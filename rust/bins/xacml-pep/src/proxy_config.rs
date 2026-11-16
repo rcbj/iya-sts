@@ -557,6 +557,14 @@ pub fn path_problem(path: &str) -> Option<&'static str> {
     if !path.starts_with('/') {
         return Some("does not start with /");
     }
+    // The proxy's own paths (#1830): a route there would never be reached,
+    // the proxy answering every path under it itself.
+    let bare = path.trim_end_matches('/');
+    if bare == RESERVED_PREFIX.trim_end_matches('/')
+        || path.starts_with(RESERVED_PREFIX)
+    {
+        return Some("is under /.iya-pep/, which is the proxy's own");
+    }
     if path.contains("//") {
         return Some("holds //");
     }
@@ -574,6 +582,9 @@ pub fn path_problem(path: &str) -> Option<&'static str> {
     }
     None
 }
+
+/// The prefix the reverse proxy keeps for its own pages (#1830).
+pub const RESERVED_PREFIX: &str = "/.iya-pep/";
 
 /// An absolute http(s) URL with a host and no userinfo, query or fragment.
 fn base_url_problem(text: &str) -> Option<&'static str> {
@@ -1191,6 +1202,12 @@ mod tests {
         refused(&|d| d["routes"][0]["path"] = json!("/a\\b"), "\\");
         refused(&|d| d["routes"][0]["path"] = json!("/a/../b"), "segment");
         refused(&|d| d["routes"][0]["path"] = json!("/a/./b"), "segment");
+        refused(&|d| d["routes"][0]["path"] = json!("/.iya-pep"), "proxy's");
+        refused(&|d| d["routes"][0]["path"] = json!("/.iya-pep/"), "proxy's");
+        refused(
+            &|d| d["routes"][0]["path"] = json!("/.iya-pep/x"),
+            "proxy's",
+        );
         refused(&|d| d["routes"][0]["match"] = json!("glob"), "match");
         refused(&|d| d["routes"][0]["methods"] = json!(["TRACE"]), "methods");
         refused(&|d| d["routes"][0]["methods"] = json!("GET"), "methods");

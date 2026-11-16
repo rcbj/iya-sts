@@ -1308,6 +1308,13 @@ impl Sync {
         self.load(said, "test");
     }
 
+    /// A pulled AuthZEN catalogue handed straight in, for a test that has
+    /// no PDP.
+    #[cfg(test)]
+    pub fn load_catalogue_for_test(&self, said: &Value) {
+        self.load_catalogue(said);
+    }
+
     /// A failed pull keeps what is held. `lastPullAt` is NOT touched: it
     /// means "when did this PEP last confirm it was current", and `stale` is
     /// computed from that gap.

@@ -56,6 +56,10 @@ reports them rather than hiding them.
 | `POST /notify` | the PDP's nudge, meaning *pull now*. Answers 204 and pulls afterwards. **HTTPS only**: over plain HTTP it is a 404 |
 | `GET /healthcheck` | liveness. It deliberately does **not** ask whether the policy is current |
 
+`HEAD` is answered like `GET`, without the body, for `/`, `/healthcheck`,
+`/crl/<name>` and the AuthZEN metadata. `HEAD /protected` is `404`: its `GET`
+is a decision, evaluated and counted.
+
 They are served over **HTTPS on 9443** once the PEP has been given a
 certificate by the realm it registered to, which is the section below — and
 over plain HTTP on port 9090 **only when you turn it on** (next section). The HTTPS listener also answers AuthZEN, as an
@@ -870,7 +874,11 @@ presenting a client certificate, and to nobody else — the service's default
 door, `authzen.callerAuthentication=mtls`. `PEP_AUTHZEN_CLIENT_CA` is the CA
 bundle a caller's certificate must chain to. With it set the listener **asks**
 every client for a certificate (`/protected` still takes none); without it the
-AuthZEN endpoints admit nobody.
+AuthZEN endpoints admit nobody. The question is asked of the listener the
+request arrived on: a listener whose settings ask for no client certificate
+(`askClientCertificate` and `requireClientCertificate` both off on its
+Listeners row) admits nobody either, and `GET /` reports what the HTTPS
+listener does as `https.asksForClientCertificates`.
 
 **Who may ask is pulled from the service.** After the catalogue the container
 pulls `GET /xacml/pep/authzen-callers`, on the same poll, with the same
@@ -947,9 +955,12 @@ curl --cacert service-root.pem --cert pep.crt --key pep.key \
 ```
 
 The metadata names the container's own PDP identifier:
-`PEP_AUTHZEN_PDP_IDENTIFIER` (an `https` origin, such as
-`https://pep.example.test:9444`) or, unset, the origin the HTTPS request
-arrived at.
+`PEP_AUTHZEN_PDP_IDENTIFIER` or the managed `authzenPdpIdentifier` (an
+`https` origin, such as `https://pep.example.test:9444`) or, unset, the
+origin the HTTPS request arrived at: its `Host` header, or over HTTP/2 the
+`:authority` the client sent. `GET /`'s `authzen.enabled` and
+`authzen.pdpIdentifier` are the values in force, the service's when it set
+them.
 
 ### What it cannot do that the service can
 
@@ -1017,6 +1028,10 @@ proxy at (https in product mode, and always for a session route), the
 timeouts, and an ordered list of routes; the first route that matches wins and
 a request no route matches is refused `404`, except a browser's `GET` or
 `HEAD` of `/`, which is the start page when no route is mounted there.
+**Paths under `/.iya-pep/` belong to the proxy**: the PEP refuses a
+configuration with a route there, and answers `404` for any path under it
+that is not one of its own pages, so not even a route at `/` forwards one to
+the application.
 Every route states its `methods`
 (all seven for any method, none for **deny-all**) and makes one
 **authorization** choice — see [Authorizing a route](xacml.md#authorizing-a-route):
@@ -1108,7 +1123,8 @@ heartbeat member. A stale stream shows when the stream stopped answering;
 its routes then ask the service's session endpoint until it polls again.
 
 `/.iya-pep/logout` ends the proxy session and sends the browser to the realm's
-end-session endpoint. A request that is not from a browser and has no proxy
+end-session endpoint. It and `/.iya-pep/callback` take `GET` and `HEAD`; any
+other method is `405` with `Allow: GET, HEAD`. A request that is not from a browser and has no proxy
 session gets `401`.
 
 The relying party is rcbj's crate

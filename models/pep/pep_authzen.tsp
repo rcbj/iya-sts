@@ -37,7 +37,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP AuthZEN edge PDP",
     `version`:"1",
-    `description`:"AuthZEN Authorization API 1.0's access evaluation, evaluations and metadata, answered by a remote PEP from the policy and attribute catalogue it pulled from its realm, so that a PEP nearby can ask a PDP nearby. A caller is admitted by a client certificate (mutual TLS) on the HTTPS listener, verified against PEP_AUTHZEN_CLIENT_CA and named on the caller list the PEP pulls from the service (GET /xacml/pep/authzen-callers), optionally narrowed by PEP_AUTHZEN_CALLERS. The metadata admits anybody. Every answer is application/json with Cache-Control: no-store; a POST's answer echoes a valid X-Request-ID. Error codes are recorded in the PEP's log and never sent. Paths not listed, the search and access-request endpoints among them, are 404 with the PEP's NotFound body."
+    `description`:"AuthZEN Authorization API 1.0's access evaluation, evaluations and metadata, answered by a remote PEP from the policy and attribute catalogue it pulled from its realm, so that a PEP nearby can ask a PDP nearby. A caller is admitted by a client certificate (mutual TLS) on the HTTPS listener it connected to, which must ask for one and verify it (PEP_AUTHZEN_CLIENT_CA or its trust anchors, and its tuning asking), verified against PEP_AUTHZEN_CLIENT_CA and named on the caller list the PEP pulls from the service (GET /xacml/pep/authzen-callers), optionally narrowed by PEP_AUTHZEN_CALLERS. The metadata admits anybody. Every answer is application/json with Cache-Control: no-store; a POST's answer echoes a valid X-Request-ID. Error codes are recorded in the PEP's log and never sent. Paths not listed, the search and access-request endpoints among them, are 404 with the PEP's NotFound body."
   },
   `servers`:#[
     #{`url`:"https://localhost:9443",`description`:"The HTTPS listener, PEP_HTTPS_PORT, or an HTTPS listener of purpose api the service defines."}
@@ -46,7 +46,7 @@ using IyaSts.ApiLib;
     `securitySchemes`:#{
       `mutualTLS`:#{
         `type`:"mutualTLS",
-        `description`:"A client certificate verified against PEP_AUTHZEN_CLIENT_CA whose SHA-256 is on a pulled caller's certificates, the caller's endpoints naming this endpoint. Refusals: 401 none configured (STS-XPEP-0039), none presented or plain HTTP (0035), did not verify (0036), the realm's caller door is not mtls (0052); 403 not on the pulled list (0051), endpoint not admitted (0053), not on PEP_AUTHZEN_CALLERS (0054, or 0037 before the first pull); 503 no list pulled and none configured (0050). No challenge header is sent."
+        `description`:"A client certificate verified against PEP_AUTHZEN_CLIENT_CA whose SHA-256 is on a pulled caller's certificates, the caller's endpoints naming this endpoint. Refusals: 401 the listener the request arrived on asks for no certificate it can verify (STS-XPEP-0039; on plain HTTP, the environment's HTTPS listener is asked), none presented or plain HTTP (0035), did not verify (0036), the realm's caller door is not mtls (0052); 403 not on the pulled list (0051), endpoint not admitted (0053), not on PEP_AUTHZEN_CALLERS (0054, or 0037 before the first pull); 503 no list pulled and none configured (0050). No challenge header is sent."
       }
     }
   },
@@ -164,7 +164,7 @@ namespace IyaSts.Pep.Authzen {
 }
 
 @component model `Metadata` {
-  @js(#{`description`:"PEP_AUTHZEN_PDP_IDENTIFIER, else https://<Host> of an HTTPS request."})
+  @js(#{`description`:"The identifier in force (the managed authzenPdpIdentifier, else PEP_AUTHZEN_PDP_IDENTIFIER), else https://<authority> of an HTTPS request: its Host header, or over HTTP/2 the :authority it sent."})
   `policy_decision_point`: string;
   `access_evaluation_endpoint`: string;
   @js(#{`description`:"Only while the realm's authzen.batchEnabled is on."})
@@ -244,10 +244,10 @@ op `postEvaluations`(`requestBody/content/application~1json/schema`: `Evaluation
 @endpoint("/.well-known/authzen-configuration", "get", #{
   `operationId`:"getAuthzenConfiguration",
   `summary`:"PDP metadata (AuthZEN 1.0 section 9)",
-  `description`:"No admission. Reads the Host header to name the identifier when PEP_AUTHZEN_PDP_IDENTIFIER is not set; no search, obligation, access-request, key or capability member is ever published.",
+  `description`:"No admission. Reads the Host header, or the request's authority when it has none (an HTTP/2 client's :authority), to name the identifier when no identifier is set; no search, obligation, access-request, key or capability member is ever published. HEAD is answered as GET without the body.",
   `responses`:#{
     `200`:#{`description`:"The metadata.",`content`:#{`application/json`:#{`schema`:null}}},
-    `404`:#{`description`:"No identifier: PEP_AUTHZEN_PDP_IDENTIFIER is not set and the request was not HTTPS with a usable Host (STS-XPEP-0045); or the CRL-only listener (0114, NotFound body).",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"No identifier: none is set and the request was not HTTPS with a usable Host or authority (STS-XPEP-0045); or the CRL-only listener (0114, NotFound body).",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"Turned off here (STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",`content`:#{`application/json`:#{`schema`:null}}},
     `503`:#{`description`:"The policies and catalogue not yet pulled (STS-XPEP-0043).",`content`:#{`application/json`:#{`schema`:null}}}
   }

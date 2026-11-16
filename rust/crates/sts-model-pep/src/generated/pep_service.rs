@@ -58,16 +58,20 @@ pub mod components {
         pub pulled_callers: crate::pep_service::components::PulledCallers,
         pub catalogue: crate::pep_service::components::Catalogue,
         pub answered: crate::pep_service::components::AuthzenAnswered,
-        /// PEP_AUTHZEN as the environment set it; the value in force is
-        /// settings.values.authzen.
+        /// Whether the edge PDP answers: the value in force, the service's managed
+        /// authzen when it set one, else PEP_AUTHZEN (settings.values.authzen says
+        /// which).
         pub enabled: bool,
         pub endpoints: Vec<String>,
         #[serde(rename = "localCallers")]
         pub local_callers: crate::pep_service::components::LocalCallers,
+        /// https.asksForClientCertificates: whether the environment's HTTPS
+        /// listener asks. Admission asks the listener each request arrived on.
         #[serde(rename = "clientCertificatesAsked")]
         pub client_certificates_asked: bool,
-        /// PEP_AUTHZEN_PDP_IDENTIFIER as the environment set it; the value in force
-        /// is settings.values.authzenPdpIdentifier.
+        /// The identifier in force: the service's managed authzenPdpIdentifier when
+        /// it set one, else PEP_AUTHZEN_PDP_IDENTIFIER; null when neither is, and
+        /// the metadata names the origin each request arrived at.
         #[serde(rename = "pdpIdentifier")]
         pub pdp_identifier: Option<String>,
         pub what: String,
@@ -264,6 +268,10 @@ pub mod components {
         pub loaded_at: Option<String>,
         #[serde(rename = "lastCheckedAt")]
         pub last_checked_at: Option<String>,
+        /// What the listener does: the acceptor it serves asks callers for a
+        /// certificate (PEP_AUTHZEN_CLIENT_CA or trust anchors set, and its
+        /// tuning's askClientCertificate or requireClientCertificate on); before it
+        /// serves one, what its tuning will build.
         #[serde(rename = "asksForClientCertificates")]
         pub asks_for_client_certificates: bool,
         pub problem: Option<String>,
@@ -300,8 +308,9 @@ pub mod components {
 
     /// What the service sends (POST, https only, the PEP's certificate verified
     /// against the realm's pep-tls chain, redirects not followed) after a commit to
-    /// the policy repository and to every member of a cluster whose configuration
-    /// changed. The PEP reads none of it.
+    /// the policy repository, to every member of a cluster whose configuration
+    /// changed, and on a Sync from the console. The PEP reads full alone and trusts
+    /// nothing else in it.
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Nudge {
@@ -310,6 +319,12 @@ pub mod components {
         pub at: String,
         /// Always empty today.
         pub pdp: String,
+        /// true on a Sync from the console: pull every document whole rather than
+        /// answered 304. Honoured at most once a poll interval (STS-XPEP-0120 logs
+        /// one asked for sooner, which pulls as usual); absent, false or any other
+        /// value is an ordinary pull.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub full: Option<bool>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

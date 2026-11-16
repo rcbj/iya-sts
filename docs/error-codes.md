@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5661** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5664** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 207
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 121
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 124
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5195,13 +5195,13 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0036` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP did not verify against PEP_AUTHZEN_CLIENT_CA (#1179). | HTTP 401, an error message |
 | `STS-XPEP-0037` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP verified, and its SHA-256 is not in PEP_AUTHZEN_CALLERS, the container's stand-in for the service's AUTHZEN_PEPS role (#1179). | HTTP 403, an error message |
 | `STS-XPEP-0038` | PEP_AUTHZEN_CALLERS is not a JSON array, or an entry of it is not a name, a 64-digit SHA-256 and at most 64 applications, and was left out; the remote PEP's edge PDP admits nobody it cannot read (#1179). | none — logged at start |
-| `STS-XPEP-0039` | The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, unreadable or holding no certificate), so its HTTPS listener asks no caller for a certificate and its AuthZEN edge PDP admits nobody (#1179). | HTTP 401 from the AuthZEN endpoints; logged at start |
+| `STS-XPEP-0039` | The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, unreadable or holding no certificate), so its HTTPS listener asks no caller for a certificate and its AuthZEN edge PDP admits nobody (#1179); or an AuthZEN request arrived on an HTTPS listener whose acceptor asks for no certificate it can verify (no client CA or trust anchors, or its tuning asks for none) — asked of that listener, not of the environment's (#1830). | HTTP 401 from the AuthZEN endpoints; logged at start |
 | `STS-XPEP-0040` | The remote PEP could not reach the PDP to pull the AuthZEN catalogue (GET /xacml/pep/authzen-catalogue). The catalogue already held is kept (#1179). | none — logged; the PEP carries on |
 | `STS-XPEP-0041` | The PDP refused the remote PEP's AuthZEN catalogue pull, or answered with something that is not a catalogue (a PDP older than #1179 answers 404). The catalogue already held is kept. | none — logged; the PEP carries on |
 | `STS-XPEP-0042` | Rows of a pulled AuthZEN catalogue were refused by the remote PEP's own catalogue grammar and left out, so those properties are undeclared at its edge PDP (#1179). | none — logged; the rest is loaded |
 | `STS-XPEP-0043` | An AuthZEN request reached the remote PEP's edge PDP before it had pulled both the policies and the AuthZEN catalogue, so it cannot map a request as the service does (#1179). | HTTP 503, an error message |
 | `STS-XPEP-0044` | An AuthZEN request reached a remote PEP whose edge PDP is turned off (PEP_AUTHZEN=false) (#1179). | HTTP 501, an error message |
-| `STS-XPEP-0045` | The remote PEP's AuthZEN metadata was asked for with no PDP identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path and was ignored (#1179). | HTTP 404 from GET /.well-known/authzen-configuration; logged at start |
+| `STS-XPEP-0045` | The remote PEP's AuthZEN metadata was asked for with no PDP identifier to name (no identifier set, and plain HTTP or no usable Host header or HTTP/2 authority), or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path and was ignored (#1179). | HTTP 404 from GET /.well-known/authzen-configuration; logged at start |
 | `STS-XPEP-0046` | A single AuthZEN evaluation sent to the remote PEP's edge PDP was larger than PEP_MAX_BODY_BYTES and was refused unread (#1179). | HTTP 413, an error message |
 | `STS-XPEP-0047` | The remote PEP could not reach the PDP to pull the AuthZEN callers (GET /xacml/pep/authzen-callers). The caller list already held is kept (#1189). | none — logged; the PEP carries on |
 | `STS-XPEP-0048` | The PDP refused the remote PEP's AuthZEN caller pull, or answered with something that is not a caller list (a PDP older than #1189 answers 404). The caller list already held is kept, and before the first one PEP_AUTHZEN_CALLERS alone decides. | none — logged; the PEP carries on |
@@ -5278,6 +5278,9 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0119` | A remote PEP could not apply one part of a listener's tuning. A TLS knob the library refused keeps the acceptor already served, or serves the certificate without that knob when none is served yet. sessionTimeoutS other than 300 is left at 300 seconds and the other settings are applied. A thread-pool worker that does not start leaves the workers already running (#1760). | none — an error in the PEP's log |
 | `STS-XPEP-0120` | A remote PEP was nudged with `full` within a poll interval of its last full pull, so it pulled as usual: a full pull is honoured at most once a poll interval, because POST /notify is not authenticated (2026-11-16). | none — an info line in the PEP's log |
 | `STS-XPEP-0121` | A job on a remote PEP listener's thread pool panicked. Its connection is lost; the worker catches the panic and takes the next job (2026-11-16). | none — an error in the PEP's log |
+| `STS-XPEP-0122` | A request reached a remote PEP reverse proxy's sign-in callback, /.iya-pep/callback, with a method other than GET or HEAD; it was refused before its state was looked up, so no pending sign-in was spent (#1830). | HTTP 405, method_not_allowed, Allow: GET, HEAD |
+| `STS-XPEP-0123` | A request reached a remote PEP reverse proxy's sign-out, /.iya-pep/logout, with a method other than GET or HEAD; no session was ended (#1830). | HTTP 405, method_not_allowed, Allow: GET, HEAD |
+| `STS-XPEP-0124` | A request on a remote PEP reverse proxy named a path under /.iya-pep/ that is none of the proxy's own pages. The prefix is the proxy's whole, so the path never reaches the route table and is never forwarded upstream (#1830). | HTTP 404, not_found |
 
 ## STS-AUTHZEN
 

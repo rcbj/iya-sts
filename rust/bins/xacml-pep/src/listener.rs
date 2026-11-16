@@ -79,7 +79,9 @@ pub struct HttpsListener {
     port: u16,
     reload_interval_ms: u64,
     status: Mutex<Status>,
-    acceptor: RwLock<Option<Arc<SslAcceptor>>>,
+    /// The acceptor served now, and what it does about a client
+    /// certificate — read together, so a connection knows both.
+    acceptor: RwLock<Option<(Arc<SslAcceptor>, ClientAuth)>>,
     /// The authorities a caller's certificate must chain to (#1179); none
     /// means no certificate is asked for — unless `ask_any`.
     client_ca: Vec<X509>,
@@ -131,6 +133,24 @@ pub struct Transport {
     /// The CRL-only plain-HTTP listener (2026-11-14): it answers
     /// `GET /crl/<name>` and nothing else (`STS-XPEP-0114`).
     pub crl_only: bool,
+    /// THE LISTENER THIS REQUEST ARRIVED ON asked for a client certificate
+    /// and verifies it against an authority (#1830): what the acceptor that
+    /// took the connection did, read with it. The AuthZEN door's first
+    /// question (`STS-XPEP-0039`) is asked of this, not of the
+    /// environment's listener. Always false on plain HTTP.
+    pub verifies_client_certificates: bool,
+}
+
+/// What a listener does about a client certificate (#1830), as its acceptor
+/// was built: nothing, ask and verify against authorities (the API
+/// listener with `PEP_AUTHZEN_CLIENT_CA` or trust anchors), or ask anybody
+/// and verify nothing (the reverse proxy's).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ClientAuth {
+    #[default]
+    None,
+    Verifying,
+    Any,
 }
 
 /// The caller's certificate on an accepted connection, read with the
@@ -293,7 +313,7 @@ fn acceptor_for(
     ask_any: bool,
     tuning: &Tuning,
     strict: bool,
-) -> Result<(SslAcceptor, X509), AcceptorFault> {
+) -> Result<(SslAcceptor, X509, ClientAuth), AcceptorFault> {
     let chain = X509::stack_from_pem(cert)
         .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     let mut chain = chain.into_iter();
@@ -333,7 +353,13 @@ fn acceptor_for(
         .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     let mut faults = Vec::new();
     apply_tls_knobs(&mut builder, tuning, &mut faults);
-    apply_client_auth(&mut builder, client_ca, ask_any, tuning, &mut faults);
+    let client_auth = apply_client_auth(
+        &mut builder,
+        client_ca,
+        ask_any,
+        tuning,
+        &mut faults,
+    );
     if !faults.is_empty() {
         tracing::error!(
             "{}xacml-pep: a listener's TLS settings were not all applied: \
@@ -350,7 +376,7 @@ fn acceptor_for(
             return Err(AcceptorFault::Tuning);
         }
     }
-    Ok((builder.build(), leaf))
+    Ok((builder.build(), leaf, client_auth))
 }
 
 /// Records one knob OpenSSL refused. The builder keeps what it had.
@@ -436,18 +462,19 @@ fn apply_tls_knobs(
 /// even when a client CA is configured. An authority list asks and checks
 /// (`xacml-pep-authzen`); `ask_any` with no authorities asks everybody and
 /// checks nobody (`xacml-pep-proxy`). Require fails the handshake when the
-/// client presents nothing.
+/// client presents nothing. Answers what was set, for `GET /` and for the
+/// AuthZEN door (#1830).
 fn apply_client_auth(
     builder: &mut openssl::ssl::SslAcceptorBuilder,
     client_ca: &[X509],
     ask_any: bool,
     tuning: &Tuning,
     faults: &mut Vec<String>,
-) {
+) -> ClientAuth {
     let want =
         tuning.ask_client_certificate || tuning.require_client_certificate;
     if !want {
-        return;
+        return ClientAuth::None;
     }
     let mut authorities = Vec::new();
     if tuning.trust_issued_client_certificates {
@@ -469,7 +496,7 @@ fn apply_client_auth(
     if !authorities.is_empty() {
         if let Err(error) = client_store(builder, &authorities) {
             faults.push(error);
-            return;
+            return ClientAuth::None;
         }
         let require = tuning.require_client_certificate;
         let mut mode = SslVerifyMode::PEER;
@@ -488,12 +515,12 @@ fn apply_client_auth(
             "session context",
             builder.set_session_id_context(b"xacml-pep-authzen"),
         );
-        return;
+        return ClientAuth::Verifying;
     }
     if !ask_any {
         // The API listener with no client CA asks nobody, which is how a
         // PEP without PEP_AUTHZEN_CLIENT_CA has always behaved.
-        return;
+        return ClientAuth::None;
     }
     let require = tuning.require_client_certificate;
     let mut mode = SslVerifyMode::PEER;
@@ -515,6 +542,27 @@ fn apply_client_auth(
         "session context",
         builder.set_session_id_context(b"xacml-pep-proxy"),
     );
+    ClientAuth::Any
+}
+
+/// What [`apply_client_auth`] will set for `tuning`, before an acceptor is
+/// built: the same decision, a trust anchors file taken as readable.
+fn planned_client_auth(
+    client_ca: &[X509],
+    ask_any: bool,
+    tuning: &Tuning,
+) -> ClientAuth {
+    if !(tuning.ask_client_certificate || tuning.require_client_certificate) {
+        ClientAuth::None
+    } else if (tuning.trust_issued_client_certificates && !client_ca.is_empty())
+        || !tuning.trust_anchors_file.is_empty()
+    {
+        ClientAuth::Verifying
+    } else if ask_any {
+        ClientAuth::Any
+    } else {
+        ClientAuth::None
+    }
 }
 
 /// The trust store and the CA names advertised to the client.
@@ -583,9 +631,30 @@ impl HttpsListener {
         listener
     }
 
+    /// What this listener does about a client certificate (#1830): what
+    /// the acceptor it serves was built to do, and before it serves one,
+    /// what its tuning will build — never the environment's client CA
+    /// alone, which the tuning may not ask with.
+    pub fn client_auth(&self) -> ClientAuth {
+        match self.current_served() {
+            Some((_, served)) => served,
+            None => planned_client_auth(
+                &self.client_ca,
+                self.ask_any,
+                &self.tuning_now(),
+            ),
+        }
+    }
+
     /// Whether this listener asks callers for a certificate (#1179).
     pub fn asks_for_client_certificates(&self) -> bool {
-        !self.client_ca.is_empty()
+        self.client_auth() != ClientAuth::None
+    }
+
+    /// Whether it asks AND verifies what is presented against an
+    /// authority: what the AuthZEN door needs (#1830).
+    pub fn verifies_client_certificates(&self) -> bool {
+        self.client_auth() == ClientAuth::Verifying
     }
 
     fn status(&self) -> MutexGuard<'_, Status> {
@@ -601,6 +670,12 @@ impl HttpsListener {
 
     /// The acceptor for a new connection: the pair being served NOW.
     pub fn current(&self) -> Option<Arc<SslAcceptor>> {
+        self.current_served().map(|(acceptor, _)| acceptor)
+    }
+
+    /// [`Self::current`] with what it does about a client certificate,
+    /// read together, for the connection's `Transport` (#1830).
+    pub fn current_served(&self) -> Option<(Arc<SslAcceptor>, ClientAuth)> {
         match self.acceptor.read() {
             Ok(guard) => guard.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
@@ -688,7 +763,7 @@ impl HttpsListener {
             return false;
         }
         let tuning = self.tuning_now();
-        let (acceptor, leaf) = match acceptor_for(
+        let (acceptor, leaf, client_auth) = match acceptor_for(
             &cert,
             &key,
             &self.client_ca,
@@ -734,10 +809,7 @@ impl HttpsListener {
             );
         }
         let first = self.current().is_none();
-        match self.acceptor.write() {
-            Ok(mut slot) => *slot = Some(Arc::new(acceptor)),
-            Err(poisoned) => *poisoned.into_inner() = Some(Arc::new(acceptor)),
-        }
+        self.swap_acceptor(acceptor, client_auth);
         let mut status = self.status();
         status.digest = digest;
         status.loaded_at = Some(sts_core::time::iso_now());
@@ -865,7 +937,9 @@ impl HttpsListener {
             &tuning,
             strict,
         ) {
-            Ok((acceptor, _)) => self.swap_acceptor(acceptor),
+            Ok((acceptor, _, client_auth)) => {
+                self.swap_acceptor(acceptor, client_auth)
+            }
             Err(AcceptorFault::Tuning) => {}
             Err(AcceptorFault::Pair(error)) => {
                 tracing::error!(
@@ -900,8 +974,8 @@ impl HttpsListener {
         }
     }
 
-    fn swap_acceptor(&self, acceptor: SslAcceptor) {
-        let built = Some(Arc::new(acceptor));
+    fn swap_acceptor(&self, acceptor: SslAcceptor, client_auth: ClientAuth) {
+        let built = Some((Arc::new(acceptor), client_auth));
         match self.acceptor.write() {
             Ok(mut slot) => *slot = built,
             Err(poisoned) => *poisoned.into_inner() = built,
@@ -913,7 +987,7 @@ impl HttpsListener {
     /// kept. Answers the served certificate's description.
     pub fn install(&self, cert: &[u8], key: &[u8]) -> Result<Value, String> {
         let tuning = self.tuning_now();
-        let (acceptor, leaf) = acceptor_for(
+        let (acceptor, leaf, client_auth) = acceptor_for(
             cert,
             key,
             &self.client_ca,
@@ -929,10 +1003,7 @@ impl HttpsListener {
         })?;
         self.save_pair(cert, key);
         let (served, _, _) = describe_served(&leaf);
-        match self.acceptor.write() {
-            Ok(mut slot) => *slot = Some(Arc::new(acceptor)),
-            Err(poisoned) => *poisoned.into_inner() = Some(Arc::new(acceptor)),
-        }
+        self.swap_acceptor(acceptor, client_auth);
         let mut status = self.status();
         status.configured = true;
         status.loaded_at = Some(sts_core::time::iso_now());
@@ -1002,7 +1073,7 @@ impl HttpsListener {
             "certificate": s.certificate,
             "loadedAt": s.loaded_at,
             "lastCheckedAt": s.last_checked_at,
-            "asksForClientCertificates": !self.client_ca.is_empty(),
+            "asksForClientCertificates": self.asks_for_client_certificates(),
             "problem": s.last_problem,
             "what": what
         })
@@ -1219,7 +1290,7 @@ mod tests {
         let (cert, key) = pair();
         let purpose = if ask_any { "proxy" } else { "api" };
         let tuning = Tuning::defaults(purpose, true);
-        let (acceptor, _) =
+        let (acceptor, _, _) =
             acceptor_for(&cert, &key, client_ca, ask_any, &tuning, false)
                 .unwrap_or_else(|fault| {
                     panic!(
@@ -1287,6 +1358,34 @@ mod tests {
         assert!(handshake(&[], Some(&caller)).is_none());
     }
 
+    /// `asksForClientCertificates` IS WHAT THE LISTENER DOES (#1830): with
+    /// `PEP_AUTHZEN_CLIENT_CA` the API listener asks and verifies by
+    /// default, and stops when its tuning asks for none — before a pair is
+    /// served (the plan) and after (the acceptor built); without one it
+    /// asks nobody whatever the tuning says.
+    #[test]
+    fn the_client_certificate_report_follows_the_tuning() {
+        let (cert, key) = pair();
+        let with_ca = HttpsListener::new("", "", 0, 0, Some(&cert));
+        assert!(with_ca.verifies_client_certificates());
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], true);
+        let mut quiet = Tuning::defaults("api", true);
+        quiet.ask_client_certificate = false;
+        with_ca.set_tuning(quiet.clone());
+        assert!(!with_ca.asks_for_client_certificates());
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], false);
+        with_ca.install(&cert, &key).unwrap();
+        assert_eq!(with_ca.current_served().unwrap().1, ClientAuth::None);
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], false);
+        with_ca.set_tuning(Tuning::defaults("api", true));
+        assert_eq!(with_ca.current_served().unwrap().1, ClientAuth::Verifying);
+        assert_eq!(with_ca.overview()["asksForClientCertificates"], true);
+        let without = HttpsListener::new("", "", 0, 0, None);
+        without.install(&cert, &key).unwrap();
+        assert!(!without.asks_for_client_certificates());
+        assert_eq!(without.overview()["asksForClientCertificates"], false);
+    }
+
     /// The reverse proxy's listener (#1760): it asks EVERY client for a
     /// certificate with no authority to check it against, reads the one
     /// presented (for `cnf.x5t#S256`), and lets a client with none in.
@@ -1304,6 +1403,7 @@ mod tests {
         assert_eq!(peer.sha256, expected);
         assert!(handshake_with(&[], None, true).is_none());
         let proxy = HttpsListener::for_proxy("c", "k", 9543, 100);
-        assert!(proxy.ask_any && !proxy.asks_for_client_certificates());
+        assert!(proxy.ask_any && proxy.asks_for_client_certificates());
+        assert!(!proxy.verifies_client_certificates());
     }
 }

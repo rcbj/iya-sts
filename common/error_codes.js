@@ -23848,7 +23848,10 @@ const CODES = [
     summary: 'The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, ' +
       'unreadable or holding no certificate), so its HTTPS listener asks ' +
       'no caller for a certificate and its AuthZEN edge PDP admits nobody ' +
-      '(#1179).',
+      '(#1179); or an AuthZEN request arrived on an HTTPS listener whose ' +
+      'acceptor asks for no certificate it can verify (no client CA or ' +
+      'trust anchors, or its tuning asks for none) — asked of that ' +
+      'listener, not of the environment\'s (#1830).',
     spec: 'HTTP 401 from the AuthZEN endpoints; logged at start' },
   { code: 'STS-XPEP-0040',
     summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
@@ -23876,7 +23879,8 @@ const CODES = [
     spec: 'HTTP 501, an error message' },
   { code: 'STS-XPEP-0045',
     summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
-      'identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), ' +
+      'identifier to name (no identifier set, and plain HTTP or no usable ' +
+      'Host header or HTTP/2 authority), ' +
       'or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path ' +
       'and was ignored (#1179).',
     spec: 'HTTP 404 from GET /.well-known/authzen-configuration; logged at ' +
@@ -24322,6 +24326,23 @@ const CODES = [
       'connection is lost; the worker catches the panic and takes the next ' +
       'job (2026-11-16).',
     spec: 'none — an error in the PEP\'s log' },
+  { code: 'STS-XPEP-0122',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-in ' +
+      'callback, /.iya-pep/callback, with a method other than GET or HEAD; ' +
+      'it was refused before its state was looked up, so no pending ' +
+      'sign-in was spent (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0123',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-out, ' +
+      '/.iya-pep/logout, with a method other than GET or HEAD; no session ' +
+      'was ended (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0124',
+    summary: 'A request on a remote PEP reverse proxy named a path under ' +
+      '/.iya-pep/ that is none of the proxy\'s own pages. The prefix is ' +
+      'the proxy\'s whole, so the path never reaches the route table and ' +
+      'is never forwarded upstream (#1830).',
+    spec: 'HTTP 404, not_found' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

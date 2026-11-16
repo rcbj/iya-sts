@@ -488,11 +488,17 @@ could sign one.
 request out in two seconds by default, and holding it open for the length of a
 pull would make a slow pull look like an unreachable PEP on somebody's console.
 
-**Its body is not read and nothing in it is trusted.** A nudge says only that
-something changed; what changed is discovered by pulling from this PEP's own
-configured PDP URL. A nudge that could tell this PEP what the policy now is, or
-where to fetch it, would be an unauthenticated caller supplying policy — and the
-whole reason a nudge is affordable on the PDP's side is that it carries nothing.
+**Nothing in its body is trusted, and one member is read.** A nudge says only
+that something changed; what changed is discovered by pulling from this PEP's
+own configured PDP URL. A nudge that could tell this PEP what the policy now
+is, or where to fetch it, would be an unauthenticated caller supplying policy —
+and the whole reason a nudge is affordable on the PDP's side is that it carries
+nothing. **`full` (#1829) is the one member read**: a Sync from the console
+asks for every document whole rather than answered 304, which fetches nothing
+a pull does not, and is honoured at most once a poll interval
+(`STS-XPEP-0120`) because anybody reaching the listener can send it. The 204
+has no body and so no `Content-Type` (#1830); it keeps `Cache-Control:
+no-store`.
 
 **`GET /` says which pull last changed the holding** (2026-09-26):
 `holding.lastChangeCause` is `start`, `poll`, `nudge` or `heartbeat`, set only
@@ -986,6 +992,21 @@ because the AuthZEN handler can say why it refused where a handshake alert
 cannot. `listener.rs`'s `peer_of()` reads what was presented and whether it
 verified; `main.rs` puts it on every request of the connection.
 
+**The first question is asked of the listener the request ARRIVED ON**
+(#1830). Each acceptor records what it was built to do about a client
+certificate (`ClientAuth`: nothing, ask and verify against an authority, or
+ask anybody), and the connection's `Transport` carries
+`verifies_client_certificates` read together with the acceptor that took it.
+A listener the service defined, or one whose tuning asks for none, is
+therefore answered for itself: until #1830 the door asked whether the
+ENVIRONMENT's listener had a client CA, so a request on a defined listener
+that verified nothing went on to `-0035` and one on a defined listener
+that did was refused `-0039` when the environment had none. Plain HTTP
+still asks the environment's HTTPS listener, so its answer (`-0035` when
+that one could admit, `-0039` when not) is what it always was. The same
+record is `https.asksForClientCertificates` on `GET /`: what the served
+acceptor does, and before one is served what its tuning will build.
+
 Then **the service's own answer decides** (#1189, rcbj's decision): `sync.rs`
 pulls `GET /xacml/pep/authzen-callers` after the catalogue, with its own token
 and `?since=`, keeps the last good list on a failure (`STS-XPEP-0047`,
@@ -1014,7 +1035,8 @@ is unreachable or older than #1189 (whose `404` keeps no list loaded). Unset,
 the pulled list alone decides, and nothing is answered before it loads.
 
 Each refusal is the service's status for the same situation and an `XPEP`
-code of its own: no certificate or plain HTTP 401 (`-0035`), one that did not
+code of its own: a listener that asks for no certificate it can verify 401
+(`-0039`), no certificate or plain HTTP 401 (`-0035`), one that did not
 verify 401 (`-0036`), nothing pulled and no local list 503 (`-0050`), a
 realm whose door is a token 401 (`-0052` — `bearer` and `mtls+bearer` admit
 no certificate alone, so the service sends no caller), a certificate the
@@ -1066,12 +1088,27 @@ before the first pull, one not on the local list 403 (`-0037`). No
 
 ### The metadata
 
-`policy_decision_point` is `PEP_AUTHZEN_PDP_IDENTIFIER` or, unset, the
+`policy_decision_point` is the identifier in force (the managed
+`authzenPdpIdentifier`, else `PEP_AUTHZEN_PDP_IDENTIFIER`) or, unset, the
 origin the HTTPS request arrived at — section 9.2.3 has a PEP refuse a
 document whose identifier is not the base it built the URL from, and the
 endpoints are served at this container's root, so an identifier with a path
 is refused at start (`STS-XPEP-0045`). It names the batch endpoint only
 while the realm has it on, and nothing unimplemented, as the service's does.
+
+**The origin is the `Host` header, else the request's authority** (#1830):
+an HTTP/2 client sends `:authority` and no `Host`, and hyper puts it in the
+URI, so reading `Host` alone answered every h2 request without an identifier
+set 404 (`-0045`). `Host` wins when both are there. `GET /`'s
+`authzen.enabled` and `authzen.pdpIdentifier` are the values in force too,
+since #1830 — they reported the environment's while the managed ones decided.
+
+**HEAD on the API listeners** (#1830) is answered as GET without the body
+for `/`, `/healthcheck`, `/crl/<name>` and this metadata: same status and
+headers, `Content-Length` the GET's. **Not for `/protected`**, whose GET is a
+decision — the PIP asked at the PDP, the enforcement counted and reported on
+the heartbeat — which a monitor's or a link checker's HEAD does not mean to
+ask for; it stays the generic 404 (`STS-XPEP-0009`), as before.
 
 ## THE REVERSE PROXY (#1760)
 
@@ -1212,7 +1249,15 @@ whole. The pair is upgraded together.
    forwarded**, so the route that decided and the resource the application
    serves are one string.
 2. `/.iya-pep/callback` and `/.iya-pep/logout` are the session mechanism's,
-   ahead of the route table.
+   ahead of the route table, and take GET and HEAD: any other method is 405
+   with `Allow: GET, HEAD` (`STS-XPEP-0122`, `-0123`; #1830), the callback's
+   state not looked up and so not spent. **`/.iya-pep/` is the proxy's
+   WHOLE** (#1830): after the accounts pages, any other path under it is 404
+   (`STS-XPEP-0124`) and never reaches the route table, so a prefix route at
+   `/` cannot forward one upstream; and a configured route there is refused
+   with the configuration (`proxy_config.rs`'s `path_problem()`), as a path
+   holding `//` is. Until #1830 only the eight paths were the proxy's and
+   the callback and sign-out answered any method.
 3. **The route**: the FIRST whose path matches — exact, or prefix at a
    segment boundary (`/api` is `/api` and `/api/…`, never `/apix`; a
    configured trailing `/` is dropped). No route, or no configuration
@@ -1864,7 +1909,9 @@ without one; `0118` every path before the first configuration since the
 start (503, *Not configured YET*); `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
-says is not usable (D10); `0095`–`0098` the identity (D11). **No log line carries
+says is not usable (D10); `0095`–`0098` the identity (D11); `0122` and `0123`
+a method other than GET or HEAD on the callback and the sign-out, `0124` a
+path under `/.iya-pep/` that is none of the proxy's (#1830). **No log line carries
 a token, an assertion, a password, a session id or a query string**: the
 method, the normalised path (at most 200 characters, quoted), the route and
 the reason.
@@ -1912,8 +1959,11 @@ in `sync.rs`, `proxy_config.rs` and `authzen_map.rs` are unchanged. Moving
 them onto the generated types is the next step, and it is a refactor of
 those readers, not of the model.
 
-**What modelling it found**, each declared as the code does it and left
-unchanged (none is a fix for this ticket):
+**What modelling it found**, each declared as the code does it. The PEP's
+own findings were fixed on `feature/1830-pep` (the nudge's 204, `full`, the
+identity door's `code`, the PIP's Accept, `GET /`'s values in force, HEAD,
+`:authority`, admission per listener, the proxy's methods and its reserved
+prefix) and are argued where each lives; what is left is the service's:
 
 * The service never reads `If-None-Match`, which the PEP sends on the settings
   and proxy pulls; only `?since=` answers 304.
@@ -1921,19 +1971,12 @@ unchanged (none is a fix for this ticket):
   `REMOTE_PEPS` holder can touch another PEP's last-seen time.
 * The heartbeat answers every registry refusal 404 (not registered, no
   directory, directory refused); register answers every one 400.
-* The PIP answers its own refusals as XML `PIPError` and the gate's as JSON;
-  the PEP sends `Accept: application/json` to it and reads neither.
+* The PIP answers its own refusals as XML `PIPError` and the gate's as JSON,
+  and the PEP reads neither. (It sent `Accept: application/json` there until
+  #1830; the PIP query now asks for `application/xml`, what it answers.)
 * `basic` has two 429 bodies, its lockout's and the limiter's; the listener
   certificate's 200 carries a stray `ok: true`; the nudge's `pdp` is always
-  empty; the identity door's 403 is read for a `code` the service never sends.
-* On `GET /`, `authzen.enabled` and `authzen.pdpIdentifier` report the
-  environment, not the managed values in force (which `settings.values` has).
-* `POST /notify`'s 204 carries `Content-Type: application/json`; the proxy's
-  callback and sign-out are dispatched for any method; `/.iya-pep/` is not
-  reserved as a whole, only its eight paths; HEAD on this handler is 404.
-* The AuthZEN metadata reads only the `Host` header, which an HTTP/2 client
-  does not send, so without `PEP_AUTHZEN_PDP_IDENTIFIER` it may be 404 over h2
-  (inferred, not observed).
+  empty.
 
 ## Error codes
 

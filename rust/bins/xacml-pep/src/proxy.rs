@@ -73,7 +73,7 @@ use sts_core::log::tag;
 use tokio::net::TcpListener;
 
 use crate::identity::{self, Jar, Jars, Tokens};
-use crate::listener::{peer_of, HttpsListener, Transport};
+use crate::listener::{peer_of, ClientAuth, HttpsListener, Transport};
 use crate::listener_pool::{drive, ListenerRuntime};
 use crate::pdp_client::PdpClient;
 use crate::proxy_auth::{self, Authenticator, Identity, Refusal};
@@ -91,6 +91,8 @@ use crate::service::Pep;
 use crate::sync::encode;
 use oidc_caep_risc::{AuthorizeOptions, EndSessionOptions};
 
+/// Every path under it is the proxy's own (#1830): its pages, or 404.
+pub const RESERVED_PREFIX: &str = crate::proxy_config::RESERVED_PREFIX;
 pub const CALLBACK_PATH: &str = "/.iya-pep/callback";
 pub const LOGOUT_PATH: &str = "/.iya-pep/logout";
 /// SEVERAL ACCOUNTS IN ONE BROWSER (#1760): the chooser and its acts.
@@ -625,7 +627,9 @@ impl Proxy {
             }
         }
         if refusal.status == 405 {
-            if let Some(route) = asked.route {
+            if let Some(allow) = refusal.allow {
+                headers.insert(header::ALLOW, HeaderValue::from_static(allow));
+            } else if let Some(route) = asked.route {
                 if let Ok(v) = HeaderValue::from_str(&route.methods.join(", "))
                 {
                     headers.insert(header::ALLOW, v);
@@ -799,11 +803,38 @@ impl Proxy {
             );
             return (self.refuse(&refusal, &asked, &pulled), false);
         };
+        // THE CALLBACK AND THE SIGN-OUT ARE GET (#1830): what a provider
+        // redirects with and what a link sends, and HEAD with it. Any other
+        // method is 405 with `Allow`, through the refusal envelope; the
+        // callback's state is not looked up, so it is not spent.
+        let gets = method == "GET" || method == "HEAD";
+        if path == CALLBACK_PATH && !gets {
+            let refusal = Refusal {
+                allow: Some("GET, HEAD"),
+                ..Refusal::new(
+                    405,
+                    "STS-XPEP-0122",
+                    "the sign-in callback takes GET and HEAD only",
+                )
+            };
+            return (self.refuse(&refusal, &asked, &pulled), false);
+        }
         if path == CALLBACK_PATH {
             let answer = self
                 .callback(query.as_deref(), &pulled, &transport, &asked)
                 .await;
             return (answer, false);
+        }
+        if path == LOGOUT_PATH && !gets {
+            let refusal = Refusal {
+                allow: Some("GET, HEAD"),
+                ..Refusal::new(
+                    405,
+                    "STS-XPEP-0123",
+                    "the sign-out takes GET and HEAD only",
+                )
+            };
+            return (self.refuse(&refusal, &asked, &pulled), false);
         }
         if path == LOGOUT_PATH {
             return (self.logout(&parts.headers, &pulled, &transport), false);
@@ -831,6 +862,21 @@ impl Proxy {
                 )
                 .await;
             return (answer, false);
+        }
+        // `/.iya-pep/` IS THE PROXY'S, WHOLE (#1830): a path under it that
+        // is none of the proxy's own is 404 here and never reaches the route
+        // table, so a prefix route at `/` cannot forward it upstream. The
+        // configuration refuses a route there too (`proxy_config.rs`).
+        if path == RESERVED_PREFIX.trim_end_matches('/')
+            || path.starts_with(RESERVED_PREFIX)
+        {
+            let refusal = Refusal::new(
+                404,
+                "STS-XPEP-0124",
+                "the path is under /.iya-pep/, which is the proxy's own, and \
+                 is none of its pages",
+            );
+            return (self.refuse(&refusal, &asked, &pulled), false);
         }
         let Some(route) = config.route_for(&path) else {
             if front_door(&method, &path, asked.html) {
@@ -2743,6 +2789,7 @@ pub async fn serve_on(
                 peer: None,
                 remote: Some(remote),
                 crl_only: false,
+                verifies_client_certificates: false,
             };
             let cfg = job.http();
             drive(stream, tower_service(proxy, transport), cfg, false, job)
@@ -2771,7 +2818,7 @@ pub async fn serve_https(
         let Ok((stream, remote)) = listener.accept().await else {
             continue;
         };
-        let Some(acceptor) = https.current() else {
+        let Some((acceptor, client_auth)) = https.current_served() else {
             continue;
         };
         let proxy = proxy.clone();
@@ -2792,6 +2839,8 @@ pub async fn serve_https(
                 peer: peer_of(tls.ssl()),
                 remote: Some(remote),
                 crl_only: false,
+                verifies_client_certificates: client_auth
+                    == ClientAuth::Verifying,
             };
             drive(tls, tower_service(proxy, transport), cfg, offer_h2, job)
                 .await;
