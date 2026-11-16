@@ -204,10 +204,24 @@ impl PdpClient {
         headers: &[(&str, String)],
         timeout: Option<Duration>,
     ) -> Answer {
-        let mut request = self
-            .http
-            .request(method, url)
-            .header("Accept", "application/json");
+        // ACCEPT FOLLOWS THE BODY (#1830): the one XML call is the PIP's,
+        // `POST /xacml/pip`, whose answers are XACML's XML, so it asks for
+        // XML; every other call is to a JSON endpoint. A caller's own Accept
+        // wins over both.
+        let accept = if headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("accept"))
+        {
+            None
+        } else if matches!(body, Some(Body::Xml(_))) {
+            Some("application/xml")
+        } else {
+            Some("application/json")
+        };
+        let mut request = self.http.request(method, url);
+        if let Some(accept) = accept {
+            request = request.header("Accept", accept);
+        }
         for (name, value) in headers {
             request = request.header(*name, value.as_str());
         }
@@ -292,4 +306,64 @@ fn describe(error: &reqwest::Error) -> String {
         text = format!("the PDP did not answer in time ({})", text);
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// ACCEPT FOLLOWS THE BODY (#1830): the PIP's XML query asks for XML,
+    /// a JSON call for JSON, and a caller's own Accept is the only one sent.
+    #[tokio::test]
+    async fn asks_for_the_media_type_it_reads() {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let record = seen.clone();
+        let router = axum::Router::new().fallback(
+            move |headers: axum::http::HeaderMap| {
+                let record = record.clone();
+                async move {
+                    let all: Vec<String> = headers
+                        .get_all("accept")
+                        .iter()
+                        .map(|v| v.to_str().unwrap_or("").to_string())
+                        .collect();
+                    record.lock().unwrap().push(all.join(" | "));
+                    "ok"
+                }
+            },
+        );
+        let socket =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Err(error) = axum::serve(socket, router).await {
+                panic!("stub: {}", error);
+            }
+        });
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = format!("http://127.0.0.1:{}", port);
+        let client = PdpClient::new(&options).unwrap();
+        client
+            .call(Method::POST, "/xacml/pip", Some(Body::Xml("<x/>".into())))
+            .await;
+        client.call(Method::GET, "/xacml/pep/policies", None).await;
+        client
+            .call_with(
+                Method::POST,
+                "/x",
+                Some(Body::Json(serde_json::json!({}))),
+                &[("accept", "text/plain".to_string())],
+                None,
+            )
+            .await;
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                "application/xml".to_string(),
+                "application/json".to_string(),
+                "text/plain".to_string()
+            ]
+        );
+    }
 }

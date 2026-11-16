@@ -1927,8 +1927,9 @@ unchanged (none is a fix for this ticket):
   `REMOTE_PEPS` holder can touch another PEP's last-seen time.
 * The heartbeat answers every registry refusal 404 (not registered, no
   directory, directory refused); register answers every one 400.
-* The PIP answers its own refusals as XML `PIPError` and the gate's as JSON;
-  the PEP sends `Accept: application/json` to it and reads neither.
+* The PIP answers its own refusals as XML `PIPError` and the gate's as JSON,
+  and the PEP reads neither. (It sent `Accept: application/json` there until
+  #1830; the PIP query now asks for `application/xml`, what it answers.)
 * `basic` has two 429 bodies, its lockout's and the limiter's; the listener
   certificate's 200 carries a stray `ok: true`; the nudge's `pdp` is always
   empty.
