@@ -19,17 +19,18 @@
 //
 // AS THE CODE DOES IT:
 //
-// * The callback and sign-out are dispatched for ANY method (the method is
-//   never compared); they are modelled as GET, which is what a browser sends
-//   and what the provider redirects with.
+// * The callback and sign-out take GET and HEAD (#1830); any other method
+//   is 405 with `Allow: GET, HEAD` (STS-XPEP-0122, 0123), the callback's
+//   state not looked up and so not spent.
 // * Every refusal is the error page when Accept names text/html and the JSON
 //   `Refusal` otherwise, except the callback's 403 STS-XPEP-0108, always the
 //   page. Each operation's `default` says so.
 // * The accounts acts read a form of at most 4096 bytes (a larger one is
 //   read as empty) merged over the query, the form winning, and never read
 //   its Content-Type; a cross-site POST is 403 STS-XPEP-0109 first.
-// * `/.iya-pep/` is not reserved as a whole: only these paths are the
-//   proxy's, and any other is the route table's.
+// * `/.iya-pep/` is the proxy's whole (#1830): a path under it that is none
+//   of these is 404 STS-XPEP-0124 and never reaches the route table, and a
+//   configured route there is refused with the configuration.
 
 import "../lib/api_lib.tsp";
 
@@ -40,7 +41,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP reverse proxy",
     `version`:"1",
-    `description`:"The paths a remote PEP's reverse proxy owns on its listeners (PEP_PROXY_PORT, 9180, plain; PEP_PROXY_HTTPS_PORT, 9543, which asks for and never requires a client certificate; and listeners of purpose proxy the service defines). Every other path is a configured route, decided by the configuration the PEP pulls, and is not described here. EVERY PATH, ROUTES INCLUDED, IS ANSWERED IN THIS ORDER: a path that does not normalise (a backslash, a control or non-ASCII byte, a bad or encoded-separator escape, //, a . or .. segment) is 400 STS-XPEP-0064; before the first configuration arrives every path is 503 STS-XPEP-0118 with Retry-After; /.iya-pep/logo.png; with no active configuration, the start page for a browser's GET of / and 404 STS-XPEP-0065 otherwise; then the callback, sign-out and accounts paths; then the route table. A ROUTE then answers: 405 STS-XPEP-0066 with Allow for a method it does not list; 403 STS-XPEP-0093 when its application is not usable; 413 STS-XPEP-0067 over its maxBodyBytes; its mechanism (an Authorization header of scheme Bearer for oauth2, SAML for saml2, Basic for basic, else the session cookie): 401 with one challenge header per mechanism it allows (Bearer realm, with error=\"invalid_token\" when a token was refused; Basic realm, charset=\"UTF-8\"; SAML realm; none for session) and codes 0070 to 0084 and 0089, 429 0080 with Retry-After when the service has locked a password out, 502 0075 when the service cannot be asked; for a browser (GET or HEAD accepting text/html) with no live session, 302 to the provider's authorization endpoint (code flow, PKCE S256, or a PAR request_uri), or on a multipleAccounts route with accounts held, 302 to /.iya-pep/accounts?return=; 403 0117 when its policy is not held and 0086 when the XACML decision refuses; 403 0116 for a deny-all route; 502 0095 to 0098 when the identity cannot be delivered (403 0095 when the service refuses it); 502 0091, 0092 or 0069 and 504 0068 for the upstream; else the upstream's own answer, streamed, redirects not followed, hop-by-hop headers removed and nothing added. Upstream, the proxy removes Host, Forwarded, X-Forwarded-*, every route's identity headers, Authorization (unless forwardCredentials), its own cookies and the service's, and adds X-Forwarded-For, X-Forwarded-Proto and X-Forwarded-Host and the route's identity (headers, a service-issued Bearer token, or a SAML session held for it at the application). Error codes are recorded in the PEP's log, with the error page's incident ID, and never sent.",
+    `description`:"The paths a remote PEP's reverse proxy owns on its listeners (PEP_PROXY_PORT, 9180, plain; PEP_PROXY_HTTPS_PORT, 9543, which asks for and never requires a client certificate; and listeners of purpose proxy the service defines). Every other path is a configured route, decided by the configuration the PEP pulls, and is not described here. EVERY PATH, ROUTES INCLUDED, IS ANSWERED IN THIS ORDER: a path that does not normalise (a backslash, a control or non-ASCII byte, a bad or encoded-separator escape, //, a . or .. segment) is 400 STS-XPEP-0064; before the first configuration arrives every path is 503 STS-XPEP-0118 with Retry-After; /.iya-pep/logo.png; with no active configuration, the start page for a browser's GET of / and 404 STS-XPEP-0065 otherwise; then the callback, sign-out and accounts paths; then any other path under /.iya-pep/, which is the proxy's own and 404 STS-XPEP-0124 (a route may not be configured there); then the route table. A ROUTE then answers: 405 STS-XPEP-0066 with Allow for a method it does not list; 403 STS-XPEP-0093 when its application is not usable; 413 STS-XPEP-0067 over its maxBodyBytes; its mechanism (an Authorization header of scheme Bearer for oauth2, SAML for saml2, Basic for basic, else the session cookie): 401 with one challenge header per mechanism it allows (Bearer realm, with error=\"invalid_token\" when a token was refused; Basic realm, charset=\"UTF-8\"; SAML realm; none for session) and codes 0070 to 0084 and 0089, 429 0080 with Retry-After when the service has locked a password out, 502 0075 when the service cannot be asked; for a browser (GET or HEAD accepting text/html) with no live session, 302 to the provider's authorization endpoint (code flow, PKCE S256, or a PAR request_uri), or on a multipleAccounts route with accounts held, 302 to /.iya-pep/accounts?return=; 403 0117 when its policy is not held and 0086 when the XACML decision refuses; 403 0116 for a deny-all route; 502 0095 to 0098 when the identity cannot be delivered (403 0095 when the service refuses it); 502 0091, 0092 or 0069 and 504 0068 for the upstream; else the upstream's own answer, streamed, redirects not followed, hop-by-hop headers removed and nothing added. Upstream, the proxy removes Host, Forwarded, X-Forwarded-*, every route's identity headers, Authorization (unless forwardCredentials), its own cookies and the service's, and adds X-Forwarded-For, X-Forwarded-Proto and X-Forwarded-Host and the route's identity (headers, a service-issued Bearer token, or a SAML session held for it at the application). Error codes are recorded in the PEP's log, with the error page's incident ID, and never sent.",
     `x-iya-cookies`:#{
       `iya_pep_session`:"A single-account session: 43 base64url characters. Path=/; HttpOnly; SameSite=Lax; Secure on HTTPS; no expiry. The server ends it after PEP_PROXY_SESSION_TTL_MS (8 hours).",
       `iya_pep_accounts`:"A browser's set of accounts on multipleAccounts routes: 32 base64url characters, the same attributes."
@@ -98,7 +99,7 @@ namespace IyaSts.Pep.Proxy {
 @endpoint("/.iya-pep/callback", "get", #{
   `operationId`:"getCallback",
   `summary`:"The OpenID Connect redirect URI",
-  `description`:"Completes the sign-in the proxy started for a session route: finds it by state (spent on lookup, so any later refusal spends it too), redeems the code at the token endpoint with the application client's credentials and the PKCE verifier, and verifies the ID Token. Answered for any method. There is no SAML browser endpoint: SAML is a per-request mechanism.",
+  `description`:"Completes the sign-in the proxy started for a session route: finds it by state (spent on lookup, so any later refusal spends it too), redeems the code at the token endpoint with the application client's credentials and the PKCE verifier, and verifies the ID Token. GET and HEAD; any other method is 405 STS-XPEP-0122 with Allow: GET, HEAD, and the state is not looked up. There is no SAML browser endpoint: SAML is a per-request mechanism.",
   `parameters`:#[
     #{`name`:"state",`in`:"query",`required`:true,`description`:"The pending sign-in; unknown, used or older than 600 s is 401 STS-XPEP-0082.",`schema`:#{`type`:"string"}},
     #{`name`:"code",`in`:"query",`required`:false,`description`:"Required unless error is sent; a code already redeemed is refused.",`schema`:#{`type`:"string"}},
@@ -110,6 +111,7 @@ namespace IyaSts.Pep.Proxy {
     `302`:#{`description`:"Signed in: Location is the path that started the sign-in. Set-Cookie: iya_pep_session (a single-account route) or iya_pep_accounts (a multipleAccounts route, whose new account becomes the active one).",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}},`Set-Cookie`:#{`schema`:#{`type`:"string"}}}},
     `401`:#{`description`:"No such pending sign-in, or its relying party is gone (STS-XPEP-0082); the provider's error, a wrong iss, no code, a replayed code, a token endpoint or ID Token failure, a token in the query, or another person on an account's re-sign-in (0083).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `403`:#{`description`:"The browser already holds PEP_PROXY_MAX_ACCOUNTS accounts (STS-XPEP-0108): always the error page, with a link to the chooser.",`content`:#{`text/html`:#{`schema`:null}}},
+    `405`:#{`description`:"A method other than GET or HEAD (STS-XPEP-0122).",`headers`:#{`Allow`:#{`schema`:#{`type`:"string",`const`:"GET, HEAD"}}},`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `503`:#{`description`:"The session store is full or no random value was had (STS-XPEP-0085); no Retry-After.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
@@ -117,6 +119,8 @@ namespace IyaSts.Pep.Proxy {
 op `getCallback`(`responses/401/content/application~1json/schema`: `Refusal`,
   `responses/401/content/text~1html/schema`: `Page`,
   `responses/403/content/text~1html/schema`: `Page`,
+  `responses/405/content/application~1json/schema`: `Refusal`,
+  `responses/405/content/text~1html/schema`: `Page`,
   `responses/503/content/application~1json/schema`: `Refusal`,
   `responses/503/content/text~1html/schema`: `Page`,
   `responses/default/content/application~1json/schema`: `Refusal`,
@@ -125,14 +129,17 @@ op `getCallback`(`responses/401/content/application~1json/schema`: `Refusal`,
 @endpoint("/.iya-pep/logout", "get", #{
   `operationId`:"getLogout",
   `summary`:"Sign out of a single-account session",
-  `description`:"Ends the session iya_pep_session names, here and in the relying party, and always clears that cookie. Answered for any method, with no same-origin check. A multipleAccounts set is not touched: its acts are under /.iya-pep/accounts. The service's sign-on session ends only if the provider's end-session endpoint ends it.",
+  `description`:"Ends the session iya_pep_session names, here and in the relying party, and always clears that cookie. GET and HEAD, with no same-origin check; any other method is 405 STS-XPEP-0123 with Allow: GET, HEAD, and nothing is ended. A multipleAccounts set is not touched: its acts are under /.iya-pep/accounts. The service's sign-on session ends only if the provider's end-session endpoint ends it.",
   `responses`:#{
     `200`:#{`description`:"Nothing more to do: no session, or the provider publishes no end_session_endpoint. JSON even to a browser.",`headers`:#{`Set-Cookie`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `302`:#{`description`:"To the provider's end_session_endpoint with id_token_hint and client_id (no post_logout_redirect_uri).",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}},`Set-Cookie`:#{`schema`:#{`type`:"string"}}}},
+    `405`:#{`description`:"A method other than GET or HEAD (STS-XPEP-0123).",`headers`:#{`Allow`:#{`schema`:#{`type`:"string",`const`:"GET, HEAD"}}},`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `getLogout`(`responses/200/content/application~1json/schema`: `SignedOut`,
+  `responses/405/content/application~1json/schema`: `Refusal`,
+  `responses/405/content/text~1html/schema`: `Page`,
   `responses/default/content/application~1json/schema`: `Refusal`,
   `responses/default/content/text~1html/schema`: `Page`): void;
 
@@ -239,7 +246,7 @@ op `postAccountsLogoutAll`(`requestBody/content/application~1x-www-form-urlencod
 @endpoint("/.iya-pep/logo.png", "get", #{
   `operationId`:"getLogo",
   `summary`:"The logo the proxy's pages show",
-  `description`:"GET and HEAD. Served once a configuration has arrived, active or not; another method goes to the route table.",
+  `description`:"GET and HEAD. Served once a configuration has arrived, active or not; another method is the reserved prefix's 404 (STS-XPEP-0124), or 0065 with no active configuration.",
   `responses`:#{
     `200`:#{`description`:"Cache-Control: public, max-age=3600.",`content`:#{`image/png`:#{`schema`:#{`type`:"string",`contentMediaType`:"image/png"}}}},
     `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}

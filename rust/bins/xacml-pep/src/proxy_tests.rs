@@ -3704,3 +3704,91 @@ async fn the_proxy_s_answers_are_the_model_s() {
         assert!(read.is_ok(), "{}: {}", path, body);
     }
 }
+
+/// THE PROXY'S OWN PATHS (#1830): the callback and the sign-out take GET
+/// and HEAD and refuse any other method 405 with `Allow`, through the
+/// refusal envelope; and `/.iya-pep/` is the proxy's whole, so a path
+/// under it that is none of its pages is 404 even under a prefix route at
+/// `/` that would otherwise forward it.
+#[tokio::test]
+async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
+    use sts_model_pep::pep_proxy::components;
+    let h = harness().await;
+    for (method, path, code) in [
+        (reqwest::Method::POST, "/.iya-pep/callback?state=s", "0122"),
+        (reqwest::Method::PUT, "/.iya-pep/callback", "0122"),
+        (reqwest::Method::POST, "/.iya-pep/logout", "0123"),
+        (reqwest::Method::DELETE, "/.iya-pep/logout", "0123"),
+    ] {
+        let r = h
+            .http
+            .request(method.clone(), format!("{}{}", h.proxy, path))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 405, "{} {}", method, path);
+        assert_eq!(r.headers()["allow"], "GET, HEAD", "{} {}", method, path);
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(body["error"], "method_not_allowed");
+        let read: Result<components::Refusal, _> =
+            serde_json::from_value(body.clone());
+        assert!(read.is_ok(), "{}: {}", path, body);
+        assert!(
+            !proxy::logged::holding(&format!("STS-XPEP-{}", code)).is_empty(),
+            "{} is logged",
+            code
+        );
+    }
+    // HEAD is the sign-out's GET.
+    let r = h
+        .http
+        .head(format!("{}/.iya-pep/logout", h.proxy))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    // A prefix route at `/` takes every path but the proxy's own.
+    let before = hits(&h);
+    let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
+    let mut doc = configuration(&h.upstream_base, &h.service_base, &cert);
+    doc["proxy"]["routes"].as_array_mut().unwrap().push(json!({
+        "id": "everything",
+        "path": "/",
+        "match": "prefix",
+        "methods": ["GET", "HEAD", "POST"],
+        "authorization": public_on("t")
+    }));
+    h.sync.receive_proxy(&doc, None);
+    let r = h.get("/elsewhere/page").send().await.unwrap();
+    assert_eq!(r.status(), 200, "the route at / forwards");
+    assert_eq!(hits(&h), before + 1);
+    for path in [
+        "/.iya-pep/nothing",
+        "/.iya-pep/",
+        "/.iya-pep",
+        "/.iya-pep/accounts-x",
+    ] {
+        let r = h
+            .get(path)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 404, "{}", path);
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(body["error"], "not_found", "{}", path);
+    }
+    let r = h
+        .http
+        .post(format!("{}/.iya-pep/logo.png", h.proxy))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404, "the logo's other methods are reserved too");
+    assert_eq!(
+        hits(&h),
+        before + 1,
+        "nothing under /.iya-pep/ went upstream"
+    );
+    assert!(!proxy::logged::holding("STS-XPEP-0124").is_empty());
+}

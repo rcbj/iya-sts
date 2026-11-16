@@ -100,6 +100,9 @@ pub struct Refusal {
     pub why: String,
     pub token_refused: bool,
     pub retry_after: Option<String>,
+    /// A 405's `Allow` for one of the proxy's own paths, which has no route
+    /// to take the list from (#1830).
+    pub allow: Option<&'static str>,
 }
 
 impl Refusal {
@@ -110,6 +113,7 @@ impl Refusal {
             why: why.to_string(),
             token_refused: false,
             retry_after: None,
+            allow: None,
         }
     }
 

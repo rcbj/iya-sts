@@ -1249,7 +1249,15 @@ whole. The pair is upgraded together.
    forwarded**, so the route that decided and the resource the application
    serves are one string.
 2. `/.iya-pep/callback` and `/.iya-pep/logout` are the session mechanism's,
-   ahead of the route table.
+   ahead of the route table, and take GET and HEAD: any other method is 405
+   with `Allow: GET, HEAD` (`STS-XPEP-0122`, `-0123`; #1830), the callback's
+   state not looked up and so not spent. **`/.iya-pep/` is the proxy's
+   WHOLE** (#1830): after the accounts pages, any other path under it is 404
+   (`STS-XPEP-0124`) and never reaches the route table, so a prefix route at
+   `/` cannot forward one upstream; and a configured route there is refused
+   with the configuration (`proxy_config.rs`'s `path_problem()`), as a path
+   holding `//` is. Until #1830 only the eight paths were the proxy's and
+   the callback and sign-out answered any method.
 3. **The route**: the FIRST whose path matches — exact, or prefix at a
    segment boundary (`/api` is `/api` and `/api/…`, never `/apix`; a
    configured trailing `/` is dropped). No route, or no configuration
@@ -1901,7 +1909,9 @@ without one; `0118` every path before the first configuration since the
 start (503, *Not configured YET*); `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
-says is not usable (D10); `0095`–`0098` the identity (D11). **No log line carries
+says is not usable (D10); `0095`–`0098` the identity (D11); `0122` and `0123`
+a method other than GET or HEAD on the callback and the sign-out, `0124` a
+path under `/.iya-pep/` that is none of the proxy's (#1830). **No log line carries
 a token, an assertion, a password, a session id or a query string**: the
 method, the normalised path (at most 200 characters, quoted), the route and
 the reason.
@@ -1949,8 +1959,11 @@ in `sync.rs`, `proxy_config.rs` and `authzen_map.rs` are unchanged. Moving
 them onto the generated types is the next step, and it is a refactor of
 those readers, not of the model.
 
-**What modelling it found**, each declared as the code does it and left
-unchanged (none is a fix for this ticket):
+**What modelling it found**, each declared as the code does it. The PEP's
+own findings were fixed on `feature/1830-pep` (the nudge's 204, `full`, the
+identity door's `code`, the PIP's Accept, `GET /`'s values in force, HEAD,
+`:authority`, admission per listener, the proxy's methods and its reserved
+prefix) and are argued where each lives; what is left is the service's:
 
 * The service never reads `If-None-Match`, which the PEP sends on the settings
   and proxy pulls; only `?since=` answers 304.
@@ -1964,9 +1977,6 @@ unchanged (none is a fix for this ticket):
 * `basic` has two 429 bodies, its lockout's and the limiter's; the listener
   certificate's 200 carries a stray `ok: true`; the nudge's `pdp` is always
   empty.
-* The proxy's
-  callback and sign-out are dispatched for any method; `/.iya-pep/` is not
-  reserved as a whole, only its eight paths.
 
 ## Error codes
 

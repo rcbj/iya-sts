@@ -1028,6 +1028,10 @@ proxy at (https in product mode, and always for a session route), the
 timeouts, and an ordered list of routes; the first route that matches wins and
 a request no route matches is refused `404`, except a browser's `GET` or
 `HEAD` of `/`, which is the start page when no route is mounted there.
+**Paths under `/.iya-pep/` belong to the proxy**: the PEP refuses a
+configuration with a route there, and answers `404` for any path under it
+that is not one of its own pages, so not even a route at `/` forwards one to
+the application.
 Every route states its `methods`
 (all seven for any method, none for **deny-all**) and makes one
 **authorization** choice — see [Authorizing a route](xacml.md#authorizing-a-route):
@@ -1119,7 +1123,8 @@ heartbeat member. A stale stream shows when the stream stopped answering;
 its routes then ask the service's session endpoint until it polls again.
 
 `/.iya-pep/logout` ends the proxy session and sends the browser to the realm's
-end-session endpoint. A request that is not from a browser and has no proxy
+end-session endpoint. It and `/.iya-pep/callback` take `GET` and `HEAD`; any
+other method is `405` with `Allow: GET, HEAD`. A request that is not from a browser and has no proxy
 session gets `401`.
 
 The relying party is rcbj's crate
