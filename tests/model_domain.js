@@ -140,7 +140,10 @@ function projectionsAreReal(t) {
   log.debug("Entering projectionsAreReal().");
   const concepts = DomainMap.catalogue();
   const rows = ModelTables.file('api.projections.json');
-  t.check(rows.length >= 15, 'published shapes are tied to concepts (' +
+  // Fourteen since 37d310ab1 (2026-11-16): the fifteenth was console.tsp's
+  // copy of management.tsp's AuditEvent, deleted with the other copies, so
+  // the shapes tied are the same and one row fewer counts them.
+  t.check(rows.length >= 14, 'published shapes are tied to concepts (' +
     rows.length + ')');
   rows.forEach(function (row) {
     const fields = concepts.get(row.concept).fields.map(function (one) {
