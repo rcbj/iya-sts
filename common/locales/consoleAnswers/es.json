@@ -98,7 +98,7 @@
   "tls.key": "Clave",
   "tls.goodUntil": "Válido hasta",
   "tls.how": "<strong>Cómo lo usa la aplicación.</strong> Preséntelo en la conexión TLS al endpoint de token con <code>client_id={client}</code> y un <code>token_endpoint_auth_method</code> de <code>tls_client_auth</code> en la entrada: la sección 2.1 de RFC 8705 lo autentica porque este dominio lo emitió para esta aplicación, sin registrar nada más. Cada token de acceso emitido en esa conexión lleva el <code>cnf[\"x5t#S256\"]</code> de este certificado (sección 3), así que la aplicación presenta el mismo certificado a los servidores de recursos. <code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
-  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a mutual-TLS client does with the chain <code>{chain}</code> and the key <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "Dominio",
   "pep.names": "Nombres",
   "validUntil": "Válido hasta",

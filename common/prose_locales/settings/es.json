@@ -7784,8 +7784,8 @@
     "text": "Cómo se autentica un PEP remoto"
   },
   "xacml.pepAuthentication|description": {
-    "en": "8d19137204b63401",
-    "text": "either, el valor predeterminado: un PEP remoto llega a /xacml/pep/* y a POST /xacml/pip con un certificado de cliente que este servicio verifica, o con un token de acceso vinculado por DPoP (RFC 9449) que obtiene de su propia autoaserción RFC 7523 a través del cliente sts-remote-pep, con audiencia el /xacml/pep de este reino y que lleva xacml:pep; cuando se presenta un token, decide el token. token: solo el token, y un certificado solo se rechaza. certificate: solo el certificado, y no se lee la cabecera Authorization. En cualquier caso, la entrada del PEP debe tener REMOTE_PEPS (roles.remotePepGroup) y decide la política de control de acceso. La misma respuesta rige el token de un PEP remoto en /access/v1, el reenvío por parte del PDP de borde de una evaluación detallada, diga lo que diga authzen.callerAuthentication."
+    "en": "223363d0264d3558",
+    "text": "token, el valor predeterminado desde 1.1.0: un PEP remoto llega a /xacml/pep/* y POST /xacml/pip solo con un token de acceso vinculado por DPoP (RFC 9449) que obtiene de su propia autoaserción RFC 7523 a través del cliente sts-remote-pep, con audiencia el /xacml/pep de este dominio y que lleva xacml:pep; un certificado de cliente por sí solo se rechaza. either: el token o un certificado de cliente que este servicio verifica; cuando se presenta un token, decide el token; establézcalo antes de actualizar mientras algún PEP siga autenticándose con su certificado. certificate: solo el certificado, y no se lee la cabecera Authorization. En cualquier caso, la entrada del PEP debe tener REMOTE_PEPS (roles.remotePepGroup) y decide la política de control de acceso. La misma respuesta rige el token de un PEP remoto en /access/v1, el reenvío por parte del PDP perimetral de una evaluación detallada, diga lo que diga authzen.callerAuthentication."
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

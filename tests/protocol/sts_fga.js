@@ -460,7 +460,11 @@ async function setUp() {
     name: "FGA test realm",
     description: "Created by tests/protocol/sts_fga.js; LEFT IN PLACE on " +
                  "purpose, so that a failed run can be read afterwards.",
-    overrides: { "global.mode": "development" } });
+    // `either` (#1827's follow-up, phase 4): this job's remote PEP pulls on
+    // its client certificate as well as on its key, and the certificate
+    // is an operator's opt-in since `token` became the default.
+    overrides: { "global.mode": "development",
+                 "xacml.pepAuthentication": "either" } });
   assert.ok(made.status === 200 && made.body && made.body.ok !== false,
     "creating the throwaway realm " + REALM + " answered " + made.status +
     " " + String(made.text).slice(0, 300));

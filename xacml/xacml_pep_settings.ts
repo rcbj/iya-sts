@@ -232,6 +232,11 @@ const BOOTSTRAP: BootstrapRow[] = [
   { env: 'PEP_PDP_URL', reason: 'connect',
     default: 'https://localhost:8081' },
   { env: 'PEP_NAME', reason: 'connect', default: 'pep-1' },
+  // PHASE 4 OF #1827's FOLLOW-UP: the PEP no longer presents PEP_TLS_CERT
+  // to this service (STS-XPEP-0135 at its start), and PEP_TLS_KEY is read
+  // only as the fallback assertion key. Both stay listed, as
+  // PEP_AUDIT_CLIENT_ID does, so an environment that sets them is still
+  // described.
   { env: 'PEP_TLS_CERT', reason: 'connect', default: '' },
   { env: 'PEP_TLS_KEY', reason: 'connect', default: '' },
   { env: 'PEP_TLS_CA', reason: 'connect', default: '' },
@@ -253,6 +258,10 @@ const BOOTSTRAP: BootstrapRow[] = [
   // on the Listener tab is the managed way to serve plain HTTP.
   { env: 'PEP_HTTP', reason: 'bind', default: 'false' },
   { env: 'PEP_PROXY_HTTP', reason: 'bind', default: 'false' },
+  // THE CRL-ONLY LISTENER ON PEP_PORT (2026-11-14), bound only with
+  // PEP_CRL_HTTP=true since phase 4 of #1827's follow-up retired the client
+  // certificate whose CRLs it served (STS-XPEP-0136 at the PEP's start).
+  { env: 'PEP_CRL_HTTP', reason: 'bind', default: 'false' },
   { env: 'PEP_HTTPS_PORT', reason: 'bind', default: '9443' },
   { env: 'PEP_PROXY_PORT', reason: 'bind', default: '9180' },
   { env: 'PEP_PROXY_HTTPS_PORT', reason: 'bind', default: '9543' },

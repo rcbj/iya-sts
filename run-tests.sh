@@ -1292,22 +1292,21 @@ COMPOSE_ENV=(
   # service the way the runner does — `sts`, on the plain-HTTP revocation
   # listener, which is plain whatever STS_HTTPS says about the main port.
   "PKI_DISTRIBUTION_BASE_URL=http://sts:8082"
-  # ---- the remote PEP and the client certificate it presents --------------
-  # The three /xacml/pep endpoints are gated: a PEP is admitted by a client
-  # certificate this service VERIFIES, whose subject DN resolves to a directory
-  # entry in the `remote-peps` group. Nothing in either image provides that
-  # certificate — mintThePepCredential() below makes one between bringing the
-  # service up and starting the PEP, which is the only window: pep.js reads the
-  # files at process start and never again.
+  # ---- the remote PEP and the key it authenticates with -------------------
+  # The /xacml/pep endpoints are gated: a PEP is admitted by a DPoP-bound
+  # access token from its RFC 7523 self-assertion, signed with a key
+  # registered on a directory entry in the `remote-peps` group. Since phase 4
+  # of #1827's follow-up (2026-11-16) that is its ONLY credential: no client
+  # certificate is minted or mounted, and XACML_PEP_TLS_CERT/KEY are no
+  # longer set. mintThePepCredential() below generates the key between
+  # bringing the service up and starting the PEP.
   # As compose.exe reads a path on Windows (#512); this script's own
   # `rm` and `mkdir` of it keep the shell's form.
   "XACML_PEP_CERT_DIR=$(hostPath "${XACML_PEP_CERT_DIR}")"
-  "XACML_PEP_TLS_CERT=/certs/pep.crt"
-  "XACML_PEP_TLS_KEY=/certs/pep.key"
   # THE ASSERTION KEY (#1827's follow-up, phase 3): mintThePepCredential()
-  # generates it beside pep.key with a certificate request, and the job
-  # registers the request once the PEP's entry exists in its realm. The
-  # service never sees the key.
+  # generates it with a certificate request, and the job registers the
+  # request once the PEP's entry exists in its realm. The service never
+  # sees the key.
   "XACML_PEP_ASSERTION_KEY=/certs/pep-assertion.key"
   # THE REGISTERED NAME IS THE CERTIFICATE'S COMMON NAME. `xacml.js` files a
   # registration under the certificate and ignores the body, so a PEP_NAME that
@@ -2064,19 +2063,26 @@ mintThePepCredential()
 {
   rm -rf "${XACML_PEP_CERT_DIR}"
   mkdir -p "${XACML_PEP_CERT_DIR}"
-  echo "Minting the remote PEP's client certificate (${XACML_PEP_SUBJECT})"
-  echo "and adding its Root CA to the mock's truststore..."
+  echo "Generating the remote PEP's assertion key and its certificate"
+  echo "request (${XACML_PEP_NAME})..."
   # ---------------------------------------------------------------------
+  # THE ASSERTION KEY ALONE SINCE PHASE 4 OF #1827's FOLLOW-UP (rcbj,
+  # 2026-11-16). Until then this minted a Root, an Issuing CA and a TLS
+  # client leaf with tests/tools/pep-credential.js and added the Root to
+  # the service's truststore; the PEP no longer presents a client
+  # certificate (STS-XPEP-0135), so none is minted, no anchor is posted,
+  # and XACML_PEP_CA_PEM is no longer exported. The key and its request
+  # are generated here, and sts_xacml_remote_pep.js sends the request to
+  # issue-pep-credential once it has made the PEP's entry in its realm.
+  # Nothing here talks to the service, which the old step did.
+  #
   # RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
   # ELSE". The tool is a node script that needs `common/crypto_impl/x509.js` and
-  # its three npm packages (and bunyan, for its logger — see NODE_PATH at
+  # its npm packages (and bunyan, for its logger — see NODE_PATH at
   # mintAdminApiToken()); this host may have neither node nor node_modules.
   # The service image has both — so the REPOSITORY is mounted read-only for the
   # tool itself (the image deletes ./tests, see the root Dockerfile) and
   # MOCK_STS_DIR points the tool at the image's own copy of the engine.
-  #
-  # On the project's network, so it dials `sts` by the name in the
-  # certificate rather than a published port this stack does not have.
   # ---------------------------------------------------------------------
   # AS THE HOST USER (#254): the service image runs as uid 10001 since #254,
   # which may not write the host directory mounted at /out. Root could, and
@@ -2086,55 +2092,28 @@ mintThePepCredential()
   # container reads them as it always did. On Windows there is no owner to
   # match and HOST_USER_ARGS is empty (tests/tools/host-platform.sh).
   if ! docker run --rm ${HOST_USER_ARGS[@]+"${HOST_USER_ARGS[@]}"} \
-       --network "${COMPOSE_PROJECT}_default" \
        -v "$(hostPath "${CURRENT_DIR}"):/repo:ro" \
        -v "$(hostPath "${XACML_PEP_CERT_DIR}"):/out" \
        -e MOCK_STS_DIR=/usr/src/sts \
        -e NODE_PATH=/usr/src/sts/node_modules \
-       -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}" \
        -w /usr/src/sts \
        "${STS_IMAGE}" \
-       sh -c '
-         # THE SERVICE'"'"'S OWN CERTIFICATE FIRST (2026-09-21). The gated
-         # door VERIFIES the connection, because it carries the token, and
-         # this one-shot container had no anchor for the per-start
-         # certificate: the handshake was aborted, the tool fell back to the
-         # open POST /tls/trust, product mode refused it, and the PEP ran the
-         # whole mode unverified. This is the fetch run-report.js makes for
-         # every job (tests/tools/trust.js), made here for this child.
-         case "$1" in
-           https:*)
-             node -e "require(\"/repo/tests/tools/trust.js\")
-               .readTrust(process.argv[1]).then(function (t) {
-                 require(\"fs\").writeFileSync(
-                   \"/out/sts-certificate.pem\", t.pem); })" "$1" || exit 1
-             export NODE_EXTRA_CA_CERTS=/out/sts-certificate.pem ;;
-         esac
-         node /repo/tests/tools/pep-credential.js \
-           --url="$1" --out=/out --subject="$2" \
-           --crl-base=http://xacml-pep:9090/crl || exit 1
-         # THE ASSERTION KEY AND ITS REQUEST (#1827, phase 3): generated
-         # here, sent by sts_xacml_remote_pep.js to issue-pep-credential
-         # once it has made the PEP'"'"'s entry in its realm.
-         exec node /repo/tests/tools/pep-credential.js --assertion \
-           --csr-only --out=/out --name="$3"' \
-         sh "$(serviceUrl)" "${XACML_PEP_SUBJECT}" "${XACML_PEP_NAME}" \
+       node /repo/tests/tools/pep-credential.js --assertion --csr-only \
+         --out=/out --name="${XACML_PEP_NAME}" \
          > /dev/null;
   then
     echo "" >&2
-    echo "WARNING: the remote PEP's client certificate could not be minted." >&2
+    echo "WARNING: the remote PEP's assertion key could not be generated." >&2
     echo "         That container will start without one, every /xacml/pep" >&2
-    echo "         call it makes will be refused by the access policy, and" >&2
-    echo "         sts_xacml_remote_pep will say so. The rest of the run is" >&2
-    echo "         unaffected." >&2
+    echo "         call it makes will be refused, and sts_xacml_remote_pep" >&2
+    echo "         will say so. The rest of the run is unaffected." >&2
     echo "" >&2
   fi
-  # THE FILES HAVE TO BE READABLE INSIDE THE PEP CONTAINER, which runs as a
-  # different user from whatever wrote them. `pep-credential.js` chmods the key
+  # THE KEY HAS TO BE READABLE INSIDE THE PEP CONTAINER, which runs as a
+  # different user from whatever wrote it. `pep-credential.js` chmods the key
   # to 0600 for the ordinary reason and that is 0600 for the WRITER — so it is
   # relaxed here, deliberately and narrowly, because this key exists for the
   # length of one test run and protects nothing.
-  chmod 0644 "${XACML_PEP_CERT_DIR}/pep.key" 2>/dev/null || true
   chmod 0644 "${XACML_PEP_CERT_DIR}/pep-assertion.key" 2>/dev/null || true
   # WHERE THE JOB WRITES THE HTTPS LISTENER'S PAIR, made now because the PEP
   # container mounts its parent and the job — in the tests container — writes
@@ -2634,7 +2613,10 @@ do
     # credential in that file already does for itself. It travels as TEXT
     # because the runner container cannot see the directory the PEP mounts.
     #
-    # Read per mode, because the certificate above is minted per mode.
+    # Read per mode, because the certificate above was minted per mode.
+    # SINCE PHASE 4 OF #1827's FOLLOW-UP NO CERTIFICATE IS MINTED, so there
+    # is no ca.crt and nothing is exported; the job reads the variable only
+    # where a launcher still sets it.
     if [ -f "${XACML_PEP_CERT_DIR}/ca.crt" ];
     then
       COMPOSE_ENV+=("XACML_PEP_CA_PEM=$(cat "${XACML_PEP_CERT_DIR}/ca.crt")")

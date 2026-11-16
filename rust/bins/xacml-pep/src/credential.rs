@@ -10,7 +10,9 @@
 //!   assertion AND every DPoP proof, so the token is bound to the key the
 //!   service registered for this PEP's entry. Unset, `PEP_TLS_KEY` is used
 //!   with a notice (`STS-XPEP-0127`) — the key of the client certificate a
-//!   PEP provisioned before this change already holds. RS256 for an RSA
+//!   PEP provisioned before this change already holds, and the one role
+//!   that variable keeps since phase 4 retired the certificate. RS256 for
+//!   an RSA
 //!   key, ES256 for EC P-256 (the signature as `r || s`), anything else
 //!   refused by name (`STS-XPEP-0128`). The file is read again on the
 //!   listener pair's reload interval; a changed key drops every token held,
@@ -34,15 +36,17 @@
 //!   role (the token endpoint, and each resource) and put in the next
 //!   proof. A second demand in a row is `STS-XPEP-0130`.
 //! * **NEVER BLOCKING.** A call for which no token can be had goes WITHOUT
-//!   one — with the client certificate where `PEP_TLS_CERT` is set, which
-//!   the service still accepts — and the service's answer is what the
-//!   caller records. Why there is no token is logged under
+//!   one — and since phase 4 (rcbj, 2026-11-16) with no client certificate
+//!   either, `PEP_TLS_CERT` being ignored (`STS-XPEP-0135`) — and the
+//!   service's answer is what the caller records. Why there is no token is
+//!   logged under
 //!   `STS-XPEP-0129`, naming the provisioning step that is missing, at warn
 //!   the first time and when the reason changes.
 //! * **NO TOKEN, KEY OR PROOF IS EVER LOGGED OR REPORTED.** `GET /`'s
-//!   `credential` says which file, the key type, its JWK thumbprint, whether
-//!   a client certificate is presented too, and per resource whether a
-//!   token is held and until when.
+//!   `credential` says which file, the key type, its JWK thumbprint, and per
+//!   resource whether a token is held and until when; its
+//!   `clientCertificate` is kept for a reader of the older document and is
+//!   always `false` since phase 4.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
@@ -415,7 +419,6 @@ pub struct Credential {
     client_id: String,
     base: String,
     source: KeySource,
-    client_certificate: bool,
     key: RwLock<KeyState>,
     slots: Mutex<[Slot; 3]>,
     gates: [tokio::sync::Mutex<()>; 3],
@@ -443,8 +446,6 @@ impl Credential {
             client_id: options.client_id.clone(),
             base: options.pdp_url.trim_end_matches('/').to_string(),
             source: options.assertion_key.clone(),
-            client_certificate: options.client_certificate.is_some()
-                && options.client_key.is_some(),
             key: RwLock::new(KeyState::default()),
             slots: Mutex::new(Default::default()),
             gates: Default::default(),
@@ -535,9 +536,9 @@ impl Credential {
         if self.source.fallback() {
             tracing::info!(
                 "{}xacml-pep: no PEP_ASSERTION_KEY, so the assertion and the \
-                 DPoP proofs are signed with the client certificate's key, \
-                 PEP_TLS_KEY ({}). Set PEP_ASSERTION_KEY to give this PEP a \
-                 key of its own.",
+                 DPoP proofs are signed with the key PEP_TLS_KEY names ({}), \
+                 once the client certificate's. Set PEP_ASSERTION_KEY to \
+                 give this PEP a key of its own.",
                 tag("STS-XPEP-0127"),
                 self.source.path
             );
@@ -547,18 +548,13 @@ impl Credential {
                 "xacml-pep: every call to the service carries a DPoP-bound \
                  access token from an RFC 7523 self-assertion signed with \
                  the {} key at {} ({}, JWK thumbprint {}), through client \
-                 {} as {}{}.",
+                 {} as {}.",
                 key.label,
                 self.source.path,
                 key.alg,
                 key.thumbprint,
                 self.client_id,
-                self.name,
-                if self.client_certificate {
-                    "; the client certificate is presented as well"
-                } else {
-                    ""
-                }
+                self.name
             ),
             None => self.say_key_problem(&state.problem),
         }
@@ -574,14 +570,9 @@ impl Credential {
         };
         tracing::warn!(
             "{}xacml-pep: {}. Calls to the service go without an access \
-             token{}.",
+             token, and the service refuses them.",
             tag(code),
-            problem,
-            if self.client_certificate {
-                ", on the client certificate alone"
-            } else {
-                ", and the service refuses them"
-            }
+            problem
         );
     }
 
@@ -709,16 +700,12 @@ impl Credential {
                 if slot.refused != why {
                     tracing::warn!(
                         "{}xacml-pep: no access token for {} (scope {}): {}. \
-                         Calls to it go without one{}.",
+                         Calls to it go without one, and the service \
+                         refuses them.",
                         tag("STS-XPEP-0129"),
                         resource.name(),
                         resource.scope(),
-                        why,
-                        if self.client_certificate {
-                            ", on the client certificate alone"
-                        } else {
-                            ", and the service refuses them"
-                        }
+                        why
                     );
                 } else {
                     tracing::debug!(
@@ -930,40 +917,23 @@ impl Credential {
     /// `credential` on `GET /`: never a token, a proof or a key.
     /// Which credential a call actually went out on, for a log line: the
     /// DPoP-bound token (and the key that bound it) unless the answer says
-    /// it went without one, then the client certificate where one is
-    /// presented, else nothing. rcbj (2026-11-16): a line that says
+    /// it went without one, else nothing — no client certificate is
+    /// presented since phase 4. rcbj (2026-11-16): a line that says
     /// "over mutual TLS" of a call made on a token is wrong.
     pub fn used_on(&self, no_token: Option<&str>) -> String {
-        Credential::describe_used(
-            no_token,
-            self.source.var,
-            self.client_certificate,
-        )
+        Credential::describe_used(no_token, self.source.var)
     }
 
-    /// `used_on()` from its three facts, so a test needs no key file.
-    pub fn describe_used(
-        no_token: Option<&str>,
-        key_source: &str,
-        client_certificate: bool,
-    ) -> String {
+    /// `used_on()` from its two facts, so a test needs no key file.
+    pub fn describe_used(no_token: Option<&str>, key_source: &str) -> String {
         match no_token {
             None => format!(
-                "a DPoP-bound access token (the key in {}){}",
+                "a DPoP-bound access token (the key in {})",
                 if key_source.is_empty() {
                     "an unnamed source"
                 } else {
                     key_source
-                },
-                if client_certificate {
-                    ", beside its client certificate"
-                } else {
-                    ""
                 }
-            ),
-            Some(why) if client_certificate => format!(
-                "its client certificate, with no access token ({})",
-                why
             ),
             Some(why) => format!("no credential at all ({})", why),
         }
@@ -1012,7 +982,9 @@ impl Credential {
             },
             "clientId": self.client_id,
             "subject": self.name,
-            "clientCertificate": self.client_certificate,
+            // Kept for a reader of the older document: always false since
+            // phase 4, when the PEP stopped presenting PEP_TLS_CERT.
+            "clientCertificate": false,
             "tokens": tokens,
             "what": "Every call this PEP makes to the service carries a \
                      DPoP-bound access token (RFC 9449) from an RFC 7523 \
@@ -1020,8 +992,9 @@ impl Credential {
                      else PEP_TLS_KEY — which also signs every DPoP proof. \
                      One token per audience: /xacml/pep (xacml:pep), \
                      /admin-api (xacml:pep-audit), /access/v1 \
-                     (authzen:evaluate). clientCertificate says whether \
-                     PEP_TLS_CERT is presented as well. The key must be \
+                     (authzen:evaluate). No client certificate is \
+                     presented (PEP_TLS_CERT is ignored), so \
+                     clientCertificate is always false. The key must be \
                      registered on this PEP's entry, whose username is \
                      PEP_NAME."
         })
@@ -1044,24 +1017,20 @@ pub mod tests {
     /// went out on — never "mutual TLS" of a call made on a token.
     #[test]
     fn a_log_line_names_the_credential_actually_used() {
-        let token = Credential::describe_used(None, "PEP_ASSERTION_KEY", false);
+        let token = Credential::describe_used(None, "PEP_ASSERTION_KEY");
         assert_eq!(
             token,
             "a DPoP-bound access token (the key in PEP_ASSERTION_KEY)"
         );
         assert!(!token.contains("mutual TLS"));
-        let both = Credential::describe_used(None, "PEP_TLS_KEY", true);
-        assert!(both.starts_with(
-            "a DPoP-bound access token (the key in \
-                                  PEP_TLS_KEY)"
-        ));
-        assert!(both.ends_with("beside its client certificate"));
-        let cert = Credential::describe_used(Some("no key"), "", true);
+        let fallback = Credential::describe_used(None, "PEP_TLS_KEY");
         assert_eq!(
-            cert,
-            "its client certificate, with no access token (no key)"
+            fallback,
+            "a DPoP-bound access token (the key in PEP_TLS_KEY)"
         );
-        let none = Credential::describe_used(Some("no key"), "", false);
+        // Phase 4: no call goes on a client certificate, token or not.
+        assert!(!fallback.contains("certificate"));
+        let none = Credential::describe_used(Some("no key"), "");
         assert_eq!(none, "no credential at all (no key)");
     }
 

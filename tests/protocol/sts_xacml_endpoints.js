@@ -1132,7 +1132,8 @@ async function anUndischargeableObligationRefuses() {
 // its certificate request is sent, through issue-pep-credential — and the
 // pull is made on the DPoP-bound token that key earns through
 // `sts-remote-pep`, with no client certificate: the same answer as the
-// certificate's. `xacml.pepAuthentication` is `either` here.
+// certificate's. `xacml.pepAuthentication` is `either` here
+// (`aCertificateIsAnOptIn()`).
 // ---------------------------------------------------------------------------
 async function aRemotePepPullsOnItsKey() {
   log.debug("Entering aRemotePepPullsOnItsKey().");
@@ -2387,6 +2388,49 @@ async function admitTheCertificates() {
   log.debug("Leaving admitTheCertificates().");
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE AT THE PEP DOOR IS AN OPERATOR'S OPT-IN (#1827's follow-up,
+// phase 4, rcbj 2026-11-16). `xacml.pepAuthentication` defaults to `token`,
+// so the admitted PEP's certificate alone is refused (401, STS-XACML-0289)
+// and the refusal names `either`, the setting an upgraded deployment whose
+// PEPs still present a certificate needs. THIS JOB'S SUBJECT IS THE
+// CERTIFICATE DOOR, so it then sets `either` in its realm — an opt-in that
+// stays for good — and every section after drives the door as it always
+// did; `aRemotePepPullsOnItsKey()` drives the token beside it.
+// ---------------------------------------------------------------------------
+async function aCertificateIsAnOptIn() {
+  log.debug("Entering aCertificateIsAnOptIn().");
+  log.info("=== A certificate at the PEP door is an operator's opt-in ===");
+  const peps = await get(api("/xacml/peps"));
+  check("xacml.pepAuthentication is token by default", function () {
+    assert.strictEqual(peps.status, 200,
+      "GET /admin-api/xacml/peps answered " + peps.status);
+    assert.strictEqual(peps.body.pepAuthentication, "token",
+      "the realm reports pepAuthentication " +
+      JSON.stringify(peps.body.pepAuthentication));
+  });
+  const refused = await pepGet("/xacml/pep/policies");
+  check("under the default the admitted certificate alone is refused, " +
+        "naming either", function () {
+    assert.strictEqual(refused.status, 401,
+      "the certificate-only pull answered " + refused.status + " " +
+      String(refused.text).slice(0, 300));
+    assert.ok(/under either/.test(String(refused.text)) &&
+              /PEP_ASSERTION_KEY/.test(String(refused.text)),
+      "the refusal should say that either accepts the certificate and name " +
+      "the assertion key; it says " + String(refused.text).slice(0, 400));
+  });
+  await setSetting("xacml.pepAuthentication", "either");
+  const admitted = await pepGet("/xacml/pep/policies");
+  check("and under either, the operator's opt-in, it is admitted",
+        function () {
+    assert.strictEqual(admitted.status, 200,
+      "the certificate's pull under either answered " + admitted.status +
+      " " + String(admitted.text).slice(0, 300));
+  });
+  log.debug("Leaving aCertificateIsAnOptIn().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving IYA STS's XACML endpoints at " + base + "/xacml");
@@ -2408,6 +2452,7 @@ async function test() {
   try {
     await createThePeople();
     await admitTheCertificates();
+    await aCertificateIsAnOptIn();
     await theGateSplitsOnTheRole();
     await theSurfaceDescribesItself();
     await anEmptyRepositoryDecidesNothing();

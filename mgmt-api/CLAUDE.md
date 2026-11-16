@@ -2577,15 +2577,17 @@ the device feed's above, made a second time:
 
 * **AND ON A DPoP KEY SINCE THE PEP'S TOKEN CREDENTIAL (#1827's
   follow-up, rcbj-approved plan, 2026-11-16).** `sts-remote-pep` is a
-  DPoP-bound public client now (`sender_constraints.js`), and through phase 3
-  of that plan its DPoP binding STANDS FOR the certificate binding its entry
-  still declares (`dpopStandsForCertificate()`, a list of that one client):
-  the token endpoint issues its `/admin-api` token bound to the PEP's key
-  with no certificate on the connection, and `STS-API-0137` lets a `cnf.jkt`
-  token of that client through, whose proof RFC 9449 section 7's check below
-  it then asks for. `accessTokenRefusal()`'s `certificateStands` keeps a
-  certificate-bound token of that client honoured where its certificate is
-  presented. Phase 4 drops the declaration, and with it this exception.
+  DPoP-bound public client now (`sender_constraints.js`), and its
+  `/admin-api` token is bound to the PEP's key, whose proof RFC 9449 section
+  7's check below asks for. Through phase 3 of that plan its entry still
+  declared certificate-bound tokens and a DPoP binding stood for that
+  declaration (`dpopStandsForCertificate()`, past `STS-API-0137`, and
+  `accessTokenRefusal()`'s `certificateStands`). **PHASE 4 (rcbj,
+  2026-11-16) DROPPED THE DECLARATION AND THE EXCEPTION**: the seed no
+  longer declares the flag, an entry an earlier build seeded has it cleared
+  at start (`applications.js`'s `fillRetiredClientFlags()`), and
+  `STS-API-0137` holds for `sts-remote-pep` exactly as for any client, which
+  now never asks it of that client because the client declares nothing.
 
 `admin_api_spec.ts`'s `scopeForMethod()` states the exception and
 `tests/admin_api_document_security.js` holds the two together.

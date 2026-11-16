@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5698** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5700** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 223
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 131
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 133
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5159,7 +5159,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0286` | A remote PEP pushed decision records to POST /admin-api/pep-audit in a body that is not { instance, events } with events a non-empty array of objects, or with more events than one batch may carry (#1827). Nothing in the batch is recorded. | HTTP 400, an error message |
 | `STS-XACML-0287` | A remote PEP pushed decision records to POST /admin-api/pep-audit and is not registered in this realm's ou=peps under the name its token's subject carries (#1827). It must register (POST /xacml/pep/register) before its records are taken. | HTTP 404, an error message |
 | `STS-XACML-0288` | A decision record a remote PEP pushed to POST /admin-api/pep-audit was not recorded: it had no positive integer seq, or a kind other than enforcement, authzen or proxy (#1827). The rest of the batch is recorded and the record is counted as ignored. | none; counted as ignored in the answer |
-| `STS-XACML-0289` | A remote PEP reached /xacml/pep/* or POST /xacml/pip with no access token while xacml.pepAuthentication is token: a client certificate alone is not accepted in this realm (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_request" |
+| `STS-XACML-0289` | A remote PEP reached /xacml/pep/* or POST /xacml/pip with no access token while xacml.pepAuthentication is token, the default since 1.1.0: a client certificate alone is not accepted in this realm (#1827). Where the certificate verified, the description says that either would accept it, and a warning under this code is logged once per realm and process. | HTTP 401, WWW-Authenticate: DPoP error="invalid_request" |
 | `STS-XACML-0290` | A remote PEP reached /xacml/pep/* or POST /xacml/pip with an access token and no client certificate while xacml.pepAuthentication is certificate: the token is not read in this realm (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
 | `STS-XACML-0291` | A remote PEP's access token at the PEP door was not one this realm issued and holds: its signature did not verify, it expired, it is not an access token, another authorization server issued it, it was revoked, or its certificate binding did not hold (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
 | `STS-XACML-0292` | A remote PEP's access token at the PEP door is not DPoP-bound (no cnf.jkt), or a DPoP-bound one was sent as Bearer (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
@@ -5295,7 +5295,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0112` | A remote PEP was nudged (POST /notify) over plain HTTP. The nudge is answered on its HTTPS listener only since 2026-11-14. | HTTP 404 not_found, saying where the nudge is answered |
 | `STS-XPEP-0113` | The remote PEP's notify URL (PEP_NOTIFY_URL, or the notifyUrl the service set) is not https, so it is REJECTED: the service nudges over https only and nothing allows http. The PEP advertises no notify URL, does not fall back to the one it would derive, reports the setting rejected in settingsInUse, and converges by polling until it is fixed or unset. Logged once per value. | none — an error in the PEP's log; settingsInUse rejected |
 | `STS-XPEP-0114` | A request reached the remote PEP's CRL-only plain-HTTP listener for something other than GET /crl/<name>; that listener serves its credential's CRLs and nothing else. | HTTP 404 not_found |
-| `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (bound when PEP_HTTP is off and the credential has a CRL directory). Logged once at start. | none; the listener keeps its default |
+| `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (not bound: since phase 4 of #1827's follow-up only PEP_CRL_HTTP=true binds it). Logged once at start. | none; the listener keeps its default |
 | `STS-XPEP-0116` | A request on a remote PEP proxy route whose methods list is empty (deny-all) was refused after the route's policy was asked, whatever it decided; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0117` | A remote PEP proxy route names a policy (authorization.policy) this PEP does not hold — never pulled, disabled, withheld or failed to load — so its request was refused whatever the bias; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0118` | The remote PEP's reverse proxy has received no configuration since it started — its first pull has not succeeded yet — so every path, its own /.iya-pep/* included, is answered "try again later" rather than "not found". Logged when first met, then as a count at most once a minute, and once more when the first configuration arrives; a configuration received empty or switched off is STS-XPEP-0065 (#1760). | HTTP 503, temporarily_unavailable, with Retry-After (the poll interval in seconds, at least 1) |
@@ -5306,12 +5306,14 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0123` | The remote PEP sent a batch of decision records to the management API without an access token, because none could be had (#1827; STS-XPEP-0129 says why the grant failed). The records stay queued. | none; the records are kept and sent later |
 | `STS-XPEP-0124` | The remote PEP could not deliver a batch of decision records to POST /admin-api/pep-audit: no answer, a refusal of its token, or a status other than 200 and 400 (#1827). The records stay queued and are sent again. | none; the records are kept and sent later |
 | `STS-XPEP-0125` | The service refused a batch of decision records as malformed (HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped that batch rather than send it forever (#1827). Each decision is still on the PEP's own log. | none; the batch is dropped |
-| `STS-XPEP-0126` | The remote PEP has no assertion key: neither PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could not be read. A key already loaded is kept; without one, every call to the service goes without an access token, on the client certificate alone where PEP_TLS_CERT is set. | none — a warning in the PEP's log |
-| `STS-XPEP-0127` | PEP_ASSERTION_KEY is not set, so the remote PEP signs its self-assertion and its DPoP proofs with its client certificate's key, PEP_TLS_KEY. A notice: it works when that key is the one registered on the PEP's entry. | none — an info line in the PEP's log |
+| `STS-XPEP-0126` | The remote PEP has no assertion key: neither PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could not be read. A key already loaded is kept; without one, every call to the service goes without an access token and is refused (the PEP presents no client certificate since phase 4 of #1827's follow-up). | none — a warning in the PEP's log |
+| `STS-XPEP-0127` | PEP_ASSERTION_KEY is not set, so the remote PEP signs its self-assertion and its DPoP proofs with the key file PEP_TLS_KEY names (its client certificate's key, before phase 4 of #1827's follow-up retired the certificate). A notice: it works when that key is the one registered on the PEP's entry. | none — an info line in the PEP's log |
 | `STS-XPEP-0128` | The remote PEP refused its assertion key: it would not parse, or it is neither RSA (RS256) nor EC P-256 (ES256). A key already loaded is kept. | none — a warning in the PEP's log |
 | `STS-XPEP-0129` | The remote PEP could not obtain an access token for one of its three resources (/xacml/pep, /admin-api, /access/v1): the token endpoint did not answer or refused the RFC 7523 self-assertion grant. The log names the missing provisioning step — the assertion key registered on the entry, the client, the remote PEPs group. Calls to that resource go without a token; the grant is not asked again for five seconds. | none — a warning in the PEP's log, at the first refusal and when the reason changes |
 | `STS-XPEP-0130` | The token endpoint or a resource demanded a DPoP nonce (use_dpop_nonce) again after the remote PEP retried with the nonce it handed. The PEP retries once only; the call's answer stands. | none — a warning in the PEP's log |
 | `STS-XPEP-0131` | A resource refused the remote PEP's access token with a 401 again after the PEP dropped it and fetched a new one. The PEP retries once only; the call's answer stands. | none — a warning in the PEP's log |
+| `STS-XPEP-0135` | PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside PEP_ASSERTION_KEY, and the remote PEP no longer presents a client certificate to the service: it authenticates every call with a DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, certified by issue-pep-credential). The variable is ignored for that; PEP_TLS_KEY alone is still read as the fallback assertion key (STS-XPEP-0127). Logged once at start. | none — a warning in the PEP's log |
+| `STS-XPEP-0136` | The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of the client certificate the PEP no longer presents (phase 4 of #1827's follow-up). PEP_CRL_HTTP=true binds it. Logged once at start. | none — a notice in the PEP's log |
 
 ## STS-AUTHZEN
 

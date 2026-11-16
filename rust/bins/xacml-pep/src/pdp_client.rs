@@ -12,10 +12,12 @@
 //! plain [`PdpClient::call_url`] is for what is not this PEP's API: the
 //! token request itself and the realm's JWKS, which is anonymous.
 //!
-//! **The client certificate goes on every call WHILE `PEP_TLS_CERT` IS
-//! SET**, as it always did: the service accepts it or the token, so a PEP
-//! that has both presents both, and one whose token cannot be had (no
-//! registered key yet) is still identified by its certificate.
+//! **NO CLIENT CERTIFICATE IS PRESENTED** (phase 4 of #1827's follow-up,
+//! rcbj 2026-11-16). Through phase 3 the certificate in `PEP_TLS_CERT` went
+//! on every call beside the token; it is retired for authenticating to the
+//! service, the token is the one credential, and `PEP_TLS_CERT` is ignored
+//! (`STS-XPEP-0135` at start, `options.rs`). The service is still
+//! verified as before (`PEP_TLS_CA`, `PEP_TLS_INSECURE`).
 //!
 //! **A call never fails**: it answers an [`Answer`] whose `error` says what
 //! went wrong, because every caller wants to RECORD what happened and carry
@@ -25,8 +27,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use openssl::pkey::PKey;
-use reqwest::{Certificate, Client, Identity, Method};
+use reqwest::{Certificate, Client, Method};
 
 use crate::credential::{challenge_error, Credential, Resource};
 use crate::options::Options;
@@ -100,14 +101,6 @@ struct Limits {
     max_body_bytes: AtomicUsize,
 }
 
-/// The client key in PKCS #8, whatever form it was written in — OpenSSL
-/// reads PKCS #1, SEC 1 and PKCS #8 alike.
-fn pkcs8(key: &[u8]) -> Result<Vec<u8>, String> {
-    PKey::private_key_from_pem(key)
-        .and_then(|k| k.private_key_to_pem_pkcs8())
-        .map_err(|e| format!("the client key would not load: {}", e))
-}
-
 impl PdpClient {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(options: &Options) -> Result<PdpClient, String> {
@@ -128,19 +121,6 @@ impl PdpClient {
             for anchor in anchors {
                 builder = builder.add_root_certificate(anchor);
             }
-        }
-        if let (Some(cert), Some(key)) =
-            (&options.client_certificate, &options.client_key)
-        {
-            let identity = Identity::from_pkcs8_pem(cert, &pkcs8(key)?)
-                .map_err(|e| {
-                    format!(
-                        "the client certificate would not \
-                                      load: {}",
-                        e
-                    )
-                })?;
-            builder = builder.identity(identity);
         }
         let http = builder
             .build()
@@ -615,8 +595,6 @@ mod tests {
         options.pdp_url = format!("{}/", base);
         options.name = "remote-pep-1".into();
         options.client_id = "sts-remote-pep".into();
-        options.client_certificate = None;
-        options.client_key = None;
         let file = pem.map(|pem| key_file(&pem));
         options.assertion_key =
             KeySource::choose(file.as_ref().map(|f| f.to_str().unwrap()), None);

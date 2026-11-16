@@ -139,11 +139,16 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal',
 // self-assertion through, holding no secret, so its token is bound to the
 // one key the PEP proves possession of — the key its assertion is signed
 // with. It is NOT a hosted surface, which is the one way it differs from
-// the three above. Its entry still declares certificate-bound tokens
-// through phase 3 of that plan, and for this client alone a DPoP binding
-// stands for that declaration (`DPOP_STANDS_FOR_CERTIFICATE_CLIENTS`), and
-// a certificate-bound token still stands at a resource where the
-// certificate it is bound to is presented.
+// the three above. Its entry declared certificate-bound tokens through phase
+// 3 of that plan, and a DPoP binding stood for that declaration
+// (`dpopStandsForCertificate()`, at the token endpoint, `oauth2.ts`'s
+// `/admin-api` binding rule, `/admin-api`'s STS-API-0137 and, at a
+// resource, a certificate-bound token beside DPoP). PHASE 4 (rcbj,
+// 2026-11-16) RETIRED THE PEP'S CLIENT CERTIFICATE: the seed no longer
+// declares the flag, an entry an earlier build seeded has it cleared at
+// start (`applications.js`'s `fillRetiredClientFlags()`), and the exception
+// went with it. What stays is the client's own refusal code for a token
+// request with no proof (STS-OAUTH-1012, `REMOTE_PEP_CLIENT`).
 // ---------------------------------------------------------------------------
 /**
  * The clients that are DPoP-bound whenever they are public clients: the
@@ -153,34 +158,11 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal',
 const DPOP_BOUND_PUBLIC_CLIENTS = ['sts-admin-console', 'sts-user-portal',
                                    'sts-report', 'sts-remote-pep'];
 
-// THE CLIENTS WHOSE DPoP BINDING STANDS FOR THE CERTIFICATE BINDING THEIR
-// ENTRY DECLARES (#1827's follow-up): `sts-remote-pep`, which declares
-// `tls_client_certificate_bound_access_tokens` from #1827 and whose PEPs move
-// from a client certificate to a DPoP key over the plan's phases 1-3. Read
-// by the token endpoint's RFC 8705 declaration check (a DPoP proof there is
-// something to bind to), `oauth2.ts`'s `/admin-api` binding rule and
-// `/admin-api`'s own (STS-API-0137), each of which would otherwise refuse a
-// PEP holding no certificate. A list of one, named, because it is an
-// exception to a rule rcbj set (#1050) for one client on one plan.
 /**
- * The clients whose DPoP binding stands for a declared certificate binding.
+ * The remote PEP's client, refused under its own code (STS-OAUTH-1012) when
+ * a token request carries no DPoP proof.
  */
-const DPOP_STANDS_FOR_CERTIFICATE_CLIENTS = ['sts-remote-pep'];
-
-/**
- * Tells whether a client's DPoP binding stands for the certificate binding
- * its entry declares (#1827's follow-up).
- *
- * @param clientId - the client
- * @returns true for `sts-remote-pep`
- */
-function dpopStandsForCertificate(clientId) {
-  log.debug("Entering dpopStandsForCertificate().");
-  const answer =
-    DPOP_STANDS_FOR_CERTIFICATE_CLIENTS.indexOf(String(clientId || '')) >= 0;
-  log.debug("Leaving dpopStandsForCertificate(). " + answer);
-  return answer;
-}
+const REMOTE_PEP_CLIENT = 'sts-remote-pep';
 
 /**
  * Tells whether a client is one that must be DPoP-bound because it is the
@@ -217,7 +199,7 @@ function publicClientIssuanceRefusal(opts) {
   // The remote PEP's client says so in its own words and under its own
   // code: an operator reading 0943's "admin console" would look in the
   // wrong place.
-  if (dpopStandsForCertificate(o.clientId)) {
+  if (String(o.clientId || '') === REMOTE_PEP_CLIENT) {
     log.debug("Leaving publicClientIssuanceRefusal(). A remote PEP sent " +
               "no proof.");
     return refusal('STS-OAUTH-1012', 'invalid_dpop_proof',
@@ -566,8 +548,7 @@ function refreshRedemptionRefusal(opts) {
  * @param opts - `where`, `boundJkt`, `proofOk`, `boundThumbprint`,
  *   `certificate`, `certificateMatches`, `mtlsAvailable`, and `clientBound`
  *   (true when the token was issued to a client `dpopBoundPublicClient()`
- *   names), `certificateStands` (true for a client whose certificate binding
- *   still stands beside DPoP, `sts-remote-pep`), and `dpopRequired`
+ *   names), and `dpopRequired`
  *   (`oauth2.accessTokenRequireDpop` as the
  *   caller read it in the realm that issued the token; the ambient realm's
  *   when absent)
@@ -580,13 +561,7 @@ function accessTokenRefusal(opts) {
   // #446: the admin console as a public client holds only DPoP-bound tokens,
   // whatever the two settings below say. An unbound one was not issued by
   // the token endpoint as it stands, and is refused rather than believed.
-  // `certificateStands` (#1827's follow-up): for `sts-remote-pep`, through
-  // phase 3 of the PEP's token plan, a token bound to the certificate
-  // presented with it stands as well — one issued before the client joined
-  // the list above, over mutual TLS.
-  const certificateStands = !!o.certificateStands && !!o.boundThumbprint &&
-    !!o.certificateMatches;
-  if (o.clientBound && !o.boundJkt && !certificateStands) {
+  if (o.clientBound && !o.boundJkt) {
     log.debug("Leaving accessTokenRefusal(). The console's token is unbound.");
     return refusal('STS-OAUTH-0944', 'invalid_token',
       'the admin console is a public client',
@@ -726,9 +701,8 @@ function state() {
 module.exports = {
   MTLS_EXEMPT_CLIENTS,
   DPOP_BOUND_PUBLIC_CLIENTS,
-  DPOP_STANDS_FOR_CERTIFICATE_CLIENTS,
+  REMOTE_PEP_CLIENT,
   dpopBoundPublicClient,
-  dpopStandsForCertificate,
   publicClientIssuanceRefusal,
   mtlsExemptClient,
   rotationRequired,

@@ -118,8 +118,10 @@ function childMain() {
     note(seeded.known && seeded.token_endpoint_auth_method === 'none' &&
          grants.join(' ') ===
            'urn:ietf:params:oauth:grant-type:jwt-bearer' &&
-         seeded.tls_client_certificate_bound_access_tokens === true,
-         '1. sts-remote-pep is seeded: public, jwt-bearer only, bound tokens',
+         seeded.tls_client_certificate_bound_access_tokens !== true &&
+         !remotePep.fields.oauthTlsClientCertificateBoundAccessTokens,
+         '1. sts-remote-pep is seeded: public, jwt-bearer only, and no ' +
+         'RFC 8705 flag (phase 4 of #1827\'s follow-up dropped it)',
          JSON.stringify({ known: seeded.known,
                           method: seeded.token_endpoint_auth_method,
                           grants: grants,
@@ -229,13 +231,17 @@ function childMain() {
                   JSON.stringify(body));
     };
 
-    // 1, continued: the seeded client's token is bound, so plain HTTP is no.
+    // 1, continued: every token to the seeded client is DPoP-bound, so a
+    // request with no proof is refused under the client's own code
+    // (STS-OAUTH-1012) — reachable since phase 4 dropped the RFC 8705 flag
+    // whose STS-OAUTH-0487 answered first.
     const unbound = await tokenFor(PEP, 'sts-remote-pep');
     note(unbound.status === 400 &&
-         /client certificate/.test(String((unbound.json || {})
+         /DPoP/.test(String((unbound.json || {}).error_description || '')) &&
+         !/client certificate/.test(String((unbound.json || {})
            .error_description || '')),
-         '1. sts-remote-pep\'s /admin-api token with neither a client ' +
-         'certificate nor a DPoP proof is refused (RFC 8705, STS-OAUTH-0487)',
+         '1. sts-remote-pep\'s /admin-api token without a DPoP proof is ' +
+         'refused for the proof (STS-OAUTH-1012), not for a certificate',
          unbound.status + ' ' + unbound.text.slice(0, 300));
 
     // ---------------------------------------------------------------------

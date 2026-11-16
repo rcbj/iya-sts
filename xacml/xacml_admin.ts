@@ -877,7 +877,7 @@ class XacmlAdmin {
       // #1827's follow-up: which credential a remote PEP may present here.
       pepAuthentication: ['certificate', 'token', 'either'].indexOf(
         String(config.value('xacml.pepAuthentication') || '')) >= 0
-        ? String(config.value('xacml.pepAuthentication')) : 'either',
+        ? String(config.value('xacml.pepAuthentication')) : 'token',
       notify: {
         on: pepHttp.notifyAllowed(),
         allowedHosts: pepHttp.allowedHosts(),

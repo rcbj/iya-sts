@@ -7784,8 +7784,8 @@
     "text": "遠端 PEP 的驗證方式"
   },
   "xacml.pepAuthentication|description": {
-    "en": "8d19137204b63401",
-    "text": "either（預設）：遠端 PEP 透過本服務驗證的用戶端憑證存取 /xacml/pep/* 與 POST /xacml/pip，或透過 DPoP 繫結的存取權杖（RFC 9449）存取；該權杖由 PEP 以自己的 RFC 7523 自我斷言經用戶端 sts-remote-pep 取得，受眾為本領域的 /xacml/pep，並帶有 xacml:pep。出示了權杖時，以權杖為準。token：只接受權杖，僅有憑證會被拒絕。certificate：只接受憑證，不讀取 Authorization 標頭。無論哪種方式，PEP 的項目都必須持有 REMOTE_PEPS（roles.remotePepGroup），並由存取控制原則決定。同樣的設定也適用於遠端 PEP 在 /access/v1 上的權杖，即邊緣 PDP 轉送細粒度評估時，不論 authzen.callerAuthentication 如何設定。"
+    "en": "223363d0264d3558",
+    "text": "token，自 1.1.0 起的預設值：遠端 PEP 只能憑藉經 DPoP 繫結的存取權杖（RFC 9449）存取 /xacml/pep/* 與 POST /xacml/pip，該權杖由其自身的 RFC 7523 自我聲明透過用戶端 sts-remote-pep 取得，對象為本領域的 /xacml/pep 並帶有 xacml:pep；僅有用戶端憑證會被拒絕。either：權杖或本服務驗證的用戶端憑證；出示權杖時由權杖決定——只要仍有 PEP 以憑證進行驗證，請在升級前設定此值。certificate：僅憑證，且不讀取 Authorization 標頭。無論哪種情況，PEP 的項目都必須持有 REMOTE_PEPS（roles.remotePepGroup），並由存取控制原則作出決定。同一答案也適用於遠端 PEP 在 /access/v1 的權杖，即邊緣 PDP 對細粒度評估的轉送，無論 authzen.callerAuthentication 如何設定。"
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

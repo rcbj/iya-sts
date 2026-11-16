@@ -23729,8 +23729,11 @@ const CODES = [
   // door (/xacml/pep/* and POST /xacml/pip), xacml/pep_token.ts.
   { code: 'STS-XACML-0289',
     summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with no ' +
-      'access token while xacml.pepAuthentication is token: a client ' +
-      'certificate alone is not accepted in this realm (#1827).',
+      'access token while xacml.pepAuthentication is token, the default ' +
+      'since 1.1.0: a client certificate alone is not accepted in this ' +
+      'realm (#1827). Where the certificate verified, the description says ' +
+      'that either would accept it, and a warning under this code is ' +
+      'logged once per realm and process.',
     spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_request"' },
   { code: 'STS-XACML-0290',
     summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with an ' +
@@ -24432,8 +24435,9 @@ const CODES = [
     spec: 'HTTP 404 not_found' },
   { code: 'STS-XPEP-0115',
     summary: 'PEP_CRL_HTTP holds a value that is neither true nor false; ' +
-      'the CRL-only listener keeps its default (bound when PEP_HTTP is off ' +
-      'and the credential has a CRL directory). Logged once at start.',
+      'the CRL-only listener keeps its default (not bound: since phase 4 ' +
+      'of #1827\'s follow-up only PEP_CRL_HTTP=true binds it). Logged once ' +
+      'at start.',
     spec: 'none; the listener keeps its default' },
   { code: 'STS-XPEP-0116',
     summary: 'A request on a remote PEP proxy route whose methods list is ' +
@@ -24507,14 +24511,16 @@ const CODES = [
     summary: 'The remote PEP has no assertion key: neither ' +
       'PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could ' +
       'not be read. A key already loaded is kept; without one, every call ' +
-      'to the service goes without an access token, on the client ' +
-      'certificate alone where PEP_TLS_CERT is set.',
+      'to the service goes without an access token and is refused (the PEP ' +
+      'presents no client certificate since phase 4 of #1827\'s ' +
+      'follow-up).',
     spec: 'none — a warning in the PEP\'s log' },
   { code: 'STS-XPEP-0127',
     summary: 'PEP_ASSERTION_KEY is not set, so the remote PEP signs its ' +
-      'self-assertion and its DPoP proofs with its client certificate\'s ' +
-      'key, PEP_TLS_KEY. A notice: it works when that key is the one ' +
-      'registered on the PEP\'s entry.',
+      'self-assertion and its DPoP proofs with the key file PEP_TLS_KEY ' +
+      'names (its client certificate\'s key, before phase 4 of #1827\'s ' +
+      'follow-up retired the certificate). A notice: it works when that ' +
+      'key is the one registered on the PEP\'s entry.',
     spec: 'none — an info line in the PEP\'s log' },
   { code: 'STS-XPEP-0128',
     summary: 'The remote PEP refused its assertion key: it would not ' +
@@ -24541,6 +24547,26 @@ const CODES = [
       'again after the PEP dropped it and fetched a new one. The PEP ' +
       'retries once only; the call\'s answer stands.',
     spec: 'none — a warning in the PEP\'s log' },
+  // #1827's follow-up, phase 4 (rcbj, 2026-11-16): the PEP's client
+  // certificate retired for authenticating to the service. 0132-0134 are
+  // #1830's.
+  { code: 'STS-XPEP-0135',
+    summary: 'PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside ' +
+      'PEP_ASSERTION_KEY, and the remote PEP no longer presents a client ' +
+      'certificate to the service: it authenticates every call with a ' +
+      'DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, ' +
+      'certified by issue-pep-credential). The variable is ignored for ' +
+      'that; PEP_TLS_KEY alone is still read as the fallback assertion key ' +
+      '(STS-XPEP-0127). Logged once at start.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0136',
+    summary: 'The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ ' +
+      'beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only ' +
+      'plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of ' +
+      'the client certificate the PEP no longer presents (phase 4 of ' +
+      '#1827\'s follow-up). PEP_CRL_HTTP=true binds it. Logged once at ' +
+      'start.',
+    spec: 'none — a notice in the PEP\'s log' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

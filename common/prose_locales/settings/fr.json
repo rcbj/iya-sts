@@ -7784,8 +7784,8 @@
     "text": "Comment un PEP distant s’authentifie"
   },
   "xacml.pepAuthentication|description": {
-    "en": "8d19137204b63401",
-    "text": "either, la valeur par défaut : un PEP distant atteint /xacml/pep/* et POST /xacml/pip avec un certificat client que ce service vérifie, ou avec un jeton d’accès lié par DPoP (RFC 9449) qu’il obtient de sa propre auto-assertion RFC 7523 via le client sts-remote-pep, dont l’audience est le /xacml/pep de ce domaine et qui porte xacml:pep ; lorsqu’un jeton est présenté, c’est lui qui décide. token : le jeton seulement, et un certificat seul est refusé. certificate : le certificat seulement, et l’en-tête Authorization n’est pas lu. Dans tous les cas, l’entrée du PEP doit détenir REMOTE_PEPS (roles.remotePepGroup) et la politique de contrôle d’accès décide. La même réponse régit le jeton d’un PEP distant sur /access/v1, le transfert par le PDP de périphérie d’une évaluation fine, quelle que soit la valeur de authzen.callerAuthentication."
+    "en": "223363d0264d3558",
+    "text": "token, la valeur par défaut depuis 1.1.0 : un PEP distant atteint /xacml/pep/* et POST /xacml/pip uniquement avec un jeton d’accès lié par DPoP (RFC 9449) qu’il obtient de sa propre auto-assertion RFC 7523 via le client sts-remote-pep, dont l’audience est le /xacml/pep de ce domaine et qui porte xacml:pep ; un certificat client seul est refusé. either : le jeton ou un certificat client que ce service vérifie ; lorsqu’un jeton est présenté, c’est lui qui décide — à définir avant la mise à niveau tant qu’un PEP s’authentifie encore par son certificat. certificate : le certificat seulement, et l’en-tête Authorization n’est pas lu. Dans tous les cas, l’entrée du PEP doit détenir REMOTE_PEPS (roles.remotePepGroup) et la politique de contrôle d’accès décide. La même réponse régit le jeton d’un PEP distant sur /access/v1, le transfert par le PDP de périphérie d’une évaluation fine, quelle que soit la valeur de authzen.callerAuthentication."
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

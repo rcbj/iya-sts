@@ -17874,9 +17874,13 @@ function internalApplications() {
     // `sts-xacml-pep-api` (/xacml/pep/* and POST /xacml/pip) and
     // `authzen:evaluate` on `sts-authzen-api` (the edge PDP's forward to
     // /access/v1) beside `xacml:pep-audit`. Every token to this client is
-    // DPoP-bound (`sender_constraints.js`), and a DPoP binding stands for
-    // the certificate binding the flag below declares, through phase 3 of
-    // that plan; phase 4 drops the flag.
+    // DPoP-bound (`sender_constraints.js`). PHASE 4 DROPPED ITS RFC 8705
+    // FLAG (rcbj, 2026-11-16): `tls_client_certificate_bound_access_tokens`
+    // was declared from #1827 through phase 3, while a PEP still presented
+    // its client certificate, and a DPoP binding stood for it. The PEP no
+    // longer presents a certificate to this service, so there is nothing to
+    // declare, and an entry an earlier build seeded with it has it cleared
+    // at start (`fillRetiredClientFlags()`).
     { identifier: 'sts-remote-pep',
       name: 'Remote PEP',
       kinds: ['oauth2-client'],
@@ -17890,8 +17894,7 @@ function internalApplications() {
                     oauthDelegatedPermission: delegatedPermissionGrants(
                       REMOTE_PEP_GRANTS),
                     oauthGlobalConsent: ['xacml:pep-audit', 'xacml:pep',
-                                         'authzen:evaluate'],
-                    oauthTlsClientCertificateBoundAccessTokens: 'TRUE' },
+                                         'authzen:evaluate'] },
       registration: {
         client_id: 'sts-remote-pep',
         client_name: 'Remote PEP',
@@ -17906,7 +17909,6 @@ function internalApplications() {
         grant_types: ['urn:ietf:params:oauth:grant-type:jwt-bearer'],
         response_types: [],
         scope: '',
-        tls_client_certificate_bound_access_tokens: true,
         token_endpoint_auth_method: 'none'
       } },
     { identifier: 'sts-api-client',
@@ -18140,6 +18142,67 @@ function fillClientGrants() {
   return wrote;
 }
 
+// THE RFC 8705 FLAG A SEEDED CLIENT NO LONGER DECLARES (#1827's follow-up,
+// phase 4, rcbj 2026-11-16), CLEARED WHERE IT IS `TRUE`. `sts-remote-pep`
+// was seeded with `tls_client_certificate_bound_access_tokens` from #1827
+// through phase 3, by builds no release carried (1.0.0 has no such client),
+// and a DPoP binding stood for it at the token endpoint, at the management
+// API and at its binding rule. Phase 4 drops both the flag and that
+// exception, so an entry still holding the flag would have its PEPs'
+// token requests refused (STS-OAUTH-0487: no certificate to bind to) —
+// every remote PEP of a development or test deployment upgraded across
+// this change. The flag is removed rather than kept beside an exception:
+// every token to this client is DPoP-bound, and its PEPs present no
+// certificate to this service, so `TRUE` here can only ever refuse them.
+// Cleared at every start, as the seed itself is applied at every start;
+// `FALSE` and an absent flag are left as they are.
+const CLIENT_FLAGS_RETIRED_SINCE_SEED = Object.freeze({
+  'sts-remote-pep': Object.freeze([TLS_BOUND_TOKENS_ATTRIBUTE])
+});
+
+function fillRetiredClientFlags() {
+  log.debug("Entering fillRetiredClientFlags().");
+  let wrote = 0;
+  Object.keys(CLIENT_FLAGS_RETIRED_SINCE_SEED).forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const cleared = CLIENT_FLAGS_RETIRED_SINCE_SEED[identifier].filter(
+      function (name) {
+        return String(valuesOf(record.fields[name])[0] || '')
+          .toUpperCase() === 'TRUE';
+      });
+    if (!cleared.length) {
+      return;
+    }
+    cleared.forEach(function (name) {
+      delete record.fields[name];
+    });
+    if (!save(record, { quiet: true })) {
+      log.warn(errorCodes.tag('STS-REG-0020') +
+               'applications: "' + identifier + '" still declares ' +
+               cleared.join(', ') + ' — the directory would not take the ' +
+               'write. Its token requests without a client certificate are ' +
+               'refused (STS-OAUTH-0487) until the flag is removed.');
+      return;
+    }
+    audit.audit({
+      action: 'application.update', actor: '', protocol: 'internal',
+      channel: 'internal', target: identifier,
+      summary: 'Application "' + identifier + '" no longer declares ' +
+               cleared.join(', ') + ', which this release does not seed it ' +
+               'with',
+      detail: { identifier: identifier, attribute: cleared.join(', '),
+                removed: cleared.join(', '), seeded: true }
+    });
+    wrote++;
+  });
+  log.debug("Leaving fillRetiredClientFlags(). " + wrote + " written.");
+  return wrote;
+}
+
 function fillApiPermissions() {
   log.debug("Entering fillApiPermissions().");
   let wrote = 0;
@@ -18297,6 +18360,9 @@ function seedInternalApplications(options) {
   // #1827's follow-up: a delegated permission grant this release added to a
   // seeded client, where absent.
   fillClientGrants();
+  // #1827's follow-up, phase 4: a flag this release no longer seeds a
+  // client with, where an earlier build set it.
+  fillRetiredClientFlags();
   log.info('applications: ' + made + ' of this service\'s own ' + rows.length +
            ' application(s) were seeded' +
            (wanted === 'default' ? '' : ' into this realm') +

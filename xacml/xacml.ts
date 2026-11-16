@@ -479,6 +479,9 @@ class XacmlSurface {
    *   its HTTP client, the monitor, the role register, the access gate, and
    *   lazy loaders for the cluster barrier and persistence
    */
+  // The realms `warnCertificateRefused()` has spoken for in this process.
+  private readonly certificateRefusedIn: Set<string> = new Set();
+
   constructor(private readonly deps: XacmlSurfaceDeps) {
     deps.log.debug("Entering XacmlSurface.constructor().");
     deps.log.debug("Leaving XacmlSurface.constructor().");
@@ -1330,8 +1333,8 @@ class XacmlSurface {
   // /xacml/pip` by its client certificate (`callerIdentity()` above) or, in
   // its place, by a DPoP-bound access token from `sts-remote-pep`
   // (`pep_token.ts`, links 1 and 2 for a token). `xacml.pepAuthentication`
-  // says which this realm accepts: `certificate`, `token`, or `either` —
-  // the default through phase 3 of the plan, when phase 4 makes it `token`.
+  // says which this realm accepts: `certificate`, `token` — the default
+  // since phase 4 of the plan — or `either`, the default through phase 3.
   //
   // **A TOKEN, WHERE ONE IS PRESENTED AND ACCEPTED, DECIDES.** A PEP in the
   // middle of the move may present both — its certificate still at the
@@ -1358,14 +1361,15 @@ class XacmlSurface {
    * The realm's answer to which credential a remote PEP may present
    * (`xacml.pepAuthentication`): `certificate`, `token` or `either`.
    *
-   * @returns the credential kind, `either` for anything else
+   * @returns the credential kind, `token` (the default) for anything else
    */
   pepAuthentication(): string {
     const { log, config } = this.deps;
     log.debug('Entering XacmlSurface.pepAuthentication().');
     const asked = String(config.value('xacml.pepAuthentication') || '');
     log.debug('Leaving XacmlSurface.pepAuthentication(). ' + asked);
-    return PEP_CREDENTIALS.indexOf(asked) >= 0 ? asked : 'either';
+    // Anything else falls to the default, the strictest answer (phase 4).
+    return PEP_CREDENTIALS.indexOf(asked) >= 0 ? asked : 'token';
   }
 
   /**
@@ -1403,10 +1407,28 @@ class XacmlSurface {
     if (token && accepts !== 'certificate') {
       identity = self.tokenIdentity(req);
     } else if (!token && accepts === 'token') {
+      // PHASE 4 MADE `token` THE DEFAULT (rcbj, 2026-11-16), so a PEP that
+      // still authenticates by its certificate after an upgrade meets this
+      // refusal. When the certificate WOULD have been accepted under
+      // `either`, the description and a warning once per realm and process
+      // say so and name the setting, rather than leaving an operator to
+      // work out that a default moved (backwards compatibility from 1.0.0:
+      // a default does not change silently).
+      const certified = self.callerIdentity(req).verified;
+      if (certified) {
+        self.warnCertificateRefused();
+      }
       identity = nobody('STS-XACML-0289', 'This realm accepts a remote ' +
         'PEP only on a DPoP-bound access token from sts-remote-pep ' +
-        '(xacml.pepAuthentication is token), and this request carried ' +
-        'none. A client certificate alone is not accepted here.',
+        '(xacml.pepAuthentication is token, the default since 1.1.0), and ' +
+        'this request carried none. A client certificate alone is not ' +
+        'accepted here.' + (certified
+          ? ' This PEP presented a client certificate that verifies, which ' +
+            'the realm accepts under either: set xacml.pepAuthentication to ' +
+            'either ' +
+            'while it moves to its assertion key (PEP_ASSERTION_KEY, ' +
+            'issued by issue-pep-credential).'
+          : ''),
         { error: 'invalid_request' });
     } else {
       identity = self.callerIdentity(req);
@@ -1422,6 +1444,31 @@ class XacmlSurface {
     log.debug('Leaving XacmlSurface.pepIdentity(). ' +
               (identity.credential || 'none') + ' ' + identity.dn);
     return identity;
+  }
+
+  // ONCE PER REALM AND PROCESS, a remote PEP refused at the PEP door for
+  // presenting only a client certificate that verifies, while the realm
+  // asks for a token (STS-XACML-0289). Phase 4 of #1827's follow-up made
+  // `token` the default, so this is what an upgraded deployment whose PEPs
+  // have not moved to their assertion key sees first; logged once rather
+  // than per call, because a PEP retries every few seconds.
+  private warnCertificateRefused(): void {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.warnCertificateRefused().');
+    const realm = String(realms.currentId() || '');
+    if (this.certificateRefusedIn.has(realm)) {
+      log.debug('Leaving XacmlSurface.warnCertificateRefused(). Said.');
+      return;
+    }
+    this.certificateRefusedIn.add(realm);
+    log.warn(errorCodes.tag('STS-XACML-0289') + 'xacml: a remote PEP ' +
+             'presented only a client certificate in realm "' +
+             (realm || 'default') + '", and xacml.pepAuthentication is ' +
+             'token there (the default since 1.1.0), so it was refused. ' +
+             'Set xacml.pepAuthentication to either while the realm\'s ' +
+             'PEPs move to their assertion key (PEP_ASSERTION_KEY, issued ' +
+             'by issue-pep-credential); docs/remote-pep.md says how.');
+    log.debug('Leaving XacmlSurface.warnCertificateRefused().');
   }
 
   // The token half of `pepIdentity()`: `pep_token.ts`'s reading, as the
