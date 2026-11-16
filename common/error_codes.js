@@ -5225,6 +5225,19 @@ const CODES = [
       'read (#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0279',
+    summary: 'A certificate a deleted person or application still held ' +
+      'valid (a TLS client or message-signing certificate, an RFC 7523 or ' +
+      'RFC 7522 key pair, an enrolled leaf) could not be revoked ' +
+      '(cessationOfOperation) when its holder was deleted. The delete ' +
+      'stands; revoke the serial on /admin/pki.',
+    spec: 'none: a log line; the delete is answered as it was' },
+  { code: 'STS-PKI-0280',
+    summary: 'A deleted person\'s or application\'s TLS client or ' +
+      'message-signing certificate could not be detached from its name in ' +
+      'the certificate register, so a holder made again under that name is ' +
+      'listed it.',
+    spec: 'none: a log line; the delete is answered as it was' },
   { code: 'STS-PKI-0281',
     summary: 'A certificate request for a person\'s RFC 7523 key carries a ' +
       'key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, ' +
@@ -15935,9 +15948,10 @@ const CODES = [
   { code: 'STS-LDAP-0077',
     summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
       '(admin.bootstrapUsername, or the name product mode generates) was ' +
-      'refused — over LDAP or SCIM — because that account cannot be ' +
-      'removed.',
-    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
+      'refused — over LDAP, SCIM or the management API — because that ' +
+      'account cannot be removed.',
+    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403; /admin-api ' +
+      'HTTP 400' },
   { code: 'STS-LDAP-0078',
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +
       'stsBootstrapAdministrator or stsConsoleClaimedAt) could not be ' +
@@ -16596,6 +16610,16 @@ const CODES = [
     summary: 'A person import created the entry but could not write the ' +
       'credentials the file carried. The person is there without them.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0222',
+    summary: 'Something a deleted person held outside their entry, under ' +
+      'their name or DN (devices, post-login progress, mail preferences, ' +
+      'federation blocks, GNAP approvals, the identity register, pending ' +
+      'enrolments, rich authorization Allows, the risk standing; the RISC ' +
+      'register row, moved ' +
+      'out of the name when it is taken again), could not be forgotten, so ' +
+      'a person made again under the name may inherit it. The delete ' +
+      'itself stands.',
+    spec: '' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -16842,6 +16866,9 @@ const CODES = [
     summary: 'In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell\'s result as unreachable).',
     spec: 'HTTP 400 (/admin-api) when the act named that cell; none ' +
       'otherwise' },
+  { code: 'STS-SCIMC-0035',
+    summary: 'A create answered 409 uniqueness (RFC 7644 section 3.3) and the resource found by userName or displayName carries the externalId of another entry — a deleted person\'s User that deprovisioning left there, or another client\'s — so it was not adopted (a person made again under a deleted person\'s name inherits nothing, #1612); dead-lettered for an operator.',
+    spec: 'none' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',
@@ -22499,6 +22526,11 @@ const CODES = [
       'device\'s keys are rechecked only once a later write of it derives ' +
       'the marker (#615).',
     spec: '' },
+  { code: 'STS-DEVICE-0053',
+    summary: 'A device of a deleted person could not be removed from the ' +
+      'register, so a person made again under the name owns it. Remove it ' +
+      'on the Devices page.',
+    spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -26961,6 +26993,18 @@ const CODES = [
     summary: 'A person\'s TLS client certificate was not revoked. The ' +
       'certificate module\'s own code names the specific refusal when it ' +
       'has one.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0943',
+    summary: 'An administrator asked to delete their own directory entry ' +
+      '(POST /admin-api/users/delete, the Delete control on a person\'s ' +
+      'console page). Another administrator has to.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0944',
+    summary: 'A person delete was refused because the person is the last ' +
+      'one the realm\'s console roster lists for Admin Write or the ' +
+      'Security Administrator, and nobody would be left to grant it.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-API-0001',

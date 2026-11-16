@@ -1512,6 +1512,27 @@ silent. **A collision the old allocators already made is not repaired** — renu
 change a SID already in somebody's ticket or ACL — and is reported by that same code the
 next time the row is restored.
 
+**A DELETED PERSON'S RID IS NEVER A NAMESAKE'S (2026-11-16, #1612's rule: a person
+deleted and made again under the same name inherits nothing).** The principal record
+under `name@REALM`, with its RID, outlived the delete — it has to, because it carries the
+sign-out stamp that refuses the deleted person's tickets (#111) — so the next person
+under the name found it and was given the same SID. Now: the delete RETIRES the record
+(`retirePerson()`, from `ldap_server.js`'s `forgetPersonHoldings()`, one key; the record
+and its stamps stay, its RID joins `retiredRids`); a retired record is never reused —
+`directoryUser()`, `certificatePerson()` and a development-mode create make a new record
+whose RID `autoRidFor()` draws past every RID the name ever had (the count of them is in
+the digest, so a namesake starts elsewhere, and all of them are taken), carrying the
+stamps and the retired list over; and a product record is BOUND to its entry's
+`entryUUID` (the key source reads it, aliases included), so a record bound to an entry
+the name no longer names is retired at its next lookup even where the delete's retirement
+never reached it. **Backwards compatible**: a record from before this keeps its RID and
+is bound to the entry at its first lookup (the lazy migration), so no existing SID
+changes; a person deleted before the upgrade and made again before that first lookup
+cannot be told apart and keeps the old binding. A configured principal (the development
+fixtures) is built from settings and never retired. **The taken-set is still a walk of
+the realm's principal records** — `autoRidFor()`'s, as before, once per record created,
+never per ticket. `tests/kerberos_namesake_rid.js` holds it.
+
 **NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js`, `krb5_service.js`
 and `spnego_exchange.js` now require `common/mode.js` and `common/config.js`, both already
 in that closure through `common/helpers.js`.

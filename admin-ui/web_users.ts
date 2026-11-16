@@ -1302,7 +1302,11 @@ class UsersPage {
         '<div class="formrow"><button class="danger"' +
         kit.tip(t.text('consoleUsers.detail.revokeTip')) + '>' +
         t.html('consoleUsers.detail.revokeButton', { name: row.name }) +
-        '</button></div></form>' }
+        '</button></div></form>' },
+        // The person deleted (rcbj, 2026-11-16): the application page's
+        // Remove tab, last, on a person's page.
+        { id: 'utab-delete', label: t.text('consoleUsers.delete.tab'),
+          html: UsersPage.userDeleteSection(t, key, gate, back) }
       ]);
 
     return inner;
@@ -3790,6 +3794,48 @@ class UsersPage {
       '</textarea></div>' +
       '<div class="formrow"><button type="submit">' +
       t.html('consoleUsers.ldif.import') + '</button></div></form>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DELETE TAB (rcbj, 2026-11-16), the application page's Remove tab for
+  // a person: `POST /admin-api/users/delete`, the directory's one person
+  // delete. It cannot be undone, so the button is held by a REQUIRED
+  // checkbox — the service account's Make arrangement: the browser refuses
+  // the submit until it is ticked, with no script of this page's own. The
+  // box has no name, so it is the reader's confirmation and not a member of
+  // the request. A deleted person's page is gone, so the answer lands on the
+  // list (`WebAnswers.landing()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's Delete tab: what a delete ends, and the confirmed form.
+   *
+   * @param t - the page's translator
+   * @param key - the person, as the page names them
+   * @param gate - `{ write }`, whether the reader holds Admin Write
+   * @param back - the list view to come back to
+   * @returns the tab's HTML
+   */
+  static userDeleteSection(t, key, gate, back) {
+    const heading = '<h2>' + t.html('consoleUsers.delete.heading') + '</h2>';
+    if (!gate.write) {
+      return heading + kit.note(t.html('consoleUsers.delete.needsWrite'));
+    }
+    return heading +
+      '<div class="warn" id="user-delete-warning">' +
+      t.html('consoleUsers.delete.note', { key: key }) + '</div>' +
+      '<form method="post" action="/admin/users">' +
+      '<input type="hidden" name="action" value="delete">' +
+      '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+      '<div class="formrow"><label><input type="checkbox" ' +
+      'id="user-delete-confirm" required> ' +
+      t.html('consoleUsers.delete.confirm', { key: key }) +
+      '</label></div>' +
+      '<div class="formrow"><button type="submit" class="danger" title="' +
+      kit.esc(t.text('consoleUsers.delete.buttonTitle')) + '">' +
+      t.html('consoleUsers.delete.button') + '</button></div></form>' +
+      kit.note(t.html('consoleUsers.delete.refusals'));
   }
 
   /**

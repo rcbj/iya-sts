@@ -1703,6 +1703,43 @@ class AuthorizationDetails {
     log.debug("Leaving AuthorizationDetails.noteConsented().");
   }
 
+  // A DELETED PERSON'S ALLOWS GO WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). A row is keyed by the NAME, the client and the details, so a
+  // person made again under the name inside the row's lifetime
+  // (`authn.pendingTtlS`) had the deleted one's Allow spent for them. The
+  // directory's one person delete (`removePersonEntry()`) calls this. The
+  // store holds only Allows of the last few minutes, and noteConsented()
+  // walks it on every write already; this walk costs the same.
+  /**
+   * Forgets every Allow a deleted person gave.
+   *
+   * @param username - the deleted person's name
+   * @returns how many were held
+   */
+  forgetPerson(username: unknown): number {
+    const { log } = this.deps;
+    log.debug("Entering AuthorizationDetails.forgetPerson().");
+    const name = String(username || '');
+    const gone: string[] = [];
+    if (name) {
+      // The name is what precedes the last two words (the client and the
+      // digest, neither of which holds a space).
+      consented.forEach(function (held: unknown, key: string): void {
+        const text = String(key);
+        const end = text.lastIndexOf(' ', text.lastIndexOf(' ') - 1);
+        const owner = end > 0 ? text.slice(0, end) : '';
+        if (owner === name || owner.toLowerCase() === name.toLowerCase()) {
+          gone.push(key);
+        }
+      });
+    }
+    gone.forEach(function (key: string): void {
+      consented.delete(key);
+    });
+    log.debug("Leaving AuthorizationDetails.forgetPerson(). " + gone.length);
+    return gone.length;
+  }
+
   // Whether they did, SPENDING the answer: one Allow is one authorization
   // response. A second request carrying the same array asks again.
   /**
@@ -1820,5 +1857,6 @@ export = {
   scopeAnswerDigestOf: slot.forward('scopeAnswerDigestOf'),
   noteConsented: slot.forward('noteConsented'),
   consumeConsent: slot.forward('consumeConsent'),
-  consumeConsented: slot.forward('consumeConsented')
+  consumeConsented: slot.forward('consumeConsented'),
+  forgetPerson: slot.forward('forgetPerson')
 };

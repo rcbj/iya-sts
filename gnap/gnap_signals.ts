@@ -85,6 +85,7 @@ interface ApproverStore {
   has(key: string): boolean;
   get(key: string): string[] | undefined;
   set(key: string, list: string[]): unknown;
+  forEach(fn: (list: string[], key: string) => void): void;
 }
 
 interface GnapSignalsDeps {
@@ -156,6 +157,42 @@ class GnapSignals {
                 'not be recorded: ' + e.message);
     }
     log.debug("Leaving GnapSignals.noteApprover().");
+  }
+
+  // A DELETED PERSON APPROVED NOTHING (2026-11-16, rcbj's rule on #1612).
+  // The lists hold NAMES, so a person made again under one counted as having
+  // approved every application the deleted one had, and that application's
+  // stream heard about them. The directory's one person delete
+  // (`removePersonEntry()`) calls this. One list per APPLICATION that ever
+  // had an approver — configuration, not people — each capped at 5,000 by
+  // noteApprover(), so the cost does not grow with the directory. A
+  // re-homing keeps them.
+  /**
+   * Takes a deleted person off every application's approvers.
+   *
+   * @param username - the deleted person's name
+   * @returns how many lists named them
+   */
+  forgetApprover(username: unknown): number {
+    const { log, approvers } = this.deps;
+    log.debug("Entering GnapSignals.forgetApprover().");
+    const name = String(username || '').toLowerCase();
+    const named: string[] = [];
+    if (name) {
+      approvers.forEach(function (list: string[], key: string): void {
+        if (Array.isArray(list) && list.indexOf(name) >= 0) {
+          named.push(key);
+        }
+      });
+    }
+    named.forEach(function (key: string): void {
+      approvers.set(key, (approvers.get(key) || []).filter(
+        function (one: string): boolean {
+          return one !== name;
+        }));
+    });
+    log.debug("Leaving GnapSignals.forgetApprover(). " + named.length);
+    return named.length;
   }
 
   /**
@@ -616,6 +653,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   noteApprover: slot.forward('noteApprover'),
   approvedBy: slot.forward('approvedBy'),
+  forgetApprover: slot.forward('forgetApprover'),
   grantRevoked: slot.forward('grantRevoked'),
   tokenRevoked: slot.forward('tokenRevoked'),
   grantModified: slot.forward('grantModified'),

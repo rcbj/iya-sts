@@ -278,7 +278,10 @@ class CellRehome {
                  'moved person was left here: ' + ((e && e.message) || e));
       }
     });
-    const gone = ldap.deletePerson(entry.dn);
+    // MOVED, not deleted: the person's certificates are not revoked or
+    // detached from their name (`removePersonEntry()`'s `moved`).
+    const gone = ldap.deletePerson(entry.dn, { door: 'a re-homing',
+                                              moved: true });
     if (!gone || !gone.ok) {
       log.error(errorCodes.tag('STS-CELL-0047') + 'cells: "' + username +
                 '" is homed in cell "' + home.cell + '" now and the entry ' +

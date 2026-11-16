@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5703** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5710** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 266
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 268
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -71,10 +71,10 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 175
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 176
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
-* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
+* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
@@ -84,14 +84,14 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
-* [Device register (`STS-DEVICE`)](#sts-device) — 52
+* [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 223
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 133
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 291
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 293
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -1097,6 +1097,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0276` | Refused under paranoid PKI mode for policy-signer: the signer of a policy export (#1713); nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
 | `STS-PKI-0277` | A certificate uploaded for a person was issued by this realm as a service account's (urn:sts:sa:<name>, #1827), and that person is not a service account in this realm. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0278` | A person's RFC 7523 key was to be certified from their own certificate request, and no request was sent or it could not be read (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0279` | A certificate a deleted person or application still held valid (a TLS client or message-signing certificate, an RFC 7523 or RFC 7522 key pair, an enrolled leaf) could not be revoked (cessationOfOperation) when its holder was deleted. The delete stands; revoke the serial on /admin/pki. | none: a log line; the delete is answered as it was |
+| `STS-PKI-0280` | A deleted person's or application's TLS client or message-signing certificate could not be detached from its name in the certificate register, so a holder made again under that name is listed it. | none: a log line; the delete is answered as it was |
 | `STS-PKI-0281` | A certificate request for a person's RFC 7523 key carries a key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
@@ -3461,7 +3463,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0074` | In product mode, a search or compare arrived on a connection that has not bound as anybody; the root DSE is the only read allowed before a bind. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0075` | In product mode, a compare named a credential attribute (userPassword, a client secret, a private key, a TOTP or recovery code, an activation token or a Kerberos key), which no reader of the socket may test. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0076` | An add or modify named an attribute the directory maintains itself: entryUUID or stsProvisionedBy in every mode, and in product mode createTimestamp, modifyTimestamp and entryDN as well. | LDAP result code 19, constraintViolation |
-| `STS-LDAP-0077` | A delete or rename of a realm's bootstrap administrator (admin.bootstrapUsername, or the name product mode generates) was refused — over LDAP or SCIM — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403 |
+| `STS-LDAP-0077` | A delete or rename of a realm's bootstrap administrator (admin.bootstrapUsername, or the name product mode generates) was refused — over LDAP, SCIM or the management API — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403; /admin-api HTTP 400 |
 | `STS-LDAP-0078` | A flag of the bootstrap administrator (pwdReset, stsBootstrapAdministrator or stsConsoleClaimedAt) could not be written because the account has no entry in this realm. | none — logged |
 | `STS-LDAP-0090` | A person was refused creation under a username that is a subject identifier (urn:uuid: or a bare UUID). | action result ok:false (console, /admin-api HTTP 400, SCIM 400) |
 | `STS-LDAP-0091` | No entry was created for an authentication whose identity is a urn:uuid: subject naming nobody in this realm's directory. | none — logged |
@@ -3575,6 +3577,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0219` | A person import was refused: the record carries an attribute no import writes — what this service records about a person, the entryUUID, a credential a subsystem mints (Kerberos keys, key pairs, enrolment secrets), or a name that is not a person's attribute. | none (a console or management API refusal, HTTP 400) |
 | `STS-LDAP-0220` | A person import was refused: a credential in the file is not in the form an export writes (a password that is not a stored hash, a record that is not JSON, a certificate that is not one), is already held by somebody else in this realm (a passkey user handle, a stored certificate), or could not be sealed. Nothing was created. | none (a console or management API refusal, HTTP 400) |
 | `STS-LDAP-0221` | A person import created the entry but could not write the credentials the file carried. The person is there without them. | none (a console or management API refusal, HTTP 400) |
+| `STS-LDAP-0222` | Something a deleted person held outside their entry, under their name or DN (devices, post-login progress, mail preferences, federation blocks, GNAP approvals, the identity register, pending enrolments, rich authorization Allows, the risk standing; the RISC register row, moved out of the name when it is taken again), could not be forgotten, so a person made again under the name may inherit it. The delete itself stands. | — |
 
 ## STS-ATTR
 
@@ -3667,6 +3670,7 @@ Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clien
 | `STS-SCIMC-0032` | In a service deployed as cells, another cell did not answer scim-client-group-share (#553): a group's owner cell could not learn every cell's share before deleting the group or replacing its members on a service provider without PATCH, or a cell could not tell the owner its share changed. Nothing is deleted or replaced; the delivery is retried, and the provider is not paused. | none — nothing is sent |
 | `STS-SCIMC-0033` | An outbound SCIM client act named a `cell` it cannot go to (#553): the service is not deployed as cells, the service has no such cell, or the act is on the client itself (add, change, remove, issue a certificate, test the connection) rather than on a cell's queue. Nothing was done. | HTTP 400 (/admin-api) |
 | `STS-SCIMC-0034` | In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell's result as unreachable). | HTTP 400 (/admin-api) when the act named that cell; none otherwise |
+| `STS-SCIMC-0035` | A create answered 409 uniqueness (RFC 7644 section 3.3) and the resource found by userName or displayName carries the externalId of another entry — a deleted person's User that deprovisioning left there, or another client's — so it was not adopted (a person made again under a deleted person's name inherits nothing, #1612); dead-lettered for an operator. | none |
 
 ## STS-SCIM
 
@@ -4890,6 +4894,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0050` | A TPM key attestation in a device certificate request was not proved FRESH — its TPMS_ATTEST extraData is not a live nonce this realm issued at EST /nonce to the same client and cookie, or the request came over SCEP, which has no nonce operation — and product mode requires freshness (common/mode.js requiresFreshKeyAttestation(); draft-ietf-lamps-csr-attestation section 6.2, draft-ietf-lamps-attestation-freshness) (#257). | EST 403 / SCEP failInfo badRequest |
 | `STS-DEVICE-0051` | An Android-attested key was registered and the Android attestation recheck could not be told (its registration mark not moved); the key was checked at registration, and a recheck after the next status list reaches it (#615). | — |
 | `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
+| `STS-DEVICE-0053` | A device of a deleted person could not be removed from the register, so a person made again under the name owns it. Remove it on the Devices page. | — |
 
 ## STS-SVCACCT
 
@@ -5849,6 +5854,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0940` | The password for a person's TLS client certificate files was refused: shorter than 8 characters, longer than 256, or the confirmation did not match. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0941` | A person's TLS client certificate was not issued. The certificate module's own code names the specific refusal when it has one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0942` | A person's TLS client certificate was not revoked. The certificate module's own code names the specific refusal when it has one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0943` | An administrator asked to delete their own directory entry (POST /admin-api/users/delete, the Delete control on a person's console page). Another administrator has to. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0944` | A person delete was refused because the person is the last one the realm's console roster lists for Admin Write or the Security Administrator, and nobody would be left to grant it. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 

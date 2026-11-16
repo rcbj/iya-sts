@@ -36,11 +36,11 @@
 //   F. THE DOORS: an LDAP delete of a person and of a group (the handler
 //      every LDAP DelRequest reaches), and SCIM's `DELETE /Users/{id}` and
 //      `DELETE /Groups/{id}` over HTTP in a child process (the stack loaded
-//      fresh, scim_model_wire.js's arrangement), each ending with the Admin
-//      Write group owning the account; and neither the console nor
-//      `/admin-api` has a person or group delete of its own (its every act
-//      is an `/admin-api` operation, and the route table has none), so
-//      those are every door.
+//      fresh, scim_model_wire.js's arrangement), and the management API's
+//      `POST /admin-api/users/delete` (2026-11-16), each ending with the
+//      Admin Write group owning the account; and `/admin-api` has no group
+//      delete of its own (the route table has none), so those are every
+//      door.
 // ===========================================================================
 delete process.env.CONFIG_FILE;
 
@@ -534,23 +534,40 @@ function overScim(t) {
   log.debug('Leaving overScim().');
 }
 
-// Neither the console nor /admin-api deletes a person or a group: the
-// console's every act is an /admin-api operation, and the API's route table
-// (generated from `models/api/*.tsp`) has no such operation, so the LDAP
-// delete and SCIM above are every door to the cleanup.
-function noOtherDoor(t) {
-  log.debug('Entering noOtherDoor().');
+// THE MANAGEMENT API'S PERSON DELETE (2026-11-16): `POST
+// /admin-api/users/delete`, the console's Delete tab, is `usersAction()`'s
+// `delete`, which hands the entry to `deletePerson()` — so it reaches the same
+// cleanup. Driven through the action, as the API's handler calls it. A group
+// still has no delete on /admin-api: the route table (generated from
+// `models/api/*.tsp`) names none.
+async function overTheManagementApi(t) {
+  log.debug('Entering overTheManagementApi().');
+  t.log.info('=== F6. the management API\'s person delete ===');
+  await withRealm(t, 'svc-orphan-f6', function () {
+    const write = adminWrite();
+    person(bootstrapName.current());
+    person('oo-f6-owner');
+    account(t, 'F6', 'oo-f6-sa', ['oo-f6-owner']);
+    const gone = adminActions.usersAction({ action: 'delete',
+                                           user: 'oo-f6-owner' },
+                                         { via: 'api', actor: 'the test' });
+    const now = ownerDns('oo-f6-sa');
+    t.check(gone && gone.ok === true && now.length === 1 &&
+            now[0] === key(write),
+            'F6. POST /admin-api/users/delete of the last owner: the Admin ' +
+            'Write group owns the account', JSON.stringify({ gone: gone,
+                                                            now: now }));
+  });
   const table = fs.readFileSync(path.join(ROOT, 'types',
                                           'api.generated.d.ts'), 'utf8');
-  const paths = (table.match(/"\/admin-api\/(users|groups)[^"]*"/g) || []);
+  const paths = (table.match(/"\/admin-api\/groups[^"]*"/g) || []);
   const deletes = paths.filter(function (one) {
-    return /delete|remove-(user|person|group)"|\/(users|groups)\/forget"/
-      .test(one);
+    return /delete|remove-group"|\/groups\/forget"/.test(one);
   });
   t.check(paths.length > 0 && deletes.length === 0,
-          'F6. /admin-api (and so the console) has no person or group ' +
-          'delete of its own', JSON.stringify(deletes));
-  log.debug('Leaving noOtherDoor().');
+          'F7. /admin-api (and so the console) has no group delete of its ' +
+          'own', JSON.stringify(deletes));
+  log.debug('Leaving overTheManagementApi().');
 }
 
 async function run(t) {
@@ -563,7 +580,7 @@ async function run(t) {
   await neverOwned(t);
   await overLdap(t);
   overScim(t);
-  noOtherDoor(t);
+  await overTheManagementApi(t);
   t.check(errorCodes.CODES.some(function (one) {
     return one.code === 'STS-SVCACCT-0068';
   }), 'G1. STS-SVCACCT-0068 is in the table');

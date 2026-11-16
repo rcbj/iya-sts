@@ -23,7 +23,9 @@
 //      step then spent (STS-AUTHN-0144); once `admin` has signed in to the
 //      console, the person holding no role is refused; over LDAP an
 //      ordinary person is deleted and a SEEDED `admin`, a realm's or the
-//      default realm's, is not (53, STS-LDAP-0077).
+//      default realm's, is not (53, STS-LDAP-0077); nor is it by `POST
+//      /admin-api/users/delete` (400, or 403 for want of the Security
+//      Administrator's role).
 //   B. PRODUCT. A password reset by an administrator (shown once,
 //      `forcedChange`) is refused at a door that cannot ask for a new one
 //      (an LDAPS bind) and taken by the sign-in screen, which asks; a wrong
@@ -445,8 +447,9 @@ async function sectionA(ctx) {
                        refusedWrite.text.slice(0, 300));
   });
 
-  // DELETED OVER LDAP: the management API has no person delete, and the
-  // directory's socket is where a client deletes an entry.
+  // DELETED OVER LDAP: the directory's socket, where a client deletes an
+  // entry. The management API's person delete (2026-11-16) is the same
+  // function, and is asked below (A11c).
   const otherDn = ",ou=users,dc=" + OTHER + ",dc=example,dc=net";
   await ok(ctx.otherBase + "/admin-api/users/create", { username: "plain",
     invent: false, attributes: { cn: "Plain Person", sn: "Person" } },
@@ -492,6 +495,26 @@ async function sectionA(ctx) {
       return /the default realm's bootstrap administrator/
         .test(String(row.summary || ""));
     }), said(defaultRows));
+  });
+  // THE MANAGEMENT API'S DOOR (2026-11-16): `POST /admin-api/users/delete`
+  // reaches the directory's one person delete, so the seeded administrator
+  // is refused there too, and stays. The seeded account holds the Security
+  // Administrator's role, so a caller without it is turned away at the gate
+  // (403) before the directory's refusal (400) is reached; either is a
+  // refusal, and the entry stays.
+  const viaApi = await call("POST", ctx.otherBase + "/admin-api/users/delete",
+                            { user: "admin" });
+  const stillThere = await call("GET", ctx.otherBase +
+                                "/admin-api/users?user=admin");
+  check("A11c. the management API refuses to delete the realm's seeded " +
+        "administrator, and the entry stays", function () {
+    assert.ok((viaApi.status === 400 &&
+               /bootstrap administrator/.test(errorsOf(viaApi))) ||
+              (viaApi.status === 403 &&
+               /Security Administrator/.test(errorsOf(viaApi))),
+              viaApi.status + " " + viaApi.text.slice(0, 300));
+    assert.ok(((stillThere.json || {}).ldap || {}).dn,
+              stillThere.text.slice(0, 300));
   });
   log.debug("Leaving sectionA().");
 }

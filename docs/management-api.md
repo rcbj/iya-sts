@@ -501,7 +501,11 @@ cover:
   `GET /admin-api/passkey-report` counts who holds which passkey algorithm
   across the realm (post-quantum only, classical only, both, none; by
   algorithm, lane and model), with the people behind a count, an export and
-  a recount (#942).
+  a recount (#942). `POST /admin-api/users/delete` (`{"user": "…"}`)
+  deletes a person through the same delete as SCIM's `DELETE` and an LDAP
+  delete, and refuses your own entry and the last holder of Admin Write or
+  the Security Administrator
+  ([Deleting a person](admin-console.md#deleting-a-person)).
 * **Applications and what they are issued.** The application register,
   consent, permissions, roles, delegation and who may delegate (`GET
   /admin-api/delegation/policy`), issued tokens, the claim and SAML

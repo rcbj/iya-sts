@@ -181,7 +181,8 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   self-issued IDs, the email address and a wallet credential offer; the person
   is sent to sign in again and returned to the page. An administrator changing a
   person's password, second factor, passkey, recovery codes, email address or
-  app passwords through the console or `/admin-api` must have signed in within
+  app passwords, exporting or importing a person, or deleting one, through the
+  console or `/admin-api` must have signed in within
   the same time: the console asks them to sign in again and carries on, and the
   API answers RFC 9470's `insufficient_user_authentication`. A program using the
   API with its own credentials is not asked.
