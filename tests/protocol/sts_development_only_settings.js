@@ -52,6 +52,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const ssfRoles = require("./ssf_roles.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -518,6 +519,9 @@ async function readSites() {
   // back below with the rest.
   await setting(DEV, "risk.assessSignIns", false);
   await setting(DEV, "global.mode", "product");
+  // The front process learns of the switch from the change log, and names
+  // the session cookie by the mode it holds: `service_facts.awaitFrontMode()`.
+  await facts.awaitFrontMode(realmBase(DEV), true);
   const config = await call("GET", realmBase(DEV) + "/admin-api/config");
   check("product: the development values are still STORED in the realm",
         function () {
