@@ -388,8 +388,8 @@ carries the same as `directoryCountedAt` and `directoryCountsKeptFor`.
 
 | Tab | What it holds |
 |---|---|
-| **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
-| **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused, sessions refused, and an existing session presented to an application for single sign-on (method *existing session*) |
+| **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it, most recent first and ten a page |
+| **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused, sessions refused, and an existing session presented to an application for single sign-on (method *existing session*), ten a page by default |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
 | **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Policies, Custom, Other — each with its own **Save**, and the address on Contact |
 | **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
