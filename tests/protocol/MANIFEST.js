@@ -560,6 +560,14 @@ const JOBS = [
   // stream holds session-revoked (initiated by admin) and account-purged.
   // `local: true`: this repository's directory, sessions and transmitter.
   { file: 'sts_account_delete_sessions.js', browser: false },
+  // A PERSON'S PAGE SHOWS EVERY WAY THEY AUTHENTICATED (rcbj, 2026-11-16):
+  // one fresh person per mechanism — the code flow and its refresh,
+  // GET /tls/sign-in, the password grant, an RFC 7523 self-assertion,
+  // WS-Trust, SAML 2.0, SAML 1.1, WS-Federation; in product the code flow
+  // and RFC 7523 — and GET /admin-api/users?user= holds the sign-in on the
+  // Authentications tab and what it produced under Sessions & tokens.
+  // `local: true`: this repository's console model of a person.
+  { file: 'sts_user_activity_every_mechanism.js', browser: false },
   // AN OAUTH GRANT REVOKED IS CAEP's session-revoked, AND CIBA AND THE
   // PRE-AUTHORIZED OFFER ARE SESSION-PRESENTED (#239, #240, 2026-09-26):
   // /oauth2/revoke (user), a refresh replay (risk-level-change and policy),
