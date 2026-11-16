@@ -1232,16 +1232,18 @@ class XacmlAdmin {
   // its settings and listeners, the policies, the AuthZEN catalogue and
   // callers, the reverse proxy — and a member's pulls ARE its cluster's
   // documents, so the cluster's configuration travels with no branch here.
-  // What the PEP already holds byte for byte is answered 304, because every
-  // pull's token is a digest of exactly what would be sent: a re-send of
-  // identical bytes would change nothing.
+  // The nudge carries `full: true`, so the PEP asks for every document
+  // without its token and loads each one again rather than being answered
+  // 304 (rcbj, 2026-11-16). The PEP honours that at most once a poll
+  // interval, because its /notify is not authenticated.
   //
   // UNLIKE THE CHANGE NUDGE IT IS AWAITED, because a person pressed a button
   // and is owed whether the PEP was reached; nothing was written, so there
-  // is no commit to wait for. A refusal says why before anything is dialled:
-  // notification or remote PEPs off, nudging stopped for this PEP (the
-  // administrator said this service does not dial it), or no usable notify
-  // URL — each converges on the PEP's own poll, which the sentence says.
+  // is no commit to wait for. IT DIALS A PEP WHOSE NUDGES ARE STOPPED too
+  // (rcbj, 2026-11-16): Stop nudging is about the change nudge, and a
+  // person pressing Sync on that row is asking for this one. A refusal says
+  // why before anything is dialled: notification or remote PEPs off, or no
+  // usable notify URL — each converges on the PEP's own poll.
   // ---------------------------------------------------------------------------
   /**
    * Nudges one registered PEP to pull everything now, and reports whether
@@ -1268,13 +1270,6 @@ class XacmlAdmin {
                : 'nudging is off (xacml.pepNotify).') + poll },
         'STS-XACML-0282'));
     }
-    if (!row.enabled) {
-      log.debug('Leaving XacmlAdmin.syncPep(). Not nudged.');
-      return Promise.resolve(errorCodes.mark({ ok: false,
-        why: '"' + name + '" is not nudged: this service was told not to ' +
-             'dial it. Press "Nudge again" first, then Sync.' + poll },
-        'STS-XACML-0283'));
-    }
     const url = pepSettings.notifyUrlOf(row);
     const problem = url ? pepHttp.urlProblem(url) : null;
     if (!url || problem) {
@@ -1288,7 +1283,7 @@ class XacmlAdmin {
                      : '') + '.') + poll },
         'STS-XACML-0284'));
     }
-    return pepHttp.nudge(url, '').then(function (result: any) {
+    return pepHttp.nudge(url, '', { full: true }).then(function (result: any) {
       peps.recordNotify(name, result.why);
       audit.audit({ action: 'xacml.pep.sync', actor: '', protocol: 'XACML',
                     detail: 'Asked remote PEP "' + name + '"' +
@@ -1305,13 +1300,14 @@ class XacmlAdmin {
       log.debug('Leaving XacmlAdmin.syncPep(). Delivered.');
       return { ok: true, pep: name, cluster: cluster, delivered: true,
                status: result.status,
-               what: '"' + name + '" was told to pull now, and is pulling ' +
-                     'its policies, settings, listeners, AuthZEN catalogue ' +
-                     'and callers and reverse proxy' +
+               what: '"' + name + '" was told to pull everything again ' +
+                     'now: its policies, settings, listeners, AuthZEN ' +
+                     'catalogue and callers and reverse proxy' +
                      (cluster ? ', which are cluster "' + cluster + '"\'s'
                               : '') +
-                     '. Whatever it already holds unchanged is answered ' +
-                     '"unchanged". The Notify column records this nudge.' };
+                     ', each sent whole. A PEP asked twice within its poll ' +
+                     'interval pulls as usual the second time. The Notify ' +
+                     'column records this nudge.' };
     }, function (error: any) {
       log.debug('Caught in XacmlAdmin.syncPep(): ' +
                 ((error && error.message) || error));

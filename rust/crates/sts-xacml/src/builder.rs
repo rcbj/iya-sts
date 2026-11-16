@@ -36,13 +36,11 @@ pub mod vocabulary {
     pub const REALM: &str = "urn:sts:xacml:realm";
     // AuthZEN's facts (#563): written by the service's AuthZEN adapter
     // alone; spelt here so a policy reading them matches either builder.
-    pub const AUTHZEN_SUBJECT_TYPE: &str =
-        "urn:sts:xacml:authzen:subject-type";
+    pub const AUTHZEN_SUBJECT_TYPE: &str = "urn:sts:xacml:authzen:subject-type";
     pub const AUTHZEN_RESOURCE_TYPE: &str =
         "urn:sts:xacml:authzen:resource-type";
     pub const AUTHZEN_CALLER: &str = "urn:sts:xacml:authzen:caller";
-    pub const AUTHZEN_APPLICATION: &str =
-        "urn:sts:xacml:authzen:application";
+    pub const AUTHZEN_APPLICATION: &str = "urn:sts:xacml:authzen:application";
     pub const AUTHZEN_SUPPLIED: &str = "urn:sts:xacml:authzen:supplied";
     // Fine-grained authorization's facts (#564): written by the service's
     // FGA adapter (`xacml/fga_map.ts`) alone; spelt here so a policy
@@ -55,22 +53,18 @@ pub mod vocabulary {
     pub const FGA_STAGE: &str = "urn:sts:xacml:fga:stage";
     pub const FGA_SUPPLIED: &str = "urn:sts:xacml:fga:supplied";
     pub const FGA_DETAIL_ACTION: &str = "urn:sts:xacml:fga:detail:action";
-    pub const FGA_DETAIL_LOCATION: &str =
-        "urn:sts:xacml:fga:detail:location";
-    pub const FGA_DETAIL_DATATYPE: &str =
-        "urn:sts:xacml:fga:detail:datatype";
+    pub const FGA_DETAIL_LOCATION: &str = "urn:sts:xacml:fga:detail:location";
+    pub const FGA_DETAIL_DATATYPE: &str = "urn:sts:xacml:fga:detail:datatype";
     pub const FGA_DETAIL_IDENTIFIER: &str =
         "urn:sts:xacml:fga:detail:identifier";
-    pub const FGA_DETAIL_PRIVILEGE: &str =
-        "urn:sts:xacml:fga:detail:privilege";
+    pub const FGA_DETAIL_PRIVILEGE: &str = "urn:sts:xacml:fga:detail:privilege";
     // The facts of a User-Managed Access question (#1168), spelt as
     // `xacml/xacml_request.js` spells them; the remote PEP builds none of
     // these today, and a policy written against one spelling must match
     // what both builders would send.
     pub const ACR: &str = "urn:sts:xacml:acr";
     pub const UMA_RESOURCE_TYPE: &str = "urn:sts:xacml:uma:resource-type";
-    pub const UMA_RESOURCE_SERVER: &str =
-        "urn:sts:xacml:uma:resource-server";
+    pub const UMA_RESOURCE_SERVER: &str = "urn:sts:xacml:uma:resource-server";
     pub const UMA_RESOURCE_SERVER_DECLARED: &str =
         "urn:sts:xacml:uma:resource-server-declared";
     pub const UMA_OWNER: &str = "urn:sts:xacml:uma:owner";

@@ -246,8 +246,7 @@ impl Authenticator {
         if let Some((keys, age, was_forced)) = &held {
             let fresh = *age
                 < Duration::from_millis(
-                    self.jwks_ttl_ms
-                        .load(std::sync::atomic::Ordering::Relaxed),
+                    self.jwks_ttl_ms.load(std::sync::atomic::Ordering::Relaxed),
                 );
             let throttled = *was_forced && *age < FORCED_REFETCH_FLOOR;
             if (!force && fresh) || (force && throttled) {

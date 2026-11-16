@@ -79,6 +79,17 @@ CRLs only; a newer console reads an older PEP's `api` with `crl-only` as
 *CRL distribution* too (`PepPicture.purposeOf()`). `cargo test`'s
 `the_crl_only_listener_is_reported_with_the_purpose_crl`.
 
+**A NUDGE WITH `full: true` PULLS EVERY DOCUMENT WHOLE (2026-11-16).** It
+is what the console's Sync button sends. `/notify` reads at most 4 KiB of its
+body for that one member, and nothing else in the body is trusted.
+`Sync::pull_full()` asks for the settings, the policies, the AuthZEN catalogue
+and callers, and the reverse proxy each without its token or ETag, so every one
+is sent whole and loaded again. The endpoint is not authenticated, so
+`claim_full_pull()` honours a full pull at most once a poll interval. A second
+one inside that time is an ordinary pull, logged with `STS-XPEP-0120`. An older
+PEP ignores the member and pulls as usual.
+`a_full_pull_asks_without_its_token_once_an_interval` holds both.
+
 **THE NUDGE IS HTTPS ONLY (2026-11-14, rcbj: "Let's assume always HTTPS").**
 `POST /notify` is answered on an HTTPS listener alone; over plain HTTP — the
 environment's `api-http` or a defined plain listener — it is a 404 naming the

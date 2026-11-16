@@ -152,18 +152,17 @@ fn authorization_of(said: &Value, what: &str) -> Result<Authorization, String> {
     if policy.trim().is_empty() {
         return Err(format!("{}.policy names no policy", at));
     }
-    let action_model =
-        match string_member(said, "actionModel", &at)?.as_str() {
-            "method" => ActionModel::Method,
-            "crud" => ActionModel::Crud,
-            "read-write" => ActionModel::ReadWrite,
-            _ => {
-                return Err(format!(
-                    "{}.actionModel is not method, crud or read-write",
-                    at
-                ))
-            }
-        };
+    let action_model = match string_member(said, "actionModel", &at)?.as_str() {
+        "method" => ActionModel::Method,
+        "crud" => ActionModel::Crud,
+        "read-write" => ActionModel::ReadWrite,
+        _ => {
+            return Err(format!(
+                "{}.actionModel is not method, crud or read-write",
+                at
+            ))
+        }
+    };
     match said.get("roles") {
         None | Some(Value::Null) | Some(Value::Object(_)) => {}
         Some(_) => return Err(format!("{}.roles is not an object", at)),
@@ -770,12 +769,7 @@ fn route_of(
             false,
             &what,
         )?,
-        multiple_accounts: bool_member(
-            said,
-            "multipleAccounts",
-            false,
-            &what,
-        )?,
+        multiple_accounts: bool_member(said, "multipleAccounts", false, &what)?,
     })
 }
 
@@ -1314,7 +1308,10 @@ mod tests {
         refused(&|d| d["routes"][1]["methods"] = Value::Null, "required");
         refused(
             &|d| {
-                d["routes"][1].as_object_mut().unwrap().remove("authorization");
+                d["routes"][1]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("authorization");
             },
             "authorization is required",
         );

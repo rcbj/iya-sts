@@ -217,8 +217,11 @@ pub fn level() -> Option<u8> {
 pub fn install(name: &str, min_level: u8) {
     let layer = BunyanLayer::new(name, min_level);
     // The first install's level is the one `set_level()` moves; a second
-    // install is refused below and has nothing to move.
-    let _ = INSTALLED_LEVEL.set(layer.min_level.clone());
+    // install is refused below and has nothing to move, so a level already
+    // set is kept and the refusal is not an error.
+    if INSTALLED_LEVEL.set(layer.min_level.clone()).is_err() {
+        eprintln!("the log level was already installed; keeping the first");
+    }
     let subscriber = tracing_subscriber::registry().with(layer);
     if let Err(error) = tracing::subscriber::set_global_default(subscriber) {
         eprintln!("the log was already installed: {}", error);

@@ -483,11 +483,13 @@ api xacml/sync-pep '{"name":"remote-pep-1"}'
 ```
 
 Sync sends the PEP one nudge at the notify URL the change nudge uses, and
-waits to see whether it was delivered. The PEP then pulls. Anything it already
-holds unchanged is answered as unchanged, so nothing it holds is replaced by an
-identical copy. Sync is refused when remote PEPs or nudging are off, when you
-stopped nudging that PEP, or when it has no usable notify URL; the reply says
-which. In each case the PEP still converges on its own poll.
+waits to see whether it was delivered. The nudge asks for a full pull: the PEP
+fetches every document whole and loads it again, even ones it already holds. A
+PEP takes at most one full pull per poll interval; a second Sync inside that
+time gets an ordinary pull. Sync also works on a PEP you stopped nudging.
+Sync is refused when remote PEPs or nudging are off, or when the PEP has no
+usable notify URL; the reply says which. In each case the PEP still converges
+on its own poll.
 
 ## Stop nudging, or forget a PEP
 

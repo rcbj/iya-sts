@@ -368,17 +368,24 @@ async function inProcess(t) {
 }
 
 // An https listener on 127.0.0.1 serving `cert` (a PEM chain) and `key`,
-// answering every request 204, as a PEP's POST /notify does.
+// answering every request 204, as a PEP's POST /notify does, and keeping
+// each body it was sent in `bodies`.
 function notifyListener(cert, key) {
   log.debug("Entering notifyListener().");
+  const bodies = [];
   const server = require('https').createServer({ cert: cert, key: key },
                                                function (req, res) {
-    req.resume();
+    const chunks = [];
+    req.on('data', function (chunk) {
+      chunks.push(chunk);
+    });
     req.on('end', function () {
+      bodies.push(Buffer.concat(chunks).toString('utf8'));
       res.writeHead(204);
       res.end();
     });
   });
+  server.bodies = bodies;
   log.debug("Leaving notifyListener().");
   return new Promise(function (resolve) {
     server.listen(0, '127.0.0.1', function () {
@@ -413,11 +420,11 @@ async function theNudgeTrustsThisCa(t) {
     }
     log.debug("Leaving set().");
   };
-  const nudge = function (url) {
+  const nudge = function (url, options) {
     log.debug("Entering nudge().");
     log.debug("Leaving nudge().");
     return inRealm(function () {
-      return pepHttp.nudge(url, 'pdp');
+      return pepHttp.nudge(url, 'pdp', options);
     });
   };
   const servers = [];
@@ -444,6 +451,17 @@ async function theNudgeTrustsThisCa(t) {
             'F1. an https nudge to a listener this realm\'s pep-tls CA ' +
             'certified verifies with no xacml.pepNotifyCaFile',
             JSON.stringify(delivered));
+    // F1b, F1c (2026-11-16): a change nudge carries no `full`, a Sync's
+    // nudge carries `full: true`.
+    const plainBody = JSON.parse(own.bodies[0] || '{}');
+    t.check(plainBody.event === 'policy-repository-changed' &&
+            !('full' in plainBody),
+            'F1b. a change nudge carries no full member', own.bodies[0]);
+    const synced = await nudge(ownUrl, { full: true });
+    const fullBody = JSON.parse(own.bodies[1] || '{}');
+    t.check(synced.ok && fullBody.full === true &&
+            fullBody.event === 'policy-repository-changed',
+            'F1c. a Sync\'s nudge carries full: true', own.bodies[1]);
 
     // F2. A FOREIGN CA: refused; accepted once that CA is the CA file.
     const ca = await testCa.makeCa();
