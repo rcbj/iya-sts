@@ -36,17 +36,52 @@
 //   4. the APPCONFIG file          the CONFIG_FILE module, e.g. env/local.js
 //   5. env/defaults.js             the DEFAULT appconfig file, which 4 is
 //                                  unioned on top of
+//   6. the row's own `dflt`        THE IMAGE'S FLOOR (2026-11-16): the
+//                                  default written in the table below, in
+//                                  this image, which no mounted or copied
+//                                  file can take away
 //
-// AND THERE IS NO SIXTH. A setting with no value in 4 or 5 and no variable in
-// 2 or 3 STOPS THIS SERVICE FROM STARTING — see requireComplete() at the foot
-// of this file. That is the 2026-08-24 change and it is the point of the whole
-// arrangement: a value nobody configured, arriving from a constant somewhere in
-// a module, is exactly what made "what is this service configured with?"
-// unanswerable before this table existed, and leaving a silent fallback under
-// the table would have kept one way of asking the question wrong.
+// THE SIXTH LEVEL IS NEW, AND IT REVERSES "THERE IS NO SIXTH" (2026-08-24 to
+// 2026-11-16). Until then a setting with no value in 4 or 5 and no variable
+// in 2 or 3 STOPPED THIS SERVICE FROM STARTING (STS-CORE-0002), on the
+// argument that only a maintainer could cause it — a row added here and
+// env/defaults.js not regenerated. That argument assumed env/defaults.js is
+// always the image's own, and it is not: an operator who customises env/ by
+// MOUNTING a directory over /usr/src/sts/env, or who keeps a copy of
+// defaults.js, carries the file from the release they copied it from. The
+// port-8081 deployment did exactly that, upgraded to an image that added
+// xacml.pepAuthentication, and crash-looped on STS-CORE-0002 until the mount
+// was moved — an upgrade that needed the operator to edit files first, which
+// rcbj's backwards-compatibility directive of 2026-11-11 rules out.
 //
-// 4 AND 5 ARE ONE LAYER, UNIONED, and that is what makes the refusal above
-// affordable. `appconfig` below is env/defaults.js with the operator's file
+// So the row's `dflt` is the floor beneath every layer. It is not "a constant
+// buried in a module" — the thing the refusal was written against — because
+// it is the same `dflt` /admin/config, GET /admin-api/config, the OpenAPI
+// document and docs/configuration.md already publish as the default, and a
+// value taken from it is reported with `source: 'default'`, by name, on every
+// one of those surfaces. What the floor costs is reported too:
+//
+//   * STS-CORE-0177, a WARNING at startup, names every setting that came from
+//     the floor and the defaults file that lacked it, so the operator learns
+//     that file is older than the image;
+//   * STS-CORE-0178, a WARNING, names every setting whose value in that file
+//     differs from this image's default. The FILE's value is used — it was
+//     what the service ran on before the upgrade, and an operator may have
+//     meant it — but it is said, because a stale copy also pins every default
+//     a later release changed.
+//
+// WHAT STILL REFUSES. A row with no `dflt` at all (none today; a required
+// secret would be one) and no value in any layer still stops the start with
+// STS-CORE-0002, so a setting that must be SUPPLIED cannot be started without.
+// A value an operator DID set that the console would refuse still stops the
+// start with STS-CORE-0108, in every layer, env/defaults.js included. And the
+// maintainer's mistake the old refusal caught — a row added and the file not
+// regenerated — is caught where it is cheaper, before the image is built:
+// tests/config_defaults_layer.js fails when env/defaults.js and this table
+// disagree in either direction.
+//
+// 4 AND 5 ARE ONE LAYER, UNIONED, and that is what keeps an operator's file
+// small. `appconfig` below is env/defaults.js with the operator's file
 // merged over it key by key, the operator's value winning wherever the two
 // carry the same key. So:
 //
@@ -54,25 +89,23 @@
 //     which is what keeps the parent project's in-process Kerberos jobs
 //     working, since they point CONFIG_FILE at the TEST suite's own config and
 //     it carries none of this service's keys;
-//   * a setting added to this table tomorrow does not break every config file
-//     in the world on the day it is added, so long as env/defaults.js gains its
-//     row — and env/defaults.js is GENERATED from the `dflt` column here, so
-//     that is one edit rather than two;
-//   * the refusal then fires on the one case it is for: a row in this table
-//     with no row in env/defaults.js, which is a setting somebody added and did
-//     not finish adding.
+//   * every value the shipped image runs on is in a file an operator can read,
+//     since env/defaults.js is GENERATED from the `dflt` column here;
+//   * and a defaults file that is OLDER than the image — or missing — costs a
+//     warning rather than the start (level 6, above).
 //
 // The order is what makes this backwards compatible rather than merely similar:
 // every env var that worked before works now and still beats the file, and a
 // service started with no env vars at all and the shipped appconfig behaves
 // exactly as it did — the shipped files were seeded with the built-in defaults,
-// so 4 and 5 agree wherever both carry a key.
+// so 4, 5 and 6 agree wherever each carries a key.
 //
-// FOUR SETTINGS ARE EXEMPT from the refusal, and they are the four marked
-// `derived`: `global.https` comes from `oauth2.rfc9700`, `oid4vp.walletUrl`
-// from `oid4vci.walletUrl`, `krb5.serviceDomains` from `krb5.realm`, and — since
-// 2026-09-13 — `adminApi.audience` from `global.publicBaseUrl`, `global.https`,
-// `global.host` and `global.port`. Their
+// THE DERIVED SETTINGS ARE ABSENT FROM THE DEFAULTS FILE, and they are the
+// ones marked `derived`: `global.https` comes from `oauth2.rfc9700`,
+// `oid4vp.walletUrl` from `oid4vci.walletUrl`, `krb5.serviceDomains` from
+// `krb5.realm`, and — since 2026-09-13 — `adminApi.audience` from
+// `global.publicBaseUrl`, `global.https`, `global.host` and `global.port`,
+// among others. Their
 // default is a FUNCTION of a neighbour, so writing a literal for them in
 // env/defaults.js would freeze the derivation at whatever it evaluated to the
 // day the file was written — which is why they are deliberately absent from
@@ -335,7 +368,37 @@ quietBelowLevel(bunyan, bunyan.DEBUG, 'debug');
 // ---------------------------------------------------------------------------
 /** The default appconfig file, which the operator's file is unioned on. */
 const DEFAULTS_FILE = path.join(configFile.ROOT, 'env', 'defaults.js');
-const defaults = require(DEFAULTS_FILE);
+
+// A MISSING env/defaults.js IS AN OLDER OR AN OPERATOR'S env/, NOT A FAULT
+// (2026-11-16). env/ is the directory an operator mounts over to customise
+// the service, and a mounted directory carries whatever files its owner put
+// there — a selected appconfig file and nothing else is a reasonable one.
+// The table's own `dflt` is the floor beneath this file (level 6 in the
+// header), so with no file every value comes from there and the start says
+// so (STS-CORE-0177). A file that is THERE and will not load is different in
+// kind, exactly as the operator's own is below: whatever it was meant to say
+// is unknown, so the start stops (STS-CORE-0179). Neither can be logged yet —
+// the logger needs a level out of the files being read — so what happened is
+// kept in `defaultsProblem` and the line after the logger reports it.
+/** @type {any} */
+let defaults = {};
+/** Why the defaults file was not read, or null when it was. */
+let defaultsProblem = null;
+try {
+  defaults = require(DEFAULTS_FILE);
+} catch (err) {
+  const missing = err && err.code === 'MODULE_NOT_FOUND' &&
+                  String(err.message).indexOf(DEFAULTS_FILE) >= 0;
+  if (!missing) {
+    process.stderr.write(errorCodes.tag('STS-CORE-0179') + 'config: FATAL ' +
+      '— the defaults file ' + DEFAULTS_FILE + ' is there and could not be ' +
+      'loaded: ' + ((err && err.message) || err) + '\nRemove it to run on ' +
+      'this image\'s own defaults, or replace it with the one the image ' +
+      'ships (see docs/configuration.md, *Upgrading with a mounted env/*).\n');
+    process.exit(1);
+  }
+  defaultsProblem = 'it is not there';
+}
 
 // A two-file union. Plain objects merge key by key; everything else — a scalar,
 // an array, a Date — is REPLACED wholesale by the override, because a merged
@@ -21871,10 +21934,12 @@ function resolve(key) {
     log.debug("Leaving resolve().");
     return { raw: fromDefaultsFile, source: 'defaults' };
   }
-  // NOWHERE. For a `derived` setting this is the answer — its default is a
-  // function of a neighbour and env/defaults.js deliberately carries no row for
-  // it. For any other, requireComplete() has already stopped the process, so
-  // this line is only reached in a module loaded on its own by a test.
+  // THE FLOOR, level 6. For a `derived` setting this is the answer — its
+  // default is a function of a neighbour and env/defaults.js deliberately
+  // carries no row for it. For any other it is the image's own default for a
+  // setting the defaults file lacks — an env/ older than the image — and
+  // reportStaleDefaults() has said so at startup (STS-CORE-0177). A row with
+  // no `dflt` never gets here: requireComplete() stopped the process.
   log.debug("Leaving resolve().");
   return { raw: defaultOf(setting), source: 'default' };
 }
@@ -23157,36 +23222,58 @@ function auditAppconfig() {
 }
 
 // ---------------------------------------------------------------------------
-// EVERY SETTING HAS A VALUE, OR THIS SERVICE DOES NOT START.
+// A SETTING THAT MUST BE SUPPLIED HAS A VALUE, OR THIS SERVICE DOES NOT START.
 //
-// The rule, stated once: a setting's value must come from the appconfig layer
-// (the operator's file, or env/defaults.js under it) or from an environment
-// variable. There is no sixth source, and a `dflt` in the table above is
-// DOCUMENTATION of what env/defaults.js was generated from rather than a
-// fallback the service quietly leans on.
+// Until 2026-11-16 this read "EVERY SETTING HAS A VALUE", and the rule was that
+// a value must come from the appconfig layer (the operator's file, or
+// env/defaults.js under it) or from an environment variable, the `dflt` column
+// being documentation rather than a fallback. The header says why that ended:
+// env/defaults.js is in the directory operators mount over, so an older copy
+// of it stopped a newer image over a setting nobody had touched. The `dflt` is
+// now the floor (level 6), and what is left for this check is the case it is
+// still right for — a row that has NO default, a value that must be supplied
+// (a required secret is the example; there is none today), and that nothing
+// supplied.
 //
-// WHAT THIS CAN ACTUALLY CATCH, since it is not what it looks like. The union
-// means an operator's file cannot cause this — a file carrying nothing at all
-// still resolves every key through env/defaults.js. What it catches is a row
-// added to the table with no row in env/defaults.js: a setting somebody added
-// and did not finish adding, which before this check would have shipped as a
-// value nobody could see in any file, on any page, and would have been
-// discovered as a default that could not be changed by editing the file that
-// claims to list it. That is a MAINTAINER'S mistake caught at the first start
-// after it is made, which is where it is cheapest.
+// The maintainer's mistake it used to catch, a row added and env/defaults.js
+// not regenerated, is tests/config_defaults_layer.js's now: it compares the
+// file with the table in both directions, before an image is built.
 //
-// It refuses BY NAME and says both places the value could go, because a
-// service that exits saying "configuration error" has told nobody anything.
+// It refuses BY NAME and says where the value could go, because a service that
+// exits saying "configuration error" has told nobody anything.
 //
 // process.exit(1) rather than a throw. A throw out of a require lands as a
 // stack trace whose top frame is node's module loader, and the reason ends up
 // three screens above where anybody looks; the exit code is the same either
 // way, and this is a message meant to be read.
 // ---------------------------------------------------------------------------
+/**
+ * What a setting that resolved to no layer above the floor means at startup.
+ *
+ * @param setting - a row of SETTINGS
+ * @returns 'derived' (its default is a neighbour's, which is correct),
+ *   'floor' (the image's own `dflt`, reported) or 'refuse' (no default at
+ *   all, and nothing supplied one)
+ */
+function floorVerdict(setting) {
+  log.debug("Entering floorVerdict().");
+  if (setting.derived) {
+    log.debug("Leaving floorVerdict(). Derived.");
+    return 'derived';
+  }
+  if (setting.dflt === undefined || setting.dflt === null) {
+    log.debug("Leaving floorVerdict(). No default.");
+    return 'refuse';
+  }
+  log.debug("Leaving floorVerdict(). The floor.");
+  return 'floor';
+}
+
 function requireComplete() {
   log.debug("Entering requireComplete().");
   const orphans = SETTINGS.filter(function (setting) {
-    return !setting.derived && resolve(setting.key).source === 'default';
+    return resolve(setting.key).source === 'default' &&
+           floorVerdict(setting) === 'refuse';
   });
   if (!orphans.length) {
     log.debug("Leaving requireComplete(). Every setting has a value.");
@@ -23198,8 +23285,8 @@ function requireComplete() {
   process.stderr.write(
     '\n' + errorCodes.tag('STS-CORE-0002') + 'config: FATAL — ' +
     orphans.length + ' ' +
-    'setting(s) have no value in the appconfig layer and no environment ' +
-    'variable:\n\n' +
+    'setting(s) have no default and no value in the appconfig layer or ' +
+    'the environment:\n\n' +
     orphans.map(function (setting) {
       return '  ' + setting.key + ' '.repeat(width - setting.key.length + 2) +
              setting.env;
@@ -23208,12 +23295,95 @@ function requireComplete() {
     'file CONFIG_FILE ' +
     'names') + ', in ' + DEFAULTS_FILE + ' (the default ' +
     'appconfig file every other one is unioned on top of), or as the ' +
-    'environment variable beside it.\n\nIf one of these was just added to ' +
-    'SETTINGS in common/config.js, env/defaults.js is generated from that ' +
-    'table and has not been regenerated.\n\n');
+    'environment variable beside it.\n\n');
   log.debug("Leaving requireComplete(). Refusing to start.");
   process.exit(1);
   log.debug("Leaving requireComplete().");
+}
+
+// ---------------------------------------------------------------------------
+// AN env/defaults.js OLDER THAN THIS IMAGE IS SAID, NOT REFUSED (2026-11-16).
+//
+// Two warnings, each with its own code so an operator's alerting can tell
+// them apart, and each naming the defaults file, because the fix is the same
+// for both — replace that file with the image's, or stop mounting it:
+//
+//   * STS-CORE-0177: settings that came from the floor, level 6. The file
+//     lacks them (or is not there at all), which is what an env/ copied from
+//     an earlier release looks like after an upgrade adds a setting. The
+//     value is this image's own default, and is what /admin/config reports
+//     with source "default".
+//   * STS-CORE-0178: settings the file carries with a value that is not this
+//     image's default. The file's value is used — it is the value the service
+//     ran on before the upgrade, and an operator who keeps a copy may have
+//     meant it — but a stale copy also pins every default a later release
+//     changed, which nobody would otherwise see.
+//
+// Neither is said for a value a layer ABOVE the file supplies: the
+// operator's file, the environment and an override make the file's row moot.
+// A WARN rather than an error: the service is running as configured. Said
+// once, at startup, which is the one moment the layers change.
+// ---------------------------------------------------------------------------
+/**
+ * Compares env/defaults.js with this table, for the settings it decides.
+ *
+ * @returns `{ floor, differing }`: the keys whose value came from the
+ *   table's own default because the file lacks them, and the keys whose value
+ *   in the file is not the table's default
+ */
+function auditDefaultsFile() {
+  log.debug("Entering auditDefaultsFile().");
+  const floor = [];
+  const differing = [];
+  SETTINGS.forEach(function (setting) {
+    if (setting.derived) {
+      return;
+    }
+    const source = resolve(setting.key).source;
+    if (source === 'default' && floorVerdict(setting) === 'floor') {
+      floor.push(setting.key);
+      return;
+    }
+    if (source !== 'defaults') {
+      return;
+    }
+    const raw = dig(defaults, setting.path || setting.key);
+    const kind = TYPES[setting.type];
+    if (JSON.stringify(kind.parse(raw, setting)) !==
+        JSON.stringify(kind.parse(defaultOf(setting), setting))) {
+      differing.push(setting.key);
+    }
+  });
+  log.debug("Leaving auditDefaultsFile(). " + floor.length + " from the " +
+            "floor, " + differing.length + " differing.");
+  return { floor: floor, differing: differing };
+}
+
+function reportStaleDefaults() {
+  log.debug("Entering reportStaleDefaults().");
+  const found = auditDefaultsFile();
+  const file = DEFAULTS_FILE + (defaultsProblem ? ' (' + defaultsProblem +
+                                                  ')' : '');
+  if (found.floor.length) {
+    log.warn(errorCodes.tag('STS-CORE-0177') + 'config: ' +
+             found.floor.length + ' setting(s) have no row in the defaults ' +
+             'file ' + file + ' and no value in any layer above it, so each ' +
+             'takes this image\'s own default: ' + nameList(found.floor) +
+             '. The defaults file is older than this image, or is not the ' +
+             'one it ships — usually an env/ directory mounted or copied ' +
+             'from an earlier release. The service runs; replace that file ' +
+             'with the image\'s, or stop mounting it, to silence this.');
+  }
+  if (found.differing.length) {
+    log.warn(errorCodes.tag('STS-CORE-0178') + 'config: ' +
+             found.differing.length + ' setting(s) in the defaults file ' +
+             file + ' are not this image\'s default, and the file\'s value ' +
+             'is used: ' + nameList(found.differing) + '. A defaults file ' +
+             'copied from an earlier release pins every default changed ' +
+             'since; set a value you mean in the appconfig file CONFIG_FILE ' +
+             'names and replace the defaults file with the image\'s.');
+  }
+  log.debug("Leaving reportStaleDefaults().");
 }
 
 log.info('config: ' + SETTINGS.length + ' settings from ' +
@@ -23362,6 +23532,10 @@ function refuseMalformedSettings() {
 }
 refuseMalformedSettings();
 
+// After the refusals, for the reason requireComplete() goes before the drift
+// warnings: a warning about a stale file is noise in front of a refusal.
+reportStaleDefaults();
+
 const audit = auditAppconfig();
 
 // IS THIS FILE EVEN THIS SERVICE'S? The test is whether it carries any key of
@@ -23490,9 +23664,10 @@ function parseAs(key, raw) {
  * Every setting this service has, in one table, and the one place a value
  * is read.
  *
- * Five layers, highest wins — a runtime override, the environment variable,
- * its legacy variable, the appconfig file, `env/defaults.js` — and no
- * sixth: a setting with no value stops the service starting.
+ * Six layers, highest wins — a runtime override, the environment variable,
+ * its legacy variable, the appconfig file, `env/defaults.js`, and the row's
+ * own default, the image's floor beneath every file. Only a setting with no
+ * default and no value stops the service starting.
  * @namespace
  */
 module.exports = {
@@ -23500,6 +23675,10 @@ module.exports = {
   parseAs: parseAs,
   setRealmContext: setRealmContext,
   DEFAULTS_FILE: DEFAULTS_FILE,
+  // What startup made of env/defaults.js (2026-11-16), and the verdict on a
+  // setting no file or variable supplied — tests/config_defaults_layer.js.
+  auditDefaultsFile: auditDefaultsFile,
+  floorVerdict: floorVerdict,
   value: value,
   text: text,
   sourceOf: sourceOf,
