@@ -135,6 +135,7 @@
 import helpers = require('../common/helpers');
 import configDump = require('./config_dump');
 import DomainClasses = require('../common/domain_classes');
+import DomainMap = require('../common/domain_map');
 import InstanceSlot = require('../common/instance_slot');
 // A policy save's or reset's message is filled from `policy_kinds.ts`'s
 // templates, so the server can translate it (#543).
@@ -4343,9 +4344,9 @@ class AdminActions {
     const dn = String(stored.dn);
     const attrs = stored.attributes || {};
     const username = String([].concat(attrs.uid || [])[0] || who);
-    const subject = attrs.entryuuid
-      ? 'urn:uuid:' + String([].concat(attrs.entryuuid)[0]).toLowerCase()
-      : '';
+    // Any entry's UUID is DirectoryEntry's (#1579).
+    const uuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid', attrs);
+    const subject = uuid ? 'urn:uuid:' + String(uuid).toLowerCase() : '';
     // THE BOOTSTRAP ADMINISTRATOR is refused by `deletePerson()` below, for
     // every door, and that refusal is the one it meets here too: it holds
     // both console roles, and would otherwise be told it is the last holder.
