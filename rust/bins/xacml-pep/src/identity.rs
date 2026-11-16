@@ -356,8 +356,7 @@ mod tests {
         assert_eq!(names, ["x-iya-user", "x-iya-how"]);
         assert!(value_of(&json!([]), ',').unwrap().is_none());
         assert!(value_of(&json!(""), ',').unwrap().is_none());
-        assert_eq!(value_of(&json!(["a"]), ',').unwrap().as_deref(),
-                   Some("a"));
+        assert_eq!(value_of(&json!(["a"]), ',').unwrap().as_deref(), Some("a"));
     }
 
     #[test]

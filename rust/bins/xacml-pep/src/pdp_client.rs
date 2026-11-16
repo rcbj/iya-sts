@@ -144,7 +144,9 @@ impl PdpClient {
     /// The timeout every call without one of its own is given, and the
     /// largest answer read — moved by a settings pull (#1760).
     pub fn set_limits(&self, timeout_ms: u64, max_body_bytes: usize) {
-        self.limits.timeout_ms.store(timeout_ms.max(1), Ordering::Relaxed);
+        self.limits
+            .timeout_ms
+            .store(timeout_ms.max(1), Ordering::Relaxed);
         self.limits
             .max_body_bytes
             .store(max_body_bytes.max(1), Ordering::Relaxed);
@@ -216,8 +218,7 @@ impl PdpClient {
                 self.limits.timeout_ms.load(Ordering::Relaxed),
             )
         }));
-        let max_body_bytes =
-            self.limits.max_body_bytes.load(Ordering::Relaxed);
+        let max_body_bytes = self.limits.max_body_bytes.load(Ordering::Relaxed);
         match body {
             Some(Body::Json(value)) => request = request.json(&value),
             Some(Body::Xml(text)) => {

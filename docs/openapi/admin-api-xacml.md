@@ -12313,7 +12313,7 @@ Scope: `admin:write`.
 | `authzActionModel` | one of `crud`, `read-write` |  | kind simple: the action model. |
 | `authzActions` | list, or string |  |  |
 | `authzActions[]` | string |  |  |
-| `authzKind` | one of `policy`, `simple`, `public`, empty |  | The form's authorization choice: an existing policy, a simple generated policy, or Public (anyone, a generated policy too). Empty is no choice, refused on a new route (STS-XACML-0263). |
+| `authzKind` | one of `policy`, `simple`, `public` |  | The form's authorization choice: an existing policy, a simple generated policy, or Public (anyone, a generated policy too). Empty is no choice, refused on a new route (STS-XACML-0263). |
 | `authzPolicy` | string |  | kind policy: the existing policy's name in this realm's repository. |
 | `authzPolicyActionModel` | one of `method`, `crud`, `read-write` |  | kind policy: what the PEP sends as the action-id; the method by default. |
 | `authzResource` | string |  | The resource-id sent, an absolute URI. Empty: for a simple or public route the proxy's base URL and the path; for an existing policy the request's path. |
@@ -12343,7 +12343,7 @@ Scope: `admin:write`.
 | `mode` | one of `headers`, `saml`, `jwt` |  | With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity. |
 | `multipleAccounts` | boolean, or string |  | true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257). |
 | `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
-| `part` | one of `settings`, `authentication`, `authorization`, `identity`, empty |  | With the form members and an existing route: the route page's tab the form is (2026-11-15). Only that part's members are read — settings: id, path, match, application and position; authentication: mechanisms, signals, multipleAccounts; authorization: methods and the authz members; identity: forwardCredentials and the identity members — and every other member keeps the stored route's value. A route that does not exist is STS-XACML-0230, another value STS-XACML-0256. Empty or absent: the members are the whole route. |
+| `part` | one of `settings`, `authentication`, `authorization`, `identity` |  | With the form members and an existing route: the route page's tab the form is (2026-11-15). Only that part's members are read — settings: id, path, match, application and position; authentication: mechanisms, signals, multipleAccounts; authorization: methods and the authz members; identity: forwardCredentials and the identity members — and every other member keeps the stored route's value. A route that does not exist is STS-XACML-0230, another value STS-XACML-0256. Empty or absent: the members are the whole route. |
 | `path` | string |  | The path the route matches. |
 | `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `position` | integer |  | Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given. |
@@ -13074,9 +13074,9 @@ Scope: `admin:write`.
 
 **Tell one remote PEP to pull everything again now**
 
-Nudges ONE registered PEP at the address the change nudge dials (its managed notify URL, or a cluster member's own) and waits for the answer. This service pushes nothing: the PEP answers a nudge by pulling a whole round — its settings and listeners, the policies, the AuthZEN catalogue and callers, and its reverse proxy — and a member of a remote PEP cluster pulls its cluster's documents, so the cluster's configuration travels with it. A document the PEP already holds byte for byte is answered 304, because every pull's token is a digest of exactly what would be sent.
+Nudges ONE registered PEP at the address the change nudge dials (its managed notify URL, or a cluster member's own) and waits for the answer. This service pushes nothing: the PEP answers a nudge by pulling a whole round — its settings and listeners, the policies, the AuthZEN catalogue and callers, and its reverse proxy — and a member of a remote PEP cluster pulls its cluster's documents, so the cluster's configuration travels with it. The nudge carries `full: true`, so the PEP asks for each document without its token and loads it again whole; a PEP honours that at most once a poll interval and otherwise pulls as usual. A PEP whose change nudges are stopped (disable-pep) is dialled all the same.
 
-Refused before anything is dialled when remote PEPs or nudging are off (STS-XACML-0282), when nudging is stopped for this PEP (STS-XACML-0283), or when it has no usable notify URL (STS-XACML-0284); a nudge that was not delivered is STS-XACML-0285 and is recorded on the PEP's row as every nudge is. The PEP converges on its own poll in every one of those cases.
+Refused before anything is dialled when remote PEPs or nudging are off (STS-XACML-0282), or when it has no usable notify URL (STS-XACML-0284); a nudge that was not delivered is STS-XACML-0285 and is recorded on the PEP's row as every nudge is. The PEP converges on its own poll in every one of those cases.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 

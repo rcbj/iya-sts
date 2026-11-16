@@ -198,7 +198,10 @@ async fn serve_http(
         let pep = pep.clone();
         let job = runtime.clone();
         runtime.hand_off(stream, move |stream| async move {
-            let transport = Transport { crl_only, ..Transport::default() };
+            let transport = Transport {
+                crl_only,
+                ..Transport::default()
+            };
             let service = tower_service(pep, transport);
             let cfg = job.http();
             drive(stream, service, cfg, false, job).await;
@@ -214,13 +217,11 @@ fn tower_service(
     transport: Transport,
 ) -> TowerToHyperService<axum::routing::Router> {
     let router = axum::Router::new()
-        .fallback(
-            move |mut request: axum::http::Request<axum::body::Body>| {
-                let pep = pep.clone();
-                request.extensions_mut().insert(transport.clone());
-                async move { pep.handle(request).await }
-            },
-        )
+        .fallback(move |mut request: axum::http::Request<axum::body::Body>| {
+            let pep = pep.clone();
+            request.extensions_mut().insert(transport.clone());
+            async move { pep.handle(request).await }
+        })
         .layer(axum::middleware::from_fn(crate::listener_pool::observe));
     TowerToHyperService::new(router)
 }
@@ -252,12 +253,8 @@ async fn serve_https(
         let pep = pep.clone();
         let job = runtime.clone();
         runtime.hand_off(stream, move |stream| async move {
-            let Some(tls) = HttpsListener::accept_tls(
-                stream,
-                &acceptor,
-                &job,
-            )
-            .await
+            let Some(tls) =
+                HttpsListener::accept_tls(stream, &acceptor, &job).await
             else {
                 return;
             };
@@ -272,8 +269,7 @@ async fn serve_https(
                 remote: None,
                 crl_only: false,
             };
-            drive(tls, tower_service(pep, transport), cfg, offer_h2, job)
-                .await;
+            drive(tls, tower_service(pep, transport), cfg, offer_h2, job).await;
         });
     }
 }
@@ -393,14 +389,20 @@ async fn start(options: Options, info: version::VersionInfo) {
     // the API's plain HTTP off by default the PEP could no longer
     // authenticate. The port serves the CRLs alone (`crl_listener`).
     let crl_only = options::crl_listener(&options);
-    listener_set.environment("api-http", options.port,
-                             if crl_only {
-                                 EnvKind::Crl(api_http.clone())
-                             } else {
-                                 plain_kind(options.http.on, api_http.clone())
-                             });
-    listener_set.environment("api-https", options.https_port,
-                             EnvKind::Tls(https.clone()));
+    listener_set.environment(
+        "api-http",
+        options.port,
+        if crl_only {
+            EnvKind::Crl(api_http.clone())
+        } else {
+            plain_kind(options.http.on, api_http.clone())
+        },
+    );
+    listener_set.environment(
+        "api-https",
+        options.https_port,
+        EnvKind::Tls(https.clone()),
+    );
     let reporting = listener_set.clone();
     sync.set_listeners_reporter(Arc::new(move || reporting.report()));
 
@@ -534,10 +536,9 @@ async fn start(options: Options, info: version::VersionInfo) {
         let (watcher, served) = (https.clone(), pep.clone());
         let reload_options = options.clone();
         let reload_sync = sync.clone();
-        let https_runtime = listener_set.runtime_of("api-https")
-            .unwrap_or_else(|| {
-                ListenerRuntime::new("api-https", "api", true)
-            });
+        let https_runtime = listener_set
+            .runtime_of("api-https")
+            .unwrap_or_else(|| ListenerRuntime::new("api-https", "api", true));
         if https_first {
             tokio::spawn(serve_https(
                 served.clone(),
@@ -603,7 +604,9 @@ async fn start(options: Options, info: version::VersionInfo) {
         // above is untouched by it. It answers 404 to everything until the
         // service sends a configuration for this PEP.
         let proxy_http = Arc::new(PlainStatus::default());
-        options.proxy_http.announce("reverse proxy", options.proxy_port);
+        options
+            .proxy_http
+            .announce("reverse proxy", options.proxy_port);
         listener_set.environment(
             "proxy-http",
             options.proxy_port,
@@ -611,8 +614,8 @@ async fn start(options: Options, info: version::VersionInfo) {
         );
         let (plain, port) = (proxy.clone(), options.proxy_port);
         let bind_plain = options.proxy_http.on;
-        let proxy_http_runtime = listener_set.runtime_of("proxy-http")
-            .unwrap_or_else(|| {
+        let proxy_http_runtime =
+            listener_set.runtime_of("proxy-http").unwrap_or_else(|| {
                 ListenerRuntime::new("proxy-http", "proxy", false)
             });
         tokio::spawn(async move {
@@ -641,13 +644,15 @@ async fn start(options: Options, info: version::VersionInfo) {
             options.proxy_https_port,
             options.https_reload_interval_ms,
         ));
-        listener_set.environment("proxy-https", options.proxy_https_port,
-                                 EnvKind::Tls(proxy_https.clone()));
+        listener_set.environment(
+            "proxy-https",
+            options.proxy_https_port,
+            EnvKind::Tls(proxy_https.clone()),
+        );
         if proxy_https.is_configured() {
             let reload_options = options.clone();
-            let proxy_https_runtime = listener_set
-                .runtime_of("proxy-https")
-                .unwrap_or_else(|| {
+            let proxy_https_runtime =
+                listener_set.runtime_of("proxy-https").unwrap_or_else(|| {
                     ListenerRuntime::new("proxy-https", "proxy", true)
                 });
             tokio::spawn(async move {
@@ -659,8 +664,7 @@ async fn start(options: Options, info: version::VersionInfo) {
                             proxy_https_runtime.clone(),
                         ));
                     }
-                    tokio::time::sleep(reload_interval(&reload_options))
-                        .await;
+                    tokio::time::sleep(reload_interval(&reload_options)).await;
                 }
             });
         }
@@ -677,17 +681,22 @@ async fn start(options: Options, info: version::VersionInfo) {
         );
     }
     if !options.proxy_enabled {
-        listener_set.environment("proxy-http", options.proxy_port,
-                                 EnvKind::Off("proxy-off"));
-        listener_set.environment("proxy-https", options.proxy_https_port,
-                                 EnvKind::Off("proxy-off"));
+        listener_set.environment(
+            "proxy-http",
+            options.proxy_port,
+            EnvKind::Off("proxy-off"),
+        );
+        listener_set.environment(
+            "proxy-https",
+            options.proxy_https_port,
+            EnvKind::Off("proxy-off"),
+        );
     }
     install_fault_handler();
     if options.http.on || crl_only {
-        let api_http_runtime = listener_set.runtime_of("api-http")
-            .unwrap_or_else(|| {
-                ListenerRuntime::new("api-http", "api", false)
-            });
+        let api_http_runtime = listener_set
+            .runtime_of("api-http")
+            .unwrap_or_else(|| ListenerRuntime::new("api-http", "api", false));
         serve_http(pep, options.port, api_http, crl_only, api_http_runtime)
             .await;
         std::future::pending::<()>().await;
@@ -776,20 +785,6 @@ fn healthy(answer: Option<&str>) -> i32 {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_healthcheck_asks_https_unless_plain_http_is_on() {
-        assert_eq!(probe_port(false), ("PEP_HTTPS_PORT", "9443"));
-        assert_eq!(probe_port(true), ("PEP_PORT", "9090"));
-        assert_eq!(healthy(Some("HTTP/1.1 200 OK\r\n")), 0);
-        assert_eq!(healthy(Some("HTTP/1.1 503 x\r\n")), 1);
-        assert_eq!(healthy(None), 1);
-    }
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--healthcheck") {
@@ -829,4 +824,18 @@ fn main() {
         }
     };
     runtime.block_on(start(options, info));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_healthcheck_asks_https_unless_plain_http_is_on() {
+        assert_eq!(probe_port(false), ("PEP_HTTPS_PORT", "9443"));
+        assert_eq!(probe_port(true), ("PEP_PORT", "9090"));
+        assert_eq!(healthy(Some("HTTP/1.1 200 OK\r\n")), 0);
+        assert_eq!(healthy(Some("HTTP/1.1 503 x\r\n")), 1);
+        assert_eq!(healthy(None), 1);
+    }
 }

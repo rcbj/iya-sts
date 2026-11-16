@@ -244,8 +244,7 @@ pub fn forward_headers(
                 .to_str()
                 .ok()
                 .and_then(|v| cookie_without_any(v, &dropped));
-            if let Some(v) = rest.and_then(|r| HeaderValue::from_str(&r).ok())
-            {
+            if let Some(v) = rest.and_then(|r| HeaderValue::from_str(&r).ok()) {
                 out.append(name.clone(), v);
             }
             continue;
@@ -407,19 +406,30 @@ mod tests {
     #[test]
     fn the_identity_providers_cookies_never_go_upstream() {
         let strip = strip_list(
-            &["sts_*".to_string(), "__Host-sts_*".to_string(),
-              "*".to_string(), "".to_string()],
-            " idp_session , sso_*,,*");
-        assert_eq!(strip, ["sts_*", "__Host-sts_*", "idp_session", "sso_*"],
-                   "a bare * or an empty entry strips nothing");
+            &[
+                "sts_*".to_string(),
+                "__Host-sts_*".to_string(),
+                "*".to_string(),
+                "".to_string(),
+            ],
+            " idp_session , sso_*,,*",
+        );
+        assert_eq!(
+            strip,
+            ["sts_*", "__Host-sts_*", "idp_session", "sso_*"],
+            "a bare * or an empty entry strips nothing"
+        );
         let mut h = HeaderMap::new();
-        h.insert("cookie", HeaderValue::from_static(
-            "__Host-sts_session=a; sts_lang=fr; idp_session=b; \
-             sso_x=c; app=1; idp_session_other=2; xsts_y=3"));
+        h.insert(
+            "cookie",
+            HeaderValue::from_static(
+                "__Host-sts_session=a; sts_lang=fr; idp_session=b; \
+             sso_x=c; app=1; idp_session_other=2; xsts_y=3",
+            ),
+        );
         for credentials in [false, true] {
             let out = forward_headers(&h, credentials, &[], &strip);
-            assert_eq!(out["cookie"],
-                       "app=1; idp_session_other=2; xsts_y=3");
+            assert_eq!(out["cookie"], "app=1; idp_session_other=2; xsts_y=3");
         }
         assert!(cookie_stripped("sts_a", &strip));
         assert!(!cookie_stripped("xsts_a", &strip), "a prefix, not a match");
@@ -428,8 +438,11 @@ mod tests {
             m.insert("cookie", HeaderValue::from_static("sts_session=1"));
             m
         };
-        assert!(forward_headers(&only, false, &[], &strip)
-                    .get("cookie").is_none(),
-                "nothing left, no Cookie header");
+        assert!(
+            forward_headers(&only, false, &[], &strip)
+                .get("cookie")
+                .is_none(),
+            "nothing left, no Cookie header"
+        );
     }
 }

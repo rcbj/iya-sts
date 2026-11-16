@@ -465,6 +465,9 @@ struct State {
     relying_parties: (usize, usize),
     settings: SettingsHolding,
     last_settings_kept_why: String,
+    /// When the last FULL pull was started (a Sync from the console,
+    /// 2026-11-16), so one is honoured at most once a poll interval.
+    last_full_pull: Option<std::time::Instant>,
 }
 
 /// What `GET /` asks the proxy's relying parties about their CAEP/RISC
@@ -541,6 +544,7 @@ impl Sync {
                     ..SettingsHolding::default()
                 },
                 last_settings_kept_why: String::new(),
+                last_full_pull: None,
             }),
             signals_reporter: Mutex::new(None),
             streams_reporter: Mutex::new(None),
@@ -857,13 +861,45 @@ impl Sync {
     // -----------------------------------------------------------------------
     #[tracing::instrument(level = "debug", skip(self))]
     pub async fn pull(&self, cause: &str) -> bool {
+        self.pull_round(cause, false).await
+    }
+
+    /// A FULL pull (a Sync from the console, 2026-11-16): every document
+    /// asked for without its token or ETag, so the PDP sends each one whole
+    /// and this PEP loads it again, where an ordinary round is answered 304
+    /// for what it already holds.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn pull_full(&self, cause: &str) -> bool {
+        self.pull_round(cause, true).await
+    }
+
+    /// Whether a full pull may start now, and if so records that it did:
+    /// at most one a poll interval, because the nudge that asks for one is
+    /// not authenticated and each one has the PDP send every document.
+    pub fn claim_full_pull(&self) -> bool {
+        let floor = std::time::Duration::from_millis(
+            self.options.now().poll_interval_ms,
+        );
+        let now = std::time::Instant::now();
+        let mut state = self.lock();
+        let free = match state.last_full_pull {
+            Some(at) => now.duration_since(at) >= floor,
+            None => true,
+        };
+        if free {
+            state.last_full_pull = Some(now);
+        }
+        free
+    }
+
+    async fn pull_round(&self, cause: &str, full: bool) -> bool {
         let changed_before = self.lock().held.last_change_at.clone();
-        self.pull_settings().await;
-        self.pull_once(cause).await;
-        self.pull_catalogue().await;
-        self.pull_callers().await;
+        self.pull_settings(full).await;
+        self.pull_once(cause, full).await;
+        self.pull_catalogue(full).await;
+        self.pull_callers(full).await;
         if self.options.proxy_enabled {
-            self.pull_proxy().await;
+            self.pull_proxy(full).await;
         }
         let mut state = self.lock();
         if cause == "nudge" {
@@ -885,10 +921,15 @@ impl Sync {
     // token, a failure keeps what is held, an older service's 404 is the
     // environment.
     // -----------------------------------------------------------------------
-    async fn pull_settings(&self) {
-        let (token, etag) = {
+    async fn pull_settings(&self, full: bool) {
+        let (token, etag) = if full {
+            (String::new(), String::new())
+        } else {
             let state = self.lock();
-            (state.settings.sync_token.clone(), state.settings.etag.clone())
+            (
+                state.settings.sync_token.clone(),
+                state.settings.etag.clone(),
+            )
         };
         let query = if token.is_empty() {
             String::new()
@@ -992,7 +1033,11 @@ impl Sync {
         let managed = Managed::parse(
             &token,
             configured,
-            if configured { &said["settings"] } else { &Value::Null },
+            if configured {
+                &said["settings"]
+            } else {
+                &Value::Null
+            },
         );
         let count = managed.values.len();
         self.options.managed.apply(managed);
@@ -1067,15 +1112,19 @@ impl Sync {
         report["lastPullOk"] = json!(s.last_pull_ok);
         report["lastPullWhy"] = json!(s.last_pull_why);
         report["offered"] = json!(!s.not_offered);
-        report["configured"] =
-            json!(self.options.managed.current().configured);
+        report["configured"] = json!(self.options.managed.current().configured);
         report
     }
 
-    async fn pull_once(&self, cause: &str) {
+    async fn pull_once(&self, cause: &str, full: bool) {
         let (token, name) = {
             let state = self.lock();
-            (state.held.sync_token.clone(), self.options.name.clone())
+            let token = if full {
+                String::new()
+            } else {
+                state.held.sync_token.clone()
+            };
+            (token, self.options.name.clone())
         };
         let query = if token.is_empty() {
             format!("?pep={}", encode(&name))
@@ -1298,8 +1347,12 @@ impl Sync {
     // THE AUTHZEN CATALOGUE (#1179). Pulled after every policy pull, with
     // its own token; a failure keeps what is held.
     // -----------------------------------------------------------------------
-    async fn pull_catalogue(&self) {
-        let token = self.lock().catalogue.sync_token.clone();
+    async fn pull_catalogue(&self, full: bool) {
+        let token = if full {
+            String::new()
+        } else {
+            self.lock().catalogue.sync_token.clone()
+        };
         let query = if token.is_empty() {
             String::new()
         } else {
@@ -1458,8 +1511,12 @@ impl Sync {
     // THE AUTHZEN CALLERS (#1189). Pulled after the catalogue, with its own
     // token; a failure keeps what is held.
     // -----------------------------------------------------------------------
-    async fn pull_callers(&self) {
-        let token = self.lock().callers.sync_token.clone();
+    async fn pull_callers(&self, full: bool) {
+        let token = if full {
+            String::new()
+        } else {
+            self.lock().callers.sync_token.clone()
+        };
         let query = if token.is_empty() {
             String::new()
         } else {
@@ -1596,8 +1653,10 @@ impl Sync {
     // THE REVERSE PROXY'S CONFIGURATION (#1760). Pulled after the callers,
     // with its own token and ETag; a failure keeps what is held.
     // -----------------------------------------------------------------------
-    async fn pull_proxy(&self) {
-        let (token, etag) = {
+    async fn pull_proxy(&self, full: bool) {
+        let (token, etag) = if full {
+            (String::new(), String::new())
+        } else {
             let state = self.lock();
             (state.proxy.sync_token.clone(), state.proxy.etag.clone())
         };
@@ -1781,8 +1840,9 @@ impl Sync {
         let now = std::time::Instant::now();
         let first = w.last_line.is_none();
         if !first
-            && w.last_line
-                .is_some_and(|at| now.duration_since(at) < WAITING_SUMMARY_EVERY)
+            && w.last_line.is_some_and(|at| {
+                now.duration_since(at) < WAITING_SUMMARY_EVERY
+            })
         {
             return;
         }
@@ -2196,18 +2256,16 @@ mod tests {
         let port = socket.local_addr().unwrap().port();
         let app = axum::Router::new().route(
             "/xacml/pep/settings",
-            axum::routing::get(
-                move |uri: axum::http::Uri| {
-                    let answer = answer.clone();
-                    async move {
-                        let mut held = answer.lock().unwrap();
-                        held.2.push(uri.query().unwrap_or("").to_string());
-                        let status =
-                            axum::http::StatusCode::from_u16(held.0).unwrap();
-                        (status, axum::Json(held.1.clone()))
-                    }
-                },
-            ),
+            axum::routing::get(move |uri: axum::http::Uri| {
+                let answer = answer.clone();
+                async move {
+                    let mut held = answer.lock().unwrap();
+                    held.2.push(uri.query().unwrap_or("").to_string());
+                    let status =
+                        axum::http::StatusCode::from_u16(held.0).unwrap();
+                    (status, axum::Json(held.1.clone()))
+                }
+            }),
         );
         tokio::spawn(async move {
             axum::serve(socket, app).await.unwrap();
@@ -2226,6 +2284,29 @@ mod tests {
         Sync::new(client, options)
     }
 
+    // A SYNC FROM THE CONSOLE (2026-11-16): a full pull asks without its
+    // token, and one is claimed at most once a poll interval.
+    #[tokio::test]
+    async fn a_full_pull_asks_without_its_token_once_an_interval() {
+        let answer: Answer = Arc::new(Mutex::new((
+            200,
+            json!({ "syncToken": "s1", "pep": "pep-1", "configured": true,
+                    "settings": {} }),
+            Vec::new(),
+        )));
+        let sync = settings_sync(&settings_service(answer.clone()).await);
+        sync.pull_settings(false).await;
+        sync.pull_settings(false).await;
+        sync.pull_settings(true).await;
+        let asked = answer.lock().unwrap().2.clone();
+        assert_eq!(
+            asked,
+            vec!["".to_string(), "since=s1".to_string(), "".to_string()]
+        );
+        assert!(sync.claim_full_pull());
+        assert!(!sync.claim_full_pull());
+    }
+
     #[tokio::test]
     async fn the_service_settings_win_and_a_404_is_the_environment() {
         let answer: Answer = Arc::new(Mutex::new((
@@ -2242,7 +2323,7 @@ mod tests {
         let sync = settings_sync(&settings_service(answer.clone()).await);
         // Before any pull: the environment's.
         assert_eq!(sync.options.now().poll_interval_ms, 15000);
-        sync.pull_settings().await;
+        sync.pull_settings(false).await;
         let now = sync.options.now();
         assert_eq!(now.bias, crate::options::Bias::PermitBiased);
         assert_eq!(now.poll_interval_ms, 2000);
@@ -2259,18 +2340,18 @@ mod tests {
         assert_eq!(report["configured"], true);
         // The next pull asks with the token, and a 304 keeps what is held.
         answer.lock().unwrap().0 = 304;
-        sync.pull_settings().await;
+        sync.pull_settings(false).await;
         assert!(answer.lock().unwrap().2[1].contains("since=s1"));
         assert_eq!(sync.options.now().poll_interval_ms, 2000);
         // A failure keeps it too.
         answer.lock().unwrap().0 = 500;
-        sync.pull_settings().await;
+        sync.pull_settings(false).await;
         let bias = sync.options.now().bias;
         assert_eq!(bias, crate::options::Bias::PermitBiased);
         assert!(!sync.lock().settings.last_pull_ok);
         // An older service: no endpoint, so the environment is in force.
         answer.lock().unwrap().0 = 404;
-        sync.pull_settings().await;
+        sync.pull_settings(false).await;
         let now = sync.options.now();
         assert_eq!(now.bias, crate::options::Bias::DenyBiased);
         assert_eq!(now.poll_interval_ms, 15000);
@@ -2288,7 +2369,7 @@ mod tests {
             Vec::new(),
         )));
         let sync = settings_sync(&settings_service(answer.clone()).await);
-        sync.pull_settings().await;
+        sync.pull_settings(false).await;
         let now = sync.options.now();
         assert_eq!(now.poll_interval_ms, 15000, "out of bounds is refused");
         assert_eq!(now.bias, crate::options::Bias::DenyBiased);
@@ -2299,7 +2380,7 @@ mod tests {
             json!({ "syncToken": "s3", "configured": false, "note": "x" }),
             Vec::new(),
         );
-        sync.pull_settings().await;
+        sync.pull_settings(false).await;
         assert_ne!(sync.options.now().heartbeat_interval_ms, 3000);
         assert_eq!(sync.settings_json()["configured"], false);
     }

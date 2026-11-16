@@ -837,8 +837,10 @@ credential and not even the new sync token. Every PEP converges without it. So:
 * a refusal is worth RECORDING and never worth escalating.
 
 **If a future change puts something in that body a PEP cannot get any other
-way, the whole argument goes with it.** The body is three members; keep it that
-way or move the argument.
+way, the whole argument goes with it.** The body is three members, and a
+fourth, `full`, on a Sync (2026-11-16): a flag asking the PEP to pull every
+document whole, which carries no content. Keep it that way or move the
+argument.
 
 Its four bounds are `ssf.push*`'s four, deliberately — an off switch, a host
 allowlist empty by default meaning any, https, and a timeout — because two
@@ -1921,16 +1923,19 @@ so `GET /admin-api/xacml/peps` already answered it.
 **SYNC IS A NUDGE TO ONE PEP, AWAITED.** rcbj asked for a button that "pushes"
 the policies, the instance's configuration and the cluster's. This service
 pushes nothing, so `sync-pep` (`XacmlAdmin.syncPep()`) is one nudge to that PEP
-alone, at the URL `notifiable()` would dial. A nudge makes the PEP pull a whole
-round, and a member's pulls are its cluster's documents. What it already holds
-is answered 304: every pull's token is a digest of what would be sent, so a
-forced re-send would be the same bytes. Unlike the change nudge it waits for the
-answer, because a person pressed a button. It writes nothing, so there is no
-commit to wait for. It refuses before dialling with `STS-XACML-0282` (remote PEPs
-or nudging off), `0283` (Stop nudging is on for this PEP) or `0284` (no usable
-notify URL). An undelivered nudge is `0285`, recorded on the row like every
-nudge. It is a PROMISE, like `issue-pep-certificate`. It is not a
-`MEMBER_REFUSED` action.
+alone, at the URL `notifiable()` would dial. A member's pulls are its cluster's
+documents. **The nudge carries `full: true`** (rcbj, 2026-11-16), and the PEP
+then asks for every document without its token, so each is sent whole and loaded
+again. The PEP honours that at most once a poll interval (`STS-XPEP-0120`
+otherwise), because `/notify` is not authenticated; `xacml-pep/CLAUDE.md` has
+its half. **It dials a PEP whose change nudges are stopped**: Stop nudging is
+about the change nudge, and Sync is a person asking for this one. Unlike the
+change nudge it waits for the answer, because a person pressed a button. It
+writes nothing, so there is no commit to wait for. It refuses before dialling
+with `STS-XACML-0282` (remote PEPs or nudging off) or `0284` (no usable notify
+URL); `0283`, the stopped-nudging refusal, is retired. An undelivered nudge is
+`0285`, recorded on the row like every nudge. It is a PROMISE, like
+`issue-pep-certificate`. It is not a `MEMBER_REFUSED` action.
 
 ## What the console page is NOT
 
