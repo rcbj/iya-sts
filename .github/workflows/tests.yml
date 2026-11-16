@@ -650,7 +650,7 @@ jobs:
           docker run --rm -v "${PWD}:/src" -w /src/rust
           -e CARGO_TERM_COLOR=always -e CARGO_INCREMENTAL=0
           ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
-          bash -c "cargo fmt --check && cargo test --workspace --locked"
+          bash -c "rustup component add rustfmt && cargo fmt --check && cargo test --workspace --locked"
 
   openapi-breaking:
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')
