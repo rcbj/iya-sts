@@ -1516,6 +1516,16 @@ reason token and the error code. The password stays off the row.
 accepted, is a different act and is not written again here.
 `common/CLAUDE.md` (3c) argues the line; the application's tab reads it.
 
+**`startSession()` writes the authentication's row, and a door that already
+wrote it says `recorded: true`** (rcbj, 2026-11-16). A WS-Trust UsernameToken
+is recorded by `WsTrust.authenticate()` as WS-Trust and its method, and its
+exchange then starts a session; without the flag the person's tab carried the
+same sign-in twice, the second as `WS-Trust issue / sign-in screen
+(password)`. A door that does not record it itself passes its `protocol` and
+`method` in `extra` instead, which override the defaults (the `via` sentence
+and `methodPhraseFor()`'s "sign-in screen (password)"): `GET /tls/sign-in`
+passes `TLS` and its certificate.
+
 ## TWO KINDS OF BROWSER SESSION, ONE STORE (2026-09-06)
 
 `/admin` and `/portal` are OpenID Connect relying parties of this service's own

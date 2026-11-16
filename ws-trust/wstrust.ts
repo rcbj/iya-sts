@@ -3676,6 +3676,12 @@ class WsTrust {
     const credential = this.requesterCredential(doc, jwtIssuer, base,
                                                 connection);
     if (credential && !credential.ok) {
+      // THE REFUSED ATTEMPT ON THE PERSON'S PAGE (rcbj, 2026-11-16): the
+      // name the credential gave — a UsernameToken's Username, or the
+      // subject a refusal names — with the refusal's code; nothing is
+      // counted and nobody is created. A credential that named nobody is
+      // nobody's attempt.
+      this.recordRefusedRequester(doc, credential, audience);
       log.debug("Leaving WsTrust.authenticate(). The credential was refused.");
       return { ok: false, reason: credential.reason,
                errorCode: credential.errorCode,
@@ -3913,6 +3919,33 @@ class WsTrust {
         ? [] : ['pwd']);
     log.debug("Leaving WsTrust.amrOf(). " + out.join(','));
     return out;
+  }
+
+  // A REFUSED REQUESTER'S ATTEMPT (rcbj, 2026-11-16), for authenticate().
+  // Never throws: the fault is the answer whatever this does.
+  private recordRefusedRequester(doc, credential, audience?): void {
+    const { stats, log, firstByLocal, textByLocal } = this.deps;
+    log.debug("Entering WsTrust.recordRefusedRequester().");
+    try {
+      const ut = firstByLocal(doc, 'UsernameToken');
+      const presented = String(credential.presented || credential.subject ||
+                               (ut ? textByLocal(ut, 'Username') : '') || '');
+      if (presented) {
+        stats.recordRefusedAuthentication({ presented: presented,
+          protocol: 'WS-Trust',
+          method: credential.method ||
+                  (ut ? 'WS-Security UsernameToken' : 'WS-Security token'),
+          errorCode: credential.errorCode || '',
+          codedElsewhere: true,
+          application: String(audience || ''),
+          note: String(credential.trustFault || 'refused') });
+      }
+    } catch (e) {
+      log.debug("Caught in WsTrust.recordRefusedRequester(): " +
+                ((e && e.message) || e));
+      // The refusal stands whether or not its row could be written.
+    }
+    log.debug("Leaving WsTrust.recordRefusedRequester().");
   }
 
   // THE DELEGATED SUBJECT ON /admin/users (#183), once the delegation policy
@@ -5369,12 +5402,17 @@ class WsTrust {
           const signedIn = authn.startSession(res, result.signIn.username,
                                               result.signIn.amr || ['pwd'], '1',
                                               result.signIn.via,
+                                              // `recorded`: authenticate()
+                                              // wrote this sign-in's row,
+                                              // as WS-Trust and its method.
                                               doorAssessed
                                                 ? { request: req,
+                                                    recorded: true,
                                                     risk: doorAssessed,
                                                     riskDecision:
                                                       doorDecision }
-                                                : { request: req });
+                                                : { request: req,
+                                                    recorded: true });
           if (!signedIn) {
             log.info('ws-trust: the token was issued and the issuance policy ' +
                      'refused the browser SESSION for ' +

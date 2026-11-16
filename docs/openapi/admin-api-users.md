@@ -438,6 +438,12 @@ Scope: `admin:read`.
 | `(shape 2).authenticationEventsPaging.param` | string |  |  |
 | `(shape 2).authenticationEventsPaging.perPage` | integer |  |  |
 | `(shape 2).authenticationEventsPaging.total` | integer |  |  |
+| `(shape 2).authenticationsWithoutActivity` | object |  | The authentications that start no sign-on session and issue nothing (a TLS client certificate on a request, an LDAP bind, a SCIM or SPIFFE caller's credential), counted by protocol and method over the rows the Authentications tab lists (what the audit log still holds). Sessions &amp; tokens draws its summary line from it; each one is on the Authentications tab. |
+| `(shape 2).authenticationsWithoutActivity.methods` | list |  |  |
+| `(shape 2).authenticationsWithoutActivity.methods[].count` | integer |  |  |
+| `(shape 2).authenticationsWithoutActivity.methods[].method` | string |  |  |
+| `(shape 2).authenticationsWithoutActivity.methods[].protocol` | string |  |  |
+| `(shape 2).authenticationsWithoutActivity.total` | integer |  |  |
 | `(shape 2).credentials` | object |  |  |
 | `(shape 2).credentials.caAvailable` | boolean |  |  |
 | `(shape 2).credentials.found` | boolean |  |  |

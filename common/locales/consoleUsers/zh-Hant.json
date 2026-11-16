@@ -199,6 +199,8 @@
   "detail.sessionsHeading": "工作階段，以及每個工作階段簽發了什麼",
   "detail.sessionsNote": "<strong>登入工作階段</strong>是持有 <code>sts_session</code> Cookie 的瀏覽器，由 OAuth 2.0 / OIDC 登入畫面和 WS-Federation 共用。權杖之所以放在某個工作階段之下，是因為簽發時這麼記錄——本服務簽發的權杖都不攜帶工作階段識別碼，而 OIDC 的 <code>sid</code> 宣告是為前端通道登出而設，為了讓本頁好做而虛構一個，會改變每個用戶端收到的內容。因此這個關聯是在簽發時於頻外記錄的，並且在更新後仍然保留：更新後的權杖會依更新權杖的 <code>jti</code> 查找，落在同一個工作階段之下。",
   "detail.noSession": "此使用者沒有登入工作階段。對於每個從未在此使用瀏覽器的身分——密碼授權、Kerberos 用戶端、WS-Trust 請求者——以及工作階段已過期並被清除的人，這都是正常狀態。",
+  "detail.withoutActivity": "<strong>{total} 次認證未建立工作階段，也未簽發任何內容</strong>：",
+  "detail.withoutActivitySee": "每一次都列在「認證嘗試」分頁中。",
   "detail.endedHeading": "在已結束的工作階段上簽發",
   "detail.endedNote": "這些權杖指向本服務已不再持有的工作階段。這不是錯誤，而是正常的結束狀態：工作階段已過期或已登出，而它產生的權杖比它活得更久——這正是用戶端的存取權杖仍能驗證、而瀏覽器會被要求重新登入時的情況。",
   "detail.sessionlessHeading": "完全沒有瀏覽器工作階段的簽發",

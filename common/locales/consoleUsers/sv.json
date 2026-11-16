@@ -199,6 +199,8 @@
   "detail.sessionsHeading": "Sessioner, och vad som utfärdades på var och en",
   "detail.sessionsNote": "En <strong>inloggningssession</strong> är en webbläsare som har cookien <code>sts_session</code>, delad mellan inloggningsskärmen för OAuth 2.0 / OIDC och WS-Federation. En token placeras under en session för att utfärdandet sa så — ingen token som tjänsten utfärdar bär en sessionsidentifierare, och OIDC:s anspråk <code>sid</code> är till för front-channel-utloggning, så att hitta på ett för att göra sidan enklare skulle ändra vad varje klient får. Kopplingen registreras i stället vid sidan om vid utfärdandet, och den överlever en förnyelse: en förnyad token slås upp via refresh-tokens <code>jti</code> och hamnar under samma session.",
   "detail.noSession": "Den här användaren har ingen inloggningssession. Det är det normala för varje identitet som aldrig använt en webbläsare här — ett lösenordsbeviljande, en Kerberos-klient, en WS-Trust-beställare — och för den vars session har gått ut och städats bort.",
+  "detail.withoutActivity": "<strong>{total} autentisering(ar) skapade ingen session och utfärdade ingenting</strong>:",
+  "detail.withoutActivitySee": "Var och en finns på fliken Autentiseringsförsök.",
   "detail.endedHeading": "Utfärdat på en session som sedan har avslutats",
   "detail.endedNote": "Dessa nämner en session som tjänsten inte längre har. Det är inget fel utan det vanliga sluttillståndet: sessionen gick ut eller loggades ut, och de tokens den gav överlevde den — vilket är exakt läget för en klient när dess åtkomsttoken fortfarande verifieras och webbläsaren skulle ombes logga in igen.",
   "detail.sessionlessHeading": "Utfärdat helt utan webbläsarsession",

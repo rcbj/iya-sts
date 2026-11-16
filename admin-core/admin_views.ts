@@ -532,6 +532,17 @@ const NOT_A_VIEW = ['format', 'notice', 'error'];
  */
 const DEFAULT_BLOCKS_PER_PAGE = 5;
 
+// Rows per page for every TABLE on a person's Sessions & tokens tab (rcbj,
+// 2026-11-16): a session's tokens, the tokens on ended sessions, the tokens
+// with no session and the other artifacts. At DEFAULT_PER_PAGE a remote PEP
+// with a few hundred RFC 7523 tokens showed one table fifty rows long and no
+// pager until the fifty-first; ten puts the pager on the page as soon as the
+// list is longer than a screen. `?per=` overrides it, as everywhere.
+/**
+ * Rows per page for each table on a person's Sessions & tokens tab.
+ */
+const DEFAULT_ACTIVITY_PER_PAGE = 10;
+
 // ---------------------------------------------------------------------------
 // THE TWO PICTURES' KEYS, AS PROSE (#543 phase 2b). `delegationMapKey()` and
 // `federationMapKey()` answer each key as ONE string of HTML, `mapKey`, which
@@ -11950,12 +11961,15 @@ class AdminViews {
       }
     });
     const summary = auditLog.summary();
+    // Counted over every row matched, not the page (rcbj, 2026-11-16).
+    const withoutActivity = this.authenticationsWithoutActivity(events);
     log.debug("Leaving AdminViews.userAuthenticationEvents(). " +
               paged.shown.length + " of " + events.length + ".");
     return {
       events: paged.shown,
       paging: this.pagingJson(paged.paging),
       matched: events.length,
+      withoutActivity: withoutActivity,
       knownActors: knownActors,
       log: {
         held: summary.held, recorded: summary.recorded,
@@ -15347,16 +15361,21 @@ class AdminViews {
         defaultPer: DEFAULT_BLOCKS_PER_PAGE });
     const sessionTokenPages = sessionPage.shown.map(function (session) {
       return self.pagedRows(req.query, split.held[session.id] || [],
-                            { name: 'session-' + session.id, noun: 'tokens' });
+                            { name: 'session-' + session.id, noun: 'tokens',
+                              defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     });
     const endedPage = this.pagedRows(req.query, split.ended,
                                      { name: 'tokensOnEndedSessions',
-                                       noun: 'tokens' });
+                                       noun: 'tokens',
+                                       defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     const sessionlessPage = this.pagedRows(req.query, split.sessionless,
                                            { name: 'tokensWithNoSession',
-                                             noun: 'tokens' });
+                                             noun: 'tokens',
+                                             defaultPer:
+                                               DEFAULT_ACTIVITY_PER_PAGE });
     const artifactPage = this.pagedRows(req.query, detail.artifacts,
-                                   { name: 'artifacts', noun: 'artifacts' });
+                                   { name: 'artifacts', noun: 'artifacts',
+                                     defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     // THE PARTNERS' SUBJECTS THIS PERSON IS LINKED TO (#109), paged like the
     // five lists above. Read off the entry, one row per federationLink value,
     // with whether the relationship it names is still registered here — a
@@ -15384,6 +15403,7 @@ class AdminViews {
     // person across every application and protocol. Read once, for the
     // page and this reply.
     const attempts = this.userAuthenticationEvents(req, key, row);
+    const withoutActivity = attempts.withoutActivity;
     log.debug("Leaving AdminViews.userDetailJson().");
     const answer = {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -15483,6 +15503,9 @@ class AdminViews {
           authenticationEventsMatched: attempts.matched,
           authenticationEventsKnownActors: attempts.knownActors,
           authenticationEventsLog: attempts.log,
+          // THE AUTHENTICATIONS SESSIONS & TOKENS HAS NOTHING TO SHOW FOR
+          // (rcbj, 2026-11-16), counted for its summary line.
+          authenticationsWithoutActivity: withoutActivity,
           // HOW THEY AUTHENTICATED (#1844): one page of `user.events`, most
           // recent first, paged as `authenticationHistoryPage`.
           authenticationHistory: historyPage.shown,
@@ -15606,7 +15629,7 @@ class AdminViews {
       back: view.back,
       params: view.params,
       blocksPerPage: DEFAULT_BLOCKS_PER_PAGE,
-      perPage: DEFAULT_PER_PAGE,
+      perPage: DEFAULT_ACTIVITY_PER_PAGE,
       maxEventsPerUser: stats.MAX_EVENTS_PER_USER,
       directoryLoaded: !!directoryReader,
       mfa: mfa,
@@ -16246,6 +16269,67 @@ class AdminViews {
     return parts.length ? '?' + parts.join('&') : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE AUTHENTICATIONS THAT LEAVE NOTHING ON SESSIONS & TOKENS (rcbj,
+  // 2026-11-16).
+  //
+  // A remote PEP authenticates with its TLS client certificate on every
+  // policy pull, dozens of times, and each one is an authentication with no
+  // sign-on session and nothing issued — so its Sessions & tokens tab was
+  // empty and read as broken. The tab now says how many of those there are
+  // and by what. The methods are the ones
+  // that by construction start no session and issue nothing: a client
+  // certificate on a request to the main port, an LDAP bind, and a SCIM or
+  // SPIFFE caller's credential. Anything else that started no session
+  // issued something, which the tab lists itself.
+  //
+  // COUNTED FROM THE ROWS THE AUTHENTICATIONS TAB LISTS, so the line and
+  // the tab cannot disagree: the register's per-method counts file an LDAP
+  // bind under the DN it named, not under the person, and would have said
+  // none. What it counts is what the audit log still holds.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts one person's accepted authentications that start no session
+   * and issue nothing, by protocol and method.
+   *
+   * @param events - the person's authentication attempts (audit rows)
+   * @returns `{ total, methods: [{ protocol, method, count }] }`
+   */
+  authenticationsWithoutActivity(events) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.authenticationsWithoutActivity().");
+    const byKey = new Map();
+    let total = 0;
+    (events || []).forEach(function (event) {
+      if (!event || event.action !== 'authentication') {
+        return;
+      }
+      const protocol = String(event.protocol || '');
+      const method = String((event.detail && event.detail.method) || '');
+      const leavesNothing =
+        (protocol === 'TLS' &&
+         /^client certificate on the main port/.test(method)) ||
+        /^ldaps?$/i.test(protocol) || protocol === 'SCIM' ||
+        protocol === 'SPIFFE';
+      if (!leavesNothing) {
+        return;
+      }
+      const key = protocol + ' ' + method;
+      const held = byKey.get(key) ||
+                   { protocol: protocol, method: method, count: 0 };
+      held.count += 1;
+      byKey.set(key, held);
+      total += 1;
+    });
+    const methods = Array.from(byKey.values());
+    methods.sort(function (a, b) {
+      return b.count - a.count;
+    });
+    log.debug("Leaving AdminViews.authenticationsWithoutActivity(). " +
+              total + ".");
+    return { total: total, methods: methods };
+  }
+
   // The live sign-on sessions belonging to one user. Sessions are keyed by an
   // opaque id and hold a user object, so the match is on the identity rather
   // than the string: the session says `alice` and the tokens say
@@ -16648,6 +16732,7 @@ export = {
   logoutJson: slot.forward('logoutJson'),
   mfaRosterJson: slot.forward('mfaRosterJson'),
   DEFAULT_BLOCKS_PER_PAGE: DEFAULT_BLOCKS_PER_PAGE,
+  DEFAULT_ACTIVITY_PER_PAGE: DEFAULT_ACTIVITY_PER_PAGE,
   queryWith: slot.forward('queryWith'),
   sessionRowsFor: slot.forward('sessionRowsFor'),
   tokensBySession: slot.forward('tokensBySession'),

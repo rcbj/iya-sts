@@ -4020,7 +4020,7 @@ function recordAuthentication(detail) {
  * Records that a presented credential was refused. Increments nothing.
  *
  * @param detail - `presented`, `protocol`, `method`, `errorCode`, and
- *   optionally `client_id`, `application`, `amr`, `acr`, `sessionId`,
+ *   optionally `codedElsewhere`, `client_id`, `application`, `amr`, `acr`, `sessionId`,
  *   `isClient`, `sub`, `note`, `channel` and `address`
  * @returns the audit row, or null when there was no identity
  */
@@ -4045,7 +4045,13 @@ function recordRefusedAuthentication(detail) {
     action: 'authentication.refused',
     // error-code: none — the caller names the code; this row copies it
     outcome: 'refused',
-    errorCode: info.errorCode || '',
+    // ONE FAILURE, ONE CODED ROW (`tests/protocol/sts_service_accounts.js`'s
+    // refusedWith()). A door that already records its refusal's code on a
+    // row of its own — the token endpoint, WS-Trust, the KDC, the directory,
+    // SPNEGO, /tls/sign-in, each since 2026-11-16 — passes `codedElsewhere`,
+    // and this row carries the code in its detail only, so a count of the
+    // code's rows does not see one failure twice.
+    errorCode: info.codedElsewhere ? '' : (info.errorCode || ''),
     actor: identity.key,
     actorForm: identity.form,
     protocol: protocol,
@@ -4066,7 +4072,8 @@ function recordRefusedAuthentication(detail) {
       acr: info.acr || '',
       sessionId: info.sessionId || '',
       isClient: !!info.isClient,
-      note: info.note || ''
+      note: info.note || '',
+      code: info.codedElsewhere ? String(info.errorCode || '') : ''
     }
   });
   log.debug("Leaving recordRefusedAuthentication().");

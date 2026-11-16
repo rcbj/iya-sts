@@ -8165,7 +8165,20 @@ page now is. He chose:
   (`common/CLAUDE.md`, the refusal paragraph).
   The overview's authentication table stays the identity register's
   acceptances.
-* **Sessions & tokens**.
+* **Sessions & tokens**. Under the sessions, **one line counts the
+  authentications that start no session and issue nothing** (rcbj,
+  2026-11-16): a client certificate on a request to the main port, an LDAP
+  bind, a SCIM or SPIFFE caller's credential, by protocol and method
+  (`UsersPage.withoutActivityLine()`, from `authenticationsWithoutActivity`
+  on the `?user=` reply, counted over the Authentications tab's rows). A
+  remote PEP that authenticated by certificate on every policy pull had an
+  empty tab that read as broken; it now says why it is empty.
+  **Every table on the tab starts at TEN rows a page** (rcbj, 2026-11-16;
+  `AdminViews.DEFAULT_ACTIVITY_PER_PAGE`) — a session's tokens, the tokens on
+  ended sessions, the tokens with no session, the other artifacts — and the
+  session blocks at five (`DEFAULT_BLOCKS_PER_PAGE`), each with the usual
+  `pageNavPair()` pager; `?per=` sets all of them. At the console-wide fifty
+  a remote PEP's RFC 7523 tokens were one long table with no pager.
 * **Attributes**: `personFieldsSection()`.
 * **Credentials**: four sub-tabs, `ucred-factors`, `ucred-password`,
   `ucred-keys` and `ucred-kerberos`, each one of the four sections that were

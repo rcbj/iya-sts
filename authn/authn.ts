@@ -6606,12 +6606,18 @@ class Authn {
     // relationship through `federation` already.
     delete statsExtra.fedPartnerSession;
     delete statsExtra.sessionNotOnOrAfter;
-    stats.recordAuthentication(Object.assign({
-      presented: username, protocol: event.via,
-      method: this.methodPhraseFor(event.amr),
-      sub: session.user.sub, amr: event.amr, acr: event.acr,
-      note: 'A re-authentication on a session this person already held.'
-    }, statsExtra, { sessionId: session.id }));
+    // `recorded`: the door wrote this authentication's row itself (see
+    // startSessionHere()).
+    const recordedByDoor = statsExtra.recorded === true;
+    delete statsExtra.recorded;
+    if (!recordedByDoor) {
+      stats.recordAuthentication(Object.assign({
+        presented: username, protocol: event.via,
+        method: this.methodPhraseFor(event.amr),
+        sub: session.user.sub, amr: event.amr, acr: event.acr,
+        note: 'A re-authentication on a session this person already held.'
+      }, statsExtra, { sessionId: session.id }));
+    }
     audit.audit({
       action: 'session.reauthenticate',
       actor: username,
@@ -8662,15 +8668,26 @@ class Authn {
     // relationship through `federation` already.
     delete statsExtra.fedPartnerSession;
     delete statsExtra.sessionNotOnOrAfter;
-    stats.recordAuthentication(Object.assign({
-      presented: username, protocol: via || 'OAuth 2.0 / OIDC',
-      method: authenticatedNow ? this.methodPhraseFor(amr) : 'declined',
-      amr: amr, acr: acr, sessionId: sessionId,
-      note: authenticatedNow
-        ? this.defaultSignInNote()
-        : 'Nobody authenticated: this is the anonymous principal, from ' +
-          '"Continue without signing in" at the sign-in screen.'
-    }, statsExtra, { sessionId: sessionId }));
+    // `recorded` (rcbj, 2026-11-16): the DOOR has already recorded this
+    // authentication through the funnel, with its own protocol and method —
+    // WS-Trust's UsernameToken, whose exchange also starts a session — so a
+    // second row here would be the same sign-in twice on the person's
+    // Authentications tab, the second one mislabelled "sign-in screen
+    // (password)". The entry already exists, which is what this call is
+    // also for.
+    const recordedByDoor = statsExtra.recorded === true;
+    delete statsExtra.recorded;
+    if (!recordedByDoor) {
+      stats.recordAuthentication(Object.assign({
+        presented: username, protocol: via || 'OAuth 2.0 / OIDC',
+        method: authenticatedNow ? this.methodPhraseFor(amr) : 'declined',
+        amr: amr, acr: acr, sessionId: sessionId,
+        note: authenticatedNow
+          ? this.defaultSignInNote()
+          : 'Nobody authenticated: this is the anonymous principal, from ' +
+            '"Continue without signing in" at the sign-in screen.'
+      }, statsExtra, { sessionId: sessionId }));
+    }
     // ---------------------------------------------------------------------
     // NO SIGNED-IN SESSION WITHOUT A DIRECTORY ENTRY (2026-09-14).
     //

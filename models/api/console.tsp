@@ -581,6 +581,14 @@ namespace IyaSts.Api.Console {
     `authenticationEventsMatched`?: numeric;
     `authenticationEventsKnownActors`?: Record<boolean>;
     `authenticationEventsLog`?: WithHeldRecordedDroppedEtc4;
+    @js(#{`description`:"The authentications that start no sign-on session and issue nothing (a TLS client certificate on a request, an LDAP bind, a SCIM or SPIFFE caller's credential), counted by protocol and method over the rows the Authentications tab lists (what the audit log still holds). Sessions & tokens draws its summary line from it; each one is on the Authentications tab."}) `authenticationsWithoutActivity`?: {
+      `total`?: integer;
+      `methods`?: ({
+        `protocol`?: string;
+        `method`?: string;
+        `count`?: integer;
+      })[];
+    };
     `authenticationHistory`?: (WithAtProtocolMethodEtc12)[];
     `authenticationHistoryPaging`?: WithPagePagesPerPageEtc8;
     `page`?: {

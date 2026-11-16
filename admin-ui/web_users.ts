@@ -1159,6 +1159,7 @@ class UsersPage {
       sessionsNav.head +
       (sessionBlocks || kit.note(t.html('consoleUsers.detail.noSession'))) +
       sessionsNav.foot +
+      UsersPage.withoutActivityLine(t, json.authenticationsWithoutActivity) +
 
       (counts.ended
         ? '<h3>' + t.html('consoleUsers.detail.endedHeading') + '</h3>' +
@@ -1578,6 +1579,29 @@ class UsersPage {
    * @param json - the `?user=` answer
    * @returns the section as HTML
    */
+  // THE AUTHENTICATIONS THIS TAB HAS NOTHING TO SHOW FOR (rcbj,
+  // 2026-11-16): a client certificate on a request, an LDAP bind, a SCIM or
+  // SPIFFE caller's credential start no session and issue nothing, so a
+  // person who authenticated only that way had an empty tab that read as
+  // broken. One line says how many and by what; the rows are on the
+  // Authentications tab. Nothing is drawn when there are none.
+  static withoutActivityLine(t, summary): string {
+    const total = Number((summary && summary.total) || 0);
+    if (!total) {
+      return '';
+    }
+    const list = [].concat((summary && summary.methods) || [])
+      .map(function (one) {
+        return kit.esc(String(one.protocol || '') + ' ' +
+                       String(one.method || '')) + ' &times;' +
+               Number(one.count || 0);
+      }).join(', ');
+    return '<p class="sub withoutactivity">' +
+      t.html('consoleUsers.detail.withoutActivity',
+             { total: String(total) }) + ' ' + list + '. ' +
+      t.html('consoleUsers.detail.withoutActivitySee') + '</p>';
+  }
+
   static authenticationsSection(t, params, json) {
     const rows = [].concat(json.authenticationEvents || []);
     const paging = json.authenticationEventsPaging || { pages: 1, param:
