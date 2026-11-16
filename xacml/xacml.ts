@@ -539,8 +539,9 @@ class XacmlSurface {
 
   // The same shape `ssf.ts`'s `offCheck()` has, and the same argument: the
   // routes stay REGISTERED and answer 501, because the feature being off and
-  // the URL being wrong are different sentences to a client.
-  private offCheck(res: Res): boolean {
+  // the URL being wrong are different sentences to a client. `xml` answers
+  // it as `POST /xacml/pip`'s `<PIPError>` (#1830), for that door alone.
+  private offCheck(res: Res, xml?: boolean): boolean {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug('Entering XacmlSurface.offCheck().');
@@ -549,16 +550,12 @@ class XacmlSurface {
       return false;
     }
     errorCodes.mark(res, 'STS-XACML-0001');
-    res.status(501).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({
-         error: 'not_implemented',
-         error_description:
-           'XACML is turned off on this service (xacml.enabled). The routes ' +
-           'stay registered and answer 501 rather than 404, because the ' +
-           'feature being off and the URL being wrong are different ' +
-           'sentences to a client. The policy repository in ou=policies is ' +
-           'untouched.'
-       }, null, 2));
+    self.refuse(res, !!xml, 501, 'not_implemented',
+      'XACML is turned off on this service (xacml.enabled). The routes ' +
+      'stay registered and answer 501 rather than 404, because the ' +
+      'feature being off and the URL being wrong are different ' +
+      'sentences to a client. The policy repository in ou=policies is ' +
+      'untouched.');
     log.debug('Leaving XacmlSurface.offCheck(). Off.');
     return true;
   }
@@ -572,6 +569,23 @@ class XacmlSurface {
        .send(JSON.stringify({ error: code, error_description: description },
                             null, 2));
     log.debug("Leaving XacmlSurface.fail().");
+  }
+
+  // `fail()`, or `pipFail()` for `POST /xacml/pip` (#1830): the off switches
+  // and the gate are shared with the JSON endpoints, and the PIP answers
+  // every refusal in its own XML whoever made it.
+  // error-code: none — the helper's definition, not a call to it.
+  private refuse(res: Res, xml: boolean, status: number, code: string,
+                 description: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering XacmlSurface.refuse().");
+    if (xml) {
+      self.pipFail(res, status, code, description);
+    } else {
+      self.fail(res, status, code, description);
+    }
+    log.debug("Leaving XacmlSurface.refuse().");
   }
 
   // ===========================================================================
@@ -1159,12 +1173,12 @@ class XacmlSurface {
   // than a parameter because the two answer different sentences: one says XACML
   // is off here, the other says XACML is on and remote enforcement points are
   // not. A caller told the first when the second was true would go looking in
-  // the wrong place.
-  private remotePepOffCheck(res: Res): boolean {
+  // the wrong place. `xml` is `offCheck()`'s.
+  private remotePepOffCheck(res: Res, xml?: boolean): boolean {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug('Entering XacmlSurface.remotePepOffCheck().');
-    if (self.offCheck(res)) {
+    if (self.offCheck(res, xml)) {
       log.debug('Leaving XacmlSurface.remotePepOffCheck(). XACML is off.');
       return true;
     }
@@ -1173,15 +1187,11 @@ class XacmlSurface {
       return false;
     }
     errorCodes.mark(res, 'STS-XACML-0002');
-    res.status(501).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({
-         error: 'not_implemented',
-         error_description:
-           'XACML is on, but remote Policy Enforcement Points are turned off ' +
-           'on this service (xacml.remotePeps). The register in ou=peps is ' +
-           'untouched, so a PEP that was registered is still listed and ' +
-           'comes back the moment this is turned on again.'
-       }, null, 2));
+    self.refuse(res, !!xml, 501, 'not_implemented',
+      'XACML is on, but remote Policy Enforcement Points are turned off ' +
+      'on this service (xacml.remotePeps). The register in ou=peps is ' +
+      'untouched, so a PEP that was registered is still listed and ' +
+      'comes back the moment this is turned on again.');
     log.debug('Leaving XacmlSurface.remotePepOffCheck(). Off.');
     return true;
   }
@@ -1425,7 +1435,7 @@ class XacmlSurface {
   // ===========================================================================
   private pepAccess(req: Req, res: Res, action: string,
                     what: string,
-                    known?: CallerIdentity): AccessResult {
+                    known?: CallerIdentity, xml?: boolean): AccessResult {
     const self = this;
     const { log, config, errorCodes, roles, accessGate } = this.deps;
     log.debug('Entering XacmlSurface.pepAccess(). action=' + action);
@@ -1473,7 +1483,9 @@ class XacmlSurface {
     } else {
       errorCodes.mark(res, 'STS-XACML-0010');
     }
-    self.fail(res, 403, 'access_denied',
+    // `xml` (#1830) is `POST /xacml/pip`'s: its refusal is a `<PIPError>`,
+    // as the door's own are.
+    self.refuse(res, !!xml, 403, 'access_denied',
       'The access policy refused this request. ' + policy.why +
       ' A remote Policy Enforcement Point reaches these endpoints by ' +
       'presenting a client certificate this service VERIFIES — the issuing ' +
@@ -3287,7 +3299,10 @@ class XacmlSurface {
       // and both point the same way — which is why this is one decision rather
       // than two exceptions.
       // ---------------------------------------------------------------------
-      if (self.remotePepOffCheck(res)) {
+      // IN XML (#1830): the 501 is a `<PIPError>`, as the 400 and 429 below
+      // are, so a caller parses one content type whatever went wrong. It
+      // was JSON until then — the shared check's.
+      if (self.remotePepOffCheck(res, true)) {
         log.debug('Leaving POST /xacml/pip. Off.');
         return;
       }
@@ -3376,8 +3391,9 @@ class XacmlSurface {
 
       // READ AND NOT WRITE: nothing changes here, and it is the one endpoint in
       // this family whose whole answer is somebody else's stored data.
+      // The gate's 403 in XML too (#1830), the 501's reason.
       const access = self.pepAccess(req, res, accessGate.ACTION.READ,
-                                    'a PIP attribute query', identity);
+                                    'a PIP attribute query', identity, true);
       if (!access.allowed) {
         log.debug('Leaving POST /xacml/pip. The access policy refused.');
         return;

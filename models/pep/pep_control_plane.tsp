@@ -24,8 +24,6 @@
 // WHAT IS IRREGULAR, DECLARED AS IT IS (`xacml-pep/CLAUDE.md` has the
 // argument for each):
 //
-// * the PIP answers its own refusals as XML `PIPError` (400, 429) and the
-//   shared gate's as JSON (403, 501);
 // * the listener certificate's 200 carries `ok: true`;
 // * `basic` answers a lockout 429 `{valid, retryAfterS}` and the limiter's
 //   429 `Error`.
@@ -42,7 +40,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP control plane",
     `version`:"1",
-    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
   },
   `servers`:#[
     #{`url`:"https://localhost:8081",`description`:"PEP_PDP_URL: the service, with /realm/<id> for a realm."}
@@ -927,7 +925,7 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
 @js(#{`$raw`:#{`type`:"string",`contentMediaType`:"application/xml",`description`:"A PIPResponse in urn:sts:xacml:pip:1.0: one XACML core Attributes per category asked (only access-subject is ever resolved), each Attribute (IncludeInResult false) with one or more AttributeValue; an empty bag is an absent Attribute. Then, if any, Unresolved holding a Designator (Category, AttributeId, DataType, MustBePresent) with a Reason for each designator not resolved.",`x-iya-xml`:#{`namespace`:"urn:sts:xacml:pip:1.0",`root`:"PIPResponse"}}})
 @component model `PipResponse` {}
 
-@js(#{`$raw`:#{`type`:"string",`contentMediaType`:"application/xml",`description`:"<PIPError xmlns=\"urn:sts:xacml:pip:1.0\" error=\"invalid_request|too_many_requests\"><Description>…</Description></PIPError>",`x-iya-xml`:#{`namespace`:"urn:sts:xacml:pip:1.0",`root`:"PIPError"}}})
+@js(#{`$raw`:#{`type`:"string",`contentMediaType`:"application/xml",`description`:"<PIPError xmlns=\"urn:sts:xacml:pip:1.0\" error=\"invalid_request|too_many_requests|access_denied|not_implemented\"><Description>…</Description></PIPError>",`x-iya-xml`:#{`namespace`:"urn:sts:xacml:pip:1.0",`root`:"PIPError"}}})
 @component model `PipError` {}
 
 @endpoint("/xacml/pip", "post", #{
@@ -938,16 +936,16 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
   `responses`:#{
     `200`:#{`description`:"The attributes. Cache-Control: no-store.",`content`:#{`application/xml`:#{`schema`:null}}},
     `400`:#{`description`:"Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025).",`content`:#{`application/xml`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate, in JSON.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate (the codes in the document's description), error=\"access_denied\".",`content`:#{`application/xml`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0022). Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/xml`:#{`schema`:null}}},
-    `501`:#{`description`:"XACML or remote PEPs off, in JSON.",`content`:#{`application/json`:#{`schema`:null}}}
+    `501`:#{`description`:"XACML or remote PEPs off (STS-XACML-0001, 0002), error=\"not_implemented\".",`content`:#{`application/xml`:#{`schema`:null}}}
   }
 })
 op `postPip`(`requestBody/content/application~1xml/schema`: `PipRequest`,
   `responses/200/content/application~1xml/schema`: `PipResponse`,
   `responses/400/content/application~1xml/schema`: `PipError`,
-  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1xml/schema`: `PipError`,
   `responses/429/content/application~1xml/schema`: `PipError`,
-  `responses/501/content/application~1json/schema`: `Error`): void;
+  `responses/501/content/application~1xml/schema`: `PipError`): void;
 
 }

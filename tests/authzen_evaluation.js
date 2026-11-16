@@ -1554,6 +1554,47 @@ async function childBody() {
                     { name: 'azpull' });
   t.check(r.status === 201, 'X13. and azpull registers again', brief(r));
 
+  // X14. POST /xacml/pip ANSWERS THE GATE AND THE OFF SWITCH IN ITS OWN XML
+  // (#1830), as it does its own refusals; the codes recorded are the same.
+  const pipRefusal = function (answer, status, error) {
+    log.debug("Entering pipRefusal().");
+    log.debug("Leaving pipRefusal().");
+    return answer.status === status && answer.json === null &&
+      /^application\/xml/.test(String(answer.headers['content-type'])) &&
+      new RegExp('<PIPError xmlns="urn:sts:xacml:pip:1\\.0" error="' +
+                 error + '">').test(answer.text);
+  };
+  const pipAsked = '<PIPRequest xmlns="urn:sts:xacml:pip:1.0"/>';
+  const xmlType = { 'content-type': 'application/xml' };
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pip', null, pipAsked,
+                    xmlType);
+  t.check(pipRefusal(r, 403, 'access_denied') &&
+          markedSince(since, 'STS-XACML-0007'),
+          'X14. the gate\'s refusal at /xacml/pip is a 403 PIPError, ' +
+          'access_denied (STS-XACML-0007)', brief(r));
+  r = await request(port, 'GET', PREFIX + '/xacml/pep/policies', null);
+  t.check(r.status === 403 && r.json && r.json.error === 'access_denied',
+          'X14. and the same refusal on /xacml/pep/* stays JSON', brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.remotePeps', false);
+  });
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pip', pullCred, pipAsked,
+                    xmlType);
+  const offPolicies = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  inRealm(function () {
+    config.setOverride('xacml.remotePeps', true);
+  });
+  t.check(pipRefusal(r, 501, 'not_implemented') &&
+          markedSince(since, 'STS-XACML-0002') &&
+          offPolicies.status === 501 && offPolicies.json &&
+          offPolicies.json.error === 'not_implemented',
+          'X14. with remote PEPs off /xacml/pip is a 501 PIPError, ' +
+          'not_implemented (STS-XACML-0002), and /xacml/pep/* a JSON 501',
+          brief(r) + ' / ' + brief(offPolicies));
+
   // -------------------------------------------------------------------------
   // O. OFF
   // -------------------------------------------------------------------------

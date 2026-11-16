@@ -22634,12 +22634,12 @@ const CODES = [
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
       'switched off (xacml.enabled).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0002',
     summary: 'A request reached a remote-PEP endpoint or POST /xacml/pip ' +
       'while remote enforcement points are switched off ' +
       '(xacml.remotePeps).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0003',
     summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) ' +
       'was refused to a caller that presented no client certificate.',
@@ -22665,17 +22665,17 @@ const CODES = [
   { code: 'STS-XACML-0008',
     summary: 'A remote-PEP endpoint was refused to a caller whose client ' +
       'certificate did not verify against this service\'s truststore.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0009',
     summary: 'A remote-PEP endpoint was refused to a verified certificate ' +
       'whose subject resolves to no directory entry holding ' +
       'REMOTE_PEPS (not in roles.remotePepGroup).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0010',
     summary: 'A remote-PEP endpoint was refused by the access policy to a ' +
       'verified caller that does hold REMOTE_PEPS — an ' +
       'operator-edited access-control document denied it.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0011',
     summary: 'A decision request to POST /xacml/pdp was not a well-formed ' +
       'JSON Profile request.',
@@ -23119,13 +23119,13 @@ const CODES = [
       'outside certificate authority that is not stored in ' +
       'userCertificate on any entry of the realm, so it resolved to ' +
       'nobody (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0180',
     summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
       'POST /xacml/pip): the client certificate verified and is from an ' +
       'outside certificate authority that is stored in userCertificate ' +
       'on more than one entry of the realm (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0181',
     summary: 'The access gate had no decider, or its decider answered ' +
       'nothing: refused in product mode, allowed in development (#1450).',
