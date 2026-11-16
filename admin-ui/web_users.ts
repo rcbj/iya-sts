@@ -3494,9 +3494,10 @@ class UsersPage {
       const managed = table + assertsAs;
 
       if (!gate.write) {
-        return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-               managed + kit.note(
-                 t.html('consoleUsers.userCredentialsSection.needsWrite'));
+        return '<section class="secframe"><h3 id="' + anchor + '">' +
+               kit.esc(p.label) + '</h3>' + managed + kit.note(
+                 t.html('consoleUsers.userCredentialsSection.needsWrite')) +
+               '</section>';
       }
       const labelField = function (suffix) {
         return '<label for="' + anchor + '-' + suffix + '-label">' +
@@ -3506,6 +3507,13 @@ class UsersPage {
           'maxlength="40" placeholder="' +
           kit.esc(t.text('consoleUsers.userCredentialsSection.labelHint')) +
           '">';
+      };
+      // Each way to add a key pair is a frame of its own, headed, so the
+      // issue form's fields and the upload form's (both carry a Name box)
+      // cannot be read as one form.
+      const subFrame = function (heading, body) {
+        return '<div class="secframe"><h4>' + heading + '</h4>' + body +
+               '</div>';
       };
       const issueForm = state.ca.available
         ? '<form method="post" action="/admin/pki/person">' +
@@ -3568,7 +3576,10 @@ class UsersPage {
           t.html('consoleUsers.userCredentialsSection.upload') +
           '</button></div></form>';
 
-      return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
+      // One frame per profile: its key pairs, what it asserts as, and the
+      // forms that add one.
+      return '<section class="secframe"><h3 id="' + anchor + '">' +
+             kit.esc(p.label) + '</h3>' +
              managed + '<h4>' +
                t.html('consoleUsers.userCredentialsSection.addHeading') +
                '</h4>' +
@@ -3578,7 +3589,13 @@ class UsersPage {
                         { max: String(state.maxPerPerson) }))
                : kit.note(t.html('consoleUsers.userCredentialsSection.addNote',
                             { max: String(state.maxPerPerson) })) +
-                 issueForm + uploadForm);
+                 subFrame(t.html(
+                   'consoleUsers.userCredentialsSection.issueHeading'),
+                          issueForm) +
+                 subFrame(t.html(
+                   'consoleUsers.userCredentialsSection.uploadHeading'),
+                          uploadForm)) +
+             '</section>';
     }).join('');
     return heading + purposeHtml +
       (state.selfService
