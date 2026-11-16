@@ -317,7 +317,9 @@ pub mod components {
         pub event: String,
         /// When, ISO 8601.
         pub at: String,
-        /// Always empty today.
+        /// The realm's PDP: the base /xacml/pep/* is served under, realm prefix
+        /// included — pinned, or that of the request that made the change; empty
+        /// only with neither. Not read by the PEP.
         pub pdp: String,
         /// true on a Sync from the console: pull every document whole rather than
         /// answered 304. Honoured at most once a poll interval (STS-XPEP-0120 logs

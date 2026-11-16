@@ -1288,7 +1288,7 @@ the PEP makes about itself.
 
 `models/pep/pep_control_plane.tsp` describes every `/xacml/pep/*` answer and
 `POST /xacml/pip` (`xacml-pep/CLAUDE.md`, *THE MODEL OF EVERY ENDPOINT*), and
-writing it found six places where the service was irregular; a seventh
+writing it found seven places where the service was irregular; an eighth
 came from the PEP's side. Each is fixed, and each keeps what a deployed PEP
 relies on — it treats any answer but 200, 201 and 304 as a failure and reads
 only the members the model names:
@@ -1328,12 +1328,19 @@ only the members the model names:
   nothing in the body but `full`. (`pep_listener_certificate.js` F1d.)
 * **A route may not be `/.iya-pep` or under `/.iya-pep/`** (`STS-XACML-0298`,
   `PepProxy.reservedPath()`): the proxy keeps that prefix for its callback
-  and sign-out and answers 404 (`STS-XPEP-0124`) to the rest, and an updated
+  and sign-out and answers 404 (`STS-XPEP-0128`) to the rest, and an updated
   PEP refuses the whole configuration holding such a route and keeps its
   last good one. A document stored before this fails the pull's validation
   like any stored document the grammar refuses — logged `STS-XACML-0200`,
   pulled as `configured: false`, so the proxy answers 404 until an
   administrator saves it again. (`xacml_pep_proxy.js` A3, A6, C9b.)
+* **Every validation door answers ONE 429 shape**: `{ error:
+  "too_many_requests", error_description, retryAfterS }`, with `Retry-After`.
+  `basic`'s own lockout (`STS-XACML-0205`) answered `{ valid: false,
+  retryAfterS }` and the doors' shared limiter (`0215`) an `Error` with no
+  wait in the body, so one status had two bodies. The PEP reads
+  `retryAfterS`, else the header, from any 429, so a deployed one reads the
+  new body as it read the old. (`xacml_pep_proxy.js` G3.)
 
 ## `GET /xacml/pep/authzen-catalogue` — the pull's other half (#1179)
 

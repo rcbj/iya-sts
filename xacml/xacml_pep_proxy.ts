@@ -46,7 +46,8 @@
 //   limits (`websecurity.doorBlocked/doorFailed/doorSucceeded`, door
 //   `xacml-pep-basic`). A refusal is `{ valid: false }` and nothing else, so
 //   it is no oracle for which usernames exist; the reason is in the log and
-//   the audit row. Blocked is the one other answer, 429 with `retryAfterS`.
+//   the audit row. Blocked is the one other answer: 429, `too_many_requests`
+//   with `retryAfterS`, the shape the doors' shared limiter answers (#1830).
 //   The password door named to `verifyAsync()` is `xacml-pep`, the sixth of
 //   `common/app_password_doors.js`'s doors (#1760): a password alone cannot
 //   ask for a second factor, so in product a person who holds or owes one
@@ -1024,7 +1025,7 @@ class PepProxy {
     }
     // THE PROXY'S OWN PREFIX (#1830). `/.iya-pep/callback` and
     // `/.iya-pep/logout` are the session mechanism's, answered before any
-    // route, and the PEP answers 404 (its own code) to anything else under
+    // route, and the PEP answers 404 (STS-XPEP-0128) to anything else under
     // the prefix — so a route there could never be reached, and an updated
     // PEP refuses the whole configuration holding one and keeps its last
     // good one. Refused here so it is never saved; a document stored before
@@ -1699,7 +1700,13 @@ class PepProxy {
       log.debug("Leaving PepProxy.basic(). Blocked.");
       return { status: 429, code: 'STS-XACML-0205', actor: username,
                reason: 'too many failed attempts',
-               body: { valid: false,
+               // THE SAME SHAPE AS THE DOORS' SHARED LIMITER'S 429 (#1830):
+               // until then this was `{ valid, retryAfterS }` and the
+               // limiter's an `Error`, so one status had two bodies. A PEP
+               // reads `retryAfterS` (else the header) from either.
+               body: { error: 'too_many_requests',
+                       error_description: 'This account\'s sign-ins are ' +
+                         'refused for now: too many failed attempts.',
                        retryAfterS: Number(blocked.retryAfterS) || 1 } };
     }
     const checked = await this.deps.loadCredentials().verifyAsync(

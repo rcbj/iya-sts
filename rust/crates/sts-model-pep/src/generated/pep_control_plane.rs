@@ -78,14 +78,6 @@ pub mod components {
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct BasicLockout {
-        pub valid: bool,
-        #[serde(rename = "retryAfterS")]
-        pub retry_after_s: i64,
-    }
-
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
     pub struct BasicRequest {
         pub username: String,
         pub password: String,
@@ -1334,6 +1326,18 @@ pub mod components {
         pub sets_refused: i64,
         #[serde(rename = "sessionsEnded")]
         pub sessions_ended: i64,
+    }
+
+    /// A refusal for now, from every validation door: the doors' shared limiter
+    /// (STS-XACML-0215), or basic's lockout of the account (0205). The wait is
+    /// retryAfterS, and the Retry-After header.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct TooManyRequests {
+        pub error: String,
+        pub error_description: String,
+        #[serde(rename = "retryAfterS")]
+        pub retry_after_s: i64,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

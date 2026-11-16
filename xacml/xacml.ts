@@ -1629,12 +1629,20 @@ class XacmlSurface {
         req, identity.verified ? identity.dn : '',
         config.value('xacml.pipMaxPerWindow'));
       if (!within.ok) {
-        res.set('Retry-After', String(within.retryAfterS));
+        // ONE 429 SHAPE ON EVERY DOOR (#1830): the Error members and
+        // `retryAfterS`, as `basic`'s own lockout answers, so a PEP reads the
+        // wait from the body whichever refused it.
+        const retryAfterS = Number(within.retryAfterS) || 1;
+        res.set('Retry-After', String(retryAfterS));
         errorCodes.mark(res, 'STS-XACML-0215');
-        self.fail(res, 429, 'too_many_requests',
-          'Too many validation calls from this remote PEP. ' + within.detail +
-          ' The limit is xacml.pipMaxPerWindow per ' +
-          'security.rateLimitWindowS, the PIP\'s.');
+        res.status(429).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({ error: 'too_many_requests',
+             error_description: 'Too many validation calls from this ' +
+               'remote PEP. ' + within.detail + ' The limit is ' +
+               'xacml.pipMaxPerWindow per security.rateLimitWindowS, the ' +
+               'PIP\'s.',
+             retryAfterS: retryAfterS }, null, 2));
         log.debug('Leaving XacmlSurface.validationDoor(). Rate limited.');
         return;
       }

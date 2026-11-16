@@ -397,7 +397,7 @@ namespace IyaSts.Pep.Service {
 @component model `Nudge` {
   @js(#{`const`:"policy-repository-changed"}) `event`: string;
   @js(#{`description`:"When, ISO 8601."}) `at`: string;
-  @js(#{`description`:"Always empty today."}) `pdp`: string;
+  @js(#{`description`:"The realm's PDP: the base /xacml/pep/* is served under, realm prefix included — pinned, or that of the request that made the change; empty only with neither. Not read by the PEP."}) `pdp`: string;
   @js(#{`description`:"true on a Sync from the console: pull every document whole rather than answered 304. Honoured at most once a poll interval (STS-XPEP-0120 logs one asked for sooner, which pulls as usual); absent, false or any other value is an ordinary pull."})
   `full`?: boolean;
 }

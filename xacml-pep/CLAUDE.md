@@ -1959,24 +1959,23 @@ in `sync.rs`, `proxy_config.rs` and `authzen_map.rs` are unchanged. Moving
 them onto the generated types is the next step, and it is a refactor of
 those readers, not of the model.
 
-**What modelling it found**, each declared as the code does it. The PEP's
-own findings were fixed on `feature/1830-pep` (the nudge's 204, `full`, the
-identity door's `code`, the PIP's Accept, `GET /`'s values in force, HEAD,
-`:authority`, admission per listener, the proxy's methods and its reserved
-prefix) and are argued where each lives; what is left is the service's:
-
-* The service never reads `If-None-Match`, which the PEP sends on the settings
-  and proxy pulls; only `?since=` answers 304.
-* `?pep=` on `/xacml/pep/policies` is not bound to the certificate, so any
-  `REMOTE_PEPS` holder can touch another PEP's last-seen time.
-* The heartbeat answers every registry refusal 404 (not registered, no
-  directory, directory refused); register answers every one 400.
-* The PIP answers its own refusals as XML `PIPError` and the gate's as JSON,
-  and the PEP reads neither. (It sent `Accept: application/json` there until
-  #1830; the PIP query now asks for `application/xml`, what it answers.)
-* `basic` has two 429 bodies, its lockout's and the limiter's; the listener
-  certificate's 200 carries a stray `ok: true`; the nudge's `pdp` is always
-  empty.
+**What modelling found, and every item of it was FIXED (#1830)** rather than
+declared. The PEP's own (the nudge's 204, `full`, the identity door's
+`code`, the PIP's Accept, `GET /`'s values in force, HEAD, `:authority`,
+admission per listener, the proxy's methods and its reserved `/.iya-pep/`
+prefix, STS-XPEP-0126 to 0128) are argued where each lives in this file. The
+service's are argued in `xacml/CLAUDE.md`, *What modelling the control plane
+corrected (#1830)*: a pull touches the certificate's row and not `?pep=`'s;
+all five pulls answer 304 to a matching `If-None-Match` (RFC 9110 13.1.2)
+as well as to `?since=`, so this PEP's `If-None-Match` is no longer wasted;
+register and heartbeat answer each registry refusal's own status (400, 404,
+503 no directory, 507 directory refused); `POST /xacml/pip` answers every
+refusal, the gate's 403 and the off switches' 501 included, as a PIPError;
+the listener certificate's 200 has no `ok`; the nudge's `pdp` names the
+realm's PDP; every validation door answers one 429 shape,
+`{error, error_description, retryAfterS}`; and the service refuses to save a
+route under `/.iya-pep/` (STS-XACML-0298), a stored one being pulled as
+`configured: false`.
 
 ## Error codes
 

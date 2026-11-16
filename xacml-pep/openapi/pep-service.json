@@ -1602,7 +1602,7 @@
           },
           "pdp": {
             "type": "string",
-            "description": "Always empty today."
+            "description": "The realm's PDP: the base /xacml/pep/* is served under, realm prefix included — pinned, or that of the request that made the change; empty only with neither. Not read by the PEP."
           },
           "full": {
             "type": "boolean",

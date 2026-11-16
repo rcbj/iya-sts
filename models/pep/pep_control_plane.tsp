@@ -21,11 +21,13 @@
 // `note` when not configured) is optional, not nullable, because the service
 // leaves it out.
 //
-// WHAT IS IRREGULAR, DECLARED AS IT IS (`xacml-pep/CLAUDE.md` has the
-// argument for each):
-//
-// * `basic` answers a lockout 429 `{valid, retryAfterS}` and the limiter's
-//   429 `Error`.
+// WHAT MODELLING CORRECTED (#1830): every irregularity the first version of
+// this file declared was fixed rather than kept — `If-None-Match` is read,
+// a pull touches the certificate's row, register and heartbeat answer each
+// registry refusal's own status, the PIP answers every refusal as XML, the
+// listener certificate lost its stray `ok`, the nudge names its PDP, and
+// every validation door answers one 429 shape. `xacml/CLAUDE.md`, *What
+// modelling the control plane corrected*, argues each.
 //
 // The PEP reaches the five validation doors at the absolute URLs the proxy
 // pull's `validation` names, which are these paths under the realm.
@@ -745,9 +747,11 @@ op `postListenerCertificate`(`requestBody/content/application~1json/schema`: `Li
   `ticket`?: string;
 }
 
-@component model `BasicLockout` {
-  @js(#{`const`:false}) `valid`: boolean;
-  `retryAfterS`: int64;
+@js(#{`description`:"A refusal for now, from every validation door: the doors' shared limiter (STS-XACML-0215), or basic's lockout of the account (0205). The wait is retryAfterS, and the Retry-After header."})
+@component model `TooManyRequests` {
+  `error`: "too_many_requests";
+  `error_description`: string;
+  @js(#{`minimum`:1}) `retryAfterS`: int64;
 }
 
 @component model `SamlRequest` {
@@ -821,20 +825,20 @@ op `postIntrospect`(`requestBody/content/application~1json/schema`: `IntrospectR
   `responses/200/content/application~1json/schema`: `Introspection`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
-  `responses/429/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
 @endpoint("/xacml/pep/basic", "post", #{
   `operationId`:"postBasic",
   `summary`:"Validation door: a username and password",
-  `description`:"The basic mechanism. The same limiter and failure as introspect; a password the service has locked out is a 429 of its own, {valid: false, retryAfterS} (STS-XACML-0205).",
+  `description`:"The basic mechanism. The same limiter and failure as introspect; a password the service has locked out is 429 too (STS-XACML-0205), the same body as the limiter's.",
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Valid or not; the reason is audited (STS-XACML-0206).",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"Malformed (STS-XACML-0204).",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `429`:#{`description`:"Locked out (BasicLockout, STS-XACML-0205), or the limiter (Error, 0215). Retry-After either way.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -843,7 +847,7 @@ op `postBasic`(`requestBody/content/application~1json/schema`: `BasicRequest`,
   `responses/200/content/application~1json/schema`: `BasicValidation`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
-  `responses/429/content/application~1json/schema`: `BasicLockout` | `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -865,7 +869,7 @@ op `postSaml`(`requestBody/content/application~1json/schema`: `SamlRequest`,
   `responses/200/content/application~1json/schema`: `SamlValidation`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
-  `responses/429/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -887,7 +891,7 @@ op `postSession`(`requestBody/content/application~1json/schema`: `SessionRequest
   `responses/200/content/application~1json/schema`: `SessionLiveness`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
-  `responses/429/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -911,7 +915,7 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/422/content/application~1json/schema`: `Error`,
-  `responses/429/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 

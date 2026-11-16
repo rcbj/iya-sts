@@ -402,7 +402,9 @@ async fn service(
         match (user, pass) {
             ("locked", _) => (
                 StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({ "error": "blocked", "retryAfterS": 30 })),
+                Json(json!({ "error": "too_many_requests",
+                        "error_description": "locked out",
+                        "retryAfterS": 30 })),
             ),
             (_, "right") => (
                 StatusCode::OK,

@@ -152,7 +152,8 @@ function request(port, method, urlPath, cred, body, headers) {
 
 // The members each closed answer may hold.
 const CLOSED = {
-  basic: ['valid', 'sub', 'username', 'retryAfterS', 'ticket'],
+  basic: ['valid', 'sub', 'username', 'ticket'],
+  tooMany: ['error', 'error_description', 'retryAfterS'],
   introspect: ['active', 'sub', 'username', 'scope', 'client_id', 'aud',
                'iss', 'exp', 'iat', 'token_type', 'cnf'],
   saml: ['valid', 'subject', 'username', 'issuer', 'notOnOrAfter',
@@ -2640,8 +2641,9 @@ async function childBody() {
     }
   }
   t.check(blocked && blocked.status === 429 && blocked.json &&
-          blocked.json.valid === false && blocked.json.retryAfterS > 0 &&
-          closedTo(blocked.json, 'basic') &&
+          blocked.json.error === 'too_many_requests' &&
+          blocked.json.retryAfterS > 0 &&
+          closedTo(blocked.json, 'tooMany') &&
           Number(blocked.headers['retry-after']) > 0,
           'G3. product: past the sign-in door\'s limit it is 429 with ' +
           'retryAfterS', blocked ? brief(blocked) : 'never blocked');

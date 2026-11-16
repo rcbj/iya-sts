@@ -2201,22 +2201,30 @@
         ],
         "description": "valid false alone, or valid true with username, sub and a ticket: opaque, bound to this PEP, good for 120 s, the evidence the identity door takes."
       },
-      "BasicLockout": {
+      "TooManyRequests": {
         "type": "object",
         "properties": {
-          "valid": {
-            "type": "boolean",
-            "const": false
+          "error": {
+            "type": "string",
+            "enum": [
+              "too_many_requests"
+            ]
+          },
+          "error_description": {
+            "type": "string"
           },
           "retryAfterS": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           }
         },
         "additionalProperties": false,
         "required": [
-          "valid",
+          "error",
+          "error_description",
           "retryAfterS"
-        ]
+        ],
+        "description": "A refusal for now, from every validation door: the doors' shared limiter (STS-XACML-0215), or basic's lockout of the account (0205). The wait is retryAfterS, and the Retry-After header."
       },
       "SamlRequest": {
         "type": "object",
@@ -3185,7 +3193,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3217,7 +3225,7 @@
       "post": {
         "operationId": "postBasic",
         "summary": "Validation door: a username and password",
-        "description": "The basic mechanism. The same limiter and failure as introspect; a password the service has locked out is a 429 of its own, {valid: false, retryAfterS} (STS-XACML-0205).",
+        "description": "The basic mechanism. The same limiter and failure as introspect; a password the service has locked out is 429 too (STS-XACML-0205), the same body as the limiter's.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3260,7 +3268,7 @@
             }
           },
           "429": {
-            "description": "Locked out (BasicLockout, STS-XACML-0205), or the limiter (Error, 0215). Retry-After either way.",
+            "description": "Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After.",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -3271,14 +3279,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/BasicLockout"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Error"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3364,7 +3365,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3450,7 +3451,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3546,7 +3547,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
