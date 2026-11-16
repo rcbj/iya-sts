@@ -629,6 +629,8 @@
   "userCredentialsSection.labelField": "名称（可选）",
   "userCredentialsSection.labelHint": "将使用它的程序",
   "userCredentialsSection.addHeading": "新增密钥对",
+  "userCredentialsSection.issueHeading": "从此领域的 CA 签发",
+  "userCredentialsSection.uploadHeading": "上传其已持有的证书",
   "userCredentialsSection.atCap": "此人在此配置文件下持有 {max} 个有效密钥对，即 <code>pki.personSigningKeyMax</code>。请先吊销一个，再签发或上传新的。",
   "userCredentialsSection.addNote": "<strong>两种方式都会向此条目新增一个密钥对</strong>，已有的密钥对继续有效，每个配置文件最多 {max} 个有效密钥对。签发会在此生成新的密钥对，并用本领域的签发 CA 签名；私钥封存在条目上，并在按钮打开的页面上<strong>只显示一次</strong>。上传会登记此人已持有的证书，本服务不为其保存私钥。来自本领域机构的证书可以单独上传，并且必须是签发给此人的。<strong>来自其他任何机构的证书都必须附带完整的证书链</strong> &mdash; 每个中间证书和自签名根证书 &mdash; 并且每一环都会被验证。包含私钥的上传会被拒绝。",
   "userCredentialsSection.upload": "上传证书",

@@ -629,6 +629,8 @@
   "userCredentialsSection.labelField": "Namn (valfritt)",
   "userCredentialsSection.labelHint": "det som ska använda det",
   "userCredentialsSection.addHeading": "Lägg till ett nyckelpar",
+  "userCredentialsSection.issueHeading": "Utfärda ett från denna sfärs CA",
+  "userCredentialsSection.uploadHeading": "Ladda upp ett certifikat de redan har",
   "userCredentialsSection.atCap": "De har {max} giltiga nyckelpar för den här profilen, vilket är <code>pki.personSigningKeyMax</code>. Återkalla ett innan du utfärdar eller laddar upp ett till.",
   "userCredentialsSection.addNote": "<strong>Båda sätten LÄGGER TILL ett nyckelpar på posten</strong>, och de som redan finns fortsätter att fungera, upp till {max} giltiga per profil. Att utfärda genererar ett nytt nyckelpar här och signerar det med den här sfärens utfärdande CA; den privata nyckeln förseglas på posten och <strong>visas en gång</strong>, på sidan som knappen öppnar. Att ladda upp registrerar ett certifikat som personen redan har, och tjänsten behåller ingen privat nyckel för det. Ett certifikat från DEN HÄR sfärens utfärdare får laddas upp ensamt, och måste ha utfärdats till personen. <strong>Ett från någon annan utfärdare måste komma med hela sin kedja</strong> &mdash; varje mellanliggande och den självsignerade roten &mdash; och varje länk verifieras. En uppladdning som innehåller en privat nyckel nekas.",
   "userCredentialsSection.upload": "Ladda upp certifikatet",
