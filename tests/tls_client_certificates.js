@@ -344,7 +344,12 @@ async function childBody() {
             .export({ type: 'spki', format: 'der' })
             .equals(leaf.publicKey.export({ type: 'spki', format: 'der' })),
           'A: the private key handed back is the certificate\'s');
-  const stored = pki.certificatesFor(REALM, 'tls-client');
+  // The person's own record: `tlsbob`'s directory-subject certificate above
+  // is in the same register.
+  const stored = pki.certificatesFor(REALM, 'tls-client').filter(
+    function (one) {
+      return tlsClient.holderOfSlot(one.slot) === PERSON;
+    });
   t.check(stored.length === 1 && !stored[0].privateKeyPem,
           'A: the register holds the certificate and no private key');
   const listed = tlsClient.listFor(REALM, PERSON);
