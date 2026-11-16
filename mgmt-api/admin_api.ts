@@ -11827,12 +11827,14 @@ class AdminApi {
               // A remote PEP's own RFC 7523 self-assertion (#1827).
               ? 'urn:ietf:params:oauth:grant-type:jwt-bearer` (an ' +
                 'assertion the PEP signs about itself), `client_id=' +
-                'sts-remote-pep`, over mutual TLS, '
+                'sts-remote-pep`, with a DPoP proof (RFC 9449) signed by ' +
+                'the same key, '
               : 'client_credentials`, ') +
             '`scope=' + hint +
             '` and `resource=' +
             self.wantedAudience(req) +
-            '`, then send it as `Authorization: Bearer`. ' +
+            '`, then send it as `Authorization: ' +
+            (pepFeed ? 'DPoP` with a fresh proof' : 'Bearer`') + '. ' +
             'adminApi.authRequired turns this off.'] });
         }
         // ---------------------------------------------------------------------
@@ -12108,16 +12110,7 @@ class AdminApi {
         // scopes still decide what a bound token may do — this decides only
         // whether it is a credential here at all. In every mode: the client
         // asked for it.
-        // ---------------------------------------------------------------------
-        // A REMOTE PEP'S DPoP KEY STANDS FOR ITS CERTIFICATE (#1827's
-        // follow-up): `sts-remote-pep` declares certificate-bound tokens
-        // through phase 3 of the PEP's token plan, and a token bound to the
-        // PEP's DPoP key is bound; the proof is asked for below (RFC 9449
-        // section 7), as of any `cnf.jkt` token.
-        const dpopStands = !!dpop.jktOf(claims) &&
-          senderConstraints.dpopStandsForCertificate(
-            String(claims.client_id || ''));
-        if (!mtls.boundThumbprintOf(claims) && !dpopStands) {
+        if (!mtls.boundThumbprintOf(claims)) {
           const holder = String(claims.client_id || '');
           const declaration = holder
             ? realms.run(realms.get(tokenRealm), function () {
@@ -12217,10 +12210,6 @@ class AdminApi {
           where: 'the management API',
           dpopRequired: dpopRequired,
           clientBound: clientBound,
-          // A remote PEP's certificate-bound token, through phase 3 of its
-          // token plan (#1827's follow-up).
-          certificateStands:
-            senderConstraints.dpopStandsForCertificate(issuedTo),
           boundJkt: boundJkt,
           proofOk: proofOk,
           boundThumbprint: mtls.boundThumbprintOf(claims),

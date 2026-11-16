@@ -624,6 +624,10 @@ async function childBody() {
   // -------------------------------------------------------------------------
   // B. THE REGISTER CARRIES THE ATTRIBUTE.
   // -------------------------------------------------------------------------
+  // The PEP below authenticates by its certificate, an operator's opt-in
+  // since phase 4 of #1827's follow-up made xacml.pepAuthentication
+  // default to `token`. Process-wide, so the realm falls back to it.
+  config.setOverride('xacml.pepAuthentication', 'either');
   let r = await request(port, 'POST', PREFIX + '/xacml/pep/register',
                         pepCred, { version: 'test' });
   t.check(r.status === 201 || r.status === 200,

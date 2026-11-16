@@ -463,7 +463,7 @@ var config = {
     returnPolicyIdList: false,               // Always return the applicable policy identifiers
     remotePeps: true,                        // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,             // A registering PEP must present a client certificate
-    pepAuthentication: "either",             // How a remote PEP authenticates
+    pepAuthentication: "token",              // How a remote PEP authenticates
     pepPlainHttpProxyListeners: false,       // A remote PEP may define a plain-HTTP reverse-proxy listener
     pipMaxPerWindow: 600,                    // PIP queries one caller may make per rate-limit window
     pipMaxDesignators: 50,                   // Attributes one PIP query may ask about

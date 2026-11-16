@@ -792,8 +792,7 @@ impl Pep {
                 } else {
                     Value::Null
                 },
-                "credentialed": o.client_certificate.is_some()
-                    || self.sync.client().credential().has_key(),
+                "credentialed": self.sync.client().credential().has_key(),
                 "lastQuery": last_query,
                 "what": pip_what
             },

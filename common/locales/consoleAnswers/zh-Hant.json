@@ -98,7 +98,7 @@
   "tls.key": "金鑰",
   "tls.goodUntil": "有效期限至",
   "tls.how": "<strong>應用程式如何使用它。</strong>在連線至權杖端點的 TLS 連線上出示它，並使用 <code>client_id={client}</code>，且項目上的 <code>token_endpoint_auth_method</code> 為 <code>tls_client_auth</code>：RFC 8705 第 2.1 節會驗證它，因為此領域將它簽發給此應用程式，無須註冊其他任何東西。在該連線上簽發的每個存取權杖都帶有此憑證的 <code>cnf[\"x5t#S256\"]</code>（第 3 節），因此應用程式要向資源伺服器出示同一張憑證。<code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
-  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a mutual-TLS client does with the chain <code>{chain}</code> and the key <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "領域",
   "pep.names": "名稱",
   "validUntil": "有效期限至",

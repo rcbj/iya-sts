@@ -1076,17 +1076,20 @@ so must `admin-ui/admin.ts`.
    the configured `adminApi.audience` where there is none. A token for any
    other resource is untouched: binding stays the client's choice there, and
    the rule is the one resource server where a stolen token administers the
-   service. **ONE CLIENT'S DPoP KEY STANDS FOR ITS CERTIFICATE (#1827's
-   follow-up, through phase 3 of the PEP token plan):** `sts-remote-pep`
-   declares the section 3.4 flag from #1827 and is a DPoP-bound public client
-   since the plan, so `sender_constraints.js`'s
-   `dpopStandsForCertificate()` names it, and for it a verified DPoP proof at
-   the token endpoint satisfies `declaredRefusal()` (`boundByDpop`, so no
-   `0487`), a `jkt` satisfies `adminApiBindingRefusal()` (no `0489`), and
-   `/admin-api` lets a `cnf.jkt` token through `0137`. A list of one,
-   named; phase 4 drops the flag and the exception with it. A token request
-   from it with no proof is `STS-OAUTH-1012` — in phases 1-3 the flag's
-   `0487` answers first, since nothing on the connection can be bound to.
+   service. **ONE CLIENT'S DPoP KEY STOOD FOR ITS CERTIFICATE THROUGH
+   PHASE 3 OF THE PEP TOKEN PLAN (#1827's follow-up), AND NO LONGER DOES:**
+   `sts-remote-pep` declared the section 3.4 flag from #1827, and while it
+   did, `sender_constraints.js`'s `dpopStandsForCertificate()` let a
+   verified DPoP proof satisfy `declaredRefusal()`, a `jkt` satisfy
+   `adminApiBindingRefusal()` and a `cnf.jkt` token pass `0137`. **Phase 4
+   (rcbj, 2026-11-16) retired the PEP's client certificate**: the seed no
+   longer declares the flag, an entry an earlier build seeded has it
+   CLEARED at every start (`applications.js`'s `fillRetiredClientFlags()`,
+   audited as `application.update`), and the exception is gone — so
+   `sts-remote-pep` meets these rules as any client does, and declares
+   nothing they ask about. A token request from it with no DPoP proof is
+   `STS-OAUTH-1012` (`sender_constraints.js`'s `REMOTE_PEP_CLIENT`),
+   reachable now that `0487` no longer answers first.
    **The gate holds the other end** (`STS-API-0137`,
    `mgmt-api/CLAUDE.md`), reading the declaration NOW, so a token issued
    before the rule or before the declaration is refused too. In every mode,

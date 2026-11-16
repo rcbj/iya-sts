@@ -1093,6 +1093,28 @@ async function childBody() {
   // K. THE CATALOGUE A REMOTE PEP PULLS (#1179)
   // -------------------------------------------------------------------------
   const CATALOGUE = PREFIX + '/xacml/pep/authzen-catalogue';
+  // PHASE 4 OF #1827's FOLLOW-UP MADE `token` THE DEFAULT of
+  // xacml.pepAuthentication. Under it a certificate that WOULD be admitted
+  // is refused alone (401, STS-XACML-0289), and the description names
+  // `either` — what an upgraded deployment whose PEPs still present a
+  // certificate meets first. The rest of K drives the certificate door, so
+  // the realm opts in to `either`, the operator's choice it stays.
+  inRealm(function () {
+    t.check(config.value('xacml.pepAuthentication') === 'token',
+            'K0. xacml.pepAuthentication defaults to token',
+            String(config.value('xacml.pepAuthentication')));
+  });
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pullCred);
+  t.check(r.status === 401 && markedSince(since, 'STS-XACML-0289') &&
+          /under either/.test(r.text) &&
+          /PEP_ASSERTION_KEY/.test(r.text),
+          'K0a. under the default an admitted certificate alone is refused ' +
+          '(401, STS-XACML-0289), naming either and the assertion key',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'either');
+  });
   since = marks.length;
   r = await request(port, 'GET', CATALOGUE, null);
   t.check(r.status === 403 && markedSince(since, 'STS-XACML-0007'),

@@ -208,13 +208,33 @@ every call, unchanged.
 * **`pepIdentity()` IS THE PEP DOOR, `callerIdentity()` STAYS THE
   HANDSHAKE.** `pepAccess()`, `validationDoor()` and the PIP read
   `pepIdentity()`, which reads the token or the certificate as
-  `xacml.pepAuthentication` (per realm, `either` by default) allows, once per
-  request (a proof is good for one request). `xacmlAccess()` and the AuthZEN
+  `xacml.pepAuthentication` (per realm, `token` by default since phase 4;
+  `either` until then) allows, once per request (a proof is good for one
+  request). `xacmlAccess()` and the AuthZEN
   certificate door read `callerIdentity()`, which never reads a header.
   **A token, where one is presented and accepted, DECIDES** — a refused one
   is not passed over for the certificate underneath. `token` refuses a
   request carrying none (`0289`); `certificate` does not read the header and
   refuses a token-only request (`0290`).
+* **PHASE 4 (rcbj, 2026-11-16): `token` IS THE DEFAULT, `certificate` AND
+  `either` ARE OPT-INS FOR GOOD.** The PEP image no longer presents a client
+  certificate (`xacml-pep/CLAUDE.md`, `STS-XPEP-0135`), so `certificate`
+  admits only an older PEP image or another implementation. **The upgrade is
+  the compatibility question**: a 1.0.0 deployment's PEPs authenticate by a
+  certificate, and the new default refuses them. A value an operator stored
+  (console, `/admin-api/config/set`, a realm's overrides) or set in an
+  appconfig file wins as every value does; with neither, the operator sets
+  `either` before upgrading (`docs/release-notes.md`, `docs/remote-pep.md`
+  *Upgrading a deployment whose PEPs use a certificate*). So the refusal is
+  never silent: where the refused request presented a certificate that
+  VERIFIES, `0289`'s description says `either` would accept it and names
+  `PEP_ASSERTION_KEY`, and `warnCertificateRefused()` logs a warning under
+  `0289` once per realm and process. **Writing `either` automatically for a
+  realm that existed before the upgrade, or whose `ou=peps` rows registered
+  by certificate, was NOT done** — it is rcbj's decision (left on #1827), and
+  the stored-value rule above already serves an operator who set it. An
+  anonymous request is now `0289`'s 401 where it was the policy's 403
+  (`STS-XACML-0007`) under `either`.
 * **THE NAME IS THE USERNAME**, `commonName` of the identity — what a
   certificate this service issued carried — so the `ou=peps` row, the
   heartbeat's row and a cluster's membership are unchanged; the row's
@@ -227,9 +247,12 @@ every call, unchanged.
   that the barrier holds until it commits, where with a certificate it was a
   read.
 
-`tests/remote_pep_token_door.js` drives it in process over plain HTTP;
-`tests/authzen_evaluation.js` K2a/K2b hold the precedence over a real
-handshake.
+`tests/remote_pep_token_door.js` drives it in process over plain HTTP (X14
+the default, X13/X15 the opt-ins); `tests/authzen_evaluation.js` K0/K0a hold
+the default's refusal of a verified certificate over a real handshake, and
+K2a/K2b the precedence under `either`. `tests/stored_certificates.js` and
+`tests/xacml_pep_proxy.js` opt in to `either`, since they drive the
+certificate door.
 
 ### PROVISIONING THE KEY: `issue-pep-credential` (phase 3, rcbj 2026-11-16)
 
@@ -260,11 +283,12 @@ person's RFC 7523 key (`common/CLAUDE.md` 3ab).
   `xacml.pep.credential` without the certificate. On the console: a form on
   the PEP's Overview and one under the Remote PEPs table (with a name field),
   the answer drawn once by `WebAnswers.pepCredential()`.
-* **THE STACKS** generate the key with the client certificate
-  (`--assertion --csr-only`, beside `pep.key`) and mount it as
-  `PEP_ASSERTION_KEY`; `sts_xacml_remote_pep.js` sends the request once it has
-  made the PEP's entry in its realm. `xacml.pepAuthentication` stays `either`,
-  so the certificate carries every call until then.
+* **THE STACKS** generate the key (`--assertion --csr-only`) and mount it
+  as `PEP_ASSERTION_KEY`; `sts_xacml_remote_pep.js` sends the request once it
+  has made the PEP's entry in its realm, and the PEP's token fetches succeed
+  from then on (it retries every five seconds). Since phase 4 they mint no
+  client certificate for the PEP at all, and nothing carries its calls until
+  the key is registered.
 
 `tests/pep_assertion_credential.js` holds it in process.
 

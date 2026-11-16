@@ -15038,27 +15038,34 @@ const SETTINGS = [
   // the two settings that already say how this realm's PEP door and its
   // AuthZEN door authenticate a caller — because it moves no socket and is a
   // fact about the realm's PEPs, whose tokens a realm's own `sts-remote-pep`
-  // issues. `either` through phase 3 of the plan; phase 4 makes `token` the
-  // default, and `certificate` stays an operator's choice for good.
+  // issues. `either` through phase 3 of the plan; PHASE 4 (rcbj, 2026-11-16)
+  // MADE `token` THE DEFAULT, and `certificate` and `either` stay an
+  // operator's choice for good. A value an operator stored or set in an
+  // appconfig file wins over this default, as every value does; a 1.0.0
+  // deployment whose PEPs still present a certificate sets `either` before
+  // it upgrades (docs/release-notes.md), and a PEP refused for that is
+  // refused under STS-XACML-0289 with a description saying so.
   { key: 'xacml.pepAuthentication', group: 'XACML',
     label: 'How a remote PEP authenticates',
     env: 'STS_XACML_PEP_AUTHENTICATION', type: 'enum',
-    enumValues: ['certificate', 'token', 'either'], dflt: 'either',
+    enumValues: ['certificate', 'token', 'either'], dflt: 'token',
     runtime: true,
-    description: 'either, the default: a remote PEP reaches /xacml/pep/* ' +
-                 'and POST /xacml/pip by a client certificate this service ' +
-                 'verifies, or by a DPoP-bound access token (RFC 9449) it ' +
-                 'obtains from its own RFC 7523 self-assertion through the ' +
-                 'client sts-remote-pep, audienced to this realm\'s ' +
-                 '/xacml/pep and carrying xacml:pep; a token, where one is ' +
-                 'presented, decides. token: the token only, and a ' +
-                 'certificate alone is refused. certificate: the ' +
-                 'certificate only, and the Authorization header is not ' +
-                 'read. Either way the PEP\'s entry must hold REMOTE_PEPS ' +
-                 '(roles.remotePepGroup) and the access-control policy ' +
-                 'decides. The same answer governs a remote PEP\'s token at ' +
-                 '/access/v1, the edge PDP\'s forward of a fine-grained ' +
-                 'evaluation, whatever authzen.callerAuthentication says.' },
+    description: 'token, the default since 1.1.0: a remote PEP reaches ' +
+                 '/xacml/pep/* and POST /xacml/pip only by a DPoP-bound ' +
+                 'access token (RFC 9449) it obtains from its own RFC 7523 ' +
+                 'self-assertion through the client sts-remote-pep, ' +
+                 'audienced to this realm\'s /xacml/pep and carrying ' +
+                 'xacml:pep, and a client certificate alone is refused. ' +
+                 'either: the token or a client certificate this service ' +
+                 'verifies; a token, where one is presented, decides — set ' +
+                 'it before upgrading while any PEP still authenticates by ' +
+                 'its certificate. certificate: the certificate only, and ' +
+                 'the Authorization header is not read. Either way the ' +
+                 'PEP\'s entry must hold REMOTE_PEPS (roles.remotePepGroup) ' +
+                 'and the access-control policy decides. The same answer ' +
+                 'governs a remote PEP\'s token at /access/v1, the edge ' +
+                 'PDP\'s forward of a fine-grained evaluation, whatever ' +
+                 'authzen.callerAuthentication says.' },
 
   { key: 'xacml.pepPlainHttpProxyListeners', group: 'XACML',
     label: 'A remote PEP may define a plain-HTTP reverse-proxy listener',

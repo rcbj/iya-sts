@@ -326,13 +326,20 @@ async fn start(options: Options, info: version::VersionInfo) {
         }
     };
     // THE CREDENTIAL (#1827 follow-up): what key signs the token requests
-    // and proofs, or why there is none — and when there is neither a key
-    // nor a client certificate, what that costs.
+    // and proofs, or why there is none — and when there is no key, what
+    // that costs. PHASE 4 (rcbj, 2026-11-16): the client certificate is no
+    // longer presented, so PEP_TLS_CERT is said once and ignored.
     let credential = client.credential().clone();
     credential.announce();
-    if options.client_certificate.is_none() && !credential.has_key() {
+    if let Some(said) = options
+        .retired_client_certificate
+        .notice(&std::env::var("PEP_ASSERTION_KEY").unwrap_or_default())
+    {
+        tracing::warn!("{}xacml-pep: {}", tag("STS-XPEP-0135"), said);
+    }
+    if !credential.has_key() {
         tracing::warn!(
-            "xacml-pep: no assertion key and no PEP_TLS_CERT, so this PEP \
+            "xacml-pep: no assertion key, so this PEP \
              cannot authenticate to the PDP. The PDP refuses the PULL, \
              because GET /xacml/pep/policies requires a remote PEP. This PEP \
              will go on deciding against whatever policy it already holds, \
@@ -399,12 +406,17 @@ async fn start(options: Options, info: version::VersionInfo) {
     // the console can say how to turn it on (`options::plain_http`).
     let api_http = Arc::new(PlainStatus::default());
     options.http.announce("decision API", options.port);
-    // THE CRL POINT STAYS REACHABLE WITH HTTP OFF (2026-11-14): a client
-    // credential minted with `--crl-base=http://<pep>:9090/crl` names this
-    // port, and the service fetches it under hard-fail in product, so with
-    // the API's plain HTTP off by default the PEP could no longer
-    // authenticate. The port serves the CRLs alone (`crl_listener`).
+    // THE CRL POINT (2026-11-14): a client credential minted with
+    // `--crl-base=http://<pep>:9090/crl` named this port, and the service
+    // fetched it under hard-fail in product, so with the API's plain HTTP
+    // off the port served the CRLs alone (`crl_listener`). Phase 4 of
+    // #1827's follow-up retired that client certificate, so the port binds
+    // only with PEP_CRL_HTTP=true, and a CRL directory that would have
+    // bound it is said once (STS-XPEP-0136).
     let crl_only = options::crl_listener(&options);
+    if let Some(said) = options::crl_listener_notice(&options) {
+        tracing::info!("{}xacml-pep: {}", tag("STS-XPEP-0136"), said);
+    }
     listener_set.environment(
         "api-http",
         options.port,
