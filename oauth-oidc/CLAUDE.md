@@ -1264,8 +1264,9 @@ so must `admin-ui/admin.ts`.
    can see it issued to a person — that second path does not consult the
    registry at all, which is the point of it, so `common/pki.js` puts the answer
    in the certificate as a `urn:sts:person:<name>` subjectAltName — a service
-   account's `urn:sts:sa:<name>` since #1827, read as the person, and refused
-   (STS-OAUTH-1011) where the entry is not one (`common/CLAUDE.md` 3df). That
+   account's `urn:sts:sa:<name>` since #1827, read as the person whichever
+   spelling names them (rcbj: the grant follows WS-Trust; `common/CLAUDE.md`
+   3df). That
    file argues the whole thing; what belongs here is that `keysForParty()` is
    told which KIND of party it is reading rather than trying every attribute
    name it knows, because the store is schemaless and a function that read both

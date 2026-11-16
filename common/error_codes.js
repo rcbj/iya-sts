@@ -11780,9 +11780,10 @@ const CODES = [
   { code: 'STS-OAUTH-1011',
     summary: 'An assertion\'s x5c leaf, issued by this realm, names its ' +
       'holder as a service account (urn:sts:sa:<name>, #1827), and in this ' +
-      'realm that entry is not one.',
-    spec: 'invalid_client or invalid_grant (HTTP 400/401), as the x5c path\'s ' +
-      'other refusals' },
+      'realm that entry is not one. RETIRED before release (#1827, rcbj ' +
+      '2026-11-16): the assertion grant follows WS-Trust and authenticates ' +
+      'the person whichever spelling names them.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-1012',
     summary: 'A token request through sts-remote-pep, the public client a ' +
       'remote PEP presents its RFC 7523 self-assertion through, carried no ' +

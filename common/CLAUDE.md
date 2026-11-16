@@ -9213,15 +9213,19 @@ make these references more centrally defined and easy to change."
   writes it only for a service account, and an entry never stops being one,
   so naming somebody who is not one (or nobody) is a leaf it did not build or
   an entry recreated at the name: STS-TLS-0063 at the TLS client gate (each
-  door then refuses under its own "not an identity" code), STS-OAUTH-1011 on
-  an `x5c`, STS-PKI-0277 on an upload, STS-ENROLL-0097 in ACME, EST and
+  door then refuses under its own "not an identity" code), STS-PKI-0277 on an upload, STS-ENROLL-0097 in ACME, EST and
   SCEP. Asked per call, never memoised. rcbj approved the one gate code over
   a code per door (2026-11-16).
-* **EXCEPT IN WS-TRUST** (rcbj, 2026-11-16: "any user with valid credentials
-  should be able to authenticate through WS-Trust"): it asks the gate with
-  `anyHolderForm`, which skips the form check and nothing else, so a valid
-  leaf naming an existing entry authenticates it in either spelling.
-  STS-WSTRUST-0074, which refused it there, was retired before release.
+* **EXCEPT IN WS-TRUST AND THE RFC 7523 GRANT** (rcbj, 2026-11-16: "any
+  user with valid credentials should be able to authenticate through
+  WS-Trust", and the grant follows it): WS-Trust asks the gate with
+  `anyHolderForm`, which skips the form check and nothing else, and the
+  grant's `x5c` path reads `sa` as the person without asking the directory,
+  so a valid leaf authenticates the person it names in either spelling (the
+  grant's self-only rule, STS-OAUTH-0049, still holds). STS-WSTRUST-0074 and
+  STS-OAUTH-1011, which refused it there, were retired before release.
+  Registering (STS-PKI-0277) and enrolling (STS-ENROLL-0097) still refuse a
+  mismatch, so this service never builds or records one.
 * `tests/service_account_certificate_names.js`.
 
 ## 3de. `signature_policy.ts`: which algorithm a realm signs with and accepts (#1368)

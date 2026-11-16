@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5673** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5672** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -2550,7 +2550,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1008` | Releasing access-token status-list block leases held by a stopped process failed (#884). The leases stay until they expire, so a restarted process keeps wasting blocks until then. | none (recorded only) |
 | `STS-OAUTH-1009` | An access-token status index was not published because the block claim's fence was lost before its status row committed (#884). The access token is not minted on that index. | none (recorded only) |
 | `STS-OAUTH-1010` | An access-token status index handed out without waiting for its own commit (#884's review: a block already proven durable, this process's origin claim fresh) was found, at the response's commit, not to have been written: its block claim's fence was gone, or the write failed. The response carrying the token is refused (STS-CLUSTER-0166), and the block is handed out from no more. | none (recorded; the response is the 503 STS-CLUSTER-0166 names) |
-| `STS-OAUTH-1011` | An assertion's x5c leaf, issued by this realm, names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. | invalid_client or invalid_grant (HTTP 400/401), as the x5c path's other refusals |
+| `STS-OAUTH-1011` *(retired)* | An assertion's x5c leaf, issued by this realm, names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. RETIRED before release (#1827, rcbj 2026-11-16): the assertion grant follows WS-Trust and authenticates the person whichever spelling names them. | — |
 
 ## STS-SAML
 
