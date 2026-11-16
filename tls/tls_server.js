@@ -5521,6 +5521,14 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                                  // Which certificate, as a thumbprint the
                                  // event fingerprints again (#62 P0).
                                  { request: req,
+                                   // The row on the person's
+                                   // Authentications tab: the protocol and
+                                   // the credential, not the listener's
+                                   // sentence and the sign-in screen's
+                                   // password (rcbj, 2026-11-16).
+                                   protocol: 'TLS',
+                                   method: 'client certificate (GET ' +
+                                           '/tls/sign-in)',
                                    credential: {
                                      kind: 'certificate',
                                      id: cert.fingerprint256 || '' } });
@@ -5912,6 +5920,22 @@ function recordClientCertificate(socket, mode, revocation) {
   // one — the console lists identities that got somewhere. It IS a refusal,
   // and gets the audit row a refusal gets, with its code.
   if (revocation && revocation.refused) {
+    // The holder's refused attempt (rcbj, 2026-11-16), where the
+    // certificate names a person: the row below names no one.
+    let named = null;
+    try {
+      named = issuedIdentityOf(socket, { stored: true });
+    } catch (e) {
+      log.debug('Caught in recordClientCertificate(): ' +
+                ((e && e.message) || e));
+      named = null;
+    }
+    if (named && named.accepted && named.kind === 'person' &&
+        named.username) {
+      recordRefusedCertificate(named, 'client certificate on the main ' +
+        'port (' + MAIN_PORT + ')', revocation.status === 'revoked'
+        ? 'STS-PKI-0118' : 'STS-PKI-0119', 'revoked');
+    }
     audit.failure(revocation.status === 'revoked' ? 'STS-PKI-0118' :
                   'STS-PKI-0119', {
       protocol: 'TLS', channel: 'tls',
@@ -6024,6 +6048,26 @@ function recordClientCertificate(socket, mode, revocation) {
            'request, because a cookie needs a response to be written on.');
   log.debug('Leaving recordClientCertificate(). Recorded.');
   return subject;
+}
+
+// A PERSON'S CERTIFICATE REFUSED (rcbj, 2026-11-16): the
+// `authentication.refused` row their Authentications tab lists, in the
+// certificate's realm. It counts nothing and creates nobody, and it never
+// throws: bookkeeping must not break a connection.
+function recordRefusedCertificate(identity, method, code, reason) {
+  log.debug('Entering recordRefusedCertificate().');
+  try {
+    inCertificateRealm(identity, function () {
+      stats.recordRefusedAuthentication({ presented: identity.username,
+        protocol: 'TLS', method: method, errorCode: code, channel: 'tls',
+        note: reason });
+    });
+  } catch (e) {
+    log.debug('Caught in recordRefusedCertificate(): ' +
+              ((e && e.message) || e));
+    // Logged and dropped, for the reason above.
+  }
+  log.debug('Leaving recordRefusedCertificate().');
 }
 
 // The authentication itself, split out of `recordClientCertificate()` so it
@@ -6703,6 +6747,17 @@ function answerCertificateSignIn(req, res) {
         errorCodes.mark(res, errorCodes.codeOf(revocation) ||
           (revocation && revocation.status === 'revoked' ? 'STS-PKI-0118'
                                                          : 'STS-PKI-0119'));
+      }
+      // THE REFUSED ATTEMPT ON THE HOLDER'S PAGE (rcbj, 2026-11-16): a
+      // verified certificate naming a person that started no session — a
+      // revocation, a second factor owed, the issuance policy — is that
+      // person's refused attempt. A browser already signed in (`id`) is not
+      // refused, and a certificate naming nobody is nobody's attempt.
+      if (!session.started && !session.id && identity &&
+          identity.kind === 'person' && identity.username) {
+        recordRefusedCertificate(identity, 'client certificate (GET ' +
+          '/tls/sign-in)', errorCodes.codeOf(res) || 'STS-TLS-0060',
+          session.refusedOnRevocation ? 'revoked' : 'no-session');
       }
       const presented = !!(req.socket && req.socket.getPeerCertificate &&
                            req.socket.getPeerCertificate().raw &&

@@ -8147,6 +8147,104 @@ class OAuth2Server {
   // THE `jti` OF A TOKEN THIS FUNCTION JUST SIGNED, for the delegation
   // register.
   //
+  // ---------------------------------------------------------------------------
+  // A PERSON'S REFUSED ATTEMPT AT THE TOKEN ENDPOINT (rcbj, 2026-11-16).
+  //
+  // The sign-in screen recorded its refusals (`authentication.refused`, #954)
+  // and nothing else did, so a person's Authentications tab listed a refused
+  // password grant or RFC 7523 / 7522 assertion nowhere: a remote PEP whose
+  // self-assertion was refused for an hour showed only its successes. Each
+  // refusal that NAMES somebody now writes the row through
+  // `stats.recordRefusedAuthentication()`, which creates no user and counts
+  // nothing. The note is a reason token, never the credential.
+  // ---------------------------------------------------------------------------
+  /**
+   * Records a refused grant as the named person's refused attempt.
+   *
+   * @param presented - the name the request gave (typed, or claimed by an
+   *   assertion that was not accepted)
+   * @param method - the grant, as the acceptance names it
+   * @param code - the error code the response was marked with
+   * @param clientId - the client that asked
+   * @param reason - a reason token
+   */
+  refusedAttempt(presented: string, method: string, code: string,
+                 clientId: string, reason: string): void {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.refusedAttempt().");
+    if (!presented) {
+      log.debug("Leaving OAuth2Server.refusedAttempt(). Nobody named.");
+      return;
+    }
+    try {
+      stats.recordRefusedAuthentication({ presented: presented,
+        protocol: 'OAuth 2.0', method: method, errorCode: code,
+        client_id: clientId || '', note: reason || '' });
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.refusedAttempt(): " +
+                ((e && e.message) || e));
+      // A record that cannot be written must not change the refusal.
+    }
+    log.debug("Leaving OAuth2Server.refusedAttempt().");
+  }
+
+  // THE NAME AN ASSERTION CLAIMS, READ WITHOUT TRUSTING IT, for the refused
+  // attempt's row only: `sub`, else `iss`, of a JWT. An encrypted or
+  // unreadable assertion names nobody.
+  /**
+   * Returns the subject an unverified JWT assertion claims.
+   *
+   * @param assertion - the compact JWS
+   * @returns `sub` or `iss`, or ''
+   */
+  claimedSubjectOfJwt(assertion: string): string {
+    const { log, jsonFromB64u } = this.deps;
+    log.debug("Entering OAuth2Server.claimedSubjectOfJwt().");
+    const parts = String(assertion || '').split('.');
+    if (parts.length !== 3) {
+      log.debug("Leaving OAuth2Server.claimedSubjectOfJwt(). Not a JWS.");
+      return '';
+    }
+    let claims: Json = null;
+    try {
+      claims = jsonFromB64u(parts[1]);
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.claimedSubjectOfJwt(): " +
+                ((e && e.message) || e));
+      // Unreadable: it names nobody.
+      claims = null;
+    }
+    const named = claims && typeof claims === 'object'
+      ? String(claims.sub || claims.iss || '') : '';
+    log.debug("Leaving OAuth2Server.claimedSubjectOfJwt().");
+    return named.slice(0, 256);
+  }
+
+  // The same for an RFC 7522 assertion: the first NameID's text.
+  /**
+   * Returns the NameID an unverified SAML 2.0 assertion claims.
+   *
+   * @param assertion - the base64url (or base64) assertion
+   * @returns the NameID, or ''
+   */
+  claimedSubjectOfSaml(assertion: string): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.claimedSubjectOfSaml().");
+    let xml = '';
+    try {
+      xml = Buffer.from(String(assertion || '').replace(/-/g, '+')
+        .replace(/_/g, '/'), 'base64').toString('utf8');
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.claimedSubjectOfSaml(): " +
+                ((e && e.message) || e));
+      // Unreadable: it names nobody.
+      xml = '';
+    }
+    const m = /<(?:[A-Za-z0-9_-]+:)?NameID\b[^>]*>([^<]{1,256})</.exec(xml);
+    log.debug("Leaving OAuth2Server.claimedSubjectOfSaml().");
+    return m ? m[1].trim() : '';
+  }
+
   // Read back off the string rather than threaded out of `issue()`: that is one
   // decode of a value the caller already holds, against changing the return
   // type of the one helper every grant here mints through — and
@@ -17497,6 +17595,9 @@ class OAuth2Server {
           log.debug("Leaving the token endpoint. The password grant was rate " +
                     "limited.");
           errorCodes.mark(res, 'STS-OAUTH-0219');
+          self.refusedAttempt(username, 'password grant (RFC 6749 section 4.3)',
+                              'STS-OAUTH-0219', client.client_id,
+                              'rate-limited');
           log.debug("Leaving OAuth2Server.tokenGrant().");
           return self.oauthError(res, 400, 'invalid_grant', allowed.detail);
         }
@@ -17513,6 +17614,9 @@ class OAuth2Server {
                  credential.reason + '): ' + credential.detail);
         log.debug("Leaving the token endpoint. The grant was refused.");
         errorCodes.mark(res, 'STS-OAUTH-0220');
+        self.refusedAttempt(username, 'password grant (RFC 6749 section 4.3)',
+                            'STS-OAUTH-0220', client.client_id,
+                            String(credential.reason || 'refused'));
         log.debug("Leaving OAuth2Server.tokenGrant().");
         return self.oauthError(res, 400, 'invalid_grant', 'Authentication ' +
                                                      'failed for ' +
@@ -17527,6 +17631,9 @@ class OAuth2Server {
                    'and the password grant cannot carry one.');
           log.debug("Leaving the token endpoint. A second factor is required.");
           errorCodes.mark(res, 'STS-OAUTH-0221');
+          self.refusedAttempt(username, 'password grant (RFC 6749 section 4.3)',
+                              'STS-OAUTH-0221', client.client_id,
+                              'second-factor-required');
           log.debug("Leaving OAuth2Server.tokenGrant().");
           return self.oauthError(res, 400, 'invalid_grant',
             'Authentication failed for user ' + username + '. This account ' +
@@ -17625,6 +17732,11 @@ class OAuth2Server {
       if (!checked.ok) {
         log.debug("Leaving the token endpoint. The assertion was refused.");
         errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0222');
+        self.refusedAttempt(
+          self.claimedSubjectOfJwt(String(body.assertion || '')),
+          'RFC 7523 JWT bearer assertion',
+          checked.errorCode || 'STS-OAUTH-0222', client.client_id,
+          String(checked.error || 'invalid_grant'));
         log.debug("Leaving OAuth2Server.tokenGrant().");
         return self.oauthError(res, 400, checked.error, checked.description);
       }
@@ -17809,6 +17921,11 @@ class OAuth2Server {
         log.debug("Leaving the token endpoint. The SAML assertion was " +
                   "refused.");
         errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0223');
+        self.refusedAttempt(
+          self.claimedSubjectOfSaml(String(body.assertion || '')),
+          'RFC 7522 SAML 2.0 bearer assertion',
+          checked.errorCode || 'STS-OAUTH-0223', client.client_id,
+          String(checked.error || 'invalid_grant'));
         log.debug("Leaving OAuth2Server.tokenGrant().");
         return self.oauthError(res, 400, checked.error, checked.description);
       }

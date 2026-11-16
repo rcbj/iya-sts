@@ -199,6 +199,8 @@
   "detail.sessionsHeading": "会话，以及在每个会话上签发的内容",
   "detail.sessionsNote": "<strong>登录会话</strong>是持有 <code>sts_session</code> cookie 的浏览器，由 OAuth 2.0 / OIDC 登录界面和 WS-Federation 共享。令牌被放在某个会话下，是因为签发时这样说明——本服务签发的令牌都不携带会话标识符，而 OIDC 的 <code>sid</code> 声明是用于前端通道注销的，为了让此页面更容易而编造一个会改变每个客户端收到的内容。因此这种关联是在签发时于带外记录的，并且在刷新后仍然保留：刷新后的令牌会通过刷新令牌的 <code>jti</code> 查找，并归入同一个会话。",
   "detail.noSession": "此用户没有任何登录会话。对于每个从未在此使用浏览器的身份来说，这是正常状态——密码授权、Kerberos 客户端、WS-Trust 请求方——对于会话已过期并被清除的任何人也是如此。",
+  "detail.withoutActivity": "<strong>{total} 次认证未建立会话，也未签发任何内容</strong>：",
+  "detail.withoutActivitySee": "每一次都列在“认证尝试”标签页中。",
   "detail.endedHeading": "在已结束的会话上签发",
   "detail.endedNote": "这些指向本服务已不再持有的会话。这不是错误，而是正常的结束状态：会话已过期或已注销，而它产生的令牌比它存活得更久——这正是客户端在其访问令牌仍能验证、而浏览器会被要求重新登录时所处的情况。",
   "detail.sessionlessHeading": "完全没有浏览器会话时签发",

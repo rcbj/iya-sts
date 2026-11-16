@@ -4141,7 +4141,22 @@ with `Cannot find module` naming a file the operator never mentioned.
    application on the session they held was on neither. Its `method` is
    `existing session`. `report/sources.ts`'s `authActivity` keeps its own
    four-action list and does not include it. The sign-in
-   screen calls the refusal line; it does not call `audit()` itself. A door
+   screen calls the refusal line; it does not call `audit()` itself.
+   **SO DOES EVERY OTHER DOOR THAT NAMES A PERSON (rcbj, 2026-11-16).**
+   Until then the sign-in screen was the refusal line's only caller, so a
+   person's Authentication attempts tab listed no refused password grant,
+   RFC 7523 or 7522 assertion, WS-Trust credential, Kerberos request, LDAP
+   bind or certificate — a remote PEP refused an RFC 7523 token for an hour
+   showed only its successes. Each now writes the row once, at one place:
+   `OAuth2Server.refusedAttempt()` at the token endpoint (an assertion's
+   claimed `sub`, read unverified, for the row only); `WsTrust.authenticate()`;
+   `krb5_kdc.js`'s `errorReply()` for every coded refusal naming a client
+   principal; `ldap_server.js`'s `auditLdap()` for a refused
+   `directory.bind`; `GET /tls/sign-in` and a handshake refused on
+   revocation, where the certificate names a person; SPNEGO's terminal
+   refusal where the ticket named one. A federation partner's assertion and
+   a wallet's presentation that were refused name nobody here and write
+   nothing. `tests/user_activity_every_mechanism.js` holds each. A door
    that knows its protocol's identifier passes it as `application` — a
    Kerberos service principal, an LDAP bind DN, a client-certificate
    subject, a WS-Trust AppliesTo, a SPIFFE ID, a SCIM bearer token's

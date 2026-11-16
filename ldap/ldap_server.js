@@ -18964,6 +18964,26 @@ function auditLdap(req, fields) {
     actor: boundDn ? consoleKeyFor(boundDn, getEntry(boundDn)) : '',
     actorForm: boundDn
   }, fields));
+  // A REFUSED BIND IS THE NAMED PERSON'S REFUSED ATTEMPT (rcbj,
+  // 2026-11-16): the `directory.bind` row above is the directory's, and
+  // the person's Authentications tab lists `authentication.refused`, so a
+  // bind refused for somebody now writes that too — once, here, wherever
+  // the refusal was decided. Nothing is counted and nobody is created.
+  const f = fields || {};
+  if (f.action === 'directory.bind' && f.outcome &&
+      f.outcome !== 'success' && f.actor) {
+    try {
+      stats.recordRefusedAuthentication({ presented: String(f.actor),
+        // `ldap`, as the accepted bind's row names it.
+        protocol: 'ldap',
+        method: 'simple bind', errorCode: String(f.errorCode || ''),
+        channel: ldapChannelOf(req), address: peerAddressOf(req),
+        note: String((f.detail && f.detail.reason) || 'refused') });
+    } catch (e) {
+      log.debug("Caught in auditLdap(): " + ((e && e.message) || e));
+      // Bookkeeping: the bind's answer is decided already.
+    }
+  }
   log.debug("Leaving auditLdap().");
 }
 

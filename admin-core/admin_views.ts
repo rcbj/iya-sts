@@ -11945,12 +11945,15 @@ class AdminViews {
       }
     });
     const summary = auditLog.summary();
+    // Counted over every row matched, not the page (rcbj, 2026-11-16).
+    const withoutActivity = this.authenticationsWithoutActivity(events);
     log.debug("Leaving AdminViews.userAuthenticationEvents(). " +
               paged.shown.length + " of " + events.length + ".");
     return {
       events: paged.shown,
       paging: this.pagingJson(paged.paging),
       matched: events.length,
+      withoutActivity: withoutActivity,
       knownActors: knownActors,
       log: {
         held: summary.held, recorded: summary.recorded,
@@ -15374,6 +15377,7 @@ class AdminViews {
     // person across every application and protocol. Read once, for the
     // page and this reply.
     const attempts = this.userAuthenticationEvents(req, key, row);
+    const withoutActivity = attempts.withoutActivity;
     log.debug("Leaving AdminViews.userDetailJson().");
     const answer = {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -15472,7 +15476,10 @@ class AdminViews {
           authenticationEventsPaging: attempts.paging,
           authenticationEventsMatched: attempts.matched,
           authenticationEventsKnownActors: attempts.knownActors,
-          authenticationEventsLog: attempts.log
+          authenticationEventsLog: attempts.log,
+          // THE AUTHENTICATIONS SESSIONS & TOKENS HAS NOTHING TO SHOW FOR
+          // (rcbj, 2026-11-16), counted for its summary line.
+          authenticationsWithoutActivity: withoutActivity
       };
       }())
     };
@@ -16230,6 +16237,67 @@ class AdminViews {
     });
     log.debug("Leaving AdminViews.queryWith().");
     return parts.length ? '?' + parts.join('&') : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE AUTHENTICATIONS THAT LEAVE NOTHING ON SESSIONS & TOKENS (rcbj,
+  // 2026-11-16).
+  //
+  // A remote PEP authenticates with its TLS client certificate on every
+  // policy pull, dozens of times, and each one is an authentication with no
+  // sign-on session and nothing issued — so its Sessions & tokens tab was
+  // empty and read as broken. The tab now says how many of those there are
+  // and by what. The methods are the ones
+  // that by construction start no session and issue nothing: a client
+  // certificate on a request to the main port, an LDAP bind, and a SCIM or
+  // SPIFFE caller's credential. Anything else that started no session
+  // issued something, which the tab lists itself.
+  //
+  // COUNTED FROM THE ROWS THE AUTHENTICATIONS TAB LISTS, so the line and
+  // the tab cannot disagree: the register's per-method counts file an LDAP
+  // bind under the DN it named, not under the person, and would have said
+  // none. What it counts is what the audit log still holds.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts one person's accepted authentications that start no session
+   * and issue nothing, by protocol and method.
+   *
+   * @param events - the person's authentication attempts (audit rows)
+   * @returns `{ total, methods: [{ protocol, method, count }] }`
+   */
+  authenticationsWithoutActivity(events) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.authenticationsWithoutActivity().");
+    const byKey = new Map();
+    let total = 0;
+    (events || []).forEach(function (event) {
+      if (!event || event.action !== 'authentication') {
+        return;
+      }
+      const protocol = String(event.protocol || '');
+      const method = String((event.detail && event.detail.method) || '');
+      const leavesNothing =
+        (protocol === 'TLS' &&
+         /^client certificate on the main port/.test(method)) ||
+        /^ldaps?$/i.test(protocol) || protocol === 'SCIM' ||
+        protocol === 'SPIFFE';
+      if (!leavesNothing) {
+        return;
+      }
+      const key = protocol + ' ' + method;
+      const held = byKey.get(key) ||
+                   { protocol: protocol, method: method, count: 0 };
+      held.count += 1;
+      byKey.set(key, held);
+      total += 1;
+    });
+    const methods = Array.from(byKey.values());
+    methods.sort(function (a, b) {
+      return b.count - a.count;
+    });
+    log.debug("Leaving AdminViews.authenticationsWithoutActivity(). " +
+              total + ".");
+    return { total: total, methods: methods };
   }
 
   // The live sign-on sessions belonging to one user. Sessions are keyed by an

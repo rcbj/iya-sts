@@ -199,6 +199,8 @@
   "detail.sessionsHeading": "Sessions, and what was issued on each",
   "detail.sessionsNote": "A <strong>sign-on session</strong> is a browser holding the <code>sts_session</code> cookie, shared between the OAuth 2.0 / OIDC login screen and WS-Federation. A token is placed under a session because the issuance said so — no token this service issues carries a session identifier, and OIDC's <code>sid</code> claim is for front-channel logout, so inventing one to make this page easier would change what every client receives. The link is recorded out of band at issuance instead, and it survives a refresh: a refreshed token is looked up by the refresh token's <code>jti</code> and lands under the same session.",
   "detail.noSession": "This user holds no sign-on session. That is the normal state for every identity that never used a browser here — a password grant, a Kerberos client, a WS-Trust requester — and for anyone whose session has expired and been swept.",
+  "detail.withoutActivity": "<strong>{total} authentication(s) made no session and issued nothing</strong>:",
+  "detail.withoutActivitySee": "Each one is on the Authentication attempts tab.",
   "detail.endedHeading": "Issued on a session that has since ended",
   "detail.endedNote": "These name a session this service no longer holds. It is not an error and it is the ordinary end state: the session expired or was signed out, and the tokens it produced outlived it — which is exactly the position a client is in when its access token still verifies and the browser would be asked to sign in again.",
   "detail.sessionlessHeading": "Issued with no browser session at all",

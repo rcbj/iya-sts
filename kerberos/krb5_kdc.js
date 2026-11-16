@@ -2572,6 +2572,27 @@ function errorReply(code, options) {
     eText: opts.eText || null,
     eData: opts.eData || null
   });
+  // THE REFUSED ATTEMPT ON THE PERSON'S PAGE (rcbj, 2026-11-16): a coded
+  // refusal naming a client principal is that principal's refused attempt
+  // (`authentication.refused`, which their Authentications tab lists). Here,
+  // where every refusal is built, so every transport has it once; the
+  // transport's own audit row is unchanged. KDC_ERR_PREAUTH_REQUIRED carries
+  // no code and is a step of the exchange, not a refusal.
+  if (opts.errorCode && opts.cname && Array.isArray(opts.cname.name) &&
+      opts.cname.name.length) {
+    try {
+      stats.recordRefusedAuthentication({
+        presented: opts.cname.name.join('/') +
+                   (opts.crealm ? '@' + opts.crealm : ''),
+        protocol: 'Kerberos v5',
+        method: 'KDC request refused with ' + msgs.describeError(code).name,
+        errorCode: String(opts.errorCode), channel: 'kerberos',
+        note: msgs.describeError(code).name });
+    } catch (e) {
+      log.debug('Caught in errorReply(): ' + ((e && e.message) || e));
+      // Bookkeeping: the KRB-ERROR goes out whatever this did.
+    }
+  }
   if (opts.errorCode) {
     try {
       Object.defineProperty(bytes, REFUSAL, {

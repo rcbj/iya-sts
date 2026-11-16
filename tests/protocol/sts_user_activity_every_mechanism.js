@@ -44,6 +44,7 @@ const https = require("https");
 const path = require("path");
 const zlib = require("zlib");
 const nodeCrypto = require("crypto");
+const ldapjs = require("ldapjs");
 const est = require("./est_client.js");
 const K = require("./oauth_wire_kit.js").kit(
   "sts_user_activity_every_mechanism");
@@ -54,7 +55,7 @@ const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
 const keys = require(path.join(REPO, "common", "crypto_impl",
                                "key_material.js"));
 
-const FLOOR = 30;
+const FLOOR = 40;
 const PW = "Uam-" + nodeCrypto.randomBytes(15).toString("base64url");
 const REDIRECT = "https://rp.uam.example.test/cb";
 const SECRET = "uam-" + nodeCrypto.randomBytes(18).toString("hex");
@@ -87,7 +88,11 @@ function pageOf(json) {
     tokensSessionless: [].concat(j.tokensWithNoSession || []).length,
     tokensEnded: [].concat(j.tokensOnEndedSessions || []).length,
     artifacts: [].concat(j.artifacts || []).length,
-    registryTokens: (((j.user || {}).tokens) || {}).issued || 0
+    registryTokens: (((j.user || {}).tokens) || {}).issued || 0,
+    refused: [].concat(j.authenticationEvents || []).filter(function (e) {
+      return e.action === "authentication.refused";
+    }).length,
+    withoutActivity: (j.authenticationsWithoutActivity || {}).total || 0
   };
   log.debug("Leaving pageOf().");
   return page;
@@ -98,7 +103,12 @@ function shows(page, want) {
   log.debug("Entering shows().");
   const tokens = page.tokensOnSessions + page.tokensSessionless +
                  page.tokensEnded;
+  if (want.refused) {
+    log.debug("Leaving shows(). A refusal.");
+    return page.refused >= 1;
+  }
   const yes = page.events.length >= 1 &&
+    (!want.withoutActivity || page.withoutActivity >= 1) &&
     (!want.session || page.sessions >= 1) &&
     (!want.tokens || tokens >= want.tokens) &&
     (!want.session || !want.tokens || page.tokensOnSessions >= want.tokens) &&
@@ -132,6 +142,20 @@ async function expect(realm, mechanism, who, want) {
   const said = JSON.stringify(page);
   const tokens = page.tokensOnSessions + page.tokensSessionless +
                  page.tokensEnded;
+  if (want.refused) {
+    check(realm + ": " + mechanism + ": the refused attempt is on the " +
+          "Authentications tab", function () {
+      assert.ok(page.refused >= 1, said);
+    });
+    log.debug("Leaving expect(). A refusal.");
+    return;
+  }
+  if (want.withoutActivity) {
+    check(realm + ": " + mechanism + ": Sessions & tokens says it made no " +
+          "session and issued nothing", function () {
+      assert.ok(page.withoutActivity >= 1, said);
+    });
+  }
   check(realm + ": " + mechanism + ": the Authentications tab lists the " +
         "sign-in", function () {
     assert.ok(page.events.length >= 1, said);
@@ -174,13 +198,15 @@ async function person(realm, tag) {
   return who;
 }
 
-async function client(realm) {
+// `product`: no password grant, which RFC 9700 mode (implied by product)
+// does not allow.
+async function client(realm, product) {
   log.debug("Entering client().");
   const id = "uam-rp-" + K.STAMP;
   await K.app(realm, id, { oauthClientId: id, oauthClientSecret: SECRET,
     oauthRedirectUri: [REDIRECT],
-    oauthGrantType: ["authorization_code", "refresh_token", "password",
-                     JWT_BEARER],
+    oauthGrantType: ["authorization_code", "refresh_token", JWT_BEARER]
+      .concat(product ? [] : ["password"]),
     oauthAllowedScope: ["openid", "offline_access"],
     oauthTokenEndpointAuthMethod: "client_secret_basic" });
   log.debug("Leaving client().");
@@ -223,14 +249,21 @@ async function codeFlow(realm, clientId, who) {
 }
 
 // RFC 7523: a key pair issued to the person, and a self-assertion with it.
-async function jwtBearer(realm, clientId, who) {
+async function jwtBearer(realm, clientId, who, stranger) {
   log.debug("Entering jwtBearer().");
-  const issued = await K.ok(K.rb(realm) + "/admin-api/pki/issue", {
-    target: "person", purpose: "jwt", identifier: who,
-    leafKeyAlg: "rsa-2048" }, "issued " + who + " a key pair");
-  const pem = String(issued.privateKeyPem || "");
-  assert.ok(/PRIVATE KEY/.test(pem), "no private key in " +
-            JSON.stringify(Object.keys(issued)));
+  let pem = "";
+  if (stranger) {
+    // A key nobody registered: the grant is refused.
+    pem = nodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 })
+      .privateKey.export({ type: "pkcs8", format: "pem" });
+  } else {
+    const issued = await K.ok(K.rb(realm) + "/admin-api/pki/issue", {
+      target: "person", purpose: "jwt", identifier: who,
+      leafKeyAlg: "rsa-2048" }, "issued " + who + " a key pair");
+    pem = String(issued.privateKeyPem || "");
+    assert.ok(/PRIVATE KEY/.test(pem), "no private key in " +
+              JSON.stringify(Object.keys(issued)));
+  }
   const now = Math.floor(Date.now() / 1000);
   const head = K.b64u({ alg: "RS256", typ: "JWT" });
   const body = K.b64u({ iss: who, sub: who,
@@ -240,7 +273,7 @@ async function jwtBearer(realm, clientId, who) {
     .toString("base64url");
   const got = await token(realm, clientId, { grant_type: JWT_BEARER,
     assertion: head + "." + body + "." + sig, scope: "openid" });
-  assert.strictEqual(got.status, 200, K.shown(got));
+  assert.strictEqual(got.status, stranger ? 400 : 200, K.shown(got));
   log.debug("Leaving jwtBearer().");
 }
 
@@ -283,6 +316,31 @@ async function tlsSignIn(realm, who) {
   assert.ok(/"signedIn":true/.test(answer.text), "GET /tls/sign-in: " +
             answer.status + " " + answer.text.slice(0, 300));
   log.debug("Leaving tlsSignIn().");
+}
+
+// A simple bind on the stack's LDAP port as the person's entry: answers the
+// LDAP result code (0 for success).
+async function ldapBind(realm, who, password) {
+  log.debug("Entering ldapBind().");
+  const r = await K.send(K.rb(realm) + "/admin-api/users?user=" +
+                         encodeURIComponent(who));
+  const dn = String((((r.json || {}).ldap || {}).entry || {}).dn || "");
+  assert.ok(dn, "no DN for " + who + ": " + K.shown(r));
+  const url = "ldap://" + new URL(K.base).hostname + ":" +
+              (process.env.STS_LDAP_PORT || "389");
+  const code = await new Promise(function (resolve) {
+    const client = ldapjs.createClient({ url: url, reconnect: false });
+    client.on("error", function (e) {
+      log.debug("Caught in ldapBind(): " + e.message);
+      resolve(-1);
+    });
+    client.bind(dn, password, function (e) {
+      client.unbind();
+      resolve(e ? e.code : 0);
+    });
+  });
+  log.debug("Leaving ldapBind(). " + code);
+  return code;
 }
 
 // WS-Trust: an Issue on a UsernameToken.
@@ -385,6 +443,35 @@ async function developmentRealm() {
     encodeURIComponent("https://wsfed.uam.example.test/"), /wresult/);
   await expect(realm, "WS-Federation passive", who,
                { session: true, artifacts: 1 });
+
+  who = await person(realm, "ldap");
+  assert.strictEqual(await ldapBind(realm, who, PW), 0, "the LDAP bind");
+  await expect(realm, "LDAP simple bind", who, { withoutActivity: true });
+
+  // THE REFUSALS: the reserved password `invalid`, refused in every mode,
+  // and an assertion signed with a key nobody registered.
+  who = await person(realm, "rscreen");
+  const b = K.browser();
+  const first = await b.go(K.rb(realm) + "/oauth2/authorize?" +
+    new URLSearchParams({ client_id: clientId, response_type: "code",
+      redirect_uri: REDIRECT, scope: "openid", state: "s",
+      nonce: K.rand(8) }).toString());
+  await K.signIn(realm, b, first, who, "invalid");
+  await expect(realm, "password screen (refused)", who, { refused: true });
+
+  who = await person(realm, "rropc");
+  await token(realm, clientId, { grant_type: "password", username: who,
+    password: "invalid", scope: "openid" });
+  await expect(realm, "password grant (refused)", who, { refused: true });
+
+  who = await person(realm, "rjwt");
+  await jwtBearer(realm, clientId, who, true);
+  await expect(realm, "RFC 7523 (refused)", who, { refused: true });
+
+  who = await person(realm, "rldap");
+  assert.strictEqual(await ldapBind(realm, who, "invalid"), 49,
+                     "the refused LDAP bind");
+  await expect(realm, "LDAP simple bind (refused)", who, { refused: true });
   log.debug("Leaving developmentRealm().");
 }
 
@@ -393,7 +480,7 @@ async function productRealm() {
   const realm = await K.realm("uamprod", "product");
   await K.ok(K.rb(realm) + "/admin-api/pki/build", { organisation: "Uam" },
              "built the CA");
-  const clientId = await client(realm);
+  const clientId = await client(realm, true);
 
   let who = await person(realm, "pw");
   await codeFlow(realm, clientId, who);
@@ -403,6 +490,22 @@ async function productRealm() {
   who = await person(realm, "jwt");
   await jwtBearer(realm, clientId, who);
   await expect(realm, "RFC 7523 self-assertion", who, { tokens: 1 });
+
+  // A wrong password at the sign-in screen (product verifies it; its
+  // password grant is refused for being one, before anybody is named).
+  who = await person(realm, "rscreen");
+  const b = K.browser();
+  const first = await b.go(K.rb(realm) + "/oauth2/authorize?" +
+    new URLSearchParams({ client_id: clientId, response_type: "code",
+      redirect_uri: REDIRECT, scope: "openid", state: "s",
+      nonce: K.rand(8), code_challenge: K.pkce().challenge,
+      code_challenge_method: "S256" }).toString());
+  await K.signIn(realm, b, first, who, "wrong-" + PW);
+  await expect(realm, "password screen (refused)", who, { refused: true });
+
+  who = await person(realm, "rjwt");
+  await jwtBearer(realm, clientId, who, true);
+  await expect(realm, "RFC 7523 (refused)", who, { refused: true });
   log.debug("Leaving productRealm().");
 }
 

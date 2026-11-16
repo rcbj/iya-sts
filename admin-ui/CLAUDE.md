@@ -8165,7 +8165,14 @@ page now is. He chose:
   (`common/CLAUDE.md`, the refusal paragraph).
   The overview's authentication table stays the identity register's
   acceptances.
-* **Sessions & tokens**.
+* **Sessions & tokens**. Under the sessions, **one line counts the
+  authentications that start no session and issue nothing** (rcbj,
+  2026-11-16): a client certificate on a request to the main port, an LDAP
+  bind, a SCIM or SPIFFE caller's credential, by protocol and method
+  (`UsersPage.withoutActivityLine()`, from `authenticationsWithoutActivity`
+  on the `?user=` reply, counted over the Authentications tab's rows). A
+  remote PEP that authenticated by certificate on every policy pull had an
+  empty tab that read as broken; it now says why it is empty.
 * **Attributes**: `personFieldsSection()`.
 * **Credentials**: four sub-tabs, `ucred-factors`, `ucred-password`,
   `ucred-keys` and `ucred-kerberos`, each one of the four sections that were

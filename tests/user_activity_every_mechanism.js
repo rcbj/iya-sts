@@ -283,6 +283,8 @@ function childMain() {
              'assertion(s) or ticket(s)', summary(p));
       }
     };
+    let tlsSignInUser = '';
+    let wsTrustUser = '';
     const person = function (tag) {
       const name = 'uam-' + tag + '-' + SUFFIX;
       ldap.createUser(name, { invent: false });
@@ -339,6 +341,7 @@ function childMain() {
     // -----------------------------------------------------------------------
     {
       const who = person('tlssignin');
+      tlsSignInUser = who;
       const c = await certFor(who);
       const got = await call({ jar: {}, path: '/tls/sign-in', cert: c.cert,
                                key: c.key });
@@ -391,6 +394,7 @@ function childMain() {
     // -----------------------------------------------------------------------
     {
       const who = person('wstrust');
+      wsTrustUser = who;
       const WST = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
       const envelope = '<s:Envelope xmlns:s="http://www.w3.org/2003/05/' +
         'soap-envelope" xmlns:wsse="http://docs.oasis-open.org/wss/2004/' +
@@ -458,6 +462,261 @@ function childMain() {
       expect('WS-Federation passive', who, { session: true, artifacts: 1 });
     }
 
+    // -----------------------------------------------------------------------
+    // 10. KERBEROS: an AS-REQ for a TGT, in process (`kdc.handleMessage()`).
+    // -----------------------------------------------------------------------
+    const kdc = require(ROOT_DIR + '/kerberos/krb5_kdc.js');
+    const principals = require(ROOT_DIR + '/kerberos/krb5_principals.js');
+    const krb5Service = require(ROOT_DIR + '/kerberos/krb5_service.js');
+    const wire = require(ROOT_DIR + '/tests/protocol/krb5_wire.js');
+    const KRB_PASSWORD = String(config.value('krb5.userPassword'));
+    const T = { label: 'in-process', send: function (bytes) {
+      return kdc.handleMessage(bytes);
+    } };
+    {
+      const who = person('kerberos');
+      const got = await wire.asExchange(T, principals.REALM, who,
+                                        { password: KRB_PASSWORD });
+      note(!!got.tgt, 'Kerberos: a TGT is issued',
+           JSON.stringify(got.second || got.first || {}).slice(0, 300));
+      expect('Kerberos AS-REQ', who, { artifacts: 1 });
+    }
+
+    // -----------------------------------------------------------------------
+    // 11. SPNEGO at /authn/spnego: a service ticket for this service.
+    // -----------------------------------------------------------------------
+    {
+      const who = person('spnego');
+      config.setOverride('krb5.spnegoAuthentication', 'true');
+      const got = await wire.asExchange(T, principals.REALM, who,
+                                        { password: KRB_PASSWORD });
+      const st = got.tgt ? await wire.tgsExchange(T, got.tgt,
+        { type: wire.msgs.NAME_TYPE.SRV_HST,
+          name: krb5Service.SERVICE_PRINCIPAL }, principals.REALM) : null;
+      const built = st && st.ok ? await wire.apRequest(st) : null;
+      const r = built ? await call({ jar: {}, path: '/authn/spnego',
+        headers: { authorization: 'Negotiate ' +
+          Buffer.from(built.token).toString('base64') } }) : null;
+      note(!!(r && r.status < 400), 'SPNEGO: the ticket signs the person in',
+           r ? r.status + ' ' + String(r.text).slice(0, 200)
+             : 'no service ticket: ' + JSON.stringify(st || got).slice(0, 300));
+      expect('SPNEGO', who, { session: true });
+    }
+
+    // -----------------------------------------------------------------------
+    // 12. AN LDAP SIMPLE BIND, on a listener of the directory's own.
+    // -----------------------------------------------------------------------
+    const ldapjs = require(ROOT_DIR + '/node_modules/ldapjs');
+    const ldapListening = ldap.listen();
+    const ldapReady = await ldapListening.whenReady;
+    const bind = function (who, password) {
+      return new Promise(function (resolve) {
+        const client = ldapjs.createClient({ url: 'ldap://127.0.0.1:' +
+          ldapReady.port, reconnect: false });
+        client.on('error', function () {});
+        client.bind('uid=' + who + ',ou=users,' + ldapReady.baseDn, password,
+          function (e) {
+            client.unbind(function () {
+              resolve(e ? e.code : 0);
+            });
+          });
+      });
+    };
+    {
+      const who = person('ldap');
+      const code = await bind(who, 'x');
+      note(code === 0, 'LDAP: the bind succeeds', String(code));
+      expect('LDAP simple bind', who, {});
+      const summary = (adminViews.userDetailJson({ query: {} }, who).json ||
+                       {}).authenticationsWithoutActivity || {};
+      note(summary.total >= 1 && (summary.methods || []).some(function (m) {
+             return m.protocol === 'ldap';
+           }),
+           'LDAP: Sessions & tokens says the bind made no session and ' +
+           'issued nothing', JSON.stringify(summary));
+    }
+
+    // -----------------------------------------------------------------------
+    // 13. RFC 7522: the person's own SAML key pair, a self-assertion.
+    // -----------------------------------------------------------------------
+    const samlSigner = require(ROOT_DIR + '/tests/protocol/saml_xmldsig.js');
+    const SAML_BEARER = 'urn:ietf:params:oauth:grant-type:saml2-bearer';
+    applications.updateApplication(CLIENT, { attribute: 'oauthGrantType',
+      mode: 'add', value: SAML_BEARER });
+    {
+      const who = person('samlbearer');
+      const issued = await pkiAdmin.pkiAction({ action: 'issue',
+        target: 'person', purpose: 'saml', identifier: who,
+        leafKeyAlg: 'rsa-2048' });
+      note(issued.ok, 'RFC 7522: a SAML key pair is issued to the person',
+           issued.why || '');
+      const built = samlSigner.buildAssertion({ issuer: who, subject: who,
+        audience: ORIGIN + '/oauth2/token',
+        recipient: ORIGIN + '/oauth2/token' });
+      const got = await form('/oauth2/token', { grant_type: SAML_BEARER,
+        assertion: samlSigner.b64u(samlSigner.sign(built,
+          issued.privateKeyPem || '', issued.certificatePem || '', {})),
+        scope: 'openid' });
+      note(got.status === 200, 'RFC 7522: tokens issued',
+           got.status + ' ' + got.text.slice(0, 300));
+      expect('RFC 7522 self-assertion', who, { tokens: 1 });
+    }
+
+    // -----------------------------------------------------------------------
+    // 14. THE SIGN-IN SCREEN WITH AN AUTHENTICATOR APP (TOTP) AFTER THE
+    //     PASSWORD.
+    // -----------------------------------------------------------------------
+    const credentials = require(ROOT_DIR + '/common/credentials');
+    const totp = require(ROOT_DIR + '/common/totp');
+    {
+      const who = person('totp');
+      const begun = credentials.beginTotpEnrolment(who,
+                                                   { base: ORIGIN });
+      const enrolled = credentials.confirmTotpEnrolment(who,
+        totp.codeAt(begun.secret, Date.now(), begun));
+      note(enrolled && enrolled.ok !== false, 'TOTP: an app is enrolled',
+           JSON.stringify(enrolled).slice(0, 200));
+      const jar = {};
+      const first = await call({ jar: jar, path: '/oauth2/authorize?' +
+        new URLSearchParams({ client_id: CLIENT, response_type: 'code',
+          redirect_uri: REDIRECT, scope: 'openid', state: 's',
+          nonce: 'n' }).toString() });
+      const at = String(first.headers.location || '');
+      const answer = await screen.submit({ port: port, ca: CA, jar: jar,
+        userAgent: UA, at: at,
+        fields: { action: 'login', username: who, password: 'x' } });
+      let done = answer;
+      if (answer.next === 'mfa') {
+        const opened = await screen.openStep({ port: port, ca: CA, jar: jar,
+          userAgent: UA, at: answer.location });
+        // The next step's code: the enrolment just spent this one.
+        done = await screen.stepAct({ port: port, ca: CA, jar: jar,
+          userAgent: UA, opened: opened, op: 'totp',
+          body: { code: totp.codeAt(begun.secret, Date.now() + 30000,
+                                    begun) } });
+      }
+      note(done.next === 'redirect',
+           'TOTP: the second factor completes the sign-in',
+           String(done.next) + ' ' + JSON.stringify(done.json).slice(0, 300));
+      expect('sign-in screen + TOTP', who, { session: true });
+    }
+
+    // -----------------------------------------------------------------------
+    // R. EVERY DOOR'S REFUSAL IS THE PERSON'S REFUSED ATTEMPT: the
+    //    reserved password `invalid` (refused in every mode), an assertion
+    //    signed with a key nobody registered, a wrong Kerberos password.
+    // -----------------------------------------------------------------------
+    const expectRefused = function (mechanism, username) {
+      const p = pageOf(username);
+      note(p.events.some(function (e) {
+             return e.action === 'authentication.refused';
+           }),
+           mechanism + ': the refused attempt is on the Authentications tab',
+           summary(p));
+    };
+    {
+      const who = person('rscreen');
+      await codeFlow({}, { action: 'login', username: who,
+                           password: 'invalid' });
+      expectRefused('password screen (refused)', who);
+    }
+    {
+      const who = person('rropc');
+      await form('/oauth2/token', { grant_type: 'password', username: who,
+        password: 'invalid', scope: 'openid' });
+      expectRefused('password grant (refused)', who);
+    }
+    {
+      const who = person('rjwt');
+      const stranger = nodeCrypto.generateKeyPairSync('rsa',
+        { modulusLength: 2048 }).privateKey;
+      const head = Buffer.from(JSON.stringify({ alg: 'RS256',
+        typ: 'JWT' })).toString('base64url');
+      const now = Math.floor(Date.now() / 1000);
+      const body = Buffer.from(JSON.stringify({ iss: who, sub: who,
+        aud: ORIGIN + '/oauth2/token', iat: now, exp: now + 120,
+        jti: nodeCrypto.randomBytes(16).toString('hex') }))
+        .toString('base64url');
+      const sig = nodeCrypto.sign('sha256', Buffer.from(head + '.' + body),
+                                  stranger).toString('base64url');
+      const got = await form('/oauth2/token', {
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: head + '.' + body + '.' + sig, scope: 'openid' });
+      note(got.status === 400, 'RFC 7523 (refused): answered 400',
+           got.status + ' ' + got.text.slice(0, 200));
+      expectRefused('RFC 7523 (refused)', who);
+    }
+    {
+      const who = person('rsaml');
+      const stranger = nodeCrypto.generateKeyPairSync('rsa',
+        { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8',
+                                                     format: 'pem' });
+      const built = samlSigner.buildAssertion({ issuer: who, subject: who,
+        audience: ORIGIN + '/oauth2/token',
+        recipient: ORIGIN + '/oauth2/token' });
+      const got = await form('/oauth2/token', { grant_type: SAML_BEARER,
+        assertion: samlSigner.b64u(samlSigner.sign(built, stranger, '', {})),
+        scope: 'openid' });
+      note(got.status === 400, 'RFC 7522 (refused): answered 400',
+           got.status + ' ' + got.text.slice(0, 200));
+      expectRefused('RFC 7522 (refused)', who);
+    }
+    {
+      const who = person('rwst');
+      const WST = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
+      await call({ method: 'POST', path: '/sts',
+        headers: { 'content-type': 'application/soap+xml' },
+        body: '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"' +
+          ' xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-' +
+          '200401-wss-wssecurity-secext-1.0.xsd"><s:Header><wsse:Security>' +
+          '<wsse:UsernameToken><wsse:Username>' + who + '</wsse:Username>' +
+          '<wsse:Password>invalid</wsse:Password></wsse:UsernameToken>' +
+          '</wsse:Security></s:Header><s:Body><wst:RequestSecurityToken ' +
+          'xmlns:wst="' + WST + '"><wst:RequestType>' + WST +
+          '/Issue</wst:RequestType></wst:RequestSecurityToken></s:Body>' +
+          '</s:Envelope>' });
+      expectRefused('WS-Trust UsernameToken (refused)', who);
+    }
+    {
+      const who = person('rldap');
+      const code = await bind(who, 'invalid');
+      note(code === 49, 'LDAP (refused): answered 49', String(code));
+      expectRefused('LDAP simple bind (refused)', who);
+    }
+    {
+      const who = person('rkrb');
+      const got = await wire.asExchange(T, principals.REALM, who,
+                                        { password: 'not-' + KRB_PASSWORD });
+      note(!got.tgt, 'Kerberos (refused): no TGT for a wrong password',
+           JSON.stringify(got.second || got.first || {}).slice(0, 200));
+      expectRefused('Kerberos AS-REQ (refused)', who);
+    }
+
+    // -----------------------------------------------------------------------
+    // L. THE LABELS: GET /tls/sign-in's row is TLS and a certificate, and a
+    //    WS-Trust UsernameToken is ONE row, WS-Trust's.
+    // -----------------------------------------------------------------------
+    {
+      const tlsRows = pageOf(tlsSignInUser).events.filter(function (e) {
+        return e.action === 'authentication';
+      });
+      note(tlsRows.length === 1 && tlsRows[0].protocol === 'TLS' &&
+           /certificate/.test(String((tlsRows[0].detail || {}).method)),
+           'GET /tls/sign-in: one row, protocol TLS, a certificate method',
+           summary(pageOf(tlsSignInUser)));
+      const wstRows = pageOf(wsTrustUser).events.filter(function (e) {
+        return e.action === 'authentication';
+      });
+      note(wstRows.length === 1 && wstRows[0].protocol === 'WS-Trust' &&
+           /UsernameToken/.test(String((wstRows[0].detail || {}).method)),
+           'WS-Trust: one row, WS-Trust and its UsernameToken',
+           summary(pageOf(wsTrustUser)));
+    }
+
+    ldapListening.server.close();
+    if (ldapListening.secureServer) {
+      ldapListening.secureServer.close();
+    }
     listener.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
@@ -481,7 +740,11 @@ async function run(t) {
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
-                                  UAM_ROOT: ROOT, UAM_OUT: out }),
+                                  UAM_ROOT: ROOT, UAM_OUT: out,
+                                  // The directory's own listener, for the
+                                  // LDAP bind: an ephemeral port.
+                                  STS_HOST: '127.0.0.1', LDAP_PORT: '0',
+                                  LDAPS_PORT: '0' }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });
   let findings = null;

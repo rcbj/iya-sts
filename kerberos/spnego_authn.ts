@@ -163,6 +163,9 @@ import spnegoPage = require('./spnego.js');
 // ERROR CODES, a leaf. A negotiation's refusal is marked by
 // exchange.applyVerdict(); the ones marked here are this door's own.
 import errorCodes = require('../common/error_codes');
+// A library, loaded by `helpers` long before this file: the refused
+// ticket's row on the person's page (rcbj, 2026-11-16).
+import stats = require('../common/admin_stats');
 // The reading of a ticket's flags into `amr` / `acr` (#658): a library
 // that requires only `common/` modules at load, so it moves no route.
 import krb5Tokens = require('./krb5_tokens');
@@ -823,6 +826,23 @@ class SpnegoAuthn {
       // diagnostics. `applyVerdict()` set the status, the
       // `WWW-Authenticate` and `no-store`; they are sent as set.
       if (!waiting) {
+        // THE PERSON'S REFUSED ATTEMPT (rcbj, 2026-11-16), where the ticket
+        // named one: a terminal refusal of their ticket is listed on their
+        // Authentications tab. A refusal before any principal was read is
+        // nobody's attempt.
+        if (verdict.client) {
+          try {
+            stats.recordRefusedAuthentication({
+              presented: String(verdict.client), protocol: 'Kerberos v5',
+              method: 'service ticket over SPNEGO',
+              errorCode: errorCodes.codeOf(res) || '',
+              note: String(verdict.code || 'refused') });
+          } catch (e) {
+            log.debug('Caught in SpnegoAuthn.handleSignIn(): ' +
+                      ((e && e.message) || e));
+            // Bookkeeping: the refusal page goes out whatever this did.
+          }
+        }
         this.sendRefusal(req, res, record, verdict);
         log.debug('Leaving SpnegoAuthn.handleSignIn(). ' + verdict.code +
                   ', refused.');
