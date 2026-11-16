@@ -343,7 +343,8 @@ async fn start(options: Options, info: version::VersionInfo) {
     {
         // The key file is read again on the listener pair's interval, so a
         // rotated key is picked up the way a rotated pair is.
-        let (credential, reload_options) = (credential.clone(), options.clone());
+        let (credential, reload_options) =
+            (credential.clone(), options.clone());
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(reload_interval(&reload_options)).await;

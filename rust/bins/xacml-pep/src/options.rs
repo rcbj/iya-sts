@@ -166,7 +166,9 @@ pub fn client_id_of(
     alias: Option<&str>,
 ) -> (String, &'static str) {
     let set = |v: Option<&str>| {
-        v.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)
+        v.map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
     };
     if let Some(id) = set(primary) {
         return (id, "PEP_CLIENT_ID");
@@ -1246,7 +1248,10 @@ mod tests {
             client_id_of(Some(" "), Some("b")),
             ("b".to_string(), "PEP_AUDIT_CLIENT_ID")
         );
-        assert_eq!(client_id_of(None, None), ("sts-remote-pep".to_string(), ""));
+        assert_eq!(
+            client_id_of(None, None),
+            ("sts-remote-pep".to_string(), "")
+        );
     }
 
     #[test]

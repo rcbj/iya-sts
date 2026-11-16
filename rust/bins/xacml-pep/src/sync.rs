@@ -66,9 +66,9 @@ use sts_xacml::policy::PolicyNode;
 use sts_xacml::xml;
 
 use crate::authzen_catalogue::{self, Row};
+use crate::credential::Resource;
 use crate::enforce::Outcome;
 use crate::options::Options;
-use crate::credential::Resource;
 use crate::pdp_client::{Body, PdpClient};
 use crate::proxy_config::{self, Mechanism, Pulled};
 use crate::rp_session::Stores;

@@ -24,9 +24,9 @@ use reqwest::Method;
 use serde_json::{json, Map, Value};
 use sts_core::log::tag;
 
+use crate::credential::Resource;
 use crate::jwt::{self, Key, Local};
 use crate::listener::Transport;
-use crate::credential::Resource;
 use crate::pdp_client::{Answer, Body, PdpClient};
 use crate::proxy_config::{Mechanism, Pulled, Route};
 use crate::saml_verify::{self, Outcome};

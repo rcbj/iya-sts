@@ -231,7 +231,10 @@ impl PdpClient {
                         nonce.as_deref(),
                     ) {
                         Ok(proof) => {
-                            all.push(("Authorization", format!("DPoP {}", value)));
+                            all.push((
+                                "Authorization",
+                                format!("DPoP {}", value),
+                            ));
                             all.push(("DPoP", proof));
                             sent = Some(value.clone());
                         }
@@ -266,7 +269,8 @@ impl PdpClient {
                     &format!(
                         "{} {} demanded a DPoP nonce again after the retry \
                          carrying the one it handed",
-                        method, crate::credential::htu(url)
+                        method,
+                        crate::credential::htu(url)
                     ),
                 );
                 return answer;
@@ -451,4 +455,354 @@ fn describe(error: &reqwest::Error) -> String {
         text = format!("the PDP did not answer in time ({})", text);
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::credential::tests::{decoded, key_file, p256_pem, rsa_pem};
+    use crate::credential::KeySource;
+    use axum::http::{HeaderMap, StatusCode};
+    use axum::response::{IntoResponse, Response};
+    use axum::routing::post;
+    use serde_json::{json, Value};
+    use std::sync::Mutex;
+
+    /// What the mock service saw: each token request's form and proof
+    /// claims, and each resource call's `Authorization` and proof claims.
+    #[derive(Default)]
+    struct Seen {
+        forms: Vec<String>,
+        token_proofs: Vec<Value>,
+        calls: Vec<(String, Value)>,
+    }
+
+    /// How the mock answers.
+    #[derive(Clone, Copy, Default)]
+    struct Script {
+        /// `expires_in` of every token.
+        expires_in: u64,
+        /// The token endpoint asks for a nonce until it is given `as-1`.
+        token_nonce: bool,
+        /// The resource asks for a nonce until it is given `rs-1`.
+        resource_nonce: bool,
+        /// The resource refuses every token but this one (0: none).
+        accept_only: usize,
+        /// The resource refuses every token, always.
+        refuse_all: bool,
+        /// How long the token endpoint takes.
+        token_delay_ms: u64,
+        /// The resource asks for a nonce whatever it is given.
+        nonce_always: bool,
+    }
+
+    fn claims_of(headers: &HeaderMap) -> Value {
+        headers
+            .get("dpop")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|p| p.split('.').nth(1))
+            .map(decoded)
+            .unwrap_or(Value::Null)
+    }
+
+    async fn mock(script: Script) -> (String, Arc<Mutex<Seen>>) {
+        let seen: Arc<Mutex<Seen>> = Arc::new(Mutex::new(Seen::default()));
+        let (on_token, on_call) = (seen.clone(), seen.clone());
+        let router = axum::Router::new()
+            .route(
+                "/realm/r1/oauth2/token",
+                post(move |headers: HeaderMap, body: String| {
+                    let seen = on_token.clone();
+                    async move {
+                        tokio::time::sleep(Duration::from_millis(
+                            script.token_delay_ms,
+                        ))
+                        .await;
+                        let claims = claims_of(&headers);
+                        let n = {
+                            let mut seen = seen.lock().unwrap();
+                            seen.forms.push(body);
+                            seen.token_proofs.push(claims.clone());
+                            seen.forms.len()
+                        };
+                        if script.token_nonce && claims["nonce"] != "as-1" {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                [("dpop-nonce", "as-1")],
+                                axum::Json(
+                                    json!({ "error": "use_dpop_nonce" }),
+                                ),
+                            )
+                                .into_response();
+                        }
+                        axum::Json(json!({
+                            "access_token": format!("t-{}", n),
+                            "token_type": "DPoP",
+                            "expires_in": script.expires_in
+                        }))
+                        .into_response()
+                    }
+                }),
+            )
+            .route(
+                "/realm/r1/xacml/pep/heartbeat",
+                post(move |headers: HeaderMap| {
+                    let seen = on_call.clone();
+                    async move {
+                        let auth = headers
+                            .get("authorization")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("")
+                            .to_string();
+                        let claims = claims_of(&headers);
+                        seen.lock()
+                            .unwrap()
+                            .calls
+                            .push((auth.clone(), claims.clone()));
+                        if script.nonce_always
+                            || (script.resource_nonce
+                                && claims["nonce"] != "rs-1")
+                        {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                [
+                                    (
+                                        "www-authenticate",
+                                        "DPoP error=\"use_dpop_nonce\"",
+                                    ),
+                                    ("dpop-nonce", "rs-1"),
+                                ],
+                            )
+                                .into_response();
+                        }
+                        let refused = script.refuse_all
+                            || (script.accept_only > 0
+                                && auth
+                                    != format!(
+                                        "DPoP t-{}",
+                                        script.accept_only
+                                    ));
+                        if refused {
+                            let r: Response = (
+                                StatusCode::UNAUTHORIZED,
+                                [(
+                                    "www-authenticate",
+                                    "DPoP error=\"invalid_token\"",
+                                )],
+                            )
+                                .into_response();
+                            return r;
+                        }
+                        axum::Json(json!({ "ok": true })).into_response()
+                    }
+                }),
+            );
+        let socket =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            // Lives as long as the test; a failure shows as the asserts
+            // failing, so it is only reported.
+            if let Err(error) = axum::serve(socket, router).await {
+                eprintln!("the mock service stopped: {}", error);
+            }
+        });
+        (format!("http://127.0.0.1:{}/realm/r1", port), seen)
+    }
+
+    fn client(base: &str, pem: Option<Vec<u8>>) -> PdpClient {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = format!("{}/", base);
+        options.name = "remote-pep-1".into();
+        options.client_id = "sts-remote-pep".into();
+        options.client_certificate = None;
+        options.client_key = None;
+        let file = pem.map(|pem| key_file(&pem));
+        options.assertion_key =
+            KeySource::choose(file.as_ref().map(|f| f.to_str().unwrap()), None);
+        let client = PdpClient::new(&options).unwrap();
+        if let Some(file) = file {
+            std::fs::remove_file(file).unwrap();
+        }
+        client
+    }
+
+    async fn heartbeat(client: &PdpClient) -> Answer {
+        client
+            .call_authorized(
+                Resource::Pep,
+                Method::POST,
+                "/xacml/pep/heartbeat",
+                Some(Body::Json(json!({}))),
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn concurrent_callers_share_one_fetch_and_renew_early() {
+        let (base, seen) = mock(Script {
+            expires_in: 31,
+            token_delay_ms: 150,
+            ..Script::default()
+        })
+        .await;
+        let c = client(&base, Some(p256_pem()));
+        let calls: Vec<_> = (0..8)
+            .map(|_| {
+                let c = c.clone();
+                tokio::spawn(async move { heartbeat(&c).await.status })
+            })
+            .collect();
+        for call in calls {
+            assert_eq!(call.await.unwrap(), 200);
+        }
+        {
+            let seen = seen.lock().unwrap();
+            assert_eq!(seen.forms.len(), 1, "one fetch for eight callers");
+            let form = &seen.forms[0];
+            assert!(form.contains("scope=xacml%3Apep"));
+            assert!(form.contains(&format!(
+                "resource={}",
+                crate::sync::encode(&format!("{}/xacml/pep", base))
+            )));
+            assert!(form.contains("client_id=sts-remote-pep"));
+            for (auth, claims) in &seen.calls {
+                assert_eq!(auth, "DPoP t-1");
+                assert_eq!(claims["htm"], "POST");
+                assert_eq!(
+                    claims["htu"],
+                    format!("{}/xacml/pep/heartbeat", base)
+                );
+                assert_eq!(claims["ath"], crate::credential::ath("t-1"));
+            }
+            let jtis: std::collections::HashSet<String> = seen
+                .calls
+                .iter()
+                .map(|(_, c)| c["jti"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(jtis.len(), 8, "a fresh proof on every call");
+        }
+        let overview = c.credential().overview();
+        assert_eq!(overview["tokens"]["xacml-pep"]["held"], true);
+        assert!(overview["tokens"]["xacml-pep"]["expiresAt"].is_string());
+        assert_eq!(overview["tokens"]["admin-api"]["held"], false);
+        assert!(!overview.to_string().contains("t-1"));
+        // expires_in 31 is renewed 30 s early: after a second, a new one.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        assert_eq!(heartbeat(&c).await.status, 200);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.forms.len(), 2);
+        assert_eq!(seen.calls.last().unwrap().0, "DPoP t-2");
+    }
+
+    #[tokio::test]
+    async fn invalid_token_is_fetched_again_and_retried_once() {
+        let (base, seen) = mock(Script {
+            expires_in: 300,
+            accept_only: 2,
+            ..Script::default()
+        })
+        .await;
+        let c = client(&base, Some(rsa_pem()));
+        assert_eq!(heartbeat(&c).await.status, 200);
+        {
+            let seen = seen.lock().unwrap();
+            assert_eq!(seen.forms.len(), 2);
+            let auths: Vec<&str> =
+                seen.calls.iter().map(|(a, _)| a.as_str()).collect();
+            assert_eq!(auths, ["DPoP t-1", "DPoP t-2"]);
+        }
+
+        // Refused again after the new token: once, no more.
+        let (base, seen) = mock(Script {
+            expires_in: 300,
+            refuse_all: true,
+            ..Script::default()
+        })
+        .await;
+        let c = client(&base, Some(rsa_pem()));
+        let answer = heartbeat(&c).await;
+        assert_eq!(answer.status, 401);
+        assert!(answer.no_token.is_none());
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.forms.len(), 2);
+        assert_eq!(seen.calls.len(), 2);
+        assert_eq!(
+            c.credential().overview()["tokens"]["xacml-pep"]["held"],
+            false
+        );
+    }
+
+    #[tokio::test]
+    async fn use_dpop_nonce_is_retried_once_at_both_ends_and_remembered() {
+        let (base, seen) = mock(Script {
+            expires_in: 300,
+            token_nonce: true,
+            resource_nonce: true,
+            ..Script::default()
+        })
+        .await;
+        let c = client(&base, Some(p256_pem()));
+        assert_eq!(heartbeat(&c).await.status, 200);
+        assert_eq!(heartbeat(&c).await.status, 200);
+        let seen = seen.lock().unwrap();
+        let token_nonces: Vec<&Value> =
+            seen.token_proofs.iter().map(|c| &c["nonce"]).collect();
+        assert_eq!(token_nonces, [&Value::Null, &json!("as-1")]);
+        assert!(seen.token_proofs.iter().all(|c| c.get("ath").is_none()));
+        assert_eq!(
+            seen.token_proofs[1]["htu"],
+            format!("{}/oauth2/token", base)
+        );
+        let resource_nonces: Vec<&Value> =
+            seen.calls.iter().map(|(_, c)| &c["nonce"]).collect();
+        // The first call is asked for one; its retry and the next call
+        // carry it.
+        assert_eq!(
+            resource_nonces,
+            [&Value::Null, &json!("rs-1"), &json!("rs-1")]
+        );
+        assert_eq!(
+            c.credential()
+                .nonce_for(&format!("{}/oauth2/token", base), "token"),
+            Some("as-1".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_nonce_demanded_twice_is_not_retried_again() {
+        let (base, seen) = mock(Script {
+            expires_in: 300,
+            nonce_always: true,
+            ..Script::default()
+        })
+        .await;
+        let c = client(&base, Some(p256_pem()));
+        assert_eq!(heartbeat(&c).await.status, 401);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.calls.len(), 2, "the call and one retry, no more");
+        assert_eq!(seen.calls[1].1["nonce"], "rs-1");
+        assert_eq!(seen.forms.len(), 1, "a nonce demand keeps the token");
+    }
+
+    #[tokio::test]
+    async fn with_no_key_the_call_goes_without_a_token_and_says_why() {
+        let (base, seen) = mock(Script {
+            expires_in: 300,
+            ..Script::default()
+        })
+        .await;
+        let c = client(&base, None);
+        let answer = heartbeat(&c).await;
+        assert_eq!(answer.status, 200);
+        assert!(answer
+            .no_token
+            .as_deref()
+            .unwrap()
+            .contains("PEP_ASSERTION_KEY"));
+        let seen = seen.lock().unwrap();
+        assert!(seen.forms.is_empty(), "no token request without a key");
+        assert_eq!(seen.calls[0].0, "");
+        assert_eq!(seen.calls[0].1, Value::Null);
+    }
 }

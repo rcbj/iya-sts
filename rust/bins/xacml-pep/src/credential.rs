@@ -147,9 +147,8 @@ impl SigningKey {
     /// The key in `pem`, or why it is refused. `var` names the variable it
     /// came from, for the sentence.
     pub fn from_pem(pem: &[u8], var: &str) -> Result<SigningKey, String> {
-        let key = PKey::private_key_from_pem(pem).map_err(|e| {
-            format!("the key at {} would not load: {}", var, e)
-        })?;
+        let key = PKey::private_key_from_pem(pem)
+            .map_err(|e| format!("the key at {} would not load: {}", var, e))?;
         let refused = |e: openssl::error::ErrorStack| {
             format!("the key at {} could not be read: {}", var, e)
         };
@@ -200,9 +199,11 @@ impl SigningKey {
         };
         // RFC 7638: the required members in lexicographic order, no
         // whitespace — which is how `jwk` was written.
-        let digest =
-            openssl::hash::hash(MessageDigest::sha256(), jwk.to_string().as_bytes())
-                .map_err(refused)?;
+        let digest = openssl::hash::hash(
+            MessageDigest::sha256(),
+            jwk.to_string().as_bytes(),
+        )
+        .map_err(refused)?;
         Ok(SigningKey {
             key,
             alg,
@@ -354,7 +355,9 @@ impl KeySource {
     /// two values given, so a test does not touch the environment.
     pub fn choose(assertion: Option<&str>, tls: Option<&str>) -> KeySource {
         let set = |v: Option<&str>| {
-            v.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)
+            v.map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
         };
         if let Some(path) = set(assertion) {
             return KeySource {
@@ -484,7 +487,8 @@ impl Credential {
             Some(Ok(bytes)) => {
                 if state.key_bytes.as_deref() == Some(bytes.as_slice()) {
                     String::new()
-                } else if state.refused_bytes.as_deref() == Some(bytes.as_slice())
+                } else if state.refused_bytes.as_deref()
+                    == Some(bytes.as_slice())
                 {
                     // The same bad file: not parsed and refused again.
                     state.problem.clone()
@@ -632,9 +636,11 @@ impl Credential {
 
     /// Remembers the `DPoP-Nonce` an answer carried, if any.
     pub fn remember_nonce(&self, url: &str, role: &str, answer: &Answer) {
-        if let Some(nonce) = answer.dpop_nonce.as_ref().filter(|n| !n.is_empty())
+        if let Some(nonce) =
+            answer.dpop_nonce.as_ref().filter(|n| !n.is_empty())
         {
-            lock(&self.nonces).insert(Self::nonce_key(url, role), nonce.clone());
+            lock(&self.nonces)
+                .insert(Self::nonce_key(url, role), nonce.clone());
         }
     }
 
@@ -766,7 +772,10 @@ impl Credential {
                 .await;
             self.remember_nonce(&token_url, "token", &answer);
             if let Some(error) = &answer.error {
-                return Err(format!("the token endpoint did not answer: {}", error));
+                return Err(format!(
+                    "the token endpoint did not answer: {}",
+                    error
+                ));
             }
             let error = answer
                 .json
@@ -810,9 +819,7 @@ impl Credential {
                     .to_string(),
             );
         };
-        let kind = json
-            .and_then(|j| j["token_type"].as_str())
-            .unwrap_or("");
+        let kind = json.and_then(|j| j["token_type"].as_str()).unwrap_or("");
         if !kind.eq_ignore_ascii_case("DPoP") {
             return Err(format!(
                 "the token endpoint issued a token of type \"{}\", not a \
@@ -821,13 +828,14 @@ impl Credential {
                 kind
             ));
         }
-        let expires_in = json
-            .and_then(|j| j["expires_in"].as_u64())
-            .unwrap_or(60);
+        let expires_in =
+            json.and_then(|j| j["expires_in"].as_u64()).unwrap_or(60);
         Ok(Held {
             value: value.to_string(),
             renew_at: Instant::now()
-                + Duration::from_secs(expires_in.saturating_sub(RENEW_BEFORE_S)),
+                + Duration::from_secs(
+                    expires_in.saturating_sub(RENEW_BEFORE_S),
+                ),
             expires_at: (chrono::Utc::now()
                 + chrono::Duration::seconds(expires_in as i64))
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -1023,10 +1031,8 @@ pub mod tests {
             .unwrap()
         };
         if jwk["kty"] == "RSA" {
-            PKey::from_rsa(
-                Rsa::from_public_components(b("n"), b("e")).unwrap(),
-            )
-            .unwrap()
+            PKey::from_rsa(Rsa::from_public_components(b("n"), b("e")).unwrap())
+                .unwrap()
         } else {
             let group =
                 EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
@@ -1047,7 +1053,8 @@ pub mod tests {
         let signature = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
         let public = public_of(jwk);
         if jwk["kty"] == "RSA" {
-            let mut v = Verifier::new(MessageDigest::sha256(), &public).unwrap();
+            let mut v =
+                Verifier::new(MessageDigest::sha256(), &public).unwrap();
             v.update(input.as_bytes()).unwrap();
             v.verify(&signature).unwrap()
         } else {
@@ -1066,7 +1073,8 @@ pub mod tests {
 
     #[test]
     fn the_self_assertion_is_rs256_and_verifies() {
-        let key = SigningKey::from_pem(&rsa_pem(), "PEP_ASSERTION_KEY").unwrap();
+        let key =
+            SigningKey::from_pem(&rsa_pem(), "PEP_ASSERTION_KEY").unwrap();
         let aud = "https://pdp.example/realm/r1/oauth2/token";
         let jws = self_assertion(&key, "remote-pep-1", aud, 1_000_000).unwrap();
         let parts: Vec<&str> = jws.split('.').collect();
@@ -1094,7 +1102,8 @@ pub mod tests {
 
     #[test]
     fn keys_other_than_rsa_and_p256_are_refused_by_name() {
-        let key = SigningKey::from_pem(&p256_pem(), "PEP_ASSERTION_KEY").unwrap();
+        let key =
+            SigningKey::from_pem(&p256_pem(), "PEP_ASSERTION_KEY").unwrap();
         let jws = self_assertion(&key, "p", "a", 5).unwrap();
         assert_eq!(decoded(jws.split('.').next().unwrap())["alg"], "ES256");
         assert!(verifies(&jws, key.jwk()));
@@ -1126,7 +1135,8 @@ pub mod tests {
     fn a_proof_has_the_shape_rfc_9449_asks_and_verifies() {
         for pem in [p256_pem(), rsa_pem()] {
             let key = SigningKey::from_pem(&pem, "PEP_ASSERTION_KEY").unwrap();
-            let url = "https://pdp.example/realm/r1/xacml/pep/policies?since=x#f";
+            let url =
+                "https://pdp.example/realm/r1/xacml/pep/policies?since=x#f";
             let jws =
                 proof(&key, "GET", url, Some("the-token"), Some("n-1"), 77)
                     .unwrap();
@@ -1145,15 +1155,14 @@ pub mod tests {
             assert_eq!(claims["iat"], 77);
             assert_eq!(claims["nonce"], "n-1");
             assert_eq!(claims["jti"].as_str().unwrap().len(), 32);
-            let digest = openssl::hash::hash(
-                MessageDigest::sha256(),
-                b"the-token",
-            )
-            .unwrap();
+            let digest =
+                openssl::hash::hash(MessageDigest::sha256(), b"the-token")
+                    .unwrap();
             assert_eq!(claims["ath"], URL_SAFE_NO_PAD.encode(digest));
             assert!(verifies(&jws, &header["jwk"]));
-            let bare = proof(&key, "POST", "https://a/oauth2/token", None, None, 1)
-                .unwrap();
+            let bare =
+                proof(&key, "POST", "https://a/oauth2/token", None, None, 1)
+                    .unwrap();
             let claims = decoded(bare.split('.').nth(1).unwrap());
             assert!(claims.get("ath").is_none());
             assert!(claims.get("nonce").is_none());
@@ -1173,14 +1182,17 @@ pub mod tests {
                   1CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINH\
                   aQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw"
         });
-        let digest =
-            openssl::hash::hash(MessageDigest::sha256(), jwk.to_string().as_bytes())
-                .unwrap();
+        let digest = openssl::hash::hash(
+            MessageDigest::sha256(),
+            jwk.to_string().as_bytes(),
+        )
+        .unwrap();
         assert_eq!(
             URL_SAFE_NO_PAD.encode(digest),
             "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs"
         );
-        let key = SigningKey::from_pem(&p256_pem(), "PEP_ASSERTION_KEY").unwrap();
+        let key =
+            SigningKey::from_pem(&p256_pem(), "PEP_ASSERTION_KEY").unwrap();
         let members: Vec<&String> =
             key.jwk().as_object().unwrap().keys().collect();
         assert_eq!(members, ["crv", "kty", "x", "y"]);
@@ -1242,12 +1254,15 @@ pub mod tests {
     #[test]
     fn a_challenge_s_error_is_read() {
         assert_eq!(
-            challenge_error(r#"DPoP error="use_dpop_nonce", error_description="x""#)
-                .as_deref(),
+            challenge_error(
+                r#"DPoP error="use_dpop_nonce", error_description="x""#
+            )
+            .as_deref(),
             Some("use_dpop_nonce")
         );
         assert_eq!(
-            challenge_error("DPoP error=invalid_token, algs=\"ES256\"").as_deref(),
+            challenge_error("DPoP error=invalid_token, algs=\"ES256\"")
+                .as_deref(),
             Some("invalid_token")
         );
         assert_eq!(challenge_error("DPoP algs=\"ES256\""), None);

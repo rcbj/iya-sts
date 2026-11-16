@@ -36,8 +36,8 @@ use sts_xacml::request::Request;
 use sts_xacml::value::Value as XacmlValue;
 use sts_xacml::xml;
 
-use crate::options::Options;
 use crate::credential::Resource;
+use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
 
 /// The namespace of the two elements XACML does not define.
