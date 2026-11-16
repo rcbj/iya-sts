@@ -532,17 +532,25 @@ function directoryDnNames() {
   Object.keys(x509.DN_ATTRS).forEach(function (name) {
     out[name.toLowerCase()] = name;
   });
-  // LDAP's long names, where they are not the short name above.
-  out.givenname = 'GN';
-  out.surname = 'SN';
-  out.domaincomponent = 'DC';
-  out.commonname = 'CN';
-  out.organization = 'O';
-  out.organisationalunit = 'OU';
-  out.organizationalunit = 'OU';
-  out.countryname = 'C';
-  out.localityname = 'L';
-  out.userid = 'UID';
+  // LDAP's long names, where they are not the short name above. A TABLE OF
+  // ATTRIBUTE TYPE NAMES, never a read of an entry: it is a literal rather
+  // than `out.givenname = …`, which tests/model_entry_reads.js would take
+  // for a store's lower-cased key being read by name (#1579).
+  const longNames = {
+    givenname: 'GN',
+    surname: 'SN',
+    domaincomponent: 'DC',
+    commonname: 'CN',
+    organization: 'O',
+    organisationalunit: 'OU',
+    organizationalunit: 'OU',
+    countryname: 'C',
+    localityname: 'L',
+    userid: 'UID'
+  };
+  Object.keys(longNames).forEach(function (name) {
+    out[name] = longNames[name];
+  });
   log.debug('Leaving directoryDnNames().');
   return out;
 }
