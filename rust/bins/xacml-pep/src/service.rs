@@ -842,6 +842,66 @@ mod tests {
         })
     }
 
+    /// THE ANSWERS ARE THE MODEL'S (#1830): every JSON answer this handler
+    /// gives is read by the type `models/pep/pep_service.tsp` generates into
+    /// `sts-model-pep`, whose objects are closed, so a member the code adds,
+    /// drops or retypes and the model does not fails here.
+    #[test]
+    fn the_answers_are_the_model_s() {
+        use sts_model_pep::pep_service::{components, read_answer};
+        let pep = a_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let json = |text: &str| -> serde_json::Value {
+            serde_json::from_str(text).unwrap()
+        };
+        for (operation, path) in
+            [("getOverview", "/"), ("getHealthcheck", "/healthcheck")]
+        {
+            let (status, body) = ask(&pep, Method::GET, path, https.clone());
+            assert_eq!(status, StatusCode::OK, "{}", path);
+            let read = read_answer(operation, 200, &json(&body));
+            assert!(
+                matches!(read, Some(Ok(()))),
+                "{}: {:?}\n{}",
+                path,
+                read,
+                body
+            );
+        }
+        let (status, body) = ask(
+            &pep,
+            Method::GET,
+            "/protected?subject=alice&employeeType=staff",
+            https.clone(),
+        );
+        assert_eq!(status, StatusCode::FORBIDDEN, "no policy is held");
+        let decision: components::Decision =
+            serde_json::from_value(json(&body)).unwrap();
+        assert!(!decision.allowed && decision.note.is_some());
+        for (method, path, transport) in [
+            (Method::GET, "/nowhere", https.clone()),
+            (Method::GET, "/crl/root.crl", https.clone()),
+            (Method::POST, "/notify", Transport::default()),
+            (
+                Method::GET,
+                "/",
+                Transport {
+                    crl_only: true,
+                    ..Transport::default()
+                },
+            ),
+        ] {
+            let (status, body) = ask(&pep, method, path, transport);
+            assert_eq!(status, StatusCode::NOT_FOUND, "{}", path);
+            let refusal: Result<components::NotFound, _> =
+                serde_json::from_value(json(&body));
+            assert!(refusal.is_ok(), "{}: {}", path, body);
+        }
+    }
+
     /// THE NUDGE IS HTTPS ONLY (2026-11-14): over plain HTTP it is refused
     /// with a sentence naming the HTTPS listener; over HTTPS it is 204.
     #[test]

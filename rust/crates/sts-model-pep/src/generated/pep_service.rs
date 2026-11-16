@@ -298,6 +298,20 @@ pub mod components {
         pub error_description: Option<String>,
     }
 
+    /// What the service sends (POST, https only, the PEP's certificate verified
+    /// against the realm's pep-tls chain, redirects not followed) after a commit to
+    /// the policy repository and to every member of a cluster whose configuration
+    /// changed. The PEP reads none of it.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Nudge {
+        pub event: String,
+        /// When, ISO 8601.
+        pub at: String,
+        /// Always empty today.
+        pub pdp: String,
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Obligation {
@@ -646,8 +660,7 @@ pub mod post_notify {
     pub const PATH: &str = "/notify";
     pub const OPERATION_ID: &str = "postNotify";
 
-    /// The body is not JSON (an upload): its bytes.
-    pub type Body = Vec<u8>;
+    pub type Body = crate::pep_service::components::Nudge;
 }
 
 /// The demonstration decision
@@ -679,6 +692,7 @@ pub mod get_protected {
 pub fn read_body(operation_id: &str, value: &serde_json::Value)
     -> Option<Result<(), serde_json::Error>> {
     match operation_id {
+        "postNotify" => Some(serde_json::from_value::<post_notify::Body>(value.clone()).map(|_| ())),
         _ => None,
     }
 }

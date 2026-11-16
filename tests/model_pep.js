@@ -171,7 +171,8 @@ function wellFormed(t, documents) {
         const where = file + ' ' + method.toUpperCase() + ' ' + one;
         t.check(Boolean(operation.operationId), where + ' has an operationId');
         t.check(!ids.has(operation.operationId), where + '\'s operationId ' +
-          'is not also ' + ids.get(operation.operationId));
+          'is unique across the four documents',
+        ids.get(operation.operationId) || '');
         ids.set(operation.operationId, where);
         Object.keys(operation.responses || {}).forEach(function (status) {
           t.check(Boolean(operation.responses[status].description),

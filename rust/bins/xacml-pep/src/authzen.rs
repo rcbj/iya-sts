@@ -1345,6 +1345,65 @@ mod tests {
         assert_eq!(out["context"]["region"], "eu");
     }
 
+    /// THE WIRE IS THE MODEL'S (#1830): every request the shared cases say
+    /// this edge accepts reads as `models/pep/pep_authzen.tsp`'s
+    /// `EvaluationRequest`, and the decision, a batch's failed item and an
+    /// error, as this file builds them, read as its answers.
+    #[test]
+    fn the_wire_is_the_model_s() {
+        use crate::authzen_map::{outcome, reasons};
+        use crate::enforce::Enforcer;
+        use crate::options::Bias;
+        use sts_model_pep::pep_authzen::{components, read_answer, read_body};
+        use sts_xacml::request::{Response, Status};
+        let cases = crate::authzen_map::tests::shared_cases();
+        let mut accepted = 0;
+        for case in cases["requests"].as_array().unwrap() {
+            if case["code"] != "" {
+                continue;
+            }
+            accepted += 1;
+            let read = read_body("postEvaluation", &case["body"]);
+            assert!(
+                matches!(read, Some(Ok(()))),
+                "{}: {:?}",
+                case["what"],
+                read
+            );
+        }
+        assert!(accepted > 0, "the shared cases accept some requests");
+        let answer = Response {
+            decision: Decision::Permit,
+            status: Status {
+                code: sts_xacml::model::StatusCode::Ok,
+                message: None,
+            },
+            obligations: Vec::new(),
+            advice: Vec::new(),
+            policy_identifiers: Vec::new(),
+        };
+        let enforced = Enforcer::new(Bias::DenyBiased)
+            .enforce(answer.decision, &answer.obligations);
+        let decided = outcome(&answer, &enforced, false);
+        for body in [
+            answer_of(decided.decision, None),
+            answer_of(decided.decision, Some(reasons(&decided))),
+        ] {
+            let read = read_answer("postEvaluation", 200, &body);
+            assert!(matches!(read, Some(Ok(()))), "{}: {:?}", body, read);
+        }
+        let failed = Reply::error(400, "STS-AUTHZEN-0001", "not an object");
+        let batch = json!({ "evaluations": [
+            answer_of(true, Some(reasons(&decided))),
+            { "decision": false, "context": { "error": failed.body["error"] } }
+        ] });
+        let read = read_answer("postEvaluations", 200, &batch);
+        assert!(matches!(read, Some(Ok(()))), "{}: {:?}", batch, read);
+        let error: Result<components::Error, _> =
+            serde_json::from_value(failed.body.clone());
+        assert!(error.is_ok(), "{}", failed.body);
+    }
+
     fn answered(status: u16, body: Value) -> Answer {
         Answer {
             status,

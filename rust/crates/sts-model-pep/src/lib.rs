@@ -35,7 +35,7 @@
 /// The unions of scalars the PEP's documents use, each an untagged enum
 /// named by its kinds.
 #[rustfmt::skip]
-#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types)]
+#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types, unused_variables)]
 pub mod unions {
     include!("generated/unions.rs");
 }
@@ -43,14 +43,14 @@ pub mod unions {
 /// The PEP's own listener: its status, health, demonstration decision, the
 /// policy nudge and its credential's CRLs.
 #[rustfmt::skip]
-#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types)]
+#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types, unused_variables)]
 pub mod pep_service {
     include!("generated/pep_service.rs");
 }
 
 /// The AuthZEN edge PDP the PEP answers on its HTTPS listener (#1179).
 #[rustfmt::skip]
-#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types)]
+#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types, unused_variables)]
 pub mod pep_authzen {
     include!("generated/pep_authzen.rs");
 }
@@ -58,7 +58,7 @@ pub mod pep_authzen {
 /// The paths the reverse proxy owns whatever it is configured with (#1760):
 /// the sign-in callback, sign-out, the account chooser and the logo.
 #[rustfmt::skip]
-#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types)]
+#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types, unused_variables)]
 pub mod pep_proxy {
     include!("generated/pep_proxy.rs");
 }
@@ -66,7 +66,7 @@ pub mod pep_proxy {
 /// The control plane: what the identity service serves for a remote PEP
 /// under `/xacml/pep/` and at `/xacml/pip`, which the PEP calls.
 #[rustfmt::skip]
-#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types)]
+#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types, unused_variables)]
 pub mod pep_control_plane {
     include!("generated/pep_control_plane.rs");
 }

@@ -52,6 +52,10 @@
 //      certificate, a scope, an issued certificate and its revocation, and
 //      the realm's door; and the policies' and the catalogue's tokens that
 //      do not.
+//   X. THE CONTROL PLANE IS THE MODEL'S (#1830): register, heartbeat, the
+//      five pulls, a refusal and two validation doors, each real answer held
+//      to xacml-pep/openapi/pep-control-plane.json (tests/tools/
+//      pep_model.js), whose objects are closed.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -1400,6 +1404,53 @@ async function childBody() {
           'P12. the policies\' and the catalogue\'s tokens do not move with ' +
           'the callers: three pulls, three contracts', policiesToken + ' / ' +
           catalogueToken);
+
+  // -------------------------------------------------------------------------
+  // X. THE CONTROL PLANE IS THE MODEL'S (#1830)
+  //
+  // `models/pep/pep_control_plane.tsp` describes what this service answers a
+  // remote PEP, and `sts-model-pep` is generated from it for the PEP to read
+  // with. Each real answer below is held to the generated document, whose
+  // objects are closed: a member written here and not modelled, or modelled
+  // as required and not written, fails.
+  // -------------------------------------------------------------------------
+  const pepModel = require('./tools/pep_model');
+  const heldToModel = function (label, operationId, answer) {
+    log.debug("Entering heldToModel().");
+    const wrong = answer.json === null ? ['not JSON: ' + brief(answer)] :
+      pepModel.problems('pep-control-plane.json', operationId,
+        answer.status, answer.json);
+    t.check(wrong.length === 0, label + ': ' + operationId + ' ' +
+            answer.status + ' is the model\'s answer', wrong.join('; '));
+    log.debug("Leaving heldToModel().");
+  };
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pullCred,
+    { name: 'azpull', notifyUrl: '', bias: 'deny-biased', resource: '',
+      version: '0.0.0', description: '' });
+  heldToModel('X1', 'postRegister', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pullCred,
+    { name: 'azpull', syncToken: '', policyCount: 0, decisions: 0,
+      allowed: 0, refused: 0, undischargeable: 0, bias: 'deny-biased',
+      resource: '', version: '0.0.0', notifyUrl: '' });
+  heldToModel('X2', 'postHeartbeat', r);
+  for (const one of [['X3', 'getPolicies', '/xacml/pep/policies'],
+    ['X4', 'getAuthzenCatalogue', '/xacml/pep/authzen-catalogue'],
+    ['X5', 'getAuthzenCallers', '/xacml/pep/authzen-callers'],
+    ['X6', 'getSettings', '/xacml/pep/settings'],
+    ['X7', 'getProxy', '/xacml/pep/proxy']]) {
+    r = await request(port, 'GET', PREFIX + one[2], pullCred);
+    t.check(r.status === 200, one[0] + '. ' + one[2] + ' answers 200',
+            brief(r));
+    heldToModel(one[0], one[1], r);
+  }
+  r = await request(port, 'GET', PREFIX + '/xacml/pep/policies', null);
+  heldToModel('X8 (a refusal)', 'getPolicies', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/session', pullCred,
+    { sid: 'no-such-session' });
+  heldToModel('X9', 'postSession', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/introspect',
+    pullCred, { token: 'not-a-token' });
+  heldToModel('X10', 'postIntrospect', r);
 
   // -------------------------------------------------------------------------
   // O. OFF

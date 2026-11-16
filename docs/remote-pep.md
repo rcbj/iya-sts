@@ -1931,6 +1931,22 @@ change anything here:
   Intermediate, and a reissue supersedes. That the container's reload never
   replaces a good pair with a bad one is `rust/bins/xacml-pep`'s own test.
 
+## API reference
+
+Every endpoint of the remote PEP is described by an OpenAPI 3.1 document,
+generated from the model in `models/pep/` and kept in the repository under
+`xacml-pep/openapi/`:
+
+| Document | What it describes |
+|---|---|
+| `pep-service.json` | The PEP's own endpoints: `GET /`, `GET /healthcheck`, `GET /protected`, `POST /notify` and `GET /crl/{name}` |
+| `pep-authzen.json` | The AuthZEN edge PDP: `POST /access/v1/evaluation`, `POST /access/v1/evaluations` and `GET /.well-known/authzen-configuration` |
+| `pep-proxy.json` | The paths the reverse proxy reserves for itself, under `/.iya-pep/`, and how every configured route answers. The routes themselves are not listed: your configuration decides them |
+| `pep-control-plane.json` | What this service serves the PEP: registration, the heartbeat, the pulls, a listener's certificate, the reverse proxy's validation endpoints, and the PIP |
+
+The same model generates Rust types for every request and answer, in the
+crate `rust/crates/sts-model-pep`.
+
 ## See also
 
 - [Authorization overview](authorization.md) — every authorization decision this service makes, and where each is documented

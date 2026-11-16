@@ -29,5 +29,10 @@ indexmap.workspace = true
 regex.workspace = true
 oidc-caep-risc.workspace = true
 
+[dev-dependencies]
+# The generated request and answer types (#1830), which the tests hold this
+# binary's real answers to.
+sts-model-pep.workspace = true
+
 [lints]
 workspace = true

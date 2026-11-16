@@ -8,3 +8,4 @@
 import "./pep_service.tsp";
 import "./pep_authzen.tsp";
 import "./pep_proxy.tsp";
+import "./pep_control_plane.tsp";

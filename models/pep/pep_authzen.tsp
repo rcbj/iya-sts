@@ -46,7 +46,7 @@ using IyaSts.ApiLib;
     `securitySchemes`:#{
       `mutualTLS`:#{
         `type`:"mutualTLS",
-        `description`:"A client certificate verified against PEP_AUTHZEN_CLIENT_CA whose SHA-256 is on a pulled caller's certificates, the caller's endpoints naming this endpoint. Refusals: 401 none configured (STS-XPEP-0039), none presented or plain HTTP (0035), did not verify (0036), the realm's caller door is not mtls (0052); 403 not on the pulled list (0051), endpoint not admitted (0053), not on PEP_AUTHZEN_CALLERS (0054, or 0037 before the first pull); 503 no list pulled and none configured (0050). No WWW-Authenticate."
+        `description`:"A client certificate verified against PEP_AUTHZEN_CLIENT_CA whose SHA-256 is on a pulled caller's certificates, the caller's endpoints naming this endpoint. Refusals: 401 none configured (STS-XPEP-0039), none presented or plain HTTP (0035), did not verify (0036), the realm's caller door is not mtls (0052); 403 not on the pulled list (0051), endpoint not admitted (0053), not on PEP_AUTHZEN_CALLERS (0054, or 0037 before the first pull); 503 no list pulled and none configured (0050). No challenge header is sent."
       }
     }
   },

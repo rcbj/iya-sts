@@ -387,6 +387,13 @@ namespace IyaSts.Pep.Service {
   `note`?: string;
 }
 
+@js(#{`description`:"What the service sends (POST, https only, the PEP's certificate verified against the realm's pep-tls chain, redirects not followed) after a commit to the policy repository and to every member of a cluster whose configuration changed. The PEP reads none of it."})
+@component model `Nudge` {
+  @js(#{`const`:"policy-repository-changed"}) `event`: string;
+  @js(#{`description`:"When, ISO 8601."}) `at`: string;
+  @js(#{`description`:"Always empty today."}) `pdp`: string;
+}
+
 @endpoint("/", "get", #{
   `operationId`:"getOverview",
   `summary`:"What this PEP holds and how it is doing",
@@ -436,13 +443,14 @@ op `getProtected`(`responses/200/content/application~1json/schema`: `Decision`,
   `operationId`:"postNotify",
   `summary`:"The PDP's nudge: pull now",
   `description`:"Answered on an HTTPS listener only. Says only that something may have changed: the body is not read and nothing in the request is trusted or checked. The PEP answers at once and then pulls; the outcome shows on GET / as holding.lastNudgeAt and lastNudgeResult (a failed pull is STS-XPEP-0010).",
-  `requestBody`:#{`required`:false,`description`:"Ignored.",`content`:#{`*/*`:#{`schema`:#{}}}},
+  `requestBody`:#{`required`:false,`description`:"What the service sends; not read, and any other body is answered alike.",`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `204`:#{`description`:"Accepted; the pull follows. The answer still carries Content-Type: application/json and Cache-Control: no-store."},
     `404`:#{`description`:"On a plain listener (STS-XPEP-0112): the PDP nudges over https only. On the CRL-only listener, STS-XPEP-0114.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
-op `postNotify`(`responses/404/content/application~1json/schema`: `NotFound`): void;
+op `postNotify`(`requestBody/content/application~1json/schema`: `Nudge`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
 
 @endpoint("/crl/{name}", "get", #{
   `operationId`:"getCrl",
@@ -453,7 +461,7 @@ op `postNotify`(`responses/404/content/application~1json/schema`: `NotFound`): v
   ],
   `responses`:#{
     `200`:#{`description`:"The CRL's bytes, as the file holds them (normally DER). No Cache-Control.",`content`:#{`application/pkix-crl`:#{`schema`:#{`type`:"string",`contentMediaType`:"application/pkix-crl"}}}},
-    `404`:#{`description`:"No CRL directory, a name of another form, or no such readable file (STS-XPEP-0009); error_description is absent.",`content`:#{`application/json`:#{`schema`:null}}}
+    `404`:#{`description`:"No CRL directory, a name of another form, or no such readable file (STS-XPEP-0009); only error is sent.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getCrl`(`responses/404/content/application~1json/schema`: `NotFound`): void;

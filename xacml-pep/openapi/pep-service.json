@@ -172,10 +172,12 @@
         "description": "Answered on an HTTPS listener only. Says only that something may have changed: the body is not read and nothing in the request is trusted or checked. The PEP answers at once and then pulls; the outcome shows on GET / as holding.lastNudgeAt and lastNudgeResult (a failed pull is STS-XPEP-0010).",
         "requestBody": {
           "required": false,
-          "description": "Ignored.",
+          "description": "What the service sends; not read, and any other body is answered alike.",
           "content": {
-            "*/*": {
-              "schema": {}
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Nudge"
+              }
             }
           }
         },
@@ -226,7 +228,7 @@
             }
           },
           "404": {
-            "description": "No CRL directory, a name of another form, or no such readable file (STS-XPEP-0009); error_description is absent.",
+            "description": "No CRL directory, a name of another form, or no such readable file (STS-XPEP-0009); only error is sent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1584,6 +1586,30 @@
           "decidedBy",
           "pip"
         ]
+      },
+      "Nudge": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "const": "policy-repository-changed"
+          },
+          "at": {
+            "type": "string",
+            "description": "When, ISO 8601."
+          },
+          "pdp": {
+            "type": "string",
+            "description": "Always empty today."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "event",
+          "at",
+          "pdp"
+        ],
+        "description": "What the service sends (POST, https only, the PEP's certificate verified against the realm's pep-tls chain, redirects not followed) after a commit to the policy repository and to every member of a cluster whose configuration changed. The PEP reads none of it."
       }
     }
   }

@@ -3439,3 +3439,41 @@ async fn a_first_answer_that_holds_nothing_is_404_not_503() {
     h.sync.receive_proxy(&json!({ "configured": true }), None);
     assert_eq!(h.get("/public/page").send().await.unwrap().status(), 404);
 }
+
+/// THE PROXY'S OWN ANSWERS ARE THE MODEL'S (#1830): the JSON the proxy's
+/// fixed paths and its refusal envelope give, read by the types
+/// `models/pep/pep_proxy.tsp` generates into `sts-model-pep`, whose objects
+/// are closed.
+#[tokio::test]
+async fn the_proxy_s_answers_are_the_model_s() {
+    use sts_model_pep::pep_proxy::{components, read_answer};
+    let h = harness().await;
+    let held = |operation: &str, status: u16, body: &Value| {
+        let read = read_answer(operation, status, body);
+        assert!(
+            matches!(read, Some(Ok(()))),
+            "{}: {:?}\n{}",
+            operation,
+            read,
+            body
+        );
+    };
+    let out = h.get("/.iya-pep/logout").send().await.unwrap();
+    assert_eq!(out.status(), 200);
+    held("getLogout", 200, &out.json().await.unwrap());
+    let accounts = h.accounts_of("").await;
+    held("getAccounts", 200, &accounts);
+    for path in ["/nowhere", "/api/x"] {
+        let refused = h
+            .get(path)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .unwrap();
+        assert!(refused.status().is_client_error(), "{}", path);
+        let body: Value = refused.json().await.unwrap();
+        let read: Result<components::Refusal, _> =
+            serde_json::from_value(body.clone());
+        assert!(read.is_ok(), "{}: {}", path, body);
+    }
+}
