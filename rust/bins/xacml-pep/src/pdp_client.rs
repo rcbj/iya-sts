@@ -5,9 +5,17 @@
 //! heartbeat and the PIP query — so a PEP cannot verify the PDP for one
 //! request and not for another.
 //!
-//! **The client certificate goes on EVERY call**, not only the registration:
-//! the PDP identifies a heartbeat by the certificate exactly as it does a
-//! registration, and the pull and the PIP require it outright.
+//! **EVERY CALL TO THE SERVICE GOES THROUGH [`PdpClient::call_authorized`]**
+//! (#1827 follow-up): a DPoP-bound access token from the shared
+//! [`Credential`] for the call's [`Resource`], a fresh DPoP proof, one retry
+//! on `use_dpop_nonce` and one on `invalid_token` with a new token. The
+//! plain [`PdpClient::call_url`] is for what is not this PEP's API: the
+//! token request itself and the realm's JWKS, which is anonymous.
+//!
+//! **The client certificate goes on every call WHILE `PEP_TLS_CERT` IS
+//! SET**, as it always did: the service accepts it or the token, so a PEP
+//! that has both presents both, and one whose token cannot be had (no
+//! registered key yet) is still identified by its certificate.
 //!
 //! **A call never fails**: it answers an [`Answer`] whose `error` says what
 //! went wrong, because every caller wants to RECORD what happened and carry
@@ -20,6 +28,7 @@ use std::time::Duration;
 use openssl::pkey::PKey;
 use reqwest::{Certificate, Client, Identity, Method};
 
+use crate::credential::{challenge_error, Credential, Resource};
 use crate::options::Options;
 
 /// What came back.
@@ -41,6 +50,11 @@ pub struct Answer {
     /// The answer's `Retry-After`, passed on with a 429 from the service's
     /// Basic door (#1760).
     pub retry_after: Option<String>,
+    /// The answer's `WWW-Authenticate` and `DPoP-Nonce` (RFC 9449).
+    pub www_authenticate: Option<String>,
+    pub dpop_nonce: Option<String>,
+    /// Why an authorized call went WITHOUT an access token, when it did.
+    pub no_token: Option<String>,
 }
 
 impl Answer {
@@ -77,6 +91,7 @@ pub struct PdpClient {
     http: Client,
     base: String,
     limits: Arc<Limits>,
+    credential: Arc<Credential>,
 }
 
 /// `PEP_TIMEOUT_MS` and `PEP_MAX_BODY_BYTES`, or the service's values.
@@ -134,11 +149,153 @@ impl PdpClient {
         Ok(PdpClient {
             http,
             base,
+            credential: Arc::new(Credential::new(options)),
             limits: Arc::new(Limits {
                 timeout_ms: AtomicU64::new(options.timeout_ms),
                 max_body_bytes: AtomicUsize::new(options.max_body_bytes),
             }),
         })
+    }
+
+    /// The credential every clone shares.
+    pub fn credential(&self) -> &Arc<Credential> {
+        &self.credential
+    }
+
+    /// [`PdpClient::call_authorized_url`] for `path` under the PDP URL's own
+    /// path (a realm prefix included).
+    #[tracing::instrument(level = "debug", skip(self, body))]
+    pub async fn call_authorized(
+        &self,
+        resource: Resource,
+        method: Method,
+        path: &str,
+        body: Option<Body>,
+    ) -> Answer {
+        self.call_authorized_with(resource, method, path, body, &[], None)
+            .await
+    }
+
+    /// [`PdpClient::call_authorized`] with extra request headers and a
+    /// timeout of its own in place of `PEP_TIMEOUT_MS` — the AuthZEN
+    /// forward (#564), which carries the caller's `X-Request-ID` and is
+    /// bounded by `PEP_AUTHZEN_FORWARD_TIMEOUT_MS`, and a pull's
+    /// `If-None-Match`.
+    #[tracing::instrument(level = "debug", skip(self, body, headers))]
+    pub async fn call_authorized_with(
+        &self,
+        resource: Resource,
+        method: Method,
+        path: &str,
+        body: Option<Body>,
+        headers: &[(&str, String)],
+        timeout: Option<Duration>,
+    ) -> Answer {
+        let url = format!("{}{}", self.base, path);
+        self.call_authorized_url(resource, method, &url, body, headers, timeout)
+            .await
+    }
+
+    /// One call to the service carrying `Authorization: DPoP <token>` for
+    /// `resource` and a `DPoP` proof for this method and URL. A 401
+    /// `use_dpop_nonce` with a `DPoP-Nonce` is made once more with that
+    /// nonce; any other 401 to a call that carried a token (the contract's
+    /// `invalid_token`, and a bare 401, which can mean nothing else) drops
+    /// the token and is made once more with a new one. No token to be had,
+    /// the call goes without one — on the client certificate where there
+    /// is one — and `no_token` says why.
+    #[tracing::instrument(level = "debug", skip(self, body, headers))]
+    pub async fn call_authorized_url(
+        &self,
+        resource: Resource,
+        method: Method,
+        url: &str,
+        body: Option<Body>,
+        headers: &[(&str, String)],
+        timeout: Option<Duration>,
+    ) -> Answer {
+        let role = resource.name();
+        let (mut nonce_retried, mut refetched) = (false, false);
+        loop {
+            let mut all: Vec<(&str, String)> = headers.to_vec();
+            let token = self.credential.token(self, resource).await;
+            let mut sent: Option<String> = None;
+            let mut no_token: Option<String> = None;
+            match &token {
+                Ok(value) => {
+                    let nonce = self.credential.nonce_for(url, role);
+                    match self.credential.dpop_proof(
+                        method.as_str(),
+                        url,
+                        Some(value),
+                        nonce.as_deref(),
+                    ) {
+                        Ok(proof) => {
+                            all.push(("Authorization", format!("DPoP {}", value)));
+                            all.push(("DPoP", proof));
+                            sent = Some(value.clone());
+                        }
+                        Err(why) => no_token = Some(why),
+                    }
+                }
+                Err(why) => no_token = Some(why.clone()),
+            }
+            let mut answer = self
+                .call_url(method.clone(), url, body.clone(), &all, timeout)
+                .await;
+            self.credential.remember_nonce(url, role, &answer);
+            let Some(sent) = sent else {
+                answer.no_token = no_token;
+                return answer;
+            };
+            if answer.error.is_some() || answer.status != 401 {
+                return answer;
+            }
+            let error = answer
+                .www_authenticate
+                .as_deref()
+                .and_then(challenge_error)
+                .unwrap_or_default();
+            if error == "use_dpop_nonce" {
+                if !nonce_retried && answer.dpop_nonce.is_some() {
+                    nonce_retried = true;
+                    continue;
+                }
+                self.credential.note_call_problem(
+                    "STS-XPEP-0130",
+                    &format!(
+                        "{} {} demanded a DPoP nonce again after the retry \
+                         carrying the one it handed",
+                        method, crate::credential::htu(url)
+                    ),
+                );
+                return answer;
+            }
+            if !refetched {
+                self.credential.drop_token(resource, &sent);
+                refetched = true;
+                continue;
+            }
+            self.credential.drop_token(resource, &sent);
+            self.credential.note_call_problem(
+                "STS-XPEP-0131",
+                &format!(
+                    "{} {} refused a newly issued access token for {} (401{}): \
+                     the token endpoint issues it and the resource does not \
+                     take it — the PEP's entry may have left the remote PEPs \
+                     group, or the service does not yet accept a token there",
+                    method,
+                    crate::credential::htu(url),
+                    resource.name(),
+                    if error.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {}", error)
+                    }
+                ),
+            );
+            return answer;
+        }
     }
 
     /// The timeout every call without one of its own is given, and the
@@ -161,39 +318,11 @@ impl PdpClient {
         )
     }
 
-    /// `path` is appended to the PDP URL's own path (a realm prefix
-    /// included).
-    #[tracing::instrument(level = "debug", skip(self, body))]
-    pub async fn call(
-        &self,
-        method: Method,
-        path: &str,
-        body: Option<Body>,
-    ) -> Answer {
-        self.call_with(method, path, body, &[], None).await
-    }
-
-    /// [`PdpClient::call`] with extra request headers and a timeout of its
-    /// own in place of `PEP_TIMEOUT_MS` — the AuthZEN forward (#564), which
-    /// carries the caller's `X-Request-ID` and is bounded by
-    /// `PEP_AUTHZEN_FORWARD_TIMEOUT_MS`. The same client, so the same
-    /// certificate and the same verification of the PDP.
-    #[tracing::instrument(level = "debug", skip(self, body, headers))]
-    pub async fn call_with(
-        &self,
-        method: Method,
-        path: &str,
-        body: Option<Body>,
-        headers: &[(&str, String)],
-        timeout: Option<Duration>,
-    ) -> Answer {
-        let url = format!("{}{}", self.base, path);
-        self.call_url(method, &url, body, headers, timeout).await
-    }
-
-    /// One call to an ABSOLUTE URL the PDP named in a pull (#1760: the
-    /// realm's JWKS and token endpoint, the four validation endpoints) —
-    /// through the same client, so the same certificate and the same
+    /// One call to an ABSOLUTE URL with NO access token: the token request
+    /// itself (`credential.rs`) and the realm's JWKS, which the PDP named
+    /// in a pull (#1760). Everything else is
+    /// [`PdpClient::call_authorized_url`], which ends here. The same
+    /// client, so the same certificate where there is one and the same
     /// verification of whoever answers. Never a URL from a request.
     #[tracing::instrument(level = "debug", skip(self, body, headers))]
     pub async fn call_url(
@@ -246,6 +375,8 @@ impl PdpClient {
         };
         let etag = header("etag");
         let retry_after = header("retry-after");
+        let www_authenticate = header("www-authenticate");
+        let dpop_nonce = header("dpop-nonce");
         let mut bytes = Vec::new();
         loop {
             match response.chunk().await {
@@ -274,11 +405,15 @@ impl PdpClient {
             timed_out: false,
             etag,
             retry_after,
+            www_authenticate,
+            dpop_nonce,
+            no_token: None,
         }
     }
 }
 
-/// A request body.
+/// A request body. Cloned for a call made once more (`call_authorized`).
+#[derive(Clone)]
 pub enum Body {
     Json(serde_json::Value),
     Xml(String),

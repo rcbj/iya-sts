@@ -19,6 +19,7 @@ mod audit;
 mod authzen;
 mod authzen_catalogue;
 mod authzen_map;
+mod credential;
 mod enforce;
 mod identity;
 mod jwt;
@@ -313,18 +314,6 @@ async fn start(options: Options, info: version::VersionInfo) {
              setting against anything else."
         );
     }
-    if options.client_certificate.is_none() {
-        tracing::warn!(
-            "xacml-pep: no PEP_TLS_CERT, so this PEP has no client \
-             certificate. The PDP refuses the REGISTRATION unless \
-             xacml.pepRequireCertificate is off — and it refuses the PULL \
-             too, because GET /xacml/pep/policies requires a VERIFIED \
-             certificate whose subject holds the built-in REMOTE_PEPS role. \
-             This PEP will go on deciding against whatever policy it already \
-             holds, which on a fresh start is NOTHING, so every decision will \
-             be NotApplicable and the bias will settle it."
-        );
-    }
     let client = match PdpClient::new(&options) {
         Ok(client) => client,
         Err(error) => {
@@ -336,6 +325,32 @@ async fn start(options: Options, info: version::VersionInfo) {
             std::process::exit(1);
         }
     };
+    // THE CREDENTIAL (#1827 follow-up): what key signs the token requests
+    // and proofs, or why there is none — and when there is neither a key
+    // nor a client certificate, what that costs.
+    let credential = client.credential().clone();
+    credential.announce();
+    if options.client_certificate.is_none() && !credential.has_key() {
+        tracing::warn!(
+            "xacml-pep: no assertion key and no PEP_TLS_CERT, so this PEP \
+             cannot authenticate to the PDP. The PDP refuses the PULL, \
+             because GET /xacml/pep/policies requires a remote PEP. This PEP \
+             will go on deciding against whatever policy it already holds, \
+             which on a fresh start is NOTHING, so every decision will be \
+             NotApplicable and the bias will settle it."
+        );
+    }
+    {
+        // The key file is read again on the listener pair's interval, so a
+        // rotated key is picked up the way a rotated pair is.
+        let (credential, reload_options) = (credential.clone(), options.clone());
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(reload_interval(&reload_options)).await;
+                credential.reload();
+            }
+        });
+    }
     let sync = Arc::new(Sync::new(client.clone(), options.clone()));
     let proxy_client = client.clone();
     let pip = RemotePip::new(client, options.pip_enabled)
@@ -488,7 +503,7 @@ async fn start(options: Options, info: version::VersionInfo) {
     // already queued is still sent.
     tracing::info!(
         "xacml-pep: decision records {} to POST {}{} every {}ms, with a \
-         token from {}{} (client {}).",
+         DPoP-bound token from {}{} (client {}).",
         if audit.enabled() {
             "are sent"
         } else {
@@ -499,8 +514,8 @@ async fn start(options: Options, info: version::VersionInfo) {
         audit::AUDIT_PATH,
         audit.interval_ms(),
         options.pdp_url.trim_end_matches('/'),
-        audit::TOKEN_PATH,
-        options.audit_client_id
+        credential::TOKEN_PATH,
+        options.client_id
     );
     let (shipper, client) = (audit.clone(), sync.client().clone());
     let timer = audit.clone();

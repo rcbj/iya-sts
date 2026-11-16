@@ -68,6 +68,7 @@ use sts_xacml::xml;
 use crate::authzen_catalogue::{self, Row};
 use crate::enforce::Outcome;
 use crate::options::Options;
+use crate::credential::Resource;
 use crate::pdp_client::{Body, PdpClient};
 use crate::proxy_config::{self, Mechanism, Pulled};
 use crate::rp_session::Stores;
@@ -750,7 +751,12 @@ impl Sync {
         }
         let answer = self
             .client
-            .call(Method::POST, "/xacml/pep/register", Some(Body::Json(body)))
+            .call_authorized(
+                Resource::Pep,
+                Method::POST,
+                "/xacml/pep/register",
+                Some(Body::Json(body)),
+            )
             .await;
         let complain = |code: &str, why: &str| {
             if first {
@@ -943,7 +949,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call_with(
+            .call_authorized_with(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/settings{}", query),
                 None,
@@ -1133,7 +1140,12 @@ impl Sync {
         };
         let answer = self
             .client
-            .call(Method::GET, &format!("/xacml/pep/policies{}", query), None)
+            .call_authorized(
+                Resource::Pep,
+                Method::GET,
+                &format!("/xacml/pep/policies{}", query),
+                None,
+            )
             .await;
         if let Some(error) = &answer.error {
             self.keep(
@@ -1360,7 +1372,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call(
+            .call_authorized(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/authzen-catalogue{}", query),
                 None,
@@ -1524,7 +1537,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call(
+            .call_authorized(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/authzen-callers{}", query),
                 None,
@@ -1672,7 +1686,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call_with(
+            .call_authorized_with(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/proxy{}", query),
                 None,
@@ -2084,7 +2099,12 @@ impl Sync {
         }
         let answer = self
             .client
-            .call(Method::POST, "/xacml/pep/heartbeat", Some(Body::Json(body)))
+            .call_authorized(
+                Resource::Pep,
+                Method::POST,
+                "/xacml/pep/heartbeat",
+                Some(Body::Json(body)),
+            )
             .await;
         if answer.error.is_some() || answer.status != 200 {
             // Debug, not warn: a PEP that cannot REPORT is still enforcing.
