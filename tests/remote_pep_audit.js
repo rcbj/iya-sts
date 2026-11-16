@@ -13,10 +13,12 @@
 // RFC 7523 key pair:
 //
 //   1. the seeded client and resource: `sts-remote-pep` is a public client
-//      on the jwt-bearer grant, its tokens bound to a certificate, holding a
-//      delegated permission grant of `xacml:pep-audit`, which
-//      `sts-management-api` defines; over a connection with no client
-//      certificate its token for /admin-api is refused (STS-OAUTH-0489);
+//      on the jwt-bearer grant, its tokens bound to a certificate (or, since
+//      the PEP's token credential, a DPoP key), holding delegated permission
+//      grants of `xacml:pep-audit`, `xacml:pep` and `authzen:evaluate`, the
+//      first of which
+//      `sts-management-api` defines; with neither a client certificate nor
+//      a DPoP proof its token for /admin-api is refused (STS-OAUTH-0487);
 //   2. an entry missing the permission is given it at the next seed
 //      (`fillApiPermissions()`, the upgrade from 1.1.0);
 //   3. the PEP's own self-assertion, through a client in that shape but
@@ -130,6 +132,21 @@ function childMain() {
       .map(function (one) { return String(one).split('|')[0]; });
     note(defined.indexOf('xacml:pep-audit') >= 0,
          '1. sts-management-api defines xacml:pep-audit', defined.join(' '));
+    // #1827's follow-up: the PEP's token credential. The remote PEP's own
+    // API object, and the client's two further delegated permission grants
+    // (tests/remote_pep_token_door.js drives them).
+    const pepApi = permissionsOf('sts-xacml-pep-api')
+      .map(function (one) { return String(one).split('|')[0]; });
+    note(pepApi.indexOf('xacml:pep') >= 0,
+         '1. sts-xacml-pep-api defines xacml:pep', pepApi.join(' '));
+    const remoteGrants = [].concat(remotePep.fields.oauthDelegatedPermission ||
+                                   []).map(String);
+    note(['urn:sts:admin-api:xacml:pep-audit',
+          'urn:sts:xacml-pep-api:xacml:pep',
+          'urn:sts:authzen-api:authzen:evaluate'].every(function (one) {
+      return remoteGrants.indexOf(one) >= 0;
+    }), '1. sts-remote-pep holds xacml:pep-audit, xacml:pep and ' +
+        'authzen:evaluate', remoteGrants.join(' '));
 
     // ---------------------------------------------------------------------
     // 2. THE UPGRADE: an entry without the permission is given it.
@@ -217,8 +234,8 @@ function childMain() {
     note(unbound.status === 400 &&
          /client certificate/.test(String((unbound.json || {})
            .error_description || '')),
-         '1. sts-remote-pep\'s /admin-api token over a connection with no ' +
-         'client certificate is refused (RFC 8705, STS-OAUTH-0489)',
+         '1. sts-remote-pep\'s /admin-api token with neither a client ' +
+         'certificate nor a DPoP proof is refused (RFC 8705, STS-OAUTH-0487)',
          unbound.status + ' ' + unbound.text.slice(0, 300));
 
     // ---------------------------------------------------------------------

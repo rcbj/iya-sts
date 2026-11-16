@@ -236,8 +236,15 @@ const BOOTSTRAP: BootstrapRow[] = [
   { env: 'PEP_TLS_KEY', reason: 'connect', default: '' },
   { env: 'PEP_TLS_CA', reason: 'connect', default: '' },
   { env: 'PEP_TLS_INSECURE', reason: 'connect', default: 'false' },
-  // The public client the decision records' token is asked through
-  // (#1827): how the PEP authenticates, so needed before anything is sent.
+  // THE PEP'S TOKEN CREDENTIAL (#1827's follow-up): the client every token
+  // is asked through, and the one key file its RFC 7523 self-assertion and
+  // its DPoP proofs are signed with (PEP_TLS_KEY where it is unset). How the
+  // PEP authenticates, so needed before anything is sent, and a file it
+  // reads from disk.
+  { env: 'PEP_CLIENT_ID', reason: 'connect', default: 'sts-remote-pep' },
+  { env: 'PEP_ASSERTION_KEY', reason: 'file', default: '' },
+  // The older name of PEP_CLIENT_ID (#1827), read where PEP_CLIENT_ID is
+  // unset, and listed so an environment that sets it is still described.
   { env: 'PEP_AUDIT_CLIENT_ID', reason: 'connect',
     default: 'sts-remote-pep' },
   { env: 'PEP_PORT', reason: 'bind', default: '9090' },

@@ -196,6 +196,64 @@ its own membership.
 a predictable identity printed in this repository is not a grant a deployment should
 inherit — so every enforcement point needs its entry and its membership.
 
+### Instead of a certificate: a DPoP-bound access token
+
+A PEP can authenticate with an access token in place of its client
+certificate on every call it makes to this service. That covers
+`/xacml/pep/*`, `POST /xacml/pip`, the decision-record push and the AuthZEN
+forward. Steps 1 and 2 above then become one step: **register one signing key
+on the PEP's entry** as its JWT assertion key. Step 3, the `remote-peps` group,
+is unchanged. You can issue the key pair on the person page's Credentials,
+or upload a certificate for an existing key with
+`POST /admin-api/pki/upload-certificate`, `target: "person"`,
+`purpose: "jwt"`. The key must be ES256 (EC P-256), which is preferred, or
+RSA.
+
+For each audience, the PEP signs an [RFC 7523](jwt-assertions.md) assertion
+about itself. It presents the assertion at the realm's `/oauth2/token` through
+the public client `sts-remote-pep`, with a [DPoP](oauth-security.md#dpop-rfc-9449) proof made with
+the same key. It asks for:
+
+| For | `resource` | `scope` |
+|---|---|---|
+| `/xacml/pep/*` and `POST /xacml/pip` | `<realm>/xacml/pep` | `xacml:pep` |
+| `POST /admin-api/pep-audit` | `<realm>/admin-api` | `xacml:pep-audit` |
+| `POST /access/v1/evaluation` (the forward) | `<realm>/access/v1` | `authzen:evaluate` |
+
+Every token issued to `sts-remote-pep` is DPoP-bound, and only a member of
+`remote-peps` is issued `xacml:pep`. Each call then sends
+`Authorization: DPoP <token>` and a fresh proof.
+
+- **The PEP is named by its entry's username.** The token's subject is the
+  PEP's own entry, so `PEP_NAME` must be that username. That is the common
+  name a certificate issued by this realm carried, so the PEP keeps its row
+  on `/admin/xacml/peps` and its place in a cluster. The row's thumbprint is
+  the DPoP key's.
+- **A refused token is a 401 with a `DPoP` challenge.** `error="invalid_token"`
+  means fetch a new token. `error="use_dpop_nonce"` comes with a `DPoP-Nonce`
+  header to put in the next proof, when the realm sets
+  `oauth2.dpopNonceRequired`. A refusal by the access policy is still a 403.
+- **A token, when one is sent, is the credential that counts.** A PEP that
+  presents both a certificate and a token is judged on the token. If the token
+  is refused, the certificate is not tried instead.
+- **The token works whatever `authzen.callerAuthentication` is.** That
+  includes `mtls`, for the forward to `/access/v1`. The PEP's entry still
+  needs `AUTHZEN_PEPS` and the application in its scope, as with a
+  certificate.
+
+**`xacml.pepAuthentication`** sets which credential the realm accepts. It is
+per realm and can be changed at runtime.
+
+| Value | Accepted |
+|---|---|
+| `either` (default) | the token or the certificate; a token, where one is sent, decides |
+| `token` | the token only; a certificate alone is refused |
+| `certificate` | the certificate only; the `Authorization` header is not read |
+
+`GET /admin-api/xacml/peps` reports the value as `pepAuthentication`. The
+refusal codes are `STS-XACML-0289` to `STS-XACML-0297` and
+`STS-AUTHZEN-0118` to `STS-AUTHZEN-0121` (see [Error codes](error-codes.md)).
+
 ### The PEP's entry is a service account
 
 The entry a PEP's certificate maps to is a program's identity, not a person's,
@@ -1017,11 +1075,13 @@ each row names the PEP, its `instance` and the record's `seq`, which together
 identify it.
 
 The call carries an access token the PEP gets for itself: it signs an
-[RFC 7523](jwt-assertions.md) assertion naming itself (`PEP_NAME`) with the key
-of its client certificate, and presents it at the realm's `/oauth2/token` over
-the same mutual TLS as every other call, through the public client
-`sts-remote-pep`, for the one scope `xacml:pep-audit` and the resource
-`/admin-api`. That scope is granted only to a member of the remote PEPs group,
+[RFC 7523](jwt-assertions.md) assertion naming itself (`PEP_NAME`) and
+presents it at the realm's `/oauth2/token` through the public client
+`sts-remote-pep`, with a DPoP proof made with the same key, for the one scope
+`xacml:pep-audit` and the resource `/admin-api`
+([the token credential](#instead-of-a-certificate-a-dpop-bound-access-token)).
+The token is bound to that key, and also to the client certificate when the
+PEP presents one. That scope is granted only to a member of the remote PEPs group,
 is checked again on every call, and opens nothing else on `/admin-api`.
 
 ### What you provision for it

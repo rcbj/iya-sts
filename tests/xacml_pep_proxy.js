@@ -1777,9 +1777,12 @@ async function childBody() {
           devCatalogue.bootstrap.map(function (one) {
             return one.env;
           }).indexOf('PEP_PDP_URL') >= 0 &&
-          devCatalogue.bootstrap.map(function (one) {
-            return one.env;
-          }).indexOf('PEP_AUDIT_CLIENT_ID') >= 0 &&
+          ['PEP_CLIENT_ID', 'PEP_ASSERTION_KEY', 'PEP_AUDIT_CLIENT_ID']
+            .every(function (env) {
+              return devCatalogue.bootstrap.map(function (one) {
+                return one.env;
+              }).indexOf(env) >= 0;
+            }) &&
           devCatalogue.precedence.join(',') === 'service,environment,default',
           'S10. the catalogue names the 29 settings (the four decision-' +
           'record ones among them), the bootstrap ' +

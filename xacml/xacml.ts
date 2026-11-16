@@ -1717,6 +1717,7 @@ class XacmlSurface {
               ? ', scope="' + PEP_TOKEN_SCOPE + '"' : '') +
             ', algs="ES256 RS256"');
     errorCodes.mark(res, refusal.code);
+    // error-code: none — marked on the line above with the identity's code.
     self.fail(res, 401, refusal.error, refusal.description);
     log.debug('Leaving XacmlSurface.pepCredentialRefused(). ' + refusal.code);
   }
