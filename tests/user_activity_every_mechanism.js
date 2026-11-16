@@ -602,6 +602,105 @@ function childMain() {
     }
 
     // -----------------------------------------------------------------------
+    // 15–17. A DEVICE (RFC 8628) AND CIBA, APPROVED ON THE PERSON'S OWN
+    //        SIGN-ON SESSION as /portal/device and /portal/ciba approve
+    //        them, and THE TOKEN EXCHANGE (RFC 8693) of a person's token.
+    //        Each new token must be on the person's page: the device's and
+    //        CIBA's under the session that approved them.
+    // -----------------------------------------------------------------------
+    const authn = require(ROOT_DIR + '/authn/authn');
+    const deviceAuthorization =
+      require(ROOT_DIR + '/oauth-oidc/device_authorization');
+    const ciba = require(ROOT_DIR + '/oauth-oidc/ciba');
+    const DEVICE_CODE = 'urn:ietf:params:oauth:grant-type:device_code';
+    const CIBA = 'urn:openid:params:grant-type:ciba';
+    const EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
+    config.setOverride('oauth2.deviceAuthorization', 'true');
+    config.setOverride('oauth2.ciba', 'true');
+    [DEVICE_CODE, CIBA, EXCHANGE].forEach(function (grant) {
+      applications.updateApplication(CLIENT, { attribute: 'oauthGrantType',
+        mode: 'add', value: grant });
+    });
+    applications.updateApplication(CLIENT, {
+      attribute: 'oauthBackchannelTokenDeliveryMode', mode: 'set',
+      value: 'poll' });
+    // The facts a portal approval hands over: the session's own.
+    const factsOf = function (who) {
+      // Newest first: the session the person just signed in on.
+      const one = [].concat(authn.sessionsOf(who) || [])[0] || {};
+      return { acr: one.acr || '', amr: one.amr || [],
+               authTime: one.authTime || 0, sessionId: one.id || '' };
+    };
+    const onSessions = function (who) {
+      return pageOf(who).tokensOnSessions;
+    };
+    {
+      const who = person('device');
+      await codeFlow({}, { action: 'login', username: who, password: 'x' });
+      const before = onSessions(who);
+      const made = await form('/oauth2/device_authorization',
+                              { scope: 'openid' });
+      note(made.status === 200 && made.json && made.json.user_code,
+           'device code: the device is given a user code',
+           made.status + ' ' + made.text.slice(0, 200));
+      const facts = factsOf(who);
+      const answered = deviceAuthorization.answer(
+        (made.json || {}).user_code, who, true, facts);
+      note(answered && answered.ok, 'device code: the person approves it ' +
+           'on their session', JSON.stringify(answered).slice(0, 200));
+      const got = await form('/oauth2/token', { grant_type: DEVICE_CODE,
+        device_code: (made.json || {}).device_code });
+      note(got.status === 200, 'device code: tokens issued',
+           got.status + ' ' + got.text.slice(0, 200));
+      const p = pageOf(who);
+      note(p.tokensOnSessions > before,
+           'device code: Sessions & tokens lists the device\'s tokens under ' +
+           'the session that approved them', summary(p) + ' before=' +
+           before + ' session=' + facts.sessionId);
+    }
+    {
+      const who = person('ciba');
+      await codeFlow({}, { action: 'login', username: who, password: 'x' });
+      const before = onSessions(who);
+      const made = await form('/oauth2/bc-authorize', { scope: 'openid',
+                                                        login_hint: who });
+      note(made.status === 200 && made.json && made.json.auth_req_id,
+           'CIBA: the request is acknowledged',
+           made.status + ' ' + made.text.slice(0, 200));
+      const facts = factsOf(who);
+      const answered = ciba.answer((made.json || {}).auth_req_id, who, true,
+                                   facts);
+      note(answered && answered.ok, 'CIBA: the person approves it on their ' +
+           'session', JSON.stringify(answered).slice(0, 200));
+      const got = await form('/oauth2/token', { grant_type: CIBA,
+        auth_req_id: (made.json || {}).auth_req_id });
+      note(got.status === 200, 'CIBA: tokens issued',
+           got.status + ' ' + got.text.slice(0, 200));
+      const p = pageOf(who);
+      note(p.tokensOnSessions > before,
+           'CIBA: Sessions & tokens lists its tokens under the session that ' +
+           'approved them', summary(p) + ' before=' + before);
+    }
+    {
+      const who = person('exchange');
+      const first = await form('/oauth2/token', { grant_type: 'password',
+        username: who, password: 'x', scope: 'openid' });
+      const before = pageOf(who);
+      const beforeAll = before.tokensOnSessions + before.tokensSessionless +
+                        before.tokensEnded;
+      const got = await form('/oauth2/token', { grant_type: EXCHANGE,
+        subject_token: (first.json || {}).access_token || '',
+        subject_token_type: 'urn:ietf:params:oauth:token-type:access_token' });
+      note(got.status === 200, 'token exchange: a token is issued',
+           got.status + ' ' + got.text.slice(0, 300));
+      const p = pageOf(who);
+      note(p.tokensOnSessions + p.tokensSessionless + p.tokensEnded >
+             beforeAll,
+           'token exchange: Sessions & tokens lists the exchanged token',
+           summary(p) + ' before=' + beforeAll);
+    }
+
+    // -----------------------------------------------------------------------
     // R. EVERY DOOR'S REFUSAL IS THE PERSON'S REFUSED ATTEMPT: the
     //    reserved password `invalid` (refused in every mode), an assertion
     //    signed with a key nobody registered, a wrong Kerberos password.

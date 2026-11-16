@@ -568,6 +568,12 @@ const JOBS = [
   // Authentications tab and what it produced under Sessions & tokens.
   // `local: true`: this repository's console model of a person.
   { file: 'sts_user_activity_every_mechanism.js', browser: false },
+  // The same for GNAP (rcbj, 2026-11-16): a person approves a redirect
+  // interaction, and their page holds the sign-in, the session with the
+  // GNAP token under it, and the grant. A job of its own because its access
+  // type is the test peer's resource server, so `testPeer: true` skips it
+  // where there is no peer without skipping the other mechanisms.
+  { file: 'sts_user_activity_gnap.js', browser: false, testPeer: true },
   // AN OAUTH GRANT REVOKED IS CAEP's session-revoked, AND CIBA AND THE
   // PRE-AUTHORIZED OFFER ARE SESSION-PRESENTED (#239, #240, 2026-09-26):
   // /oauth2/revoke (user), a refresh replay (risk-level-change and policy),

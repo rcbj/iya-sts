@@ -32,6 +32,7 @@
 // In a DEVELOPMENT realm: the sign-in screen's password and a code flow,
 // with its refresh; `GET /tls/sign-in` with an EST-enrolled certificate; the
 // password grant; an RFC 7523 self-assertion on the person's own key pair;
+// an RFC 8693 exchange of the person's own token;
 // a WS-Trust UsernameToken; SAML 2.0, SAML 1.1 and WS-Federation browser
 // sign-ins. In a PRODUCT realm, the two that product allows unchanged for an
 // unregistered caller: the code flow and the RFC 7523 self-assertion.
@@ -205,7 +206,8 @@ async function client(realm, product) {
   const id = "uam-rp-" + K.STAMP;
   await K.app(realm, id, { oauthClientId: id, oauthClientSecret: SECRET,
     oauthRedirectUri: [REDIRECT],
-    oauthGrantType: ["authorization_code", "refresh_token", JWT_BEARER]
+    oauthGrantType: ["authorization_code", "refresh_token", JWT_BEARER,
+                     "urn:ietf:params:oauth:grant-type:token-exchange"]
       .concat(product ? [] : ["password"]),
     oauthAllowedScope: ["openid", "offline_access"],
     oauthTokenEndpointAuthMethod: "client_secret_basic" });
@@ -443,6 +445,23 @@ async function developmentRealm() {
     encodeURIComponent("https://wsfed.uam.example.test/"), /wresult/);
   await expect(realm, "WS-Federation passive", who,
                { session: true, artifacts: 1 });
+
+  // RFC 8693: the person's own access token exchanged for another, which
+  // is on their page beside it.
+  who = await person(realm, "exch");
+  const subjectToken = await token(realm, clientId, { grant_type: "password",
+    username: who, password: PW, scope: "openid" });
+  assert.strictEqual(subjectToken.status, 200, K.shown(subjectToken));
+  const held = await settled(realm, who, { tokens: 1 });
+  const heldBefore = held.tokensOnSessions + held.tokensSessionless +
+                     held.tokensEnded;
+  const exchanged = await token(realm, clientId, {
+    grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+    subject_token: subjectToken.json.access_token,
+    subject_token_type: "urn:ietf:params:oauth:token-type:access_token" });
+  assert.strictEqual(exchanged.status, 200, K.shown(exchanged));
+  await expect(realm, "token exchange (RFC 8693)", who,
+               { tokens: heldBefore + 1 });
 
   who = await person(realm, "ldap");
   assert.strictEqual(await ldapBind(realm, who, PW), 0, "the LDAP bind");
