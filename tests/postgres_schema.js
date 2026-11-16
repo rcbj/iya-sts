@@ -526,6 +526,25 @@ function checkTheSessionIndex(t, sql) {
   log.debug("Leaving checkTheSessionIndex().");
 }
 
+// THE REMOTE PEPS' CREDENTIAL STEP (#1827's follow-up, phase 4): 1.1.0's
+// default for xacml.pepAuthentication is `token`, and the upgrade keeps
+// `either` for a realm that registered a PEP under 1.0.0 (whose PEPs all
+// authenticated by certificate). Held here: the setting's default in
+// config.js, the step's three writes, each only where nothing is stored, and
+// each reading ou=peps through parent_key. The step was also run against a
+// throwaway postgres:16 and mariadb:11.8 store (twice, the second writing
+// nothing) when it was written; this checks the text stays that step.
+function pepAuthenticationRow() {
+  log.debug("Entering pepAuthenticationRow().");
+  const text = fs.readFileSync(path.join(ROOT, 'common', 'config.js'), 'utf8');
+  const at = text.indexOf("key: 'xacml.pepAuthentication'");
+  const row = at >= 0 ? text.slice(at, at + 600) : '';
+  const dflt = /dflt:\s*'([a-z]+)'/.exec(row);
+  log.debug("Leaving pepAuthenticationRow().");
+  return { found: at >= 0, dflt: dflt ? dflt[1] : '',
+           either: /'either'/.test(row) };
+}
+
 // Release 1.0.0 is schema version 31. postgres/upgrade-1.0.0.sql is the
 // live-store step to version 32: the two session indexes schema.sql gained
 // after that tag, built with CREATE INDEX CONCURRENTLY, and the same
@@ -591,6 +610,46 @@ function checkTheReleaseUpgrade(t, sql) {
   t.check(version.length === 1 && body.some(function (statement) {
     return normalize(statement) === normalize(version[0]);
   }), 'upgrade-1.0.0.sql records that same version row');
+  // #1827's follow-up, phase 4: the PEP credential step.
+  const pep = pepAuthenticationRow();
+  t.check(pep.found && pep.dflt === 'token' && pep.either,
+          'xacml.pepAuthentication defaults to token and offers either',
+          JSON.stringify(pep));
+  // A psql meta-command (`\gset`, `\if`) carries no `;`, so the first
+  // write is read with the SELECT before it; each is cut from its WITH.
+  const pepSteps = body.map(function (statement) {
+    const at = statement.indexOf('WITH written AS');
+    return at >= 0 ? statement.slice(at) : statement;
+  }).filter(function (statement) {
+    return statement.indexOf('xacml.pepAuthentication') >= 0 &&
+           /^WITH written AS \(\s*(INSERT|UPDATE)\b/i.test(statement);
+  });
+  t.equal(pepSteps.length, 3,
+          'upgrade-1.0.0.sql writes xacml.pepAuthentication in three steps');
+  t.check(pepSteps.length === 3 && pepSteps.every(function (one) {
+    return /INSERT INTO sts_changes \(origin, kind\)\s+SELECT 'upgrade-1\.0\.0'/
+      .test(one) && /WHERE EXISTS \(SELECT 1 FROM written\)/.test(one);
+  }), 'each write records a change-log row, and only when it wrote',
+          pepSteps.join('\n---\n'));
+  t.check(pepSteps.length === 3 &&
+          /ON CONFLICT \(key\) DO NOTHING/i.test(pepSteps[0]) &&
+          /realm = 'default' AND parent_key LIKE 'ou=peps,%'/
+            .test(pepSteps[0]) &&
+          /"raw": "either"/.test(pepSteps[0]),
+          'the default realm gets {"raw": "either"} only with a PEP under ' +
+          'ou=peps and no stored row', pepSteps[0]);
+  t.check(pepSteps.length === 3 &&
+          /NOT jsonb_exists\(/.test(pepSteps[1]) &&
+          /e\.parent_key LIKE 'ou=peps,%'/.test(pepSteps[1]) &&
+          /"either"/.test(pepSteps[1]),
+          'another realm gets either only with a PEP and no stored value',
+          pepSteps[1]);
+  t.check(pepSteps.length === 3 &&
+          /NOT jsonb_exists\(/.test(pepSteps[2]) &&
+          /"token"/.test(pepSteps[2]) &&
+          /a\.value->>'raw' = 'either'/.test(pepSteps[2]),
+          'a realm is pinned to token only where the default realm stores ' +
+          'either and it stores nothing', pepSteps[2]);
   log.debug("Leaving checkTheReleaseUpgrade().");
 }
 

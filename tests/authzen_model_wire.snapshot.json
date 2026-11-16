@@ -2544,7 +2544,7 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 13
+     "total": 15
     },
     "results": [
      {
@@ -2578,7 +2578,7 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 13
+     "total": 15
     },
     "results": [
      {
@@ -2875,8 +2875,8 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 13,
-     "total": 13
+     "count": 15,
+     "total": 15
     },
     "results": [
      {
@@ -2901,6 +2901,10 @@
      },
      {
       "type": "application",
+      "id": "sts-remote-pep"
+     },
+     {
+      "type": "application",
       "id": "sts-report"
      },
      {
@@ -2918,6 +2922,10 @@
      {
       "type": "application",
       "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "sts-xacml-pep-api"
      },
      {
       "type": "application",
@@ -3068,8 +3076,8 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 13,
-     "total": 13
+     "count": 15,
+     "total": 15
     },
     "results": [
      {
@@ -3094,6 +3102,10 @@
      },
      {
       "type": "application",
+      "id": "sts-remote-pep"
+     },
+     {
+      "type": "application",
       "id": "sts-report"
      },
      {
@@ -3111,6 +3123,10 @@
      {
       "type": "application",
       "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "sts-xacml-pep-api"
      },
      {
       "type": "application",
@@ -7206,7 +7222,7 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 13
+     "total": 15
     },
     "results": [
      {
@@ -7241,7 +7257,7 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 13
+     "total": 15
     },
     "results": [
      {
@@ -7548,8 +7564,8 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 13,
-     "total": 13
+     "count": 15,
+     "total": 15
     },
     "results": [
      {
@@ -7574,6 +7590,10 @@
      },
      {
       "type": "application",
+      "id": "sts-remote-pep"
+     },
+     {
+      "type": "application",
       "id": "sts-report"
      },
      {
@@ -7591,6 +7611,10 @@
      {
       "type": "application",
       "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "sts-xacml-pep-api"
      },
      {
       "type": "application",
@@ -7747,8 +7771,8 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 13,
-     "total": 13
+     "count": 15,
+     "total": 15
     },
     "results": [
      {
@@ -7773,6 +7797,10 @@
      },
      {
       "type": "application",
+      "id": "sts-remote-pep"
+     },
+     {
+      "type": "application",
       "id": "sts-report"
      },
      {
@@ -7790,6 +7818,10 @@
      {
       "type": "application",
       "id": "sts-user-portal"
+     },
+     {
+      "type": "application",
+      "id": "sts-xacml-pep-api"
      },
      {
       "type": "application",

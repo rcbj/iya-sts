@@ -1233,7 +1233,10 @@ class Acme {
     });
     (requested.uris || []).forEach(function (one) {
       const named = core.entryFromUri(one);
-      if (named && named.kind === entry.kind) {
+      // Either spelling of a person (#1827), but `urn:sts:sa:` only of a
+      // service account.
+      if (named && named.kind === entry.kind &&
+          !core.serviceAccountUriRefusal(one)) {
         have[keyOf('permanent-identifier', named.id)] = true;
       } else {
         bad.push('URI ' + one);
@@ -1916,6 +1919,13 @@ class Acme {
         }
         let value = jws.normalIdentifier(one.type, one.value);
         if (one.type === 'permanent-identifier' && value) {
+          // `urn:sts:sa:` of somebody who is not a service account (#1827).
+          const notOne = core.serviceAccountUriRefusal(value);
+          if (notOne) {
+            log.debug("Leaving the ACME new-order. Not a service account.");
+            return self.acmeProblem(ctx, 400, 'rejectedIdentifier',
+                                    'STS-ENROLL-0097', notOne.why);
+          }
           const named = core.entryFromUri(value);
           value = named && named.kind === account.entry.kind ? named.id : value;
         }

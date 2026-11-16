@@ -48,8 +48,8 @@
     "text": "El certificado con el que el KDC de este dominio firma sus respuestas PKINIT (RFC 4556): id-pkinit-KPKdc en su uso extendido de clave y el servicio de concesión de tickets del dominio, krbtgt/REALM@REALM, en un id-pkinit-san. Uno por proceso, creado cuando se usa PKINIT por primera vez; la clave privada nunca sale del proceso que la creó."
   },
   "pki.useCases.acme.what": {
-    "en": "85c88fe668bcb64d",
-    "text": "Certificados emitidos por ACME (RFC 8555) en /enroll/acme, a una entrada de persona o aplicación para la que se emitió una clave de External Account Binding. Cada hoja nombra esa entrada en un subjectAltName urn:sts:person: o urn:sts:application:."
+    "en": "2f0eeec1390c0623",
+    "text": "Certificados emitidos por ACME (RFC 8555) en /enroll/acme, a una entrada de persona o aplicación para la que se emitió una clave de External Account Binding. Cada hoja nombra esa entrada en un subjectAltName urn:sts:person: (urn:sts:sa: para una cuenta de servicio) o urn:sts:application:."
   },
   "pki.useCases.est.what": {
     "en": "20925fe97c792b47",
@@ -60,12 +60,12 @@
     "text": "Certificados emitidos por SCEP (RFC 8894) en /enroll/scep, a la entrada para la que se emitió una contraseña de desafío de un solo uso. El certificado de RA para el que SCEP cifra las solicitudes también es una hoja de esta CA, con una clave RSA porque el transporte de claves de SCEP es RSA."
   },
   "pki.useCases.tls-client.what": {
-    "en": "903e048677f8ab58",
-    "text": "Los certificados de cliente TLS que las personas se emiten a sí mismas en el portal de usuario: clientAuth, el nombre urn:sts:person: de la persona y una clave privada entregada una vez como PKCS#12. Un certificado de esta autoridad inicia la sesión de su titular en GET /tls/sign-in en el puerto principal, en este dominio; un certificado de cualquier otra autoridad de este servicio no lo hace, aunque todas encadenan a la misma raíz."
+    "en": "1b378238cd4bc7ec",
+    "text": "Los certificados de cliente TLS que las personas se emiten a sí mismas en el portal de usuario: clientAuth, el nombre urn:sts:person: de la persona (urn:sts:sa: para una cuenta de servicio) y una clave privada entregada una vez como PKCS#12. Un certificado de esta autoridad inicia la sesión de su titular en GET /tls/sign-in en el puerto principal, en este dominio; un certificado de cualquier otra autoridad de este servicio no lo hace, aunque todas encadenan a la misma raíz."
   },
   "pki.useCases.message-signing.what": {
-    "en": "4aacf430b5a390f0",
-    "text": "Los certificados con los que una persona o una aplicación firma una solicitud WS-Trust (una firma WS-Security 1.1 sobre el Body SOAP y el Timestamp): solo digitalSignature, el nombre urn:sts:person: o urn:sts:application: del titular, y una clave privada entregada una sola vez como PKCS#12. Los emite un administrador desde la consola o /admin-api. Un certificado de esta autoridad autentica a su titular como solicitante de una RST firmada, en este dominio; un certificado de cliente TLS de este servicio no lo hace, y este no inicia la sesión de nadie por TLS."
+    "en": "f585bff7b006f247",
+    "text": "Los certificados con los que una persona o una aplicación firma una solicitud WS-Trust (una firma WS-Security 1.1 sobre el Body SOAP y el Timestamp): solo digitalSignature, el nombre urn:sts:person:, urn:sts:sa: (una cuenta de servicio) o urn:sts:application: del titular, y una clave privada entregada una sola vez como PKCS#12. Los emite un administrador desde la consola o /admin-api. Un certificado de esta autoridad autentica a su titular como solicitante de una RST firmada, en este dominio; un certificado de cliente TLS de este servicio no lo hace, y este no inicia la sesión de nadie por TLS."
   },
   "pki.useCases.policy-signing.what": {
     "en": "9dd7e80fa0d8f1eb",

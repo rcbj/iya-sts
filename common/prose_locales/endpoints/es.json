@@ -1007,6 +1007,10 @@
     "en": "1b28ca2ff0e0999f",
     "text": "El feed de cumplimiento de dispositivos (MDM / postura)"
   },
+  "endpoints.route./admin-api/pep-audit.name": {
+    "en": "df3ac1026eab32fe",
+    "text": "Los registros de decisiones de un PEP remoto"
+  },
   "endpoints.route./admin-api/device-registration.name": {
     "en": "f8fcb8ceb53f6ebf",
     "text": "Registro de dispositivos"

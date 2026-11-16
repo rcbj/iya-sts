@@ -98,7 +98,7 @@
   "tls.key": "Clé",
   "tls.goodUntil": "Valide jusqu’au",
   "tls.how": "<strong>Comment l’application l’utilise.</strong> Présentez-le sur la connexion TLS au point de terminaison de jeton avec <code>client_id={client}</code> et une <code>token_endpoint_auth_method</code> de <code>tls_client_auth</code> sur l’entrée : la section 2.1 de la RFC 8705 l’authentifie parce que ce domaine l’a émis pour cette application, sans rien d’autre d’enregistré. Chaque jeton d’accès émis sur cette connexion porte le <code>cnf[\"x5t#S256\"]</code> de ce certificat (section 3) : l’application présente donc le même certificat aux serveurs de ressources. <code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
-  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a mutual-TLS client does with the chain <code>{chain}</code> and the key <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "Domaine",
   "pep.names": "Noms",
   "validUntil": "Valide jusqu’au",
@@ -116,5 +116,11 @@
   "cluster.back": "Retour au cluster",
   "cluster.discardedDownload": "Télécharger ce qui a été abandonné",
   "cluster.discardedLead": "Le PEP n’a plus son propre proxy inverse, ses paramètres ni ses écouteurs : il récupère ceux du cluster. Voici ce qu’il avait, une seule fois.",
-  "cluster.discardedTitle": "Un PEP a rejoint un cluster"
+  "cluster.discardedTitle": "Un PEP a rejoint un cluster",
+  "once.pepCredential": "Clé d’assertion du PEP",
+  "pepCredential.keyPath": "(le chemin du fichier de clé avec lequel vous avez fait la demande)",
+  "pepCredential.urn": "Nom",
+  "pepCredential.env": "Démarrez le PEP avec cet environnement. La clé privée n’a jamais quitté la machine qui a fait la demande ; ce service n’en a aucune à donner.",
+  "pepCredential.chain": "Le certificat et sa chaîne jusqu’à la racine du service. Public : le PEP n’en a pas besoin pour s’authentifier, et il figure dans la liste des clés de l’entrée.",
+  "pepCredential.download": "Télécharger le certificat"
 }

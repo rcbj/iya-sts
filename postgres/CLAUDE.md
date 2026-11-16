@@ -17,7 +17,7 @@ this service builds for itself.
 | `require-tls.sh` | rewrites every `host` rule in `pg_hba.conf` to `hostssl` |
 | `schema.sql` | **builds the schema and the least-privileged role this service dials with.** Plain SQL, idempotent, takes psql variables, and runnable by hand against any database |
 | `apply-schema.sh` | runs `schema.sql` once, on the start that creates the cluster, with the role name and password the stack was given |
-| `upgrade-1.0.0.sql` | brings a release 1.0.0 store (schema version 31) to version 32 without running `schema.sql`. The container does not run it |
+| `upgrade-1.0.0.sql` | brings a release 1.0.0 store (schema version 31) to version 32 without running `schema.sql`, and stores `xacml.pepAuthentication` = `either` for each realm with a registered remote PEP (#1827). The container does not run it |
 
 ## How `docker-compose.yml` runs them
 
@@ -307,6 +307,24 @@ keep serving while the indexes build; start the version-32 image after
 the script exits 0. A rollback to a version-31 image leaves both indexes
 in place. MariaDB's twin is `mariadb/upgrade-1.0.0.sql`, and it adds only
 `sts_sessions_started`.
+
+**AND ONE DATA STEP, THE REMOTE PEPS' CREDENTIAL (#1827's follow-up, phase
+4; rcbj 2026-11-16: "Default to 'token' ... create a migration script").**
+1.1.0 makes `xacml.pepAuthentication` default to `token`, and every PEP a
+1.0.0 store registered authenticated by certificate, so the script stores
+`either` in each realm with a row under its `ou=peps` (`parent_key LIKE
+'ou=peps,%'`) and no stored value: `sts_appconfig` `{"raw": "either"}` for
+the default realm, `sts_realms.overrides` for the others — and, because the
+default realm's row is every realm's fallback, `token` in each other realm
+with no PEP and no value when the default realm stores `either`. Each write
+is a data-modifying CTE that also writes an `sts_changes` row (origin
+`upgrade-1.0.0`, kind `appconfig` or `realms`) only when it changed
+something, so a running 1.1.0 process picks it up at its next pull and a
+second run writes nothing. No transaction, as above. A database without
+the four tables (a cell or tier store) skips it and says so. It was run
+against throwaway postgres:16 and mariadb:11.8 stores twice when written;
+`tests/postgres_schema.js` and `tests/mariadb_schema.js` hold its text.
+Not a schema change, so no version of its own.
 
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that

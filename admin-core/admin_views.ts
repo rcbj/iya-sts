@@ -99,7 +99,6 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
-import nodeCrypto = require('crypto');
 import configDump = require('./config_dump');
 // The policy references a group may make (#1235, rule 3cx): a leaf.
 import PolicySelection = require('../common/policy_selection');
@@ -11835,7 +11834,7 @@ class AdminViews {
         return;
       }
       try {
-        const cert = new nodeCrypto.X509Certificate(text);
+        const cert = stsCrypto.parseCertificate(text);
         add(helpers.dnRfc4514(cert.subject));
       } catch (e) {
         // A list row whose PEM is not a certificate. The tab still lists
@@ -11874,7 +11873,7 @@ class AdminViews {
           return;
         }
         try {
-          const cert = new nodeCrypto.X509Certificate(one.der);
+          const cert = stsCrypto.parseCertificate(one.der);
           add(helpers.dnRfc4514(cert.subject));
         } catch (e) {
           // DER that is not a certificate. The username's rows still list.

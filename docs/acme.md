@@ -272,7 +272,8 @@ it names a host, `CN=<the first dns or ip identifier>, UID=<entry>,
 O=<organisation>`, because certbot and lego read a certificate's names back as
 its CN plus its dNSNames and every renewal asked for the entry's name as a host
 until this was so (#207) — it always
-carries the entry's `urn:sts:person:<name>` or `urn:sts:application:<id>` URI,
+carries the entry's `urn:sts:person:<name>` (`urn:sts:sa:<name>` for a
+[service account](service-accounts.md)) or `urn:sts:application:<id>` URI,
 and its key usages are the profile's.
 
 ## Profiles

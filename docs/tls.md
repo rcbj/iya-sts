@@ -301,7 +301,8 @@ arrives. What a certificate is worth is decided where it is used:
 Every door except the token endpoint (and GNAP's key proof, which reads a
 certificate as a key) maps a certificate to **one directory entry** the same
 way: a certificate this service issued names its person or application in a
-`urn:sts:person:` / `urn:sts:application:` subjectAltName, and a certificate
+`urn:sts:person:` / `urn:sts:application:` subjectAltName (`urn:sts:sa:` for a
+service account, which is a person), and a certificate
 from an outside certificate authority is the entry it is **stored on** — see
 [A certificate from an outside certificate authority](#a-certificate-from-an-outside-certificate-authority).
 The token endpoint keeps the client's registered RFC 8705 metadata

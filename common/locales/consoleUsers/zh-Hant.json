@@ -629,6 +629,8 @@
   "userCredentialsSection.labelField": "名稱（選填）",
   "userCredentialsSection.labelHint": "將使用它的程式",
   "userCredentialsSection.addHeading": "新增金鑰組",
+  "userCredentialsSection.issueHeading": "從此領域的 CA 簽發",
+  "userCredentialsSection.uploadHeading": "上傳其已持有的憑證",
   "userCredentialsSection.atCap": "當事人在此設定檔下持有 {max} 組有效金鑰組，即 <code>pki.personSigningKeyMax</code>。請先撤銷一組，再簽發或上傳新的。",
   "userCredentialsSection.addNote": "<strong>兩種方式都會為此項目新增一組金鑰組</strong>，已有的金鑰組繼續有效，每個設定檔最多 {max} 組有效金鑰組。簽發會在此產生新的金鑰組並由本領域的簽發 CA 簽署；私密金鑰密封在項目上，並在按鈕開啟的頁面上<strong>只顯示一次</strong>。上傳會登記當事人已持有的憑證，本服務不為其保管私密金鑰。來自本領域授權單位的憑證可以單獨上傳，且必須是簽發給此人的。<strong>來自其他任何授權單位的憑證必須附上完整鏈結</strong> &mdash; 每個中繼憑證和自我簽署的根憑證 &mdash; 且每個環節都會經過驗證。攜帶私密金鑰的上傳會被拒絕。",
   "userCredentialsSection.upload": "上傳憑證",
@@ -976,5 +978,6 @@
   "mfaSection.pubStateDeactivated": "已停用",
   "mfaSection.pubDeactivate": "停用",
   "mfaSection.pubDeactivateTip": "永久停用此 DID：其位址回應 410 Gone，其歷史仍可解析，並且不再用於當事人登入，也不再於 did 宣告中發布。",
-  "mfaSection.pubNeedsWrite": "停用需要 <strong>Admin Write</strong>。"
+  "mfaSection.pubNeedsWrite": "停用需要 <strong>Admin Write</strong>。",
+  "keySource.issuedFromCsr": "根據其自己的請求在此認證 &mdash; 本領域的簽發 CA 認證了其自行產生的金鑰。私密金鑰由其持有；本服務從未持有。"
 }

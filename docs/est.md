@@ -229,6 +229,7 @@ the entry's valid EST certificates by the subject and names the request repeats.
 
 **An administrator** enrolls for somebody else by naming them in a
 `urn:sts:person:<username>` (or `urn:sts:application:<id>`) subjectAltName, or
+`urn:sts:sa:<username>` for a [service account](service-accounts.md), or
 by their username as the common name.
 
 ## With libest's estclient

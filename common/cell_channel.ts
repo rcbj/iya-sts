@@ -71,6 +71,8 @@ import cells = require('./cells');
 // This service's one cryptographic module (#453), for the inter-cell leaf's
 // key pair. A leaf that requires nothing here.
 import stsCrypto = require('./crypto');
+// The names a leaf gives its holder, defined once (#1827).
+import SubjectUrn = require('./subject_urn');
 
 const log = bunyan.createLogger({ name: 'sts-cell-channel' });
 
@@ -79,7 +81,7 @@ const log = bunyan.createLogger({ name: 'sts-cell-channel' });
 // answered 404 like any other unrouted path.
 const OP_PREFIX = '/_cell/v1/';
 // The URI subjectAltName every inter-cell leaf carries.
-const CELL_URN_PREFIX = 'urn:sts:cell:';
+const CELL_URN_PREFIX = SubjectUrn.CELL;
 // How long a leaf lives, and when a process re-mints its own: at half-life,
 // asked by the scheduler job below every CHECK_MS.
 const LEAF_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -477,10 +479,9 @@ class CellChannel {
       return refuse('its certificate was not issued by the inter-cell ' +
                     'Issuing CA');
     }
-    const names = String((cert && cert.subjectaltname) || '')
-      .split(',').map((one: string) => one.trim())
-      .filter((one: string) => one.indexOf('URI:' + CELL_URN_PREFIX) === 0)
-      .map((one: string) => one.slice(('URI:' + CELL_URN_PREFIX).length));
+    const names = SubjectUrn.namesIn(
+      String((cert && cert.subjectaltname) || ''), ['cell'])
+      .map((one) => one.name);
     if (names.length !== 1) {
       log.debug("Leaving CellChannel.peerCellOf(). No single cell.");
       return refuse('its certificate names ' + names.length + ' cells');
