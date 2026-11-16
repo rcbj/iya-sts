@@ -15790,6 +15790,13 @@ op `getMetrics`(`responses/200/content/application~1json/schema`: `Metrics`,
         `description`:"Which page of `artifacts` to return, answered by `artifactsPaging`. SAML assertions, Kerberos tickets and credentials."
       },
       #{
+        `name`:"authenticationHistoryPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `authenticationHistory` to return, answered by `authenticationHistoryPaging`. How they authenticated (`user.events`), most recent first, ten a page by default (#1844). `user.events` is still the whole list."
+      },
+      #{
         `name`:"federationLinksPage",
         `in`:"query",
         `required`:false,
@@ -15828,6 +15835,7 @@ op `getUsers`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/12/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/13/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/15/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_users_r200_application_json_h2549,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors13`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
