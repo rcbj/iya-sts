@@ -928,6 +928,47 @@ impl Credential {
     }
 
     /// `credential` on `GET /`: never a token, a proof or a key.
+    /// Which credential a call actually went out on, for a log line: the
+    /// DPoP-bound token (and the key that bound it) unless the answer says
+    /// it went without one, then the client certificate where one is
+    /// presented, else nothing. rcbj (2026-11-16): a line that says
+    /// "over mutual TLS" of a call made on a token is wrong.
+    pub fn used_on(&self, no_token: Option<&str>) -> String {
+        Credential::describe_used(
+            no_token,
+            self.source.var,
+            self.client_certificate,
+        )
+    }
+
+    /// `used_on()` from its three facts, so a test needs no key file.
+    pub fn describe_used(
+        no_token: Option<&str>,
+        key_source: &str,
+        client_certificate: bool,
+    ) -> String {
+        match no_token {
+            None => format!(
+                "a DPoP-bound access token (the key in {}){}",
+                if key_source.is_empty() {
+                    "an unnamed source"
+                } else {
+                    key_source
+                },
+                if client_certificate {
+                    ", beside its client certificate"
+                } else {
+                    ""
+                }
+            ),
+            Some(why) if client_certificate => format!(
+                "its client certificate, with no access token ({})",
+                why
+            ),
+            Some(why) => format!("no credential at all ({})", why),
+        }
+    }
+
     pub fn overview(&self) -> Value {
         let state = self.key_state();
         let slots = lock(&self.slots);
@@ -997,6 +1038,31 @@ pub mod tests {
 
     pub fn decoded(part: &str) -> Value {
         serde_json::from_slice(&URL_SAFE_NO_PAD.decode(part).unwrap()).unwrap()
+    }
+
+    /// rcbj, 2026-11-16: a log line names the credential a call actually
+    /// went out on — never "mutual TLS" of a call made on a token.
+    #[test]
+    fn a_log_line_names_the_credential_actually_used() {
+        let token = Credential::describe_used(None, "PEP_ASSERTION_KEY", false);
+        assert_eq!(
+            token,
+            "a DPoP-bound access token (the key in PEP_ASSERTION_KEY)"
+        );
+        assert!(!token.contains("mutual TLS"));
+        let both = Credential::describe_used(None, "PEP_TLS_KEY", true);
+        assert!(both.starts_with(
+            "a DPoP-bound access token (the key in \
+                                  PEP_TLS_KEY)"
+        ));
+        assert!(both.ends_with("beside its client certificate"));
+        let cert = Credential::describe_used(Some("no key"), "", true);
+        assert_eq!(
+            cert,
+            "its client certificate, with no access token (no key)"
+        );
+        let none = Credential::describe_used(Some("no key"), "", false);
+        assert_eq!(none, "no credential at all (no key)");
     }
 
     pub fn rsa_pem() -> Vec<u8> {

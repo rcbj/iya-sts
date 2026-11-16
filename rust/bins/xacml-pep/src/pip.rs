@@ -469,10 +469,12 @@ impl RemotePip {
                     "the PDP answered {} to the PIP query{}.",
                     answered.status,
                     if answered.status == 403 {
-                        " — POST /xacml/pip requires a client certificate \
-                         this service VERIFIES whose subject holds the \
-                         built-in REMOTE_PEPS role, so check PEP_TLS_CERT and \
-                         the group roles.remotePepGroup names"
+                        " — POST /xacml/pip requires a credential naming an \
+                         entry that holds the built-in REMOTE_PEPS role (a \
+                         DPoP-bound access token from PEP_ASSERTION_KEY, or \
+                         a client certificate the service verifies), so \
+                         check that key's registration and the group \
+                         roles.remotePepGroup names"
                     } else {
                         ""
                     }
@@ -510,10 +512,13 @@ impl RemotePip {
         let resolved = read.answers.len();
         tracing::info!(
             "pip: resolved {} of {} designator(s) about \"{}\" against the \
-             PDP's embedded directory.",
+             PDP's embedded directory, on {}.",
             resolved,
             count,
-            subject
+            subject,
+            self.client
+                .credential()
+                .used_on(answered.no_token.as_deref())
         );
         let unresolved: Vec<Value> = read
             .unresolved
