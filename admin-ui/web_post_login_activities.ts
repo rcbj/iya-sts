@@ -85,10 +85,12 @@ class PostLoginActivitiesPage {
       t.html('consolePostLoginActivities.reportLink') + '</a></p>' +
       '<h2 data-tab="activities">' +
       t.html('consolePostLoginActivities.activities') + '</h2>' +
-      WebKit.note(t.html('consolePostLoginActivities.signIn')) +
-      self.list(v, c) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content is one frame, its heading being the tab's label.
+      WebKit.frame(WebKit.note(t.html('consolePostLoginActivities.signIn')) +
+      self.list(v, c)) +
       '<h2 data-tab="start">' + t.html('consolePostLoginActivities.start') +
-      '</h2>' + self.startForm(v, c);
+      '</h2>' + WebKit.frame(self.startForm(v, c));
   }
 
   // A state in the reader's words. Each key is written out whole, so the
