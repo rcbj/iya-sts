@@ -15865,9 +15865,10 @@ const CODES = [
   { code: 'STS-LDAP-0077',
     summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
       '(admin.bootstrapUsername, or the name product mode generates) was ' +
-      'refused — over LDAP or SCIM — because that account cannot be ' +
-      'removed.',
-    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
+      'refused — over LDAP, SCIM or the management API — because that ' +
+      'account cannot be removed.',
+    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403; /admin-api ' +
+      'HTTP 400' },
   { code: 'STS-LDAP-0078',
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +
       'stsBootstrapAdministrator or stsConsoleClaimedAt) could not be ' +
@@ -26670,6 +26671,18 @@ const CODES = [
     summary: 'A person\'s TLS client certificate was not revoked. The ' +
       'certificate module\'s own code names the specific refusal when it ' +
       'has one.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0943',
+    summary: 'An administrator asked to delete their own directory entry ' +
+      '(POST /admin-api/users/delete, the Delete control on a person\'s ' +
+      'console page). Another administrator has to.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0944',
+    summary: 'A person delete was refused because the person is the last ' +
+      'one the realm\'s console roster lists for Admin Write or the ' +
+      'Security Administrator, and nobody would be left to grant it.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-API-0001',

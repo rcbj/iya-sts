@@ -50,6 +50,10 @@ A disabled account is `pwdAccountLockedTime` on the entry. Every door
 refuses that person.
 [Admin console](admin-console.md#password-and-second-factors).
 
+A deleted person is gone with everything they held: the console's Delete
+tab, `POST /admin-api/users/delete`, SCIM's `DELETE` and an LDAP delete are
+one act. [Admin console](admin-console.md#deleting-a-person).
+
 ## The names
 
 | Name | What it is |

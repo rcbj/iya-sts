@@ -32012,6 +32012,10 @@ module.exports = {
   readPerson: readPerson,
   writePerson: writePerson,
   deletePerson: deletePerson,
+  // Whether an entry is its realm's bootstrap administrator, which no door
+  // deletes: the management API's person delete asks it before its own
+  // refusals (2026-11-16), so the account meets STS-LDAP-0077 first.
+  isBootstrapAdministratorEntry: isBootstrapAdministratorEntry,
   inPersonBatch: inPersonBatch,
   personBatchStep: personBatchStep,
   groupDnFor: groupDnFor,

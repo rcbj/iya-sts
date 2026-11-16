@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5661** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5663** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 291
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 293
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -3451,7 +3451,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0074` | In product mode, a search or compare arrived on a connection that has not bound as anybody; the root DSE is the only read allowed before a bind. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0075` | In product mode, a compare named a credential attribute (userPassword, a client secret, a private key, a TOTP or recovery code, an activation token or a Kerberos key), which no reader of the socket may test. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0076` | An add or modify named an attribute the directory maintains itself: entryUUID or stsProvisionedBy in every mode, and in product mode createTimestamp, modifyTimestamp and entryDN as well. | LDAP result code 19, constraintViolation |
-| `STS-LDAP-0077` | A delete or rename of a realm's bootstrap administrator (admin.bootstrapUsername, or the name product mode generates) was refused — over LDAP or SCIM — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403 |
+| `STS-LDAP-0077` | A delete or rename of a realm's bootstrap administrator (admin.bootstrapUsername, or the name product mode generates) was refused — over LDAP, SCIM or the management API — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403; /admin-api HTTP 400 |
 | `STS-LDAP-0078` | A flag of the bootstrap administrator (pwdReset, stsBootstrapAdministrator or stsConsoleClaimedAt) could not be written because the account has no entry in this realm. | none — logged |
 | `STS-LDAP-0090` | A person was refused creation under a username that is a subject identifier (urn:uuid: or a bare UUID). | action result ok:false (console, /admin-api HTTP 400, SCIM 400) |
 | `STS-LDAP-0091` | No entry was created for an authentication whose identity is a urn:uuid: subject naming nobody in this realm's directory. | none — logged |
@@ -5806,6 +5806,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0940` | The password for a person's TLS client certificate files was refused: shorter than 8 characters, longer than 256, or the confirmation did not match. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0941` | A person's TLS client certificate was not issued. The certificate module's own code names the specific refusal when it has one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0942` | A person's TLS client certificate was not revoked. The certificate module's own code names the specific refusal when it has one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0943` | An administrator asked to delete their own directory entry (POST /admin-api/users/delete, the Delete control on a person's console page). Another administrator has to. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0944` | A person delete was refused because the person is the last one the realm's console roster lists for Admin Write or the Security Administrator, and nobody would be left to grant it. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 

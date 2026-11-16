@@ -289,6 +289,21 @@ is read from is every delivery in the realm), so it is answered before the
 `user` check the other four make, and `GET /admin-api/logout` grew
 `deliveryState`, `deliveryq` and `backchannelDeliveriesPage` to find one.
 
+**`delete` SINCE 2026-11-16 (rcbj: "Add a user delete endpoint to the admin
+api")**, `deleteUser`, and the person page's Delete tab is its console
+control (rule 7). It is not a second delete: `adminActions.deletePersonAction()`
+hands the entry to the directory's `deletePerson()`, SCIM's function, on the
+`removePersonEntry()` path an LDAP delete takes, so every cleanup those doors
+do (groups, roles, owner lists, the photo, the account observers, and
+`account_state.ts` ending what the person held) is this door's too. Two
+refusals are this door's own, because SCIM and LDAP have no console to
+protect: the caller's own entry (`STS-ADMIN-0943`, the token's person in the
+realm that issued the token, `callerPersonOf().realm`) and the last present
+member of a realm's Admin Write or Security Administrator roster
+(`STS-ADMIN-0944`). A Security Administrator's entry needs that role
+(`holder`, `common/security_operations.ts`), and the act is in
+`REAUTHENTICATED_ACTIONS`. `tests/admin_users_delete.js` holds it.
+
 ### `/admin-api/applications/new` is a GET WITH NO POST BESIDE IT, and that is rule 7 read exactly
 
 `/admin/applications/new` arrived on 2026-08-25 — a console page whose one

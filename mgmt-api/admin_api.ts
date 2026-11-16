@@ -725,11 +725,13 @@ type RouteApp = typeof app;
 // A person's LDIF file since 2026-11-14: an export can carry their
 // credentials in the clear, and an import writes credentials onto a new
 // person, so both are asked for a recent sign-in as `set-password` is.
+// A person's delete (2026-11-16) too: it cannot be undone, and it ends
+// everything they hold.
 const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
   'clear-email-factor', 'disable-mfa', 'disable-primary-keys', 'set-mail',
   'create-app-password', 'revoke-app-password', 'export-ldif',
-  'import-ldif'];
+  'import-ldif', 'delete'];
 
 class AdminApi {
   /**
@@ -5089,6 +5091,10 @@ class AdminApi {
 
           { action: 'remove-certificate',
             operationId: 'removeUserCertificate' },
+
+          // THE PERSON DELETED (rcbj, 2026-11-16): the Delete control on
+          // their page, through the directory's one person delete.
+          { action: 'delete', operationId: 'deleteUser' },
 
           // THE PERSON AS AN LDIF FILE (2026-11-14): the Import / export tab
           // of their console page, #546's pattern.
@@ -11351,12 +11357,17 @@ class AdminApi {
    * @param res - the response, whose locals the gate wrote
    * @returns `{ username, sub }`, or null where the caller is no person
    */
-  callerPersonOf(res): { username: string; sub: string } | null {
+  callerPersonOf(res): { username: string; sub: string;
+                         realm: string } | null {
     const { log } = this.deps;
     log.debug("Entering AdminApi.callerPersonOf().");
     const caller = res && res.locals && res.locals.apiCaller;
+    // `realm` (2026-11-16): the realm that issued the token, which a
+    // person delete compares with the realm it acts in before calling the
+    // entry the caller's own.
     const out = caller && caller.kind === 'person' && caller.name
-      ? { username: String(caller.name), sub: String(caller.sub || '') }
+      ? { username: String(caller.name), sub: String(caller.sub || ''),
+          realm: String(caller.realm || '') }
       : null;
     log.debug("Leaving AdminApi.callerPersonOf(). " +
               (out ? out.username : '(nobody)'));

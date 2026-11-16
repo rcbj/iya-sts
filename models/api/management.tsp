@@ -5181,6 +5181,15 @@ namespace IyaSts.Api.Management {
     `removed`?: string
   }
 
+@component model `UserDeleted` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `changed`?: boolean;
+    `username`?: string;
+    `dn`?: string
+  }
+
 @component model `WithOkMessageErrors38` {
     `ok`: boolean;
     `message`?: string;
@@ -17488,6 +17497,39 @@ op `removeUserCertificate`(@js(#{
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors38`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors38`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/users/delete",
+  "post",
+  #{
+    `operationId`:"deleteUser",
+    `summary`:"Delete somebody's entry from the directory",
+    `description`:"Deletes the person's entry, through the directory's one person delete: the function SCIM's `DELETE /scim/v2/Users/{id}` calls and an LDAP delete reaches. It cannot be undone. The entry goes with everything stored on it (its credentials and passkeys among them) and its profile photo; every group and role that named them lets them go, and every owner list (a service account's last owner is replaced by the realm's Admin Write group); RISC receivers are sent `account-purged`. Everything they held is then ended, as `POST /admin-api/users/disable` ends it: sessions (with CAEP `session-revoked` and back-channel Logout Tokens), tokens, codes and connections. Somebody made again under the same name inherits nothing.\n\n**Refused** for nobody of that name in this realm (STS-LDAP-0013), the realm's bootstrap administrator (STS-LDAP-0077), an entry with entries beneath it (STS-LDAP-0014), the caller's own entry (STS-ADMIN-0943), and the last person the realm's console roster lists for Admin Write or the Security Administrator (STS-ADMIN-0944). A person who holds the Security Administrator's role is deleted only by a Security Administrator. A person asks for a recent sign-in first, as for a password reset.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Who was deleted, and the entry's DN.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `deleteUser`(@js(#{`examples`:#[#{`user`:"departed-contractor"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string
+  },
+  `responses/200/content/application~1json/schema`: `UserDeleted`,
+  `responses/400/content/application~1json/schema`: `UserDeleted`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 

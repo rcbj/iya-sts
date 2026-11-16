@@ -2855,6 +2855,58 @@ Scope: `admin:write`.
 | `reason` | string |  |  |
 | `username` | string |  |  |
 
+## POST /admin-api/users/delete
+
+`deleteUser`
+
+**Delete somebody's entry from the directory**
+
+Deletes the person's entry, through the directory's one person delete: the function SCIM's `DELETE /scim/v2/Users/{id}` calls and an LDAP delete reaches. It cannot be undone. The entry goes with everything stored on it (its credentials and passkeys among them) and its profile photo; every group and role that named them lets them go, and every owner list (a service account's last owner is replaced by the realm's Admin Write group); RISC receivers are sent `account-purged`. Everything they held is then ended, as `POST /admin-api/users/disable` ends it: sessions (with CAEP `session-revoked` and back-channel Logout Tokens), tokens, codes and connections. Somebody made again under the same name inherits nothing.
+
+**Refused** for nobody of that name in this realm (STS-LDAP-0013), the realm's bootstrap administrator (STS-LDAP-0077), an entry with entries beneath it (STS-LDAP-0014), the caller's own entry (STS-ADMIN-0943), and the last person the realm's console roster lists for Admin Write or the Security Administrator (STS-ADMIN-0944). A person who holds the Security Administrator's role is deleted only by a Security Administrator. A person asks for a recent sign-in first, as for a password reset.
+
+**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `user` | string | yes | The person, as /admin-api/users names them. |
+| `username` | string |  | Accepted for `user`. |
+
+**200**: Who was deleted, and the entry's DN.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `changed` | boolean |  |  |
+| `dn` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `username` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `changed` | boolean |  |  |
+| `dn` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `username` | string |  |  |
+
 ## GET /admin-api/users/devices
 
 `getUserDevices`

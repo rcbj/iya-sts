@@ -586,6 +586,44 @@ The API is `POST /admin-api/users/export-ldif`
 (`{"user": "…", "credentials": true}`, answering the LDIF as `ldif` and as
 a file) and `POST /admin-api/users/import-ldif` (`{"ldif": "…"}`).
 
+#### Deleting a person
+
+A person's page has a **Delete** tab (Admin Write), last, as an
+[application's page](applications.md) has its **Remove** tab. **A delete
+cannot be undone.** The button stays disabled until you tick the box
+saying so.
+
+The console, `POST /admin-api/users/delete` (`{"user": "…"}`), SCIM's
+`DELETE /scim/v2/Users/{id}` and an LDAP delete are one act:
+
+* The entry goes, with everything stored on it: credentials, passkeys,
+  certificates and the profile photo.
+* Every group and role that named the person lets them go, and so does
+  every owner list. A service account whose last owner this was is owned by
+  the realm's Admin Write group (see [Service accounts](service-accounts.md)).
+* RISC receivers are sent `account-purged`.
+* Everything the person held is ended, as a disable ends it: sign-on
+  sessions (with CAEP `session-revoked` and back-channel Logout Tokens),
+  tokens, codes and connections.
+* Somebody made again under the same name starts with nothing: a new
+  subject, no groups, no roles.
+
+It is refused for:
+
+| Refusal | Code |
+|---|---|
+| Nobody of that name in this realm | `STS-LDAP-0013` |
+| The realm's bootstrap administrator | `STS-LDAP-0077` |
+| An entry with entries beneath it | `STS-LDAP-0014` |
+| Your own entry | `STS-ADMIN-0943` |
+| The last person the realm's roster lists for Admin Write or the Security Administrator | `STS-ADMIN-0944` |
+
+The last two are the console's and the API's only: SCIM and LDAP have no
+administrator to protect. Deleting a person who holds the Security
+Administrator's role takes that role
+([Security administrator](security-administrator.md)). The delete needs a
+recent sign-in, and its audit row is `user.delete`.
+
 #### Creating a person — `/admin/users/new`
 
 The list page has one control: a name, and a button to **`/admin/users/new`**,
