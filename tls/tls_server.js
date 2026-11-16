@@ -5934,7 +5934,7 @@ function recordClientCertificate(socket, mode, revocation) {
         named.username) {
       recordRefusedCertificate(named, 'client certificate on the main ' +
         'port (' + MAIN_PORT + ')', revocation.status === 'revoked'
-        ? 'STS-PKI-0118' : 'STS-PKI-0119', 'revoked');
+        ? 'STS-PKI-0118' : 'STS-PKI-0119', 'revoked', true);
     }
     audit.failure(revocation.status === 'revoked' ? 'STS-PKI-0118' :
                   'STS-PKI-0119', {
@@ -6054,12 +6054,14 @@ function recordClientCertificate(socket, mode, revocation) {
 // `authentication.refused` row their Authentications tab lists, in the
 // certificate's realm. It counts nothing and creates nobody, and it never
 // throws: bookkeeping must not break a connection.
-function recordRefusedCertificate(identity, method, code, reason) {
+function recordRefusedCertificate(identity, method, code, reason,
+                                  codedElsewhere) {
   log.debug('Entering recordRefusedCertificate().');
   try {
     inCertificateRealm(identity, function () {
       stats.recordRefusedAuthentication({ presented: identity.username,
-        protocol: 'TLS', method: method, errorCode: code, channel: 'tls',
+        protocol: 'TLS', method: method, errorCode: code,
+        codedElsewhere: !!codedElsewhere, channel: 'tls',
         note: reason });
     });
   } catch (e) {
@@ -6757,7 +6759,10 @@ function answerCertificateSignIn(req, res) {
           identity.kind === 'person' && identity.username) {
         recordRefusedCertificate(identity, 'client certificate (GET ' +
           '/tls/sign-in)', errorCodes.codeOf(res) || 'STS-TLS-0060',
-          session.refusedOnRevocation ? 'revoked' : 'no-session');
+          session.refusedOnRevocation ? 'revoked' : 'no-session',
+          // The request's own row carries a code only when one was marked;
+          // otherwise this row is the one that does.
+          !!errorCodes.codeOf(res));
       }
       const presented = !!(req.socket && req.socket.getPeerCertificate &&
                            req.socket.getPeerCertificate().raw &&

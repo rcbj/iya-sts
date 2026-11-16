@@ -480,6 +480,13 @@ function childMain() {
       note(!!got.tgt, 'Kerberos: a TGT is issued',
            JSON.stringify(got.second || got.first || {}).slice(0, 300));
       expect('Kerberos AS-REQ', who, { artifacts: 1 });
+      // The KDC's KDC_ERR_PREAUTH_REQUIRED is the exchange's first step, not
+      // a refusal of the person.
+      note(!pageOf(who).events.some(function (e) {
+             return e.action === 'authentication.refused';
+           }),
+           'Kerberos: an ordinary sign-in shows no refused attempt',
+           summary(pageOf(who)));
     }
 
     // -----------------------------------------------------------------------
@@ -810,6 +817,57 @@ function childMain() {
            /UsernameToken/.test(String((wstRows[0].detail || {}).method)),
            'WS-Trust: one row, WS-Trust and its UsernameToken',
            summary(pageOf(wsTrustUser)));
+    }
+
+    // -----------------------------------------------------------------------
+    // P. PAGING (rcbj, 2026-11-16): every table on Sessions & tokens starts
+    //    at ten rows and pages past them; the session blocks start at five;
+    //    `?per=` overrides both.
+    // -----------------------------------------------------------------------
+    {
+      const who = person('paged');
+      for (let i = 0; i < 12; i++) {
+        await form('/oauth2/token', { grant_type: 'password', username: who,
+          password: 'x', scope: 'openid' });
+      }
+      const detail = function (query) {
+        return (adminViews.userDetailJson({ query: query }, who) || {})
+          .json || {};
+      };
+      // Whichever list the twelve land in: the tokens with no session, or a
+      // session's own.
+      const tables = function (json) {
+        return [{ shown: json.tokensWithNoSession,
+                  paging: json.tokensWithNoSessionPaging }]
+          .concat([].concat(json.sessions || []).map(function (s) {
+            return { shown: s.tokens, paging: s.tokensPaging };
+          }));
+      };
+      const plain = detail({});
+      const full = tables(plain).filter(function (x) {
+        return x.paging && x.paging.total >= 12;
+      })[0];
+      const said = JSON.stringify(tables(plain).map(function (x) {
+        return x.paging;
+      }));
+      note(!!full && full.paging.perPage === 10 && full.paging.pages >= 2 &&
+           [].concat(full.shown || []).length === 10,
+           'paging: a table of twelve tokens shows ten and a second page',
+           said);
+      note(((plain.artifactsPaging || {}).perPage === 10) &&
+           ((plain.tokensOnEndedSessionsPaging || {}).perPage === 10) &&
+           ((plain.sessionsPaging || {}).perPage === 5),
+           'paging: the other tables start at ten, the session blocks at five',
+           JSON.stringify({ a: plain.artifactsPaging,
+                            e: plain.tokensOnEndedSessionsPaging,
+                            s: plain.sessionsPaging }));
+      const asked = tables(detail({ per: '3' })).filter(function (x) {
+        return x.paging && x.paging.total >= 12;
+      })[0];
+      note(!!asked && asked.paging.perPage === 3 &&
+           [].concat(asked.shown || []).length === 3,
+           'paging: ?per= overrides the ten', JSON.stringify(asked &&
+                                                             asked.paging));
     }
 
     ldapListening.server.close();

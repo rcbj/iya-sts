@@ -3926,6 +3926,7 @@ class WsTrust {
           method: credential.method ||
                   (ut ? 'WS-Security UsernameToken' : 'WS-Security token'),
           errorCode: credential.errorCode || '',
+          codedElsewhere: true,
           application: String(audience || ''),
           note: String(credential.trustFault || 'refused') });
       }

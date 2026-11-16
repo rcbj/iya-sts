@@ -8179,6 +8179,7 @@ class OAuth2Server {
     try {
       stats.recordRefusedAuthentication({ presented: presented,
         protocol: 'OAuth 2.0', method: method, errorCode: code,
+        codedElsewhere: true,
         client_id: clientId || '', note: reason || '' });
     } catch (e) {
       log.debug("Caught in OAuth2Server.refusedAttempt(): " +

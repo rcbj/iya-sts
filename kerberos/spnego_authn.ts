@@ -836,6 +836,7 @@ class SpnegoAuthn {
               presented: String(verdict.client), protocol: 'Kerberos v5',
               method: 'service ticket over SPNEGO',
               errorCode: errorCodes.codeOf(res) || '',
+              codedElsewhere: true,
               note: String(verdict.code || 'refused') });
           } catch (e) {
             log.debug('Caught in SpnegoAuthn.handleSignIn(): ' +

@@ -2576,17 +2576,21 @@ function errorReply(code, options) {
   // refusal naming a client principal is that principal's refused attempt
   // (`authentication.refused`, which their Authentications tab lists). Here,
   // where every refusal is built, so every transport has it once; the
-  // transport's own audit row is unchanged. KDC_ERR_PREAUTH_REQUIRED carries
-  // no code and is a step of the exchange, not a refusal.
-  if (opts.errorCode && opts.cname && Array.isArray(opts.cname.name) &&
-      opts.cname.name.length) {
+  // transport's own audit row is unchanged. KDC_ERR_PREAUTH_REQUIRED (25)
+  // is a step of the exchange, not a refusal: it is the first answer to
+  // every AS-REQ a client sends without pre-authentication, which is every
+  // ordinary sign-in, and it DOES carry a code, so it is excluded by number
+  // (until 2026-11-16 every Kerberos sign-in showed a refused attempt).
+  if (opts.errorCode && code !== 25 && opts.cname &&
+      Array.isArray(opts.cname.name) && opts.cname.name.length) {
     try {
       stats.recordRefusedAuthentication({
         presented: opts.cname.name.join('/') +
                    (opts.crealm ? '@' + opts.crealm : ''),
         protocol: 'Kerberos v5',
         method: 'KDC request refused with ' + msgs.describeError(code).name,
-        errorCode: String(opts.errorCode), channel: 'kerberos',
+        errorCode: String(opts.errorCode), codedElsewhere: true,
+        channel: 'kerberos',
         note: msgs.describeError(code).name });
     } catch (e) {
       log.debug('Caught in errorReply(): ' + ((e && e.message) || e));

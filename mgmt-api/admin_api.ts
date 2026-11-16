@@ -4597,7 +4597,7 @@ class AdminApi {
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
                          adminViews.DEFAULT_BLOCKS_PER_PAGE + ' rather than ' +
-                         adminViews.DEFAULT_PER_PAGE +
+                         adminViews.DEFAULT_ACTIVITY_PER_PAGE +
                          ' because each one carries a ' +
                          'token list of its own. Only the sessions ON this ' +
                          'page are in the reply.' },

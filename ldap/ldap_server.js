@@ -18977,6 +18977,7 @@ function auditLdap(req, fields) {
         // `ldap`, as the accepted bind's row names it.
         protocol: 'ldap',
         method: 'simple bind', errorCode: String(f.errorCode || ''),
+        codedElsewhere: true,
         channel: ldapChannelOf(req), address: peerAddressOf(req),
         note: String((f.detail && f.detail.reason) || 'refused') });
     } catch (e) {

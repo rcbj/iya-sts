@@ -529,6 +529,17 @@ const NOT_A_VIEW = ['format', 'notice', 'error'];
  */
 const DEFAULT_BLOCKS_PER_PAGE = 5;
 
+// Rows per page for every TABLE on a person's Sessions & tokens tab (rcbj,
+// 2026-11-16): a session's tokens, the tokens on ended sessions, the tokens
+// with no session and the other artifacts. At DEFAULT_PER_PAGE a remote PEP
+// with a few hundred RFC 7523 tokens showed one table fifty rows long and no
+// pager until the fifty-first; ten puts the pager on the page as soon as the
+// list is longer than a screen. `?per=` overrides it, as everywhere.
+/**
+ * Rows per page for each table on a person's Sessions & tokens tab.
+ */
+const DEFAULT_ACTIVITY_PER_PAGE = 10;
+
 // ---------------------------------------------------------------------------
 // THE TWO PICTURES' KEYS, AS PROSE (#543 phase 2b). `delegationMapKey()` and
 // `federationMapKey()` answer each key as ONE string of HTML, `mapKey`, which
@@ -15340,16 +15351,21 @@ class AdminViews {
         defaultPer: DEFAULT_BLOCKS_PER_PAGE });
     const sessionTokenPages = sessionPage.shown.map(function (session) {
       return self.pagedRows(req.query, split.held[session.id] || [],
-                            { name: 'session-' + session.id, noun: 'tokens' });
+                            { name: 'session-' + session.id, noun: 'tokens',
+                              defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     });
     const endedPage = this.pagedRows(req.query, split.ended,
                                      { name: 'tokensOnEndedSessions',
-                                       noun: 'tokens' });
+                                       noun: 'tokens',
+                                       defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     const sessionlessPage = this.pagedRows(req.query, split.sessionless,
                                            { name: 'tokensWithNoSession',
-                                             noun: 'tokens' });
+                                             noun: 'tokens',
+                                             defaultPer:
+                                               DEFAULT_ACTIVITY_PER_PAGE });
     const artifactPage = this.pagedRows(req.query, detail.artifacts,
-                                   { name: 'artifacts', noun: 'artifacts' });
+                                   { name: 'artifacts', noun: 'artifacts',
+                                     defaultPer: DEFAULT_ACTIVITY_PER_PAGE });
     // THE PARTNERS' SUBJECTS THIS PERSON IS LINKED TO (#109), paged like the
     // five lists above. Read off the entry, one row per federationLink value,
     // with whether the relationship it names is still registered here — a
@@ -15599,7 +15615,7 @@ class AdminViews {
       back: view.back,
       params: view.params,
       blocksPerPage: DEFAULT_BLOCKS_PER_PAGE,
-      perPage: DEFAULT_PER_PAGE,
+      perPage: DEFAULT_ACTIVITY_PER_PAGE,
       maxEventsPerUser: stats.MAX_EVENTS_PER_USER,
       directoryLoaded: !!directoryReader,
       mfa: mfa,
@@ -16702,6 +16718,7 @@ export = {
   logoutJson: slot.forward('logoutJson'),
   mfaRosterJson: slot.forward('mfaRosterJson'),
   DEFAULT_BLOCKS_PER_PAGE: DEFAULT_BLOCKS_PER_PAGE,
+  DEFAULT_ACTIVITY_PER_PAGE: DEFAULT_ACTIVITY_PER_PAGE,
   queryWith: slot.forward('queryWith'),
   sessionRowsFor: slot.forward('sessionRowsFor'),
   tokensBySession: slot.forward('tokensBySession'),

@@ -261,7 +261,7 @@ async function jwtBearer(realm, clientId, who, stranger) {
   } else {
     const issued = await K.ok(K.rb(realm) + "/admin-api/pki/issue", {
       target: "person", purpose: "jwt", identifier: who,
-      leafKeyAlg: "rsa-2048" }, "issued " + who + " a key pair");
+      keyAlg: "rsa-2048" }, "issued " + who + " a key pair");
     pem = String(issued.privateKeyPem || "");
     assert.ok(/PRIVATE KEY/.test(pem), "no private key in " +
               JSON.stringify(Object.keys(issued)));
