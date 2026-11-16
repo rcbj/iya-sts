@@ -2185,6 +2185,7 @@ async function childBody() {
   const leaf = issuedL.json && issuedL.json.certificatePem
     ? new nodeCrypto.X509Certificate(issuedL.json.certificatePem) : null;
   t.check(issuedL.status === 200 && issuedL.json.issued === true &&
+          !('ok' in issuedL.json) &&
           issuedL.headers['cache-control'] === 'no-store' &&
           !/PRIVATE KEY/.test(issuedL.text) && leaf &&
           leaf.publicKey.export({ type: 'spki', format: 'pem' }) ===
@@ -2197,6 +2198,14 @@ async function childBody() {
           'L9. the listener\'s certificate certifies the PEP\'s own key, ' +
           'names the definition\'s names and not the request\'s, with its ' +
           'chain, no-store and no key', brief(issuedL));
+  // L9b. THE ANSWER IS THE MODEL'S (#1830): closed, so the internal `ok`
+  // it carried until then would fail here.
+  const certWrong = require('./tools/pep_model').problems(
+    'pep-control-plane.json', 'postListenerCertificate', issuedL.status,
+    issuedL.json);
+  t.check(certWrong.length === 0,
+          'L9b. the listener certificate\'s 200 is the model\'s answer, ' +
+          'with no ok member', certWrong.join('; '));
   const againL = await request(port, 'POST', CERT, pepCred,
                                { listener: 'pub', csr: csrPem });
   t.check(againL.status === 200 && againL.json.issued === false &&

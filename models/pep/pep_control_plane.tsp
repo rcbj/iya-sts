@@ -24,7 +24,6 @@
 // WHAT IS IRREGULAR, DECLARED AS IT IS (`xacml-pep/CLAUDE.md` has the
 // argument for each):
 //
-// * the listener certificate's 200 carries `ok: true`;
 // * `basic` answers a lockout 429 `{valid, retryAfterS}` and the limiter's
 //   429 `Error`.
 //
@@ -677,7 +676,6 @@ op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull
 }
 
 @component model `ListenerCertificate` {
-  @js(#{`const`:true}) `ok`: boolean;
   `pep`: string;
   `listener`: string;
   `renew`: int64;

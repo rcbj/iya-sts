@@ -3100,9 +3100,15 @@ class XacmlSurface {
                       'Refused.');
             return;
           }
+          // WITHOUT `ok` (#1830): it is `issueForListener()`'s own flag,
+          // and the status already says it; it reached the PEP as an
+          // undocumented member until the model named it. The PEP reads
+          // only `fullChainPem`.
+          const answer = Object.assign({}, result);
+          delete answer.ok;
           res.status(200).type('application/json')
              .set('Cache-Control', 'no-store')
-             .send(JSON.stringify(result, null, 2));
+             .send(JSON.stringify(answer, null, 2));
           log.debug('Leaving POST /xacml/pep/listener-certificate. ' +
                     result.serialHex);
         }, function (e: any) {

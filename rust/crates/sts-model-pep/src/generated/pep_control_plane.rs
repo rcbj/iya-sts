@@ -448,7 +448,6 @@ pub mod components {
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct ListenerCertificate {
-        pub ok: bool,
         pub pep: String,
         pub listener: String,
         pub renew: i64,

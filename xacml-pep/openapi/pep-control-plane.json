@@ -2031,10 +2031,6 @@
       "ListenerCertificate": {
         "type": "object",
         "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          },
           "pep": {
             "type": "string"
           },
@@ -2077,7 +2073,6 @@
         },
         "additionalProperties": false,
         "required": [
-          "ok",
           "pep",
           "listener",
           "renew",
