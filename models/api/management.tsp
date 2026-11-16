@@ -14101,7 +14101,7 @@ op `reportPepDecisions`(@js(#{
       @js(#{`minimum`:1}) `seq`: integer;
       `at`?: string;
       @js(#{`minLength`:1,`maxLength`:40}) `kind`: string;
-      `decision`?: "Permit" | "Deny" | "NotApplicable" | "Indeterminate" | "";
+      `decision`?: "Permit" | "Deny" | "NotApplicable" | "Indeterminate";
       `allowed`?: boolean;
       `fault`?: boolean;
       `code`?: string;
