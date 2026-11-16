@@ -2232,3 +2232,78 @@ model XacmlPepListenerTuningFields {
 @hoisted model XacmlPepClusterDiscarded { `proxy`?: NullableXacmlPepProxy; `settings`?: NullableXacmlPepSettings; `listeners`?: NullableXacmlPepListeners }
 @hoisted model XacmlPepListenerOverride { `address`?: string; `port`?: integer; `names`?: (string)[] }
 @hoisted model XacmlPepClusterMemberAddresses { `pep`?: string; `publicBaseUrl`?: string; `notifyUrl`?: string; `listeners`?: Record<XacmlPepListenerOverride> }
+
+// ---------------------------------------------------------------------------
+// SHARED COMPONENTS (2026-11-16): one model the Management API and Admin
+// Console API OpenAPI documents both answer with. A `@component` here is a
+// `$ref`, and `lib/api_lib.mjs` writes it into each document that reaches
+// it, under this name; models/CLAUDE.md, *One model, one place*.
+// ---------------------------------------------------------------------------
+
+@js(#{
+    `description`:"A refusal or a failure. The sentence is for a person; no error code is ever in it."
+  }) @component model `RefusalFailure` {
+    `ok`?: boolean;
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string;
+    `message`?: string;
+    `why`?: string;
+    `status`?: integer
+  }
+
+@component model `WithKindCountIdentifiers` {
+    `kind`?: string;
+    `count`?: integer;
+    `identifiers`?: (string)[];
+    `moreIdentifiers`?: integer;
+    `notes`?: (string)[]
+  }
+
+@component model `WithApplicationsGrantsLines2` {
+    `applications`?: integer;
+    `grants`?: integer;
+    `lines`?: integer;
+    `permissions`?: integer;
+    `dangling`?: integer;
+    `selfGrants`?: integer;
+    `asked`?: integer;
+    `unused`?: integer
+  }
+
+@component model `WithPagePagesPerPage2` {
+    `page`?: integer;
+    `pages`?: integer;
+    `perPage`?: integer;
+    `firstRow`?: integer;
+    `lastRow`?: integer;
+    `total`?: integer;
+    `param`?: NullableString;
+    `noun`?: NullableString
+  }
+
+@component model `WithOnlyWhileOnAloneWhileOnKey` {
+    `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
+    `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
+  }
+
+@component model `WithIdLabelClassical2` is ({
+    `id`?: string;
+    `label`?: string;
+    `classical`?: boolean;
+    `families`?: (string)[];
+    `note`?: string
+  })[];
+
+@component model `WithIdLabelSubject` is ({
+    `id`?: string;
+    `label`?: string;
+    `subject`?: string;
+    `keyAlg`?: string;
+    `notAfter`?: string;
+    `hasAlternativeKey`?: boolean
+  })[];
+
+@component model `WithOkMessageErrors63` is (`WithKindCountIdentifiers`)[];
+
+@component model `WithIdFromTo2` is Record<`WithKindCountIdentifiers`>;

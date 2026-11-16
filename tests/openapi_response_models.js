@@ -1390,16 +1390,20 @@ function topMembers(doc, schema, seen) {
 }
 
 // ONE ANSWER, ONE MODEL (2026-11-16). #1845 was a member added to a copy:
-// `models/api/console.tsp` carries 74 models under the names the Management
+// `models/api/console.tsp` carried 74 models under the names the Management
 // API OpenAPI document gives them — `UserDetail` among them — and no console
-// operation uses any of them, so a member added there is read by nothing,
-// and the answer it was meant for still failed its real model. Two halves:
+// operation used any of them, so a member added there was read by nothing,
+// and the answer it was meant for still failed its real model. The copies
+// are deleted, and the models the two documents really share live once, in
+// `common.tsp` (models/CLAUDE.md, *One model, one place*). Three halves:
 //
-//   * A MODEL THE TWO DOCUMENTS BOTH NAME IS THE SAME MODEL, whole: an edit
-//     to either copy alone fails here. Two had drifted already
-//     (`ApplicationList` without #1760's `pepRoutes`, `AuditEvent` without
-//     the audit chain's `mac` and `prev`) and were brought into line with
-//     the management copies, which are the ones operations use.
+//   * A MODEL THE TWO DOCUMENTS BOTH NAME IS A `common.tsp` COMPONENT, and
+//     so the same model, whole: neither document's own namespace may declare
+//     it (the build refuses that too, `lib/api_lib.mjs`).
+//   * EVERY COMPONENT OF THE ADMIN CONSOLE API OPENAPI DOCUMENT IS REACHED
+//     FROM ONE OF ITS OPERATIONS, so no copy no operation reads can come
+//     back. `tests/model_typespec.js` holds the same of every declaration in
+//     `console.tsp`, the hoisted ones included.
 //   * A CONSOLE TWIN (#454) answers what its management operation answers
 //     and the members `sendJson()` drops from that one: the management
 //     model's members are the twin's, and the twin's are the management
@@ -1411,23 +1415,51 @@ function consoleAndManagementAgree(t, docs) {
   const consoleDoc = docs.console;
   const ms = management.components.schemas;
   const cs = consoleDoc.components.schemas;
+  const common = [];
+  const declared = /@component\s+model\s+`?(\w+)`?/g;
+  const source = fs.readFileSync(path.join(ROOT, 'models', 'api',
+    'common.tsp'), 'utf8');
+  let found = declared.exec(source);
+  while (found) {
+    common.push(found[1]);
+    found = declared.exec(source);
+  }
   const shared = Object.keys(cs).filter(function (name) {
     return Object.prototype.hasOwnProperty.call(ms, name);
   });
-  const drifted = shared.filter(function (name) {
-    return JSON.stringify(cs[name]) !== JSON.stringify(ms[name]);
-  }).map(function (name) {
-    const c = Object.keys(cs[name].properties || {});
-    const m = Object.keys(ms[name].properties || {});
-    return name + ' (console only: ' + c.filter(function (k) {
-      return m.indexOf(k) < 0;
-    }).join(' ') + '; management only: ' + m.filter(function (k) {
-      return c.indexOf(k) < 0;
-    }).join(' ') + ')';
+  const notCommon = shared.filter(function (name) {
+    return common.indexOf(name) < 0 ||
+      JSON.stringify(cs[name]) !== JSON.stringify(ms[name]);
   });
-  t.check(shared.length > 0 && drifted.length === 0,
-          'a model both documents name is one model (' + shared.length +
-          ' shared): ' + drifted.join('; '), '');
+  t.check(common.length > 0 && notCommon.length === 0,
+          'a model both documents name is one model, a common.tsp ' +
+          'component (' + shared.length + ' shared, ' + common.length +
+          ' in common.tsp): ' + notCommon.join(', '), '');
+  const reached = new Set();
+  const pending = [consoleDoc.paths];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object') {
+      continue;
+    }
+    if (typeof node.$ref === 'string') {
+      const name = node.$ref.split('/').pop();
+      if (!reached.has(name)) {
+        reached.add(name);
+        pending.push(cs[name]);
+      }
+    }
+    Object.keys(node).forEach(function (key) {
+      pending.push(node[key]);
+    });
+  }
+  const unread = Object.keys(cs).filter(function (name) {
+    return !reached.has(name);
+  });
+  t.check(Object.keys(cs).length > 0 && unread.length === 0,
+          'every component of the Admin Console API OpenAPI document is ' +
+          'reached from one of its operations (' + Object.keys(cs).length +
+          '): ' + unread.join(', '), '');
   const samePath = Object.keys(consoleDoc.paths).filter(function (at) {
     return Object.prototype.hasOwnProperty.call(management.paths, at);
   });
