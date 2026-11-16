@@ -408,8 +408,9 @@ const USE_CASES = [
     cn: 'ACME Issuing CA',
     what: 'Certificates issued over ACME (RFC 8555) at /enroll/acme, to a ' +
           'person or application entry an External Account Binding key was ' +
-          'issued for. Every leaf names that entry in a urn:sts:person: or ' +
-          'urn:sts:application: subjectAltName.' },
+          'issued for. Every leaf names that entry in a urn:sts:person: ' +
+          '(urn:sts:sa: for a service account) or urn:sts:application: ' +
+          'subjectAltName.' },
   { id: 'est', scope: 'realm', label: 'EST enrollment',
     cn: 'EST Issuing CA',
     what: 'Certificates issued over EST (RFC 7030) at /.well-known/est, to ' +
@@ -437,7 +438,8 @@ const USE_CASES = [
   { id: 'tls-client', scope: 'realm', label: 'TLS client certificates',
     cn: 'TLS Client Issuing CA',
     what: 'The TLS client certificates people issue themselves on the user ' +
-          'portal: clientAuth, the person\'s urn:sts:person: name, and a ' +
+          'portal: clientAuth, the person\'s urn:sts:person: name (a ' +
+          'service account\'s urn:sts:sa:), and a ' +
           'private key handed over once as a PKCS#12. A certificate from ' +
           'this authority signs its holder in at GET /tls/sign-in on the ' +
           'main port, in this ' +
@@ -461,7 +463,8 @@ const USE_CASES = [
     what: 'The certificates a person or an application signs a WS-Trust ' +
           'request with (a WS-Security 1.1 signature over the SOAP Body ' +
           'and Timestamp): digitalSignature only, the holder\'s ' +
-          'urn:sts:person: or urn:sts:application: name, and a private key ' +
+          'urn:sts:person:, urn:sts:sa: (a service account) or ' +
+          'urn:sts:application: name, and a private key ' +
           'handed over once as a PKCS#12. Issued by an administrator from ' +
           'the console or /admin-api. A certificate from this authority ' +
           'authenticates its holder as the requester of a signed RST, in ' +

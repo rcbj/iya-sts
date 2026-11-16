@@ -4348,8 +4348,8 @@
     "text": "接受 TLS 客户端证书"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person: 或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
+    "en": "a9bb56c470b2a73f",
+    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person:、urn:sts:sa:（服务账户）或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",

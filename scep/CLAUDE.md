@@ -304,7 +304,8 @@ challenge spent. The RA key is in the realm's PKI row (global tier), so any
 cell can open the envelope far enough to read whose the message is:
 
 * **a signer this realm issued** (RenewalReq, GetCert, GetCRL, a PKCSReq in
-  the historical renewal form) — the person its `urn:sts:person:` names goes
+  the historical renewal form) — the person its `urn:sts:person:` (or a
+  service account's `urn:sts:sa:`, #1827) names goes
   to their home cell;
 * **a PKCSReq's challenge password** — the challenge id names its entry
   (`common/cert_enrollment.ts`'s `credentialId()`, stamped with the minting

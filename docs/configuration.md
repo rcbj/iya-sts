@@ -1618,7 +1618,7 @@ Enrollment over Secure Transport (RFC 7030), drawn on `/admin/est`. Every row is
 | `est.attemptsPerIdentity` | `STS_EST_ATTEMPTS_PER_IDENTITY` | `10` | yes | Refused authentications or enrollments one username, client_id or certificate may make in one web-security window before EST answers 429. |
 | `est.attemptsPerAddress` | `STS_EST_ATTEMPTS_PER_ADDRESS` | `60` | yes | Refused requests one client address may make in one web-security window before EST answers 429. |
 | `est.basicAuthentication` | `STS_EST_BASIC_AUTHENTICATION` | `true` | yes | A person's directory password or an application's client_id and client_secret (RFC 7030 section 3.2.3). |
-| `est.certificateAuthentication` | `STS_EST_CERTIFICATE_AUTHENTICATION` | `true` | yes | A client certificate THIS REALM issued, verified to its Intermediate and mapped to its entry by the urn:sts:person: or urn:sts:application: name in it (RFC 7030 section 3.3.2). |
+| `est.certificateAuthentication` | `STS_EST_CERTIFICATE_AUTHENTICATION` | `true` | yes | A client certificate THIS REALM issued, verified to its Intermediate and mapped to its entry by the urn:sts:person:, urn:sts:sa: (a service account) or urn:sts:application: name in it (RFC 7030 section 3.3.2). |
 | `est.serverKeyGeneration` | `STS_EST_SERVER_KEY_GENERATION` | `true` | yes | Whether this service generates the key pair (RFC 7030 section 4.4) — the one enrollment path in which it holds a private key, which it then keeps, sealed, on the entry the certificate names. |
 
 ### SCEP

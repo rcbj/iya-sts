@@ -8936,7 +8936,8 @@ const SETTINGS = [
     runtime: true,
     description: 'A client certificate THIS REALM issued, verified to its ' +
                  'Intermediate and mapped to its entry by the ' +
-                 'urn:sts:person: or urn:sts:application: name in it ' +
+                 'urn:sts:person:, urn:sts:sa: (a service account) or ' +
+                 'urn:sts:application: name in it ' +
                  '(RFC 7030 section 3.3.2). Required for simplereenroll ' +
                  'with no Basic credential.' },
   { key: 'est.serverKeyGeneration', group: 'EST',

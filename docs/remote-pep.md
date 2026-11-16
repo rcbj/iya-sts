@@ -235,7 +235,9 @@ each row.
 **Issue it from this realm.** On the PEP user's page, Credentials, Key pairs,
 **TLS client certificates** generates the key pair and certifies it from the
 realm's TLS Client Issuing CA. The subject follows the directory entry, and
-the subjectAltName `urn:sts:person:<username>` is what admits the PEP. The
+the subjectAltName is what admits the PEP: `urn:sts:sa:<username>`, because a
+PEP's identity is a [service account](service-accounts.md) (a certificate
+issued before says `urn:sts:person:<username>` and is still accepted). The
 reply is the only copy of the private key (a `.p12`, an encrypted key and
 the chain). Give those two files to the container as `PEP_TLS_CERT` and
 `PEP_TLS_KEY`. The leaf is not stored in `userCertificate`, and no root is

@@ -4348,8 +4348,8 @@
     "text": "Aceptar un certificado de cliente TLS"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Un certificado de cliente emitido por ESTE DOMINIO, verificado hasta su intermedia y asociado a su entrada por el nombre urn:sts:person: o urn:sts:application: que contiene (RFC 7030 sección 3.3.2). Obligatorio para simplereenroll sin credencial Basic."
+    "en": "a9bb56c470b2a73f",
+    "text": "Un certificado de cliente emitido por ESTE DOMINIO, verificado hasta su intermedia y asociado a su entrada por el nombre urn:sts:person:, urn:sts:sa: (una cuenta de servicio) o urn:sts:application: que contiene (RFC 7030 sección 3.3.2). Obligatorio para simplereenroll sin credencial Basic."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",

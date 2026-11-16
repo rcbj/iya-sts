@@ -4348,8 +4348,8 @@
     "text": "Tanggapin ang TLS client certificate"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Isang client certificate na iniisyu ng REALM NA ITO, vine-verify hanggang sa Intermediate nito at ini-map sa entry nito gamit ang urn:sts:person: o urn:sts:application: name na nasa loob nito (RFC 7030 section 3.3.2). Kailangan para sa simplereenroll na walang Basic credential."
+    "en": "a9bb56c470b2a73f",
+    "text": "Isang client certificate na iniisyu ng REALM NA ITO, vine-verify hanggang sa Intermediate nito at ini-map sa entry nito gamit ang urn:sts:person:, urn:sts:sa: (service account) o urn:sts:application: name na nasa loob nito (RFC 7030 section 3.3.2). Kailangan para sa simplereenroll na walang Basic credential."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",

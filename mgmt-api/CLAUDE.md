@@ -2014,7 +2014,8 @@ READS `DPoP` TOO* above.
 The same two action names on `POST /admin-api/users` issue and revoke one
 for a **person** (`issueUserTlsClientCertificate`,
 `revokeUserTlsClientCertificate`). The subject is the directory entry's
-name, the subjectAltName is `urn:sts:person:<username>`, and the leaf is
+name, the subjectAltName is `urn:sts:person:<username>` (`urn:sts:sa:` for
+a service account, #1827; `implicitName` says which), and the leaf is
 not written to `userCertificate`. The list is `mfa.tls` of
 `GET /admin-api/users`, which adds `subjectDn`, `entryDn` and
 `caAvailable` to the signing list's shape. Codes `STS-ADMIN-0939` through
