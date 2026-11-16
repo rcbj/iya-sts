@@ -896,12 +896,18 @@ serviceState.start({
   });
   // In a service of several cells, a realm whose bootstrap account is homed
   // in another cell is not bootstrapped here: see bootstrapHomedElsewhere().
+  // The name is each realm's own, asked in it (admin_rbac.ts's
+  // bootstrapName(), 2026-11-14): a product realm's is generated.
   const unlessHomedElsewhere = function (realmId, bootstrap) {
-    return bootstrapHomedElsewhere(realmId, bootstrapUsername)
+    const realm = realms.get(realmId);
+    const name = realm ? realms.run(realm, function () {
+      return require('./common/bootstrap_name').current();
+    }) : bootstrapUsername;
+    return bootstrapHomedElsewhere(realmId, name)
       .then(function (home) {
         if (home) {
           log.info('credentials: the "' + realmId + '" realm\'s bootstrap ' +
-                   'account "' + bootstrapUsername + '" is homed in cell "' +
+                   'account "' + name + '" is homed in cell "' +
                    home + '"; this cell bootstraps no administrator of its ' +
                    'own.');
           return { ran: false, why: 'homed in cell ' + home };
@@ -942,7 +948,13 @@ serviceState.start({
               adminRbac.seedBootstrapAdministrator(realm.id);
               designateRemotePeps(realm.id);
               adminRbac.reportClosedConsole(realm.id);
-              return credentials.bootstrap({ username: bootstrapUsername });
+              // The REALM'S name (2026-11-14, #444's D12): asked here, in
+              // the realm, because a realm in product mode in a development
+              // process seeds `admin-<hmac>` (admin_rbac.ts's
+              // bootstrapName()), and the default realm's name would give
+              // a password to an account that is not its administrator.
+              return credentials.bootstrap({
+                username: require('./common/bootstrap_name').current() });
             });
           });
         });

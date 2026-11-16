@@ -42,9 +42,24 @@
 //      the retry is delivered.
 //   6. The outbox lists what was sent, with no body.
 //
+//   7. THE CHANNEL'S REFUSALS AND DEAD LETTERS, WITH THEIR CODES (D12, #444:
+//      carries over the over-the-wire half of tests/mail.js), in a
+//      development realm of its own and needing no catcher: no transport
+//      (STS-MAIL-0001), a recipient past mail.ratePerRecipient (0010) and a
+//      From that is not one mailbox (0023) are refused 400 and recorded on
+//      the audit log; an SMTP relay that refuses the connection (0009), an
+//      smtp transport with no host (0004) and DKIM required with no key
+//      (0022) are each a dead letter whose outbox row carries its code and
+//      sentence; an administrator's reset link to be mailed to a person with
+//      no address, and in product with global.publicBaseUrl empty, is
+//      answered with the link and a `mailError` saying why nothing was
+//      mailed. Its realm is removed at the end only when
+//      STS_TEST_REMOVE_REALMS is "1" (a hand run against a long-lived
+//      probe), for tests/CLAUDE.md's *No job removes a realm*.
+//
 // WHERE THERE IS NO CATCHER — an AWS target, the coverage run — the sections
 // that need it SKIP and say so (`MAILPIT_API_URL` unset); section 0's refusal
-// runs everywhere.
+// and section 7 run everywhere.
 // ===========================================================================
 
 const assert = require("assert");
@@ -217,8 +232,152 @@ function linkParam(link, name) {
   return value;
 }
 
-async function test() {
-  log.debug("Entering test().");
+// SECTION 7's own realm, and the codes recorded there after a point; a
+// response never carries one.
+const REFUSALS = usernameFor("mailr").replace(/[^a-z0-9-]/g, "").slice(0, 30);
+
+function refusalsApi(path) {
+  log.debug("Entering refusalsApi().");
+  log.debug("Leaving refusalsApi().");
+  return base + "/realm/" + REFUSALS + "/admin-api" + path;
+}
+
+async function newestSeq() {
+  log.debug("Entering newestSeq().");
+  const r = await call("GET", refusalsApi("/audit?per=1"));
+  log.debug("Leaving newestSeq().");
+  return (r.json && r.json.newestSeq) || 0;
+}
+
+async function codesSince(since, wanted) {
+  log.debug("Entering codesSince().");
+  let found = [];
+  for (let i = 0; i < 20 && found.indexOf(wanted) < 0; i += 1) {
+    const r = await call("GET", refusalsApi("/audit?per=200"));
+    found = ((r.json && r.json.events) || []).filter(function (row) {
+      return row.seq > since && row.errorCode;
+    }).map(function (row) {
+      return row.errorCode;
+    });
+    if (found.indexOf(wanted) < 0) {
+      await sleep(150);
+    }
+  }
+  log.debug("Leaving codesSince(). " + found.join(","));
+  return found;
+}
+
+async function settings(values) {
+  log.debug("Entering settings().");
+  await ok(refusalsApi("/config/set-many"), values,
+           "set " + Object.keys(values).join(", "));
+  log.debug("Leaving settings().");
+}
+
+async function refusedTest(code, what) {
+  log.debug("Entering refusedTest().");
+  const since = await newestSeq();
+  const r = await call("POST", refusalsApi("/mail/test"), { user: "mr-one" });
+  const codes = await codesSince(since, code);
+  check("7. " + what + " (400, " + code + " on the audit row)", function () {
+    assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    assert.ok(codes.indexOf(code) >= 0, "recorded: " + codes.join(","));
+    assert.ok(r.text.indexOf("STS-") < 0, "a code was sent");
+  });
+  log.debug("Leaving refusedTest().");
+  return r;
+}
+
+// A test message queued, and the outbox row it became once it settled.
+async function deadLetter(code, what, pattern) {
+  log.debug("Entering deadLetter().");
+  const queued = await ok(refusalsApi("/mail/test"), { user: "mr-one" },
+                          "queued a test message");
+  const row = await until("the message settled", async function () {
+    const r = await call("GET", refusalsApi("/mail/outbox?message=" +
+                         encodeURIComponent(queued.message_id)));
+    const one = ((r.json && r.json.rows) || [])[0];
+    return one && one.state !== "pending" ? one : null;
+  }, 15000);
+  check("7. " + what + ": a dead letter after one attempt, its row " +
+        "carrying " + code, function () {
+    assert.strictEqual(row.state, "dead", JSON.stringify(row).slice(0, 300));
+    assert.strictEqual(row.attempts, 1);
+    assert.strictEqual(row.errorCode, code, JSON.stringify(row));
+    assert.ok(pattern.test(row.why), row.why);
+  });
+  log.debug("Leaving deadLetter().");
+}
+
+async function refusals() {
+  log.debug("Entering refusals().");
+  log.info("=== 7. the channel's refusals and dead letters ===");
+  // THE REALM STARTS IN DEVELOPMENT, SAID SO (run #300): the section
+  // creates a person with no address, captures messages and only at its
+  // end puts the realm in product itself; in a product process a realm made
+  // without the override would refuse the first two from the start.
+  await ok(base + "/admin-api/realms/create", { id: REFUSALS,
+    domain: REFUSALS + ".example.net", name: "Mail refusals",
+    overrides: { "global.mode": "development" } },
+    "created the realm " + REFUSALS);
+  await ok(refusalsApi("/users/create"), { username: "mr-one",
+    invent: false, credential: "none", attributes: { cn: "Mail One",
+      sn: "One", givenName: "Mail", mail: "mr-one@" + REFUSALS +
+      ".example.net" } }, "created a person with an address");
+  await ok(refusalsApi("/users/create"), { username: "mr-none",
+    invent: false, credential: "none", attributes: { cn: "Mail None",
+      sn: "None", givenName: "Mail" } }, "created a person with none");
+  await settings({ "mail.transport": "off" });
+  await refusedTest("STS-MAIL-0001", "no transport configured");
+  await settings({ "mail.transport": "capture", "mail.ratePerRecipient": "1",
+                   "mail.ratePerCategory": "100" });
+  await ok(refusalsApi("/mail/test"), { user: "mr-one" },
+           "sent the one message the ceiling allows");
+  await refusedTest("STS-MAIL-0010", "a recipient past mail.ratePerRecipient");
+  await settings({ "mail.ratePerRecipient": "100",
+                   "mail.from": "a@b.example, c@d.example" });
+  await refusedTest("STS-MAIL-0023", "a From that is not one plain mailbox");
+  await call("POST", refusalsApi("/config/reset"), { key: "mail.from" });
+
+  await settings({ "mail.transport": "smtp", "mail.smtpHost": "127.0.0.1",
+                   "mail.smtpPort": "1", "mail.smtpTls": "starttls",
+                   "mail.smtpAuth": "none", "mail.attempts": "1" });
+  await deadLetter("STS-MAIL-0009", "a relay that refuses the connection",
+                   /ECONNREFUSED/);
+  await settings({ "mail.dkimDomain": REFUSALS + ".example.net",
+                   "mail.dkimSelector": "s1" });
+  await deadLetter("STS-MAIL-0022", "DKIM required and no key",
+                   /no DKIM key is configured/);
+  await call("POST", refusalsApi("/config/reset"), { key: "mail.dkimDomain" });
+  await call("POST", refusalsApi("/config/set"), { key: "mail.smtpHost",
+                                                   value: "" });
+  await deadLetter("STS-MAIL-0004", "an smtp transport with no host",
+                   /has no host/);
+
+  const noAddress = await ok(refusalsApi("/users/issue-password-reset"),
+    { user: "mr-none", deliver: "mail" }, "asked to mail a reset link");
+  check("7. a reset link to be mailed to a person with no address is " +
+        "answered with the link and why nothing was mailed", function () {
+    assert.ok(/#token=/.test(noAddress.resetUrl || ""),
+              JSON.stringify(noAddress).slice(0, 300));
+    assert.ok(/no mail attribute/.test(noAddress.mailError || ""),
+              String(noAddress.mailError));
+  });
+  await settings({ "global.publicBaseUrl": "" });
+  await call("POST", refusalsApi("/config/set"), { key: "global.mode",
+                                                   value: "product" });
+  const noBase = await ok(refusalsApi("/users/issue-password-reset"),
+    { user: "mr-one", deliver: "mail" }, "asked to mail a reset link");
+  check("7. in product with global.publicBaseUrl empty no link is mailed, " +
+        "and the answer says so", function () {
+    assert.ok(/global\.publicBaseUrl is not set/
+                .test(noBase.mailError || ""), String(noBase.mailError));
+  });
+  log.debug("Leaving refusals().");
+}
+
+async function sections() {
+  log.debug("Entering sections().");
   log.info("Driving the mail channel at " + base + " in the realm " + REALM +
            (MAILPIT ? ", delivering to the catcher at " + MAILPIT
                     : "; there is no catcher (MAILPIT_API_URL is unset)"));
@@ -280,8 +439,7 @@ async function test() {
     skip("sections 1-6", "MAILPIT_API_URL is not set, so there is no mail " +
          "catcher to deliver to (an AWS target or the coverage run)");
     assert.ok(checks + skipped >= 3, "only " + checks + " checks ran");
-    log.info("Test completed successfully.");
-    log.debug("Leaving test().");
+    log.debug("Leaving sections(). No catcher.");
     return;
   }
   await ok(realmBase() + "/admin-api/config/set-many",
@@ -478,6 +636,21 @@ async function test() {
 
   assert.ok(checks + skipped >= 17, "only " + checks + " checks ran and " +
             skipped + " were skipped; a section has stopped being called.");
+  log.debug("Leaving sections().");
+}
+
+// Sections 0-6, then 7, which needs no catcher and so runs everywhere.
+async function test() {
+  log.debug("Entering test().");
+  await sections();
+  try {
+    await refusals();
+  } finally {
+    if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+      await call("POST", base + "/admin-api/realms/remove",
+                 { id: REFUSALS });
+    }
+  }
   log.info(checks + " check(s) passed, " + skipped + " skipped.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

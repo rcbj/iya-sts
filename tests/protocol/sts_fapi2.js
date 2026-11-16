@@ -26,6 +26,22 @@
 //   g. THE PORTAL signs its person in under FAPI 2.0 (PAR, code, DPoP).
 //   h. TLS: BCP 195 — TLS 1.3 preferred, TLS 1.2 only with an ECDHE AES-GCM
 //      suite, a CBC suite refused.
+//   i. D12 (#444), `tests/fapi2_units.js` over the wire: the report's
+//      no-rotation row; DPoP's algorithms and the client methods in
+//      discovery; registration (ES256 and a loopback http address taken;
+//      EdDSA refused as discovery says, STS-REG-0185; an http address
+//      elsewhere, 0176, and a 1024-bit RSA key refused; 0175, 0177, 0178
+//      off the audit log); section d's codes as the wire records them
+//      (STS-OAUTH-0573 and 0590 the profile's, 0021, 0160 and 0283 the
+//      general gates', which answer before fapi.js's 0589 and 0574); an
+//      assertion ten seconds ahead taken and an nbf two minutes ahead
+//      refused (0007); a client_secret_basic client refused (0421, not the
+//      units file's 0580); a request_uri of 599 seconds when 600 is
+//      configured; rotation forced by oauth2.refreshTokenRotation; a code
+//      refused after 62 seconds. Not carried (class (d)): the predicates
+//      as functions, the exemption list as a constant (the portal's
+//      sign-in, g, is its observable half), and FAPI 1.0's own consent and
+//      rotation (sts_fapi_baseline.js's).
 //
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
@@ -376,6 +392,282 @@ function handshake(options) {
   });
 }
 
+// How many rows of this realm's audit log carry `code`, waited for briefly
+// until there are more than `above` (default 0): the row is written as the
+// refusal is sent.
+async function codeCount(code, above) {
+  log.debug("Entering codeCount(). " + code);
+  const floor = Number(above || 0);
+  let n = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const r = await send(realmApi + "/audit?per=500&code=" +
+                         encodeURIComponent(code));
+    n = Number((r.body && r.body.matched) || 0);
+    if (n > floor) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+  log.debug("Leaving codeCount(). " + n);
+  return n;
+}
+
+function sleep(ms) {
+  log.debug("Entering sleep().");
+  log.debug("Leaving sleep().");
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+// D12 (#444): what `tests/fapi2_units.js` asked of fapi.js in process, asked
+// of the realm over the wire. `f` carries test()'s client and helpers.
+async function unitsOverTheWire(f) {
+  log.debug("Entering unitsOverTheWire().");
+  log.info("=== i. the profile's rules, as fapi2_units.js held them ===");
+  const report = (await send(base + R + "/oauth2/fapi")).body;
+  check("i/A. the report carries the no-rotation row, and no FAPI 1.0 row",
+        function () {
+    const ids = report.requirements.map(function (row) {
+      return row.id;
+    });
+    assert.ok(ids.indexOf("no-rotation") >= 0, JSON.stringify(ids));
+    assert.ok(/FAPI 2.0 Security Profile/.test(report.specification),
+              report.specification);
+  });
+  check("i/I. discovery: DPoP's algorithms and the client methods are the " +
+        "profile's, and no signed request object is required (that is " +
+        "Message Signing's)", function () {
+    (f.disco.dpop_signing_alg_values_supported || []).forEach(function (a) {
+      assert.ok(["PS256", "ES256", "EdDSA"].indexOf(a) >= 0, a);
+    });
+    assert.ok((f.disco.dpop_signing_alg_values_supported || []).length > 0);
+    f.disco.token_endpoint_auth_methods_supported.forEach(function (m) {
+      assert.ok(["private_key_jwt", "tls_client_auth",
+                 "self_signed_tls_client_auth"].indexOf(m) >= 0, m);
+    });
+    assert.notStrictEqual(f.disco.require_signed_request_object, true);
+  });
+
+  // D. REGISTRATION, its codes read off the audit log.
+  const register = function (overrides) {
+    return postJson(base + R + "/oauth2/register",
+                    Object.assign({}, f.metadata, overrides));
+  };
+  // THE PROFILE ALLOWS EdDSA (5.4.1), BUT THIS SERVICE SIGNS NO ID TOKEN
+  // WITH IT: discovery leaves it out, and registration agrees with
+  // discovery (STS-REG-0185), where fapi2_units.js asked the profile's
+  // filter alone. The wire is asserted.
+  let r = await register({ id_token_signed_response_alg: "ES256" });
+  check("i/D. an ID Token signed ES256 registers (5.4.1)", function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+  });
+  r = await register({ id_token_signed_response_alg: "EdDSA" });
+  const r185 = await codeCount("STS-REG-0185");
+  check("i/D. EdDSA, which discovery does not list for ID Tokens, is " +
+        "refused as an algorithm this service does not sign with " +
+        "(STS-REG-0185)", function () {
+    assert.ok(f.disco.id_token_signing_alg_values_supported
+      .indexOf("EdDSA") < 0);
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+    assert.ok(r185 >= 1, String(r185));
+  });
+  r = await register({ redirect_uris: ["http://127.0.0.1:9000/cb"] });
+  check("i/D. a loopback http redirect URI registers (5.3.2.2 item 8)",
+        function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+  });
+  const loopback = r.body;
+  r = await register({ redirect_uris: ["http://rp.fapi2.example.test/cb"] });
+  check("i/B. an http redirect URI anywhere else does not", function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+  const rsa1024 = nodeCrypto.generateKeyPairSync("rsa",
+    { modulusLength: 1024 }).publicKey.export({ format: "jwk" });
+  rsa1024.kid = "rsa1024-" + STAMP;
+  r = await register({ jwks: { keys: [rsa1024] },
+                       token_endpoint_auth_signing_alg: "PS256" });
+  check("i/D. a 1024-bit RSA key is refused", function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+  const regCodes = {};
+  for (const code of ["STS-REG-0175", "STS-REG-0177", "STS-REG-0178"]) {
+    regCodes[code] = await codeCount(code);
+  }
+  check("i/D. registration's refusals are recorded STS-REG-0175 (the key), " +
+        "0177 (RS256) and 0178 (code id_token)", function () {
+    Object.keys(regCodes).forEach(function (code) {
+      assert.ok(regCodes[code] >= 1, JSON.stringify(regCodes));
+    });
+  });
+
+  // B. THE PUSH AT A LOOPBACK http ADDRESS, and the codes of section d.
+  const nowB = Math.floor(Date.now() / 1000);
+  const loopAuth = { client_id: loopback.client_id,
+    client_assertion_type:
+      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    client_assertion: signEs256({ alg: "ES256", typ: "JWT", kid: f.pub.kid },
+      { iss: loopback.client_id, sub: loopback.client_id, aud: f.issuer,
+        jti: nodeCrypto.randomBytes(12).toString("base64url"), iat: nowB,
+        exp: nowB + 60 }, f.pair.privateKey) };
+  r = await f.push(Object.assign({}, f.params,
+                   { redirect_uri: "http://127.0.0.1:9000/cb" }), loopAuth);
+  check("i/B. a push to that loopback http address is accepted (5.3.2.2 " +
+        "item 8)", function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+  });
+  // ON THE WIRE THE GENERAL GATES ANSWER FIRST for two of them: a push
+  // without client authentication is STS-OAUTH-0021 (client
+  // authentication), never fapi.js's 0589, and one without redirect_uri is
+  // STS-OAUTH-0160, never 0574; an array aud is STS-OAUTH-0283. PKCE (0573)
+  // and the future iat (0590) are the profile's own.
+  const pushCodes = {};
+  for (const code of ["STS-OAUTH-0573", "STS-OAUTH-0590", "STS-OAUTH-0021",
+                      "STS-OAUTH-0160", "STS-OAUTH-0283", "STS-REG-0176"]) {
+    pushCodes[code] = await codeCount(code);
+  }
+  check("i/B, J, E. section d's refusals are recorded: STS-OAUTH-0573 (no " +
+        "PKCE), 0590 (an assertion dated ahead), 0021 (an unauthenticated " +
+        "push), 0160 (no redirect_uri), 0283 (an array aud); and the http " +
+        "address elsewhere STS-REG-0176", function () {
+    Object.keys(pushCodes).forEach(function (code) {
+      assert.ok(pushCodes[code] >= 1, JSON.stringify(pushCodes));
+    });
+  });
+  const unreached = (await codeCount("STS-OAUTH-0589")) +
+                    (await codeCount("STS-OAUTH-0574"));
+  check("i/J. fapi.js's own STS-OAUTH-0589 and 0574 are not what a client " +
+        "meets", function () {
+    assert.strictEqual(unreached, 0, String(unreached));
+  });
+
+  // E. TIMESTAMPS: ten seconds ahead is taken; an nbf two minutes ahead is
+  // not.
+  const now = Math.floor(Date.now() / 1000);
+  r = await f.push(f.params, f.clientAuth({ iat: now + 10, nbf: now + 5 }));
+  check("i/E. a client assertion dated ten seconds ahead is accepted " +
+        "(5.3.2.1 item 13)", function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+  });
+  // The units file had the profile refuse a future nbf (0590); a client
+  // meets the assertion's own verification first, which refuses an nbf not
+  // yet reached as STS-OAUTH-0007 (invalid_client). The wire is asserted.
+  const before = await codeCount("STS-OAUTH-0007");
+  r = await f.push(f.params, f.clientAuth({ nbf: now + 120 }));
+  const after = await codeCount("STS-OAUTH-0007", before);
+  check("i/E. an nbf two minutes ahead is refused invalid_client, " +
+        "STS-OAUTH-0007", function () {
+    assert.strictEqual(r.status, 401, r.raw.slice(0, 300));
+    assert.ok(after > before, before + " -> " + after);
+  });
+
+  // C. A CLIENT METHOD THE PROFILE REFUSES, registered through the
+  // management API (which the registration endpoint would not take).
+  const secretId = "f2-secret-" + STAMP.toLowerCase().slice(-10);
+  const secret = "fapi2-units-" + STAMP + "-secret";
+  const made = await postJson(realmApi + "/applications/create",
+    { identifier: secretId, name: secretId, protocols: ["oauth2"],
+      fields: { oauthClientId: [secretId], oauthClientSecret: secret,
+                oauthTokenEndpointAuthMethod: "client_secret_basic",
+                oauthRedirectUri: [REDIRECT],
+                oauthGrantType: ["authorization_code",
+                                 "client_credentials"] } });
+  const basic = "Basic " + Buffer.from(secretId + ":" + secret)
+    .toString("base64");
+  const c421 = await codeCount("STS-OAUTH-0421");
+  r = await send(base + R + "/oauth2/par", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded",
+               Authorization: basic },
+    body: form(f.params) });
+  const c421after = await codeCount("STS-OAUTH-0421", c421);
+  // The units file had fapi.js refuse the method (0580); a client meets
+  // the server's own list first: the method is not in
+  // token_endpoint_auth_methods_supported, STS-OAUTH-0421 at the push.
+  check("i/C. a client_secret_basic client is refused at the push as a " +
+        "method the server does not list, STS-OAUTH-0421", function () {
+    assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+    assert.ok(c421after > c421, c421 + " -> " + c421after);
+  });
+  r = await send(base + R + "/oauth2/token", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded",
+               Authorization: basic },
+    body: form({ grant_type: "client_credentials" }) });
+  check("i/C. and at the token endpoint: no token", function () {
+    assert.ok(r.status === 400 || r.status === 401, r.raw.slice(0, 300));
+    assert.ok(!(r.body && r.body.access_token), r.raw.slice(0, 300));
+  });
+
+  // G. A request_uri lives under 600 seconds even when 600 is configured.
+  await ok(realmApi + "/config/set", { key: "oauth2.parRequestUriLifetimeS",
+                                       value: "600" },
+           "asked for request_uris of 600 seconds");
+  r = await f.push(f.params);
+  check("i/G. with 600 configured a request_uri is given 599 seconds " +
+        "(5.3.2.2 item 12)", function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+    assert.strictEqual(r.body.expires_in, 599, r.raw.slice(0, 300));
+  });
+  await ok(realmApi + "/config/reset",
+           { key: "oauth2.parRequestUriLifetimeS" }, "put it back");
+
+  // F. ROTATION FORCED: oauth2.refreshTokenRotation turns it on.
+  await ok(realmApi + "/config/set", { key: "oauth2.refreshTokenRotation",
+                                       value: "true" },
+           "forced refresh token rotation in the realm");
+  // A FRESH PKCE PAIR EACH TIME: RFC 9700 mode refuses a code_challenge
+  // already used in this realm (section 2.1.1).
+  const issue = async function () {
+    const fresh = pkce();
+    const pushed = await f.push(Object.assign({}, f.params,
+      { code_challenge: fresh.challenge }));
+    const back = await follow(f.alice, await f.alice.go("GET",
+      R + "/oauth2/authorize?" + form({ client_id: f.client.client_id,
+                                        request_uri: pushed.body.request_uri
+                                      })), ALICE, { shown: 0 });
+    return { code: (paramsAt(back) || new URLSearchParams()).get("code"),
+             verifier: fresh.verifier,
+             where: back.status + " " + String(back.location).slice(0, 200) };
+  };
+  let code = await issue();
+  let t = await f.token({ grant_type: "authorization_code", code: code.code,
+                          redirect_uri: REDIRECT,
+                          code_verifier: code.verifier }, true);
+  const rt = t.body && t.body.refresh_token;
+  const once = await f.token({ grant_type: "refresh_token",
+                               refresh_token: rt }, true);
+  const twice = await f.token({ grant_type: "refresh_token",
+                                refresh_token: rt }, true);
+  check("i/F. with oauth2.refreshTokenRotation the refresh token rotates: " +
+        "its second redemption is refused", function () {
+    assert.strictEqual(t.status, 200, code.where + " " + t.raw.slice(0, 300));
+    assert.strictEqual(once.status, 200, once.raw.slice(0, 300));
+    assert.ok(once.body.refresh_token &&
+              once.body.refresh_token !== rt, "not rotated");
+    assert.strictEqual(twice.status, 400, twice.raw.slice(0, 300));
+  });
+  await ok(realmApi + "/config/reset", { key: "oauth2.refreshTokenRotation" },
+           "put rotation back");
+
+  // G. A CODE LIVES 60 SECONDS AT MOST (5.3.2.1 item 11): one held for 62
+  // seconds is refused.
+  code = await issue();
+  log.info("  (holding a code for 62 seconds)");
+  await sleep(62000);
+  t = await f.token({ grant_type: "authorization_code", code: code.code,
+                      redirect_uri: REDIRECT,
+                      code_verifier: code.verifier }, true);
+  check("i/G. a code presented after 62 seconds is refused invalid_grant",
+        function () {
+    assert.ok(code.code, "no code was issued: " + code.where);
+    assert.strictEqual(t.status, 400, t.raw.slice(0, 300));
+    assert.strictEqual(t.body.error, "invalid_grant", t.raw.slice(0, 300));
+  });
+  log.debug("Leaving unitsOverTheWire().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving the FAPI 2.0 Security Profile at " + base + R);
@@ -658,7 +950,11 @@ async function test() {
     log.info("  (the service is plain HTTP here; TLS is not checked)");
   }
 
-  assert.ok(checks >= 18, "only " + checks + " checks ran; a section has " +
+  await unitsOverTheWire({ issuer: issuer, disco: disco, metadata: metadata,
+    client: client, push: push, token: token, params: params, alice: alice,
+    clientAuth: clientAuth, pub: pub, pair: pair });
+
+  assert.ok(checks >= 40, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

@@ -6000,6 +6000,9 @@ function recordClientCertificate(socket, mode, revocation) {
     // IN THE CERTIFICATE'S REALM, so the directory entry the observer seeds is
     // in the subtree of the realm whose authority issued it. A stored
     // certificate's realm is the ambient one the lookup just asked.
+    // `username` (#33): a person's certificate issued here is filed on the
+    // entry its holder subject names NOW, so a rename does not make the CN
+    // a new person (see certificatePlan() in ldap_server.js).
     inCertificateRealm(holder, function () {
       recordCertificateAuthentication(holder.username, subject, common, cert,
                                       mode, revocation, holder.issuedHere);
@@ -6025,11 +6028,12 @@ function recordClientCertificate(socket, mode, revocation) {
 
 // The authentication itself, split out of `recordClientCertificate()` so it
 // can run inside the certificate's realm. It may throw; its caller catches.
-// `username` is the mapped person. `subject` is the RFC 4514 DN, kept in the
-// note and — for a leaf this realm issued — on the certificate the directory
-// merges onto that person. An outside leaf passes no certificate object:
-// `autoCreateUser()` treats one as "the identity is this subject" and
-// `certificatePlan()` would file the outside CN.
+// `username` is the mapped person, and the holder name `certificatePlan()`
+// files on (#33). `subject` is the RFC 4514 DN, kept in the note and — for a
+// leaf this realm issued — on the certificate the directory merges onto that
+// person. An outside leaf passes no certificate object: `autoCreateUser()`
+// treats one as "the identity is this subject" and `certificatePlan()` would
+// file the outside CN.
 function recordCertificateAuthentication(username, subject, common, cert,
                                          mode, revocation, issuedHere) {
   log.debug('Entering recordCertificateAuthentication().');
@@ -6066,7 +6070,11 @@ function recordCertificateAuthentication(username, subject, common, cert,
       validFrom: cert.valid_from || '',
       validTo: cert.valid_to || '',
       fingerprint256: cert.fingerprint256 || '',
-      email: emailOf(cert)
+      email: emailOf(cert),
+      // The entry this certificate's holder has now, by name (#33). The
+      // actor above is that same username. An outside leaf sends no
+      // certificate object, so this field is not how one is filed.
+      holder: String(username || '')
     };
   }
   stats.recordAuthentication(detail);
@@ -6681,6 +6689,21 @@ function answerCertificateSignIn(req, res) {
         errorCodes.mark(res, session.refusedAsStored === 'STORED_TWICE'
           ? 'STS-TLS-0055' : 'STS-TLS-0054');
       }
+      // REFUSED ON REVOCATION, ON THE AUDIT LOG OF THE REALM ASKED (#34,
+      // #38, 2026-11-15). Nothing marked it, so it was a log line only:
+      // STS-PKI-0119 (the status could not be established under hard-fail)
+      // and STS-PKI-0189 (RFC 9608 noRevAvail beside a distribution point)
+      // reached no audit row at all, and STS-PKI-0118 only the handshake's
+      // row, written in the default realm because a handshake has no realm.
+      // Marked here, under the revocation verdict's own code, the call log
+      // writes the refusal's row in the realm this request named, as it
+      // does for STS-TLS-0054 above. The answer is unchanged: 200,
+      // `session.refusedOnRevocation`.
+      if (session.refusedOnRevocation) {
+        errorCodes.mark(res, errorCodes.codeOf(revocation) ||
+          (revocation && revocation.status === 'revoked' ? 'STS-PKI-0118'
+                                                         : 'STS-PKI-0119'));
+      }
       const presented = !!(req.socket && req.socket.getPeerCertificate &&
                            req.socket.getPeerCertificate().raw &&
                            req.socket.getPeerCertificate().raw.length);
@@ -7061,7 +7084,13 @@ function connectionView(req) {
     },
     clientCertificate: {
       presented: presented,
+      // `verified` is the handshake's verdict AND NOT REFUSED ON REVOCATION
+      // (#37, 2026-11-15) — settled once the revocation verdict is in,
+      // below. It was the handshake's alone, so a revoked certificate the
+      // main port's doors refuse read `verified: true` here.
+      // `handshakeVerified` keeps the handshake's own answer.
       verified: presented && socket.authorized === true,
+      handshakeVerified: presented && socket.authorized === true,
       authorizationError: presented && socket.authorizationError
         ? String(socket.authorizationError) : null,
       certificate: presented ? describeCertificate(peer, 0) : null,
@@ -7075,6 +7104,7 @@ function connectionView(req) {
         why: identity.why || null
       } : null,
       revocation: null,
+      revocationStatus: null,
       signIn: '/tls/sign-in',
       note: presented
         ? 'What this connection carried. Verified means a chain to an anchor ' +
@@ -7148,8 +7178,39 @@ function connectionView(req) {
   log.debug('Leaving connectionView(). The revocation verdict follows.');
   return checkedSocket(socket).then(function (verdict) {
     view.clientCertificate.revocation = verdict || null;
+    view.clientCertificate.revocationStatus = revocationStatusOf(verdict);
+    if (verdict && verdict.refused) {
+      view.clientCertificate.verified = false;
+    }
     return view;
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE REVOCATION VERDICT IN THREE WORDS (#37, 2026-11-15), beside the whole
+// verdict at `revocation`: its `status`, whether the policy `refused` the
+// certificate on it — what `GET /tls/sign-in` and every door reading the
+// certificate act on — the `policy`, and the `source` that decided: the
+// list or responder that named it revoked, else the leaf's own link's
+// (`crl`, `ocsp`, `register`, ...), and `''` where nothing was consulted.
+// ---------------------------------------------------------------------------
+function revocationStatusOf(verdict) {
+  log.debug('Entering revocationStatusOf().');
+  if (!verdict) {
+    log.debug('Leaving revocationStatusOf(). No verdict.');
+    return null;
+  }
+  const links = Array.isArray(verdict.links) ? verdict.links : [];
+  const decided = verdict.revoked && verdict.revoked.source
+    ? String(verdict.revoked.source)
+    : (links.length && links[0] && links[0].source
+      ? String(links[0].source) : '');
+  log.debug('Leaving revocationStatusOf(). ' + verdict.status);
+  return { status: String(verdict.status || ''),
+           refused: verdict.refused === true,
+           checked: verdict.checked === true,
+           policy: String(verdict.policy || ''),
+           source: verdict.status === 'unchecked' ? '' : decided };
 }
 
 // ---------------------------------------------------------------------------

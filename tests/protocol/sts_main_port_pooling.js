@@ -28,6 +28,12 @@
 //      intermediate the service does not hold, and product mode's hard-fail
 //      refuses a leaf whose issuer it cannot find.
 //
+//   6. (D12, #444: tests/main_port_pooling.js's A and
+//      tests/tls_resumed_chain.js's unverified leaf) the four settings the
+//      pooling rests on carry their documented defaults, and a session made
+//      with a certificate that did NOT verify resumes and still signs
+//      nobody in: an unverified chain is remembered for nobody.
+//
 // Its connections are raw TLS sockets, so `tools/fresh-connections.js` (the
 // cluster mode's preload) changes nothing here: every connection is new, and
 // each one offers the session the one before it was given.
@@ -642,6 +648,83 @@ async function revocationOutlivesNoSession() {
   log.debug("Leaving revocationOutlivesNoSession().");
 }
 
+// ---------------------------------------------------------------------------
+// 6. THE FOUR SETTINGS' DEFAULTS, AND AN UNVERIFIED CHAIN REMEMBERED FOR
+// NOBODY (D12, #444).
+// ---------------------------------------------------------------------------
+async function settingRow(key) {
+  log.debug("Entering settingRow(). " + key);
+  const answer = await get("/admin-api/config",
+                           { Authorization: "Bearer " + token() });
+  const json = answer.json || {};
+  const row = (json.groups || []).reduce(function (all, g) {
+    return all.concat(g.settings || []);
+  }, []).filter(function (one) {
+    return one.key === key;
+  })[0];
+  assert.ok(row, "GET /admin-api/config lists no " + key);
+  log.debug("Leaving settingRow().");
+  return row;
+}
+
+async function defaultsAndStrangers() {
+  log.debug("Entering defaultsAndStrangers().");
+  log.info("== 6. The four settings' defaults, and an unverified chain " +
+           "remembered for nobody");
+  const want = {
+    "http.keepAliveTimeoutS": [60, "STS_HTTP_KEEP_ALIVE_TIMEOUT_S"],
+    "tls.sessionTimeoutS": [300, "STS_TLS_SESSION_TIMEOUT_S"],
+    "tls.mainPortSharedTickets": [true, "STS_TLS_MAIN_PORT_SHARED_TICKETS"],
+    "tls.resumedChainWaitMs": [2000, "STS_TLS_RESUMED_CHAIN_WAIT_MS"]
+  };
+  for (const key of Object.keys(want)) {
+    const row = await settingRow(key);
+    check(key + " defaults to " + want[key][0] + " (" + want[key][1] + ")",
+          function () {
+      assert.strictEqual(row.default, want[key][0], JSON.stringify(row)
+        .slice(0, 300));
+      assert.strictEqual(row.env, want[key][1], JSON.stringify(row)
+        .slice(0, 300));
+    });
+  }
+  // A self-signed leaf nothing trusts: the handshake admits it (the port
+  // requires none), it does not verify, and its session is resumed.
+  const stranger = await credentials.mint({
+    rootSubject: "CN=pooling stranger Root " + STAMP + ",O=iya-sts tests",
+    issuingSubject: "CN=pooling stranger CA " + STAMP + ",O=iya-sts tests",
+    subject: "CN=pooling-stranger-" + STAMP + ",O=iya-sts tests" });
+  const ask = [
+    { path: "/admin-api/tls-connection",
+      headers: { Authorization: "Bearer " + token() } },
+    { path: "/tls/sign-in" }
+  ];
+  const first = await pipelined(ask, stranger);
+  const again = await pipelined(ask, Object.assign({ session: first.session },
+                                                   stranger));
+  const viewOf = function (got) {
+    return (got.responses[0] && got.responses[0].json &&
+            got.responses[0].json.clientCertificate) || {};
+  };
+  const signedOf = function (got) {
+    return !!(got.responses[1] && got.responses[1].json &&
+              got.responses[1].json.signedIn === true);
+  };
+  check("an unverified certificate is presented, does not verify, and " +
+        "signs nobody in — on the full handshake and on the resumed one",
+        function () {
+    assert.strictEqual(viewOf(first).presented, true,
+                       JSON.stringify(viewOf(first)));
+    assert.strictEqual(viewOf(first).verified, false,
+                       JSON.stringify(viewOf(first)));
+    assert.strictEqual(signedOf(first), false);
+    assert.ok(again.reused, "the second connection did not resume");
+    assert.notStrictEqual(viewOf(again).verified, true,
+                          JSON.stringify(viewOf(again)));
+    assert.strictEqual(signedOf(again), false);
+  });
+  log.debug("Leaving defaultsAndStrangers().");
+}
+
 async function main() {
   log.debug("Entering main().");
   await keepAlive();
@@ -649,6 +732,7 @@ async function main() {
   await sessionLifetime();
   await resumption();
   await revocationOutlivesNoSession();
+  await defaultsAndStrangers();
   log.info("sts_main_port_pooling passed: " + checks + " checks.");
   log.debug("Leaving main().");
 }

@@ -286,9 +286,17 @@ function dnsOf(result) {
 // The realm, its people, its groups, its application and its administrator.
 async function setUp(realm, mode) {
   log.debug("Entering setUp(). " + realm);
+  // A product realm requires a second factor of everybody, and an LDAP
+  // simple bind cannot ask for one (STS-AUTHN-0213, refused as a wrong
+  // password); `authn.allowOptionalSecondFactor` is what
+  // directory_read_authorization.js turns on for the same reason.
+  const overrides = { "global.mode": mode };
+  if (mode === "product") {
+    overrides["authn.allowOptionalSecondFactor"] = "true";
+  }
   await ok(base + "/admin-api/realms/create",
            { id: realm, domain: realm + ".example.net",
-             name: "#106 " + mode, overrides: { "global.mode": mode } },
+             name: "#106 " + mode, overrides: overrides },
            "created the " + mode + " realm " + realm);
   const api = realmBase(realm) + "/admin-api";
   const dns = {};

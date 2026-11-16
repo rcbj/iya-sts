@@ -80,6 +80,13 @@ on:
         description: Also run the coverage job
         type: boolean
         default: false
+      # THE #444 JOBS (rcbj, 2026-11-15): off unless asked, each reported
+      # SKIPPED; passed to the unit job and every launcher call as
+      # STS_TEST_444. A push or a pull request has no inputs, so `off`.
+      with444:
+        description: Also run the jobs #444 created (STS_TEST_444=on)
+        type: boolean
+        default: false
   # Nightly, for the coverage run. A schedule runs the DEFAULT branch's copy
   # of this file, so every checkout below takes `develop` on a schedule: the
   # tree worth measuring every night is the one work lands on.
@@ -113,6 +120,9 @@ env:
   # log made 20-38 MB of it, truncated before the summary. The service logs
   # are captured into the report artifact either way.
   STS_TEST_ATTACH_RUNNER_ONLY: "1"
+  # The #444 switch for every job below (tests/CLAUDE.md, *The #444
+  # switch*): the unit job hands it to its container, the launcher reads it.
+  STS_TEST_444: ${{ inputs.with444 && 'on' || 'off' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -285,6 +295,7 @@ jobs:
         run: |
           docker run --rm --shm-size=2g \
             -e STS_TEST_SERVICE_URL= -e STS_LDAP_URL= \
+            -e STS_TEST_444 \
             -v "${PWD}/tests/report:/usr/src/sts/tests/report" \
             "ghcr.io/rcbj/iya-sts/iya-sts-tests:${IMAGE_TAG}" \
             node tests/tools/run-report.js --no-protocol --unit-concurrency=4 \
@@ -340,6 +351,18 @@ jobs:
   # 126-155) with about forty per cent on top. A bound that fires here is a
   # finding to measure, not a number to raise blind.
   #
+  # CLUSTER, MEASURED TWICE (2026-11-15). Run 43642810770 ran the same 275
+  # protocol jobs in 150 minutes; run 43735265596 was still in its last
+  # (472/472, the third bulk load, about five minutes from the end) when its
+  # bound of 13200 s fired at 220 minutes. The other modes of that run were
+  # no slower than the first run's (memory 71 against 69 minutes,
+  # single-node 108 against 139), so the runner, not the suite, is what
+  # varies by a third from run to run; cluster's per-request handler times
+  # were 1.3-2 times the first run's on both nodes from the first jobs. The
+  # bound is 270 minutes, the slow run's 228 with about a fifth on top, and
+  # sts_oidfed_extensions, which spent five of those minutes timing out, is
+  # fixed separately. A cluster run past 270 is a finding, not a number.
+  #
   # STS_TEST_CONFORMANCE_MODES EMPTY (#187): the OpenID conformance plans are
   # the two `openid-conformance*` jobs'; here they are reported SKIPPED with
   # the reason.
@@ -367,8 +390,8 @@ jobs:
             minutes: 250
             bound: 13200
           - mode: cluster
-            minutes: 250
-            bound: 13200
+            minutes: 300
+            bound: 16200
           - mode: cells
             minutes: 230
             bound: 12000

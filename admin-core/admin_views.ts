@@ -11234,6 +11234,8 @@ class AdminViews {
       Object.keys(copy).forEach(function (name) {
         if (names.indexOf(name) >= 0) {
           copy[name] = self.maskedCredential(copy[name]);
+        } else if (name === 'appRegistrationJson') {
+          copy[name] = self.maskedRegistrationJson(copy[name]);
         }
       });
       out[member] = copy;
@@ -11256,10 +11258,69 @@ class AdminViews {
     const names = this.sensitiveApplicationAttributes();
     log.debug("Leaving AdminViews.maskedAttributeRows().");
     return rows.map(function (one) {
+      if (one.name === 'appRegistrationJson') {
+        return Object.assign({}, one,
+          { values: self.maskedRegistrationJson(one.values) });
+      }
       return names.indexOf(one.name) >= 0
         ? Object.assign({}, one, { values: self.maskedCredential(one.values) })
         : one;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REGISTRATION DOCUMENT CARRIES TWO CREDENTIALS (2026-11-14, found by
+  // #444's D12). `appRegistrationJson` is the RFC 7591 registration response
+  // kept as it was answered, and that answer holds the `client_secret` and
+  // the RFC 7592 `registration_access_token`. The attribute is not a
+  // credential, so it was answered whole to every Admin Read caller while
+  // `appRegistrationAccessToken` beside it was masked. The two members are
+  // masked as the attribute is; the rest of the document stands. A value
+  // that is not a JSON object is answered as it is: there is nothing in it
+  // this could find.
+  // ---------------------------------------------------------------------------
+  /**
+   * Masks the credentials an RFC 7591 registration document carries.
+   *
+   * @param value - the attribute's value or values (JSON text)
+   * @returns the same shape, `client_secret` and
+   *   `registration_access_token` masked
+   */
+  maskedRegistrationJson(value) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.maskedRegistrationJson().");
+    if (Array.isArray(value)) {
+      log.debug("Leaving AdminViews.maskedRegistrationJson(). Values.");
+      return value.map(function (one) {
+        return self.maskedRegistrationJson(one);
+      });
+    }
+    if (typeof value !== 'string' || !value) {
+      log.debug("Leaving AdminViews.maskedRegistrationJson(). Nothing.");
+      return value;
+    }
+    let document = null;
+    try {
+      document = JSON.parse(value);
+    } catch (e) {
+      log.debug("Caught in AdminViews.maskedRegistrationJson(): " +
+                ((e && e.message) || e));
+      document = null;
+    }
+    if (!document || typeof document !== 'object' ||
+        Array.isArray(document)) {
+      log.debug("Leaving AdminViews.maskedRegistrationJson(). Not an " +
+                "object.");
+      return value;
+    }
+    ['client_secret', 'registration_access_token'].forEach(function (name) {
+      if (Object.prototype.hasOwnProperty.call(document, name)) {
+        document[name] = self.maskedCredential(document[name]);
+      }
+    });
+    log.debug("Leaving AdminViews.maskedRegistrationJson().");
+    return JSON.stringify(document);
   }
 
   // What one attribute of an application entry IS, as the drill-down's third

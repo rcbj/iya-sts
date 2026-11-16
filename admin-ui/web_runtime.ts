@@ -3073,8 +3073,9 @@ class ConsoleRuntime extends SpaClient {
     }
     // AN SVG LINK IS `a`, NOT `A`: an element in the SVG namespace keeps
     // its case, so a picture's boxes (the PEP picture's routes and
-    // listeners, the delegation and federation pictures' parties) were
-    // full page loads that dropped the token held in memory.
+    // listeners, the delegation and federation pictures' parties, the
+    // geolocation map's places) were full page loads that dropped the
+    // token held in memory.
     let el = event.target;
     while (el && String(el.tagName || '').toUpperCase() !== 'A') {
       el = el.parentElement;

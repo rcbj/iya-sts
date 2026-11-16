@@ -334,6 +334,45 @@ apply to deletes made after the 1.1.0 image starts. References a 1.0.0
 service left behind before the upgrade stay until you remove them on the
 console or through `/admin-api`.
 
+### Behaviour changes: a service account is for good
+
+1.1.0 holds three rules about [service accounts](service-accounts.md#it-cannot-be-undone)
+at every door: the console, `/admin-api` and an LDAP modify. Each changes
+what 1.0.0 did:
+
+* **A service account cannot be made an ordinary person again.**
+  `POST /admin-api/users/set-service-account` with `serviceAccount: false`
+  on a service account is answered 400 (`STS-SVCACCT-0060`), and an LDAP
+  modify that deletes or replaces `stsServiceAccount` is refused with
+  result code 19 (`STS-SVCACCT-0064`). 1.0.0 cleared the flag, the owners,
+  the destination and the rotation state. The console's **Make them an
+  ordinary person** button is gone, and its **Make them a service
+  account** button now asks you to confirm that it cannot be undone.
+  Deleting the entry is still allowed.
+* **A service account that has an owner always keeps one**, whatever the
+  policy's `requireOwner` says. Removing the last owner, sending
+  `owners: []`, or an LDAP modify deleting the last
+  `stsServiceAccountOwner` is refused (`STS-SVCACCT-0061`,
+  `STS-SVCACCT-0065`). In 1.0.0 this was allowed while `requireOwner` was
+  off. An account made with no owner under `requireOwner` off can still
+  be edited without naming one.
+* **An owner cannot remove themselves.** Taking your own DN off an
+  account's owners, or the group that is your only way of owning it, is
+  refused (`STS-SVCACCT-0062`, `STS-SVCACCT-0063`; over LDAP, for the bound
+  DN, `STS-SVCACCT-0066`, `STS-SVCACCT-0067`). Another administrator may
+  remove you.
+* **Deleting an account's last owner makes the realm's administrator the
+  owner.** When the person or group that is a service account's only owner
+  is deleted (SCIM `DELETE`, an LDAP delete), the realm's Admin Write group
+  becomes its owner, or the realm's bootstrap administrator if there is no
+  such group. An `admin.service-account.owner-added` row by `system` says
+  so. In 1.0.0 the account was left with no owner. If the realm has
+  neither, it still is, and `STS-SVCACCT-0068` is logged.
+
+Existing service accounts are unchanged, and nothing needs a migration
+step. A script that un-made a service account, or emptied its owners,
+gets the refusal instead.
+
 ### AuthZEN ignores members it does not define
 
 In 1.0.0, an [AuthZEN](authzen.md) request carrying a member that AuthZEN

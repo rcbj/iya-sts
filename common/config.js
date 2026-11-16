@@ -10827,7 +10827,9 @@ const SETTINGS = [
   { key: 'saml2.assertionLifetimeMin', group: 'SAML 2.0 assertions',
     label: 'Assertion lifetime (minutes)',
     env: 'STS_SAML2_ASSERTION_LIFETIME_MIN', type: 'int', dflt: 60,
-    runtime: true,
+    // `min: 1` (#39, 2026-11-15): with no bound a realm or an application
+    // could store 0, which the readers' `|| 60` then read as an hour.
+    min: 1, runtime: true,
     description: 'How long an issued assertion is valid for: it becomes ' +
                  'Conditions/NotOnOrAfter and the bearer ' +
                  'SubjectConfirmationData/NotOnOrAfter alike. Set it to 1 to ' +
@@ -11290,7 +11292,9 @@ const SETTINGS = [
   { key: 'saml11.assertionLifetimeMin', group: 'SAML 1.1 assertions',
     label: 'Assertion lifetime (minutes)',
     env: 'STS_SAML11_ASSERTION_LIFETIME_MIN', type: 'int', dflt: 60,
-    runtime: true,
+    // `min: 1` (#39, 2026-11-15): with no bound a realm or an application
+    // could store 0, which the readers' `|| 60` then read as an hour.
+    min: 1, runtime: true,
     description: 'How long the browser profiles\' assertions are valid for, ' +
                  'in the NotBefore and NotOnOrAfter of <saml:Conditions>. It ' +
                  'is separate from the WS-Federation lifetime for the same ' +
@@ -22141,6 +22145,47 @@ function unstorableText(value) {
  */
 function checkOverride(key, raw, forRealm) {
   log.debug("Entering checkOverride().");
+  log.debug("Leaving checkOverride().");
+  return overrideProblem(key, raw, forRealm, true);
+}
+
+// ---------------------------------------------------------------------------
+// A VALUE THE STORE ALREADY HOLDS, CHECKED FOR WHAT IT IS AND NOT FOR WHAT IS
+// BESIDE IT (2026-11-15, GitHub Actions run #300).
+//
+// A realm's overrides read back or replicated from another process are
+// re-checked one value at a time (`realms.js`'s restorableOverrides(), #39),
+// so a bound added to a row after a value was written costs that value and
+// not the realm. That check ran the RULES BETWEEN SETTINGS too, and those are
+// a judgment the process that took the write already made, with that realm's
+// companions in hand. Asked again here they read the companion wherever the
+// pull happened to run — the default realm, outside any request — and they
+// are not symmetric: `oauth2.accessTokenSigningAlg=ES256` set first and
+// `keys.signingAlgorithms=PS256,RS256` set after it are both taken (the
+// second write is not judged against the first, and the setting falls back
+// to the list's first), while the pair judged together is STS-KEYS-0192. A
+// replica that re-judged the pair held a different realm from the writer's.
+// So this is checkOverride() without `writeRules`: the type, the bounds, the
+// runtime and realm rules — what a value IS — and nothing between settings.
+// ---------------------------------------------------------------------------
+/**
+ * Checks a stored value as checkOverride() does, without the rules between
+ * settings, which the door that took the write already asked.
+ *
+ * @param key - the setting's key
+ * @param raw - the value as text
+ * @param forRealm - as for `checkOverride()`
+ * @returns the problem, or null
+ */
+function checkStoredOverride(key, raw, forRealm) {
+  log.debug("Entering checkStoredOverride().");
+  log.debug("Leaving checkStoredOverride().");
+  return overrideProblem(key, raw, forRealm, false);
+}
+
+// checkOverride()'s body; `withRules` false is checkStoredOverride().
+function overrideProblem(key, raw, forRealm, withRules) {
+  log.debug("Entering overrideProblem().");
   // `forRealm` OMITTED MEANS "WHEREVER THIS WRITE WOULD LAND", which is what
   // every caller inside this service means and what none of them was saying.
   //
@@ -22164,14 +22209,14 @@ function checkOverride(key, raw, forRealm) {
   // refusing. Defaulting here fixes all four call sites at once and leaves the
   // explicit `true` and the explicit `false` meaning exactly what they did.
   const inRealm = forRealm === undefined ? !!realmFor(key) : !!forRealm;
-  log.debug("Entering checkOverride(). forRealm=" + inRealm);
+  log.debug("overrideProblem(): forRealm=" + inRealm);
   const setting = byKey[key];
   if (!setting) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return 'Unknown setting "' + key + '".' + replacedBy(key);
   }
   if (!setting.runtime && !(inRealm && setting.realmRuntime)) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return '"' + key + '" cannot be changed while this service is running: ' +
       setting.restartReason + '. Set it in the appconfig file or as ' +
       (setting.env || 'its environment variable') + ' and restart.';
@@ -22180,22 +22225,27 @@ function checkOverride(key, raw, forRealm) {
   // realm hears STS-CORE-0162 rather than a type error (#368).
   const realmLocked = maxCountRealmProblem(key);
   if (realmLocked) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return realmLocked;
   }
   if (unstorableText(raw)) {
-    log.debug("Leaving checkOverride(). Text the store cannot hold.");
+    log.debug("Leaving overrideProblem(). Text the store cannot hold.");
     return '"' + key + '" holds a NUL character or half of a surrogate ' +
       'pair, which this service cannot store.';
   }
   const problem = TYPES[setting.type].check(raw, setting);
   if (problem) {
-    log.debug("Leaving checkOverride().");
+    log.debug("Leaving overrideProblem().");
     return '"' + key + '" ' + problem + '.';
+  }
+  if (!withRules) {
+    log.debug("Leaving overrideProblem(). Stored: no rule between " +
+              "settings.");
+    return null;
   }
   const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting),
                                  inRealm);
-  log.debug("Leaving checkOverride().");
+  log.debug("Leaving overrideProblem().");
   return ruled ? ruled.problem : null;
 }
 
@@ -22266,6 +22316,23 @@ function withWriteBatch(values, fn) {
   } finally {
     writeBatch = before;
   }
+}
+
+/**
+ * The values of the write batch in force, as a copy, or null outside one.
+ * `realms.setOverride()` layers them over a realm's stored overrides when
+ * it builds its own batch (2026-11-15): its batch REPLACES this one for the
+ * length of its check, so without them a pair posted together was judged
+ * by the realm's old value of the one not yet written (`Branding`'s
+ * colours, a realm's `set-many`).
+ *
+ * @returns {Object<string, *>|null}
+ */
+function currentWriteBatch() {
+  log.debug("Entering currentWriteBatch().");
+  const out = writeBatch ? Object.assign({}, writeBatch) : null;
+  log.debug("Leaving currentWriteBatch(). " + !!out);
+  return out;
 }
 
 // A companion setting's value as a rule should judge it: the batch's, where
@@ -23401,6 +23468,7 @@ module.exports = {
   managementApiBaseUrl: managementApiBaseUrl,
   registerLogger: registerLogger,
   checkOverride: checkOverride,
+  checkStoredOverride: checkStoredOverride,
   unstorableText: unstorableText,
   checkOverrideCode: checkOverrideCode,
   checkWrite: checkWrite,
@@ -23429,5 +23497,6 @@ module.exports = {
   TLS_LISTENERS: TLS_LISTENERS,
   PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
   addWriteRule: addWriteRule,
-  withWriteBatch: withWriteBatch
+  withWriteBatch: withWriteBatch,
+  currentWriteBatch: currentWriteBatch
 };

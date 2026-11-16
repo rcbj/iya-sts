@@ -17,8 +17,9 @@
 //   A. THE LIST: several owners, a person and a group, each once whatever it
 //      was called; one per line as a string; none refused while the policy
 //      requires one; more than MAX_OWNERS refused (STS-SVCACCT-0031); one
-//      bad owner refuses the whole set and writes nothing; none allowed and
-//      the attribute gone when the policy does not require one; an owner
+//      bad owner refuses the whole set and writes nothing; once it names an
+//      owner the list is never emptied, even where the policy does not
+//      require one (rcbj, 2026-11-15, STS-SVCACCT-0061); an owner
 //      deleted is taken off the list and the other owner kept (#1612's
 //      rule, 2026-11-13: until then it was reported with no kind and kept,
 //      so somebody made again at the DN owned the account).
@@ -39,8 +40,8 @@
 //      without Admin Write; and an ordinary person's one staged form.
 //   F. ONE OWNER OR THE DESTINATION AT ONCE (#602): `addOwner()`,
 //      `removeOwner()` and `setDestination()` keep everything else; an
-//      owner listed twice is not; the last owner stays while the policy
-//      requires one; a destination is both-or-neither; and the three console
+//      owner listed twice is not; the last owner stays, whatever the
+//      policy; a destination is both-or-neither; and the three console
 //      acts answer the account as it now stands.
 //   G. THE DESTINATION'S HELPERS (#602): its search asks the Secret
 //      destinations list and reads its answer; a Use chooses it with the
@@ -161,10 +162,12 @@ async function theList(t) {
             JSON.stringify(lines));
     const none = serviceAccounts.set('svc-o', { serviceAccount: true,
                                                 owners: [] });
-    t.equal(errorCodes.codeOf(none), 'STS-SVCACCT-0023',
-            'A4. an empty list is refused while the policy requires one');
+    // An account that names owners never loses its last (rcbj,
+    // 2026-11-15): STS-SVCACCT-0061, ahead of requireOwner's -0023.
+    t.equal(errorCodes.codeOf(none), 'STS-SVCACCT-0061',
+            'A4. an empty list is refused: the account names owners now');
     const absent = serviceAccounts.set('svc-o', { serviceAccount: true });
-    t.equal(errorCodes.codeOf(absent), 'STS-SVCACCT-0023',
+    t.equal(errorCodes.codeOf(absent), 'STS-SVCACCT-0061',
             'A5. and so is no `owners` at all: a set replaces the list');
     const bad = serviceAccounts.set('svc-o', {
       serviceAccount: true, owners: ['svc-o-ann', 'nobody-at-all'] });
@@ -191,10 +194,11 @@ async function theList(t) {
     try {
       const unowned = serviceAccounts.set('svc-o', { serviceAccount: true,
                                                      owners: '' });
-      t.check(unowned.ok && unowned.account.owners.length === 0 &&
-              ownerValues('svc-o').length === 0,
-              'A9. with requireOwner off the list may be empty, and the ' +
-              'attribute goes', JSON.stringify(unowned));
+      t.check(unowned.ok === false &&
+              errorCodes.codeOf(unowned) === 'STS-SVCACCT-0061' &&
+              ownerValues('svc-o').length === serviceAccounts.MAX_OWNERS,
+              'A9. with requireOwner off the list still may not be emptied ' +
+              'once it names an owner', JSON.stringify(unowned));
     } finally {
       policy.reset('default');
     }

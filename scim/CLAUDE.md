@@ -1241,7 +1241,11 @@ residents' names and UUIDs, so they cross only where the policy releases
 that cell's residents to the asking cell (purpose `directory-list`, the
 Directory page's question); the counts always cross. `act()` routes the five
 cell acts: `cell` to that cell over `scim-client-act`, none to every cell
-(`cells` in the answer, a refusal only when no cell did it); a `cell` on a
+(`cells` in the answer, a refusal only when no cell did it; a `reconcile`
+also answers `mergedReconcile()`'s top-level counts — `users` and
+`deprovisioned` summed, `groups` the most one cell queued, because every
+pushing cell queues each group in scope for its own share — which until CI
+run #250 it did not, so `sts_scim_client` read nothing in cells); a `cell` on a
 client act, an unknown cell, or one cell's service, is `STS-SCIMC-0033`, an
 unreachable named cell `STS-SCIMC-0034`. The console's per-cell row carries
 `cell` on each act form, and a dead letter's Retry in another cell's list

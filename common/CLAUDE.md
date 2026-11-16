@@ -1970,6 +1970,47 @@ the 502 it always did. `STS-WORKER-0042`, logged through `warnSparingly()`;
 `stats().replayed` counts them. A request any byte of which was delivered is
 never repeated. `tests/request_proxy_replay.js` pins both halves.
 
+**AND THE `write EPIPE` AFTER A DELIVERED REQUEST WAS FOUND (2026-11-15): IT
+WAS A WRITE AFTER THE LAST BYTE.** `tests/request_ryw_session.js` failed in
+three of five unit-pool runs on GitHub Actions with
+`[STS-WORKER-0030] … could not answer POST /oauth2/token?issue=RT1: write
+EPIPE` for requests the worker had read whole and answered — no
+`STS-WORKER-0042`, rightly, since the bytes were delivered. `proxy()` wrote
+each body chunk and then called `ClientRequest.end()`. While the agent's
+socket is still CONNECTING (the request was opened a tick before the body was
+forwarded, the usual case for a body streamed from `req`), node's `end()`
+queues an EMPTY write behind the pending one, and issues it as a SEPARATE
+write after the write that carries the last byte. The worker answers on that
+byte; with `Connection: close` it then closes, and a unix socket whose peer
+has closed refuses even an empty write: EPIPE, the socket is destroyed with
+the answer unread, and the client gets a 502 for a request that ran. It needs
+this thread to be preempted between those two writes while the worker's
+thread reads, answers and closes — rare alone (none in 16 runs alone, none in
+12 beside four CPU hogs), a few times a run in the unit pool. **It is not
+the stub's**: a request worker does exactly what the stub did, so the
+production service could 502 a POST it had executed. Only the shape that
+failed fits: a POST with a body that is not read before the barrier (a
+keyed request, carrying a cookie). A body read first (`readCodeExchangeBody()`)
+is written and ended in the same turn as `open()`, before the agent hands a
+socket over, so node queues it all and flushes it as one write; a GET has
+only the end.
+
+**THE FIX IS THAT NOTHING IS WRITTEN AFTER THE LAST BYTE.** `forward()` holds
+the latest chunk back and writes the one before it, and `endBody()` sends the
+held chunk WITH the end (`upstream.end(chunk)`), which corks the socket and
+writes the chunk and node's trailing empty write as one writev: the worker
+cannot have the last byte without the rest. Back-pressure is unchanged (the
+write that returns false is still the one that pauses the client), the
+headers still go with the first write, and `delivered` is set by the end's
+callback for a one-chunk body, which fires only once the kernel took it. **A
+resend was not the answer and must not become one**: the worker has run the
+request, a POST is not idempotent, and `delivered` is true. `sendAgain()`
+writes and ends in the turn it opens, so it already makes one write.
+`tests/request_proxy_last_write.js` makes the preemption certain — the
+agent's sockets stop THIS THREAD (`Atomics.wait`, not a timer, so nothing is
+read meanwhile) before every write after their first, against a worker in a
+thread of its own — and reproduces the CI line exactly without the fix.
+
 **THE RULE THAT COMES OUT OF IT** is worth more than the mechanism: a store is
 shared by coordination, and anything that is NOT a row in a store — a socket, a
 timer, a listener — is held by one process and reachable from no other. There
@@ -8082,9 +8123,30 @@ other node's tier (`STS-PKI-0182` at warn), a deliberate Build is refused with
 it. It is a claim and not `cluster.withLease()`, because a lease there is a role a
 node keeps, and a Build pressed on any other node would be refused for as long as
 the holder lived. `STS-PKI-0183` is a store that could not be asked,
-`STS-PKI-0184` a claim held past three minutes. `scep/scep_ra.ts` uses the same
-function under a claim of its own. `buildScopeNow()` also writes its branch onto
-the row as it is when it saves, not as it was read before nine awaits.
+`STS-PKI-0184` a build waited for past the caller's deadline. `scep/scep_ra.ts`
+uses the same function under a claim of its own. `buildScopeNow()` also writes
+its branch onto the row as it is when it saves, not as it was read before nine
+awaits.
+
+**ONE DEADLINE PER CALLER, AND NOTHING WAITS FOR EVER (CI run #250,
+2026-11-15).** The fuzz mode's schemathesis waited 300 s, unanswered, for
+`build-scope`, `policies/transfer/export`, `scep/reissue-ra` and
+`scim/clients/issue-certificate`. Each ends in `oneBuildAtATime()`'s per-scope
+queue — the issuers through `ensureScope()`, which asks for the branch inside
+it — and the queue had no bound, while the claim's three minutes were counted
+from the claim, not the caller: a caller behind a build that waited out a held
+claim (a starved pool, a release that failed, `STS-CLUSTER-0014`) waited that
+build's wait and then its own, and a build nested in a build (the Root under a
+branch) started a bound of its own. Now `buildWaitFrame()` sets one deadline,
+`CLUSTER_BUILD_WAIT_MS` from when the caller joins the queue, carried by an
+`AsyncLocalStorage` to every wait of the builds it runs and honoured only while
+that build runs; the queue (`turnBefore()`, the order still kept), the claim's
+wait (polling backs off to 2 s) and any nested build all end there, with
+`STS-PKI-0184`. `/admin-api/pki/*` answers `0184` and `0183` 503 with
+Retry-After (`isBusyRefusal()`). And `buildScope()` asks `scopeBuildChecks()` —
+the listener-loadable key, the algorithms, the process chain, the lifetimes —
+BEFORE the queue, so a body refused for what it asks for is answered at once.
+`tests/pki_build_wait.js` holds all three.
 
 **CRL NUMBERS ACROSS NODES** — `pki_revocation.js`'s `agreedCrlNumber()` advances
 the clock-based candidate in `cluster/cluster_counters.js` wherever a shared
@@ -11603,7 +11665,10 @@ reason it is one file: the identity rule (`authorizeTarget()`), the profile
 table and the settings that narrow it (`checkProfile()`), the proof of
 possession (`parseCsr()` — RSA/ECDSA through pkijs, Ed25519 through node, ML-DSA
 and the composites through `x509.verifyBytes()`, a KEM key refused unless the CSR
-is a TEMPLATE), the certificate's content (`namesFor()` — subject and SAN from
+is a TEMPLATE, and an RSA key under 2048 bits refused in every mode as a key
+this authority cannot certify, `STS-ENROLL-0031` — #35, 2026-11-15: nothing
+asked the size, so a development realm certified RSA-1024 over EST, and ACME
+and SCEP read the same function), the certificate's content (`namesFor()` — subject and SAN from
 the ENTRY, an unowned name REFUSES rather than being dropped, and `email`,
 `smartcard-logon` and the two `tls-server*` profiles adding or requiring a name of
 their own), issuance and storage (`issue()` over `pki.issueEnrolled()`), the two
@@ -13172,6 +13237,46 @@ its password may ROTATE, pushed to a secrets manager first and committed only
 after, with the previous password kept for an overlap. `docs/service-accounts.md`
 is the operator's page; each file's header argues its part.
 
+* **FOR GOOD (rcbj, 2026-11-15): "Once a user is established as a service
+  account, do not allow this to be undone. Do not allow all owners to be
+  deleted. Do not allow an owner to delete themselves as an owner."** Three
+  rules, held by `set()` (so by `addOwner()`, `removeOwner()`, the console
+  and `/admin-api`) with the codes STS-SVCACCT-0060 to -0063 and by
+  `serviceAccountWriteRefusal()` on an LDAP modify with -0064 to -0067
+  (0051–0059 are the remote PEP's, #1760): `serviceAccount` false on a
+  service account, or a delete or replace of the flag, is refused; a change
+  that leaves an account that names an owner with none is refused, asked
+  BEFORE `check()`'s `requireOwner` so its -0023 does not stand in; and
+  `ownerChangeRefusal()` refuses the caller taking off their own DN, or the
+  group that was their ONLY way of owning the account — a group the caller
+  is in may go while they still own it another way, since they are not
+  removing themselves. The caller is the verified token's PERSON
+  (`callerPersonOf()`, passed as `ctx.admin`) or the LDAP bind DN, never a
+  request member; development's open API and a client's own token name
+  nobody, so only the last-owner rule applies to them. Three decisions
+  stand beside the rules: **deleting the entry is still allowed** (it ends
+  the account, it does not make it a person, and #1613's rule means a
+  person made again at the name inherits nothing); **`requireOwner` off
+  still lets an account be MADE, and edited, with no owner** — the rule is
+  about taking owners away, and refusing every edit of an ownerless account
+  would turn the setting off for existing accounts; and **deleting the
+  PERSON OR GROUP that is the last owner is not refused**, because a
+  leaver's deletion (often SCIM, from an HR system) cannot wait on an
+  ownership detail. **INSTEAD THE REALM'S ADMINISTRATOR INHERITS IT (rcbj,
+  2026-11-15: "if the last owner is deleted, then the realm admin account
+  should be added as the owner")**: `rewriteOwnerReferences()` — the one
+  cleanup a person's delete (`removePersonEntry()`: SCIM, an LDAP delete, a
+  re-homing) and a group's (`deleteGroupEntry()` and the LDAP delete
+  handler) reach — takes the DN off and, where that empties the list, names
+  `realmAdministratorOwner()` in the SAME write: the realm's
+  `admin.writeGroup` group, else its bootstrap administrator, never the
+  deleted entry or the account itself — the order #1760's remote-PEP
+  identity uses, so the two agree. An `admin.service-account.owner-added`
+  row, actor `system`, names both DNs. With neither, the account names no
+  owner and STS-SVCACCT-0068 is logged; an administrator's add-owner
+  repairs it, and nothing refuses that. The console and `/admin-api` have
+  no person or group delete of their own. An account that named no owner
+  before is never visited. `tests/service_account_orphan_owner.js`.
 * **ONE PREDICATE.** `ServiceAccounts.isServiceAccount(entry)` is asked by
   every door; `isServiceAccountName()` for a door holding a name. No door
   reads the attribute. The directory's only writer of the attributes is
@@ -14976,7 +15081,12 @@ not refused, and the default stays.
   link's `stsPasswordResetSource`), the administrator's `reset-password`
   (`admin-password`), and the activation link's finish (`activation`, only
   where a passkey enrolled BEFORE the link was issued is held:
-  `noteActivationRecovery()`). The first passkey sign-in clears it
+  `noteActivationRecovery()`), and the three self-service doors of a
+  sign-in — a recovery code (`recovery-code`, 2026-11-14) and an emailed
+  code or link (`email-code`, `email-link`, #31, 2026-11-15), first factor
+  or second — through `authn.ts`'s `noteRecoveryDoor()`, before either way
+  on, and not for a door `operator-only` refuses outright
+  (`STS-AUTHN-0380`). The first passkey sign-in clears it
   (`authn.ts`'s `recoveryCompleted()`, audit `authn.recovery.completed`).
 * **The question is the issuance policy's** (`recover-account`, xacml/
   CLAUDE.md), asked through `passkeyPolicy.recoveryRefusal()` with the facts

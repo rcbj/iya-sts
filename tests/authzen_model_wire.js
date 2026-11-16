@@ -1013,6 +1013,19 @@ function firstDifference(a, b, where) {
       }
     }
   }
+  // A member present on one side only: JSON.stringify(undefined) is
+  // undefined, not a string, so it is named rather than sliced — the run
+  // of 2026-11-15 threw here and hid the difference it had found.
+  if (a === undefined) {
+    log.debug("Leaving firstDifference(). Absent from the record.");
+    return where + ': absent on the record, ' +
+      JSON.stringify(b).slice(0, 300) + ' now';
+  }
+  if (b === undefined) {
+    log.debug("Leaving firstDifference(). Absent now.");
+    return where + ': absent now, ' + JSON.stringify(a).slice(0, 300) +
+      ' was recorded';
+  }
   log.debug("Leaving firstDifference().");
   return where + ': ' + JSON.stringify(b).slice(0, 300) + ' where ' +
     JSON.stringify(a).slice(0, 300) + ' was recorded';
@@ -1042,10 +1055,10 @@ function run(t) {
           'the conversation has as many steps as recorded',
           now.wire.length + ' vs ' + recorded.wire.length);
   recorded.wire.forEach(function (one, i) {
-    t.check(firstDifference(one, now.wire[i], 'wire') === null,
+    t.check(firstDifference(one, now.wire[i], 'wire[' + i + ']') === null,
             one.mode + ', ' + one.step + ': ' + one.method +
             ' answers as recorded (' + one.status + ')',
-            firstDifference(one, now.wire[i], 'wire'));
+            firstDifference(one, now.wire[i], 'wire[' + i + ']'));
   });
   log.debug("Leaving run().");
 }

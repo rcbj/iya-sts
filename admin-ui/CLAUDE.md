@@ -2224,6 +2224,16 @@ scheduler's runs filter offers every job id, which is why the view model keeps
 `jobIds` beside the paged rows. A menu built from `shown` can only filter by
 what is already on the screen.
 
+**A list whose rows cost something to build is paged BEFORE it is built
+(#1766, 2026-11-14).** The scheduler's report built every job view in every
+realm (each reading that realm's run rows) and every run's view, and then
+kept one page: 13 s a walk in run 29. `scheduler.status()` now takes
+`pageJobs(total, everyJobId)` and `pageRuns(total)`: it lists the cheap keys,
+hands each length to the pager (`adminViews.pagingOf()`, the paging
+`pagedRows()` would have made), and builds the slice it names, reading each
+realm's run store once for the page. The answer is byte for byte the old one;
+`tests/scheduler_report_paging.js` compares the two.
+
 ### THE KEY-PAIR HISTORY IS A SUB-PAGE, AND IT IS PAGED (2026-09-22)
 
 `/admin/keys/history` — reached from a *History* link on every row of the
@@ -8542,6 +8552,23 @@ is one:
 `ownerSearch()` in the runtime serves both searches and both modes; on a
 service account what a groups search leaves out is what the account holds,
 since the form carries no `owner` rows.
+
+**THE MAKE IS FOR GOOD, AND THE TAB SAYS SO (rcbj, 2026-11-15).** A service
+account is never made an ordinary person again (`common/CLAUDE.md` 3cd), so
+the *Make them an ordinary person* button and its two strings are gone, and
+the account's tab ends with `permanentNote` in their place. The Make on an
+ordinary person carries an unfolded amber box (`irreversibleWarning`, drawn
+as a bare `div.warn` because `kit.warn()` folds anything over a line) and a
+REQUIRED, UNNAMED checkbox (`#service-account-irreversible`,
+`irreversibleConfirm`): the browser's own constraint validation stops the
+Make, and the hidden default button Enter presses, until it is ticked — no
+script of this page's, which `script-src 'self'` would not run inline, and
+no member of the request, which `/admin-api` does not ask for. Every other
+button in the form is `formnovalidate`, so a Remove, a search or a Use is
+never stopped by it. The new-user screen draws `permanentNote` as a
+`div.warn` beside its Service account box, where a required checkbox could
+not be conditional on the box without a script.
+`tests/service_account_irreversible.js` section C holds both.
 
 ## A GROUP'S PAGE HAS AN OWNERS TAB (#603, 2026-10-12)
 

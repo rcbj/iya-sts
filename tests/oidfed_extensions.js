@@ -22,7 +22,8 @@
 //      rotation a jwks_update, its deletion its revocation — answered under
 //      the identifier it had; suspending it breaks the chain through it;
 //   4. the Extended Subordinate Listing (#135): paging with an opaque
-//      pointer, the claims, the audit timestamps, the filters, the refusals;
+//      pointer, the claims, the audit timestamps, the filters, the refusals,
+//      and a realm of this service described only when a caller needs it;
 //   5. the Entity Collection (#136): in process only (the realm's own
 //      realms), the filters and claims and refusals; then a CRAWL through a
 //      foreign Intermediate to its leaf — every entity resolved to the realm
@@ -428,6 +429,91 @@ async function body(t) {
   }) && refusals[4].status === 404 && refusals[4].error === 'page_not_found',
           '4d. a bad limit, time or boolean is invalid_request; a pointer ' +
           'not ours is page_not_found', JSON.stringify(refusals));
+
+  // 4e. A REALM OF THIS SERVICE IS DESCRIBED ONLY WHEN A CALLER NEEDS IT
+  // (GitHub Actions run 43735265596, cluster mode): describing one signs its
+  // whole Entity Configuration, and an unfiltered page cost one per realm the
+  // service holds, whatever its limit — sts_oidfed_extensions' walk two at a
+  // time ran out of its five minutes. Counted by the Entity Configurations
+  // signed (iss === sub, the statement typ) while each answer is built.
+  const extra = ['1', '2', '3'].map(function (n) {
+    return 'oidfedd' + n + '-' + RUN;
+  });
+  extra.forEach(function (id) {
+    realms.create({ id: id, name: 'OpenID Federation describe test ' + id });
+  });
+  const extraIds = extra.map(function (id) {
+    return inRealm(id, function () {
+      return oidfed.entityId(req);
+    });
+  });
+  const sign = EntityStatement.sign;
+  let configurations = 0;
+  EntityStatement.sign = function (payload, typ, signer) {
+    if (payload && payload.iss === payload.sub && typ === ES) {
+      configurations += 1;
+    }
+    return sign.apply(this, arguments);
+  };
+  const counted = async function (fn) {
+    log.debug("Entering counted().");
+    configurations = 0;
+    const answer = await fn();
+    log.debug("Leaving counted(). " + configurations);
+    return { answer: answer, signed: configurations };
+  };
+  let walk;
+  let plain;
+  let typed;
+  let marks;
+  let idsOnly;
+  try {
+    walk = await counted(async function () {
+      let one = await listing.answer(entity, req, { limit: '2' });
+      let n = 1;
+      while (one.ok && one.body.next) {
+        one = await listing.answer(entity, req, { limit: '2',
+                                                  from: one.body.next });
+        n += 1;
+      }
+      return { ok: one.ok, pages: n };
+    });
+    plain = await counted(function () {
+      return entity.listing(req, {});
+    });
+    typed = await counted(function () {
+      return listing.answer(entity, req, { entity_type: 'openid_provider' });
+    });
+    marks = await counted(function () {
+      return listing.answer(entity, req, { limit: '1',
+                                           claims: 'trust_marks' });
+    });
+    idsOnly = await counted(function () {
+      return entity.subordinateFacts(req, false);
+    });
+  } finally {
+    EntityStatement.sign = sign;
+    extra.forEach(function (id) {
+      if (realms.get(id)) {
+        realms.remove(id);
+      }
+    });
+  }
+  t.check(walk.answer.ok && walk.answer.pages >= 3 && walk.signed === 0 &&
+          plain.answer.ok && plain.signed === 0 &&
+          plain.answer.list.indexOf(leafId) >= 0 &&
+          typed.answer.ok && typed.signed >= extra.length + 1 &&
+          extraIds.every(function (id) {
+            return idsOf(typed.answer).indexOf(id) >= 0;
+          }) &&
+          marks.answer.ok && marks.signed <= 1 &&
+          idsOnly.signed === 0 && idsOnly.answer.length >= extra.length + 1,
+          '4e. an unfiltered walk, the plain list and the collection\'s ' +
+          'identifiers describe no realm; a filter on entity type describes ' +
+          'every one, and a trust_marks claim only the page\'s',
+          JSON.stringify({ walk: walk.signed, pages: walk.answer.pages,
+                           plain: plain.signed, typed: typed.signed,
+                           marks: marks.signed, idsOnly: idsOnly.signed }));
 
   t.log.info('=== 5. the Entity Collection ===');
   config.setOverride('oidfed.collectionCacheS', 0);

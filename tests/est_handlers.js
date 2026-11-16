@@ -586,6 +586,31 @@ async function childMain() {
        'STS-EST-0018', encrypted.status + ' ' + encrypted.code + ' ' +
        String(encrypted.body).slice(0, 200));
 
+  // --- 8b. serverkeygen switched off: the credential first (#36) -----------
+  await inRealm(A, function () {
+    config.setOverride('est.serverKeyGeneration', false);
+  });
+  let anonymousKeygen;
+  let knownKeygen;
+  try {
+    anonymousKeygen = await call(A, 'serverkeygen', { headers: PKCS10,
+      body: b64Body(decryptCsr) });
+    knownKeygen = await call(A, 'serverkeygen', { headers: PKCS10,
+      basic: [WHO, 'x'], body: b64Body(decryptCsr) });
+  } finally {
+    await inRealm(A, function () {
+      config.clearOverride('est.serverKeyGeneration');
+    });
+  }
+  note(anonymousKeygen.status === 401 &&
+       anonymousKeygen.code !== 'STS-EST-0005',
+       'est.serverKeyGeneration off: an anonymous /serverkeygen is asked ' +
+       'for a credential, not told the switch (#36)',
+       anonymousKeygen.status + ' ' + anonymousKeygen.code);
+  note(knownKeygen.status === 501 && knownKeygen.code === 'STS-EST-0005',
+       'and an authenticated person is refused by it: 501, STS-EST-0005',
+       knownKeygen.status + ' ' + knownKeygen.code);
+
   // --- 9. re-enrollment with the client certificate --------------------------
   const peerDer = aliceCert ? aliceCert.raw : Buffer.alloc(0);
   const renewCsr = await csr('ec-p256', aliceCert

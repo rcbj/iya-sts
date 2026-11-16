@@ -785,6 +785,11 @@ class UsersPage {
         'href="/admin/policies#serviceAccount">' +
         t.html('consoleUsers.newUserBody.saPolicy') + '</a>' +
         t.html('consoleUsers.newUserBody.saAfter')) +
+        // AND IT IS FOR GOOD (rcbj, 2026-11-15): the Service account tab's
+        // own sentence, in the amber box, beside the box that makes one.
+        '<div class="warn">' +
+        t.html('consoleUsers.serviceAccountSection.permanentNote') +
+        '</div>' +
 
         // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
         // same group headings, as a person's Attributes tab, drawn from
@@ -5280,6 +5285,23 @@ class UsersPage {
         kit.note(t.html('consoleUsers.serviceAccountSection.destLeadDraft')) +
         hidden('destination', destination) + current + secretBox +
         destSearch +
+        // IT CANNOT BE UNDONE (rcbj, 2026-11-15), said where the button is
+        // and held by a REQUIRED checkbox: the browser refuses the Make (and
+        // the Enter that presses the default button) until it is ticked,
+        // with no script of this page's own — `script-src 'self'` allows
+        // none inline. Every other button here is `formnovalidate`, so a
+        // Remove, a search or a Use is never stopped by it. The box has no
+        // name: it is the reader's confirmation, not a member of the
+        // request, and `/admin-api` asks for none.
+        // The amber box UNFOLDED (`kit.warn()` folds anything longer than
+        // a line): the whole warning is the point.
+        '<div class="warn" id="service-account-warning">' +
+        t.html('consoleUsers.serviceAccountSection.irreversibleWarning',
+               { key: key }) + '</div>' +
+        '<div class="formrow"><label><input type="checkbox" ' +
+        'id="service-account-irreversible" required> ' +
+        t.html('consoleUsers.serviceAccountSection.irreversibleConfirm',
+               { key: key }) + '</label></div>' +
         '<div class="formrow"><button title="' +
         kit.esc(t.text('consoleUsers.serviceAccountSection.saveTitle')) +
         '">' + makeLabel + '</button></div></form>' +
@@ -5311,14 +5333,16 @@ class UsersPage {
              t.html('consoleUsers.serviceAccountSection.rotateNow'),
              t.text('consoleUsers.serviceAccountSection.rotateTitle'), '')
       : '';
-    const clear = account
-      ? form('set-service-account',
-             t.html('consoleUsers.serviceAccountSection.ordinaryButton'),
-             t.text('consoleUsers.serviceAccountSection.ordinaryTitle'),
-             '<input type="hidden" name="serviceAccount" value="false">', true)
+    // NO WAY BACK (rcbj, 2026-11-15): a service account is never made an
+    // ordinary person again, so the button that did it is gone and the tab
+    // says why in its place. Deleting the entry is the only end.
+    // Unfolded, as the Make's warning is (`kit.note()` folds past a line).
+    const permanent = account
+      ? '<div class="warn" id="service-account-permanent">' +
+        t.html('consoleUsers.serviceAccountSection.permanentNote') + '</div>'
       : '';
     return heading + lead + state + set + protection(true) + rotate +
-      clear;
+      permanent;
   }
 
   // Not a 404: this service has simply never seen the name, or has forgotten

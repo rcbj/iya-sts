@@ -259,6 +259,7 @@ Everything runs in containers; the host needs only docker.
 ./run-tests.sh                      # every job, in all six modes
 ./run-tests.sh --modes=memory       # one mode of the six (see below)
 ./run-tests.sh --plan               # what a run would do; starts nothing
+./run-tests.sh --with-444           # also run the jobs #444 created
 ./run-coverage.sh                   # coverage, from a run of its own
 ```
 
@@ -266,7 +267,9 @@ A bare `./run-tests.sh` runs six modes, in this order: `memory`,
 `single-node`, `mariadb`, `cluster`, `cells` and `fuzz`. The `fuzz` mode runs
 only its Schemathesis jobs; the other modes run every job. An `--only=`
 narrows every mode, and a mode it leaves with no job is skipped, with the
-reason. A bare run takes about eleven hours on a laptop. CI does not run a
+reason. The jobs the Rust conversion (#444) created are switched off by
+default and reported skipped; `--with-444` (or `STS_TEST_444=on`) runs them.
+A bare run takes about eleven hours on a laptop. CI does not run a
 bare run: its jobs name the modes they run.
 
 `./run-tests.sh` writes a report to `tests/report/<mode>/latest/`.

@@ -730,11 +730,29 @@ class AdminRbac {
   // `stsBootstrapAdministrator` says it was seeded, `stsConsoleClaimedAt` says
   // the window is closed, and `pwdReset` is the password rule.
   // ---------------------------------------------------------------------------
+  //
+  // **ASKED IN THE ROSTER'S REALM, NOT THE CALLER'S (2026-11-14, found by
+  // #444's D12).** The name depends on the mode (`mode.generatesBootstrapName()`,
+  // product's `admin-<hmac>`), and the mode is a realm's setting. `bound()`
+  // binds the directory view and not the ambient realm, so a realm created
+  // with `global.mode=product` in a development process was SEEDED from the
+  // create's ambient realm — `admin` — while its roster, read later from a
+  // request in that realm, expected `admin-<hmac>`: nobody could ever claim
+  // that console. The name is now asked in the realm the view answers about,
+  // the same realm whichever caller asks.
   private bootstrapName() {
-    const { log, config } = this.deps;
+    const { log, realms } = this.deps;
+    const self = this;
     log.debug("Entering AdminRbac.bootstrapName().");
+    const names = require('../common/bootstrap_name');
+    const realm = realms.get(self.boundRealmId());
+    const name = realm
+      ? realms.run(realm, function () {
+          return names.current();
+        })
+      : names.current();
     log.debug("Leaving AdminRbac.bootstrapName().");
-    return require('../common/bootstrap_name').current();
+    return name;
   }
 
   /**
@@ -1082,14 +1100,19 @@ class AdminRbac {
     const self = this;
     log.debug("Entering AdminRbac.noteConsoleSignIn().");
     const name = String(username || '').trim();
-    const wanted = self.bootstrapName();
+    const fromRealm = String((session && session.derivedFromRealm) ||
+                             defaultRealmId || realms.DEFAULT_ID);
+    // THE NAME IS THE SIGN-IN REALM'S (2026-11-14, #444's D12): asked with
+    // that realm's roster bound, so a product realm in a development process
+    // compares with its generated name and not the default realm's `admin`.
+    const wanted = name ? String(self.inRosterRealm(fromRealm, function () {
+      return self.bootstrapName();
+    }) || '') : '';
     if (!name || !wanted || name.toLowerCase() !== wanted.toLowerCase()) {
       log.debug("Leaving AdminRbac.noteConsoleSignIn(). Not the bootstrap " +
                 "administrator.");
       return false;
     }
-    const fromRealm = String((session && session.derivedFromRealm) ||
-                             defaultRealmId || realms.DEFAULT_ID);
     const closed = self.inRosterRealm(fromRealm, function () {
       // PRODUCT: ONLY A PASSWORD CLAIMS IT (#103). The account's name can be
       // signed in by other doors — a partner asserting `admin`, a certificate

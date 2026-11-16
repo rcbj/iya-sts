@@ -1446,6 +1446,9 @@ services:
       # "--only=crypto --no-browser" ./run-tests.sh` is the way to
       # narrow a containerized run; unset, the whole suite runs.
       - STS_TEST_ARGS=${STS_TEST_ARGS:-}
+      # The #444 switch (rcbj, 2026-11-15): `on` runs the jobs #444 created,
+      # `off` reports each SKIPPED. ./run-tests.sh --with-444 sets it.
+      - STS_TEST_444=${STS_TEST_444:-off}
       # TOKEN LOGGING for the token-exchange chain job: set, every token
       # request and its answer is logged in that job's log (`[token-log]`).
       # Off unless the host sets it.

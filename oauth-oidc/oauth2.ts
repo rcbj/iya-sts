@@ -4370,7 +4370,37 @@ class OAuth2Server {
       return claims[name] === undefined;
     });
     if (rest.length) {
-      Object.assign(claims, self.claimsNamed(user, rest));
+      // FROM THE PERSON'S ENTRY, NEVER THE PERSONA (2026-11-14, found by
+      // #444's D12). In development `helpers.userFor()` adds an invented
+      // persona (`name` "<user> (mock)", an `email` at the realm's invented
+      // domain, `email_verified`) to every person object, and `claimsNamed()`
+      // prefers the object's value — so a resource server's declared claims
+      // carried the persona while the same claims mapped by a permission
+      // carried the directory's. `mode.inventsClaimValues()` is "where the
+      // store holds NONE": here the declared claims are read without the
+      // persona, so the entry answers them, and one it does not hold is
+      // omitted, as the permission-mapped ones are.
+      const asFiled = Object.assign({}, user || {});
+      if (this.deps.mode.inventsClaimValues() && asFiled.username) {
+        // Only a value that IS the persona `userFor()` invents is dropped; a
+        // caller that handed a person object holding real values keeps them.
+        // `email_verified` goes with an invented `email`: a verified flag
+        // beside the entry's own address would be invented too.
+        const invented: Json = this.deps.userFor(String(asFiled.username)) ||
+          {};
+        const inventedMail = invented.email !== undefined &&
+          asFiled.email === invented.email;
+        DIRECTORY_PERSONA_CLAIMS.forEach(function (name: string): void {
+          if (invented[name] !== undefined &&
+              asFiled[name] === invented[name]) {
+            delete asFiled[name];
+          }
+        });
+        if (inventedMail) {
+          delete asFiled.email_verified;
+        }
+      }
+      Object.assign(claims, self.claimsNamed(asFiled, rest));
     }
     const mode = scopeClaims.agreedResourceMode(modes);
     log.debug("Leaving OAuth2Server.resourceServerClaims(). " +
@@ -11112,6 +11142,18 @@ class OAuth2Server {
     if (redirectCheck.how) {
       log.debug("The redirect_uri was accepted by " + redirectCheck.how + ".");
     }
+    // A REDIRECT URI VERIFIED AS THE CLIENT'S OWN (#26, 2026-11-15): a
+    // REGISTERED client, and an address matched against the URIs registered
+    // for IT — not the service-wide oauth2.redirectUris list, and not one RFC
+    // 9126 section 2.4 let through unregistered (`relaxed`). Only this kind
+    // of address may carry an RFC 8707 `invalid_target` back with nobody
+    // signed in; see the STS-OAUTH-0950 refusal below.
+    const ownUris = (registeredClient &&
+                     Array.isArray(registeredClient.redirect_uris))
+      ? registeredClient.redirect_uris.map(String) : [];
+    const verifiedRedirect = !relaxed && redirectCheck.ok &&
+      redirectCheck.matched !== undefined &&
+      ownUris.indexOf(String(redirectCheck.matched)) >= 0;
 
     // A FORM POST CANNOT REACH A PROTOCOL HANDLER (2026-09-13, every mode). An
     // operating system hands a native app the URL a browser was sent to and
@@ -11579,9 +11621,22 @@ class OAuth2Server {
     if (unregisteredResources.length) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A resource " +
                 "names no registered target.");
-      return redirectable('STS-OAUTH-0950', 'invalid_target',
+      // REDIRECTED EVEN WITH NOBODY SIGNED IN, ONCE THE ADDRESS IS THE
+      // CLIENT'S OWN (#26, rcbj, 2026-11-15). Until then RFC 9700 mode showed
+      // it on this service's 400 page (RFC 9700 section 4.11.2's
+      // authenticate-before-redirect), so a client asking for a target this
+      // service does not know never saw RFC 8707 section 2's error at all.
+      // Section 4.11.2's danger is a browser forwarded to an address nobody
+      // vouched for, with parameters an attacker chose; a registered
+      // client's own registered redirect URI, carrying only `invalid_target`
+      // and the request's `state`, is neither. Anything less verified — an
+      // unregistered client, the service-wide list, a relaxed pushed address
+      // — keeps the page (`verifiedRedirect` above).
+      const out: Json = redirectable('STS-OAUTH-0950', 'invalid_target',
         'RFC 8707 section 2: the resource ' +
         RegisteredTargets.describe(unregisteredResources));
+      out.verifiedRedirect = verifiedRedirect;
+      return out;
     }
     log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). Vetted.");
     return { ok: true, q: q, types: types, registeredClient: registeredClient,
@@ -11927,7 +11982,10 @@ class OAuth2Server {
     const q = vetted.q;
     const redirectUri = vetted.redirectUri;
 
-    const fail = function (error, description, pageText?) {
+    // `trusted` (#26) is `{ verifiedRedirect }` from the one refusal that may
+    // go back to a verified address with nobody signed in; see
+    // `redirectPolicyFor()`.
+    const fail = function (error, description, pageText?, trusted?) {
       log.debug("Entering fail().");
       // RFC 9700 section 4.11.2: an authorization server must authenticate the
       // user BEFORE redirecting them. With nobody signed in, an error
@@ -11941,7 +11999,8 @@ class OAuth2Server {
       // eventually got it wrong.
       const policy = bcp.redirectPolicyFor({
         hasSession: !!sessionOf(req), prompt: q.prompt,
-        fromSignIn: !!q.authn_error
+        fromSignIn: !!q.authn_error,
+        verifiedRedirect: !!(trusted && trusted.verifiedRedirect)
       });
       if (!policy.redirect) {
         log.debug("Leaving the authorization endpoint. Showing " + error +
@@ -12030,7 +12089,8 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.authorizeRequest().");
       // error-code: none — the code is vetAuthorizationRequest()'s, marked
       // above
-      return fail(vetted.error, vetted.description, vetted.pageText);
+      return fail(vetted.error, vetted.description, vetted.pageText,
+                  { verifiedRedirect: !!vetted.verifiedRedirect });
     }
     // An id_token_hint that did not verify (#118) — see withIdTokenHint().
     const idTokenHint = req.stsIdTokenHint || null;
@@ -14754,6 +14814,32 @@ class OAuth2Server {
         // grained authorization's `server_error` is 500 (#564).
         return self.oauthError(res, Number(e.refusal.status) || 400,
                                e.refusal.error, e.refusal.description);
+      }
+      // AN OPAQUE MINT REFUSED (#501), answered as itself (2026-11-14, found
+      // by #444's D12). A full store (STS-OAUTH-0979) or three colliding
+      // handles (STS-OAUTH-0984) threw out of the mint and reached the
+      // wrapper's fault handler: a 500 recorded as STS-OAUTH-0228 with a
+      // stack, and the module's own code never recorded. A full store is a
+      // capacity the client may wait out, so it is 503 with Retry-After and
+      // RFC 6749's `temporarily_unavailable`; a collision stays a fault,
+      // `server_error`, under its own code. No token was issued either way.
+      const minted = String(errorCodes.codeOf(e) || '');
+      if (minted === 'STS-OAUTH-0979' || minted === 'STS-OAUTH-0984') {
+        log.debug("Leaving the token endpoint's refusal wrapper. The opaque " +
+                  "mint was refused (" + minted + ").");
+        errorCodes.mark(res, minted);
+        log.debug("Leaving OAuth2Server.tokenEndpoint().");
+        if (minted === 'STS-OAUTH-0979') {
+          res.set('Retry-After', '30');
+          // error-code: none — marked above, STS-OAUTH-0979.
+          return self.oauthError(res, 503, 'temporarily_unavailable',
+            'No access token could be issued now: this realm holds as many ' +
+            'opaque access tokens as it allows. Try again later.');
+        }
+        // error-code: none — marked above, STS-OAUTH-0984.
+        return self.oauthError(res, 500, 'server_error',
+          'No access token could be issued: a fresh handle could not be ' +
+          'drawn.');
       }
       log.debug("Leaving the token endpoint's refusal wrapper. Rethrowing.");
       throw e;

@@ -8602,7 +8602,16 @@ class AdminApi {
               ? Object.assign({}, result,
                               { workbench: pkiAdmin.workbenchOf(result.draft) })
               : result;
-            self.sendJson(res, result.ok ? 200 : 400, answered);
+            // A BUILD WAITED FOR TOO LONG, OR A STORE THAT COULD NOT BE ASKED
+            // ABOUT ONE (STS-PKI-0184, STS-PKI-0183), is about the moment and
+            // not the request: 503 with Retry-After, which a client retries,
+            // rather than a 400 it would take as its own fault (CI run #250,
+            // `pki.isBusyRefusal()`).
+            const busy = pki.isBusyRefusal(result);
+            if (busy) {
+              res.setHeader('Retry-After', '5');
+            }
+            self.sendJson(res, result.ok ? 200 : (busy ? 503 : 400), answered);
             log.debug("Leaving the management API PKI action endpoint.");
           }).catch(function (e) {
             errorCodes.mark(res, 'STS-API-0021');
@@ -12180,8 +12189,21 @@ class AdminApi {
             return senderConstraints.dpopBoundPublicClient(
               issuedTo, entry.token_endpoint_auth_method);
           });
+        // `oauth2.accessTokenRequireDpop` IS THE ISSUING REALM'S (#28, rcbj,
+        // 2026-11-15). A realm's switch is about the tokens that realm's own
+        // clients hold; asked in the ambient realm it also refused the
+        // service-wide API client's bearer token — the default realm's
+        // `sts-api-client`, which operators and automation use at every
+        // realm's `/admin-api` — the moment a realm turned it on. So it is
+        // read in `tokenRealm`, the realm that issued the token: a realm's
+        // own client meets the realm's rule, the service-wide client the
+        // default realm's.
+        const dpopRequired = realms.run(realms.get(tokenRealm), function () {
+          return senderConstraints.accessTokenDpopRequired();
+        });
         const required = senderConstraints.accessTokenRefusal({
           where: 'the management API',
+          dpopRequired: dpopRequired,
           clientBound: clientBound,
           boundJkt: boundJkt,
           proofOk: proofOk,
@@ -12196,8 +12218,7 @@ class AdminApi {
         if (required) {
           errorCodes.mark(res, required.errorCode);
           res.set('WWW-Authenticate',
-                  (senderConstraints.accessTokenDpopRequired() ? 'DPoP' :
-                   'Bearer') +
+                  (dpopRequired ? 'DPoP' : 'Bearer') +
                   ' error="' + required.error + '", scope="' + scopesWanted +
                   '"');
           // error-code: none — marked above with the refusal's own code, one of

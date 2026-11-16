@@ -600,6 +600,34 @@ async function signInToTheConsole(base, user, log2, options) {
     return answer;
   }
 
+  // A STATIC FILE A PAGE IS DRAWN OVER (#444 phase 2b), as the runtime's
+  // `asset()` fetches it: public, on this origin under the realm's prefix,
+  // no token, kept once read and not kept when it failed. The answer is
+  // `null` when it could not be read, and the renderer then says so.
+  const assets = {};
+  async function staticAsset(path) {
+    log.debug("Entering staticAsset(). " + path);
+    if (Object.prototype.hasOwnProperty.call(assets, path)) {
+      log.debug("Leaving staticAsset(). Kept.");
+      return assets[path];
+    }
+    let held = null;
+    try {
+      const r = await fetch(base + path);
+      held = r.ok ? await r.json() : null;
+    } catch (e) {
+      log.debug("Caught in staticAsset(): " + ((e && e.message) || e));
+      // The page drawn without it says what it could not draw, which is
+      // what a job reading the page then asserts against.
+      held = null;
+    }
+    if (held !== null) {
+      assets[path] = held;
+    }
+    log.debug("Leaving staticAsset().");
+    return held;
+  }
+
   let index = null;
   async function operations() {
     log.debug("Entering operations().");
@@ -734,8 +762,25 @@ async function signInToTheConsole(base, user, log2, options) {
       }
       const asked = Object.assign({}, query || {});
       delete asked.format;
+      // AND OVER THE STATIC FILES ITS PAGE ROW NAMES (#444 phase 2b,
+      // 2026-11-14), as the runtime's draw merges them in: Geolocation's
+      // map is laid out in the browser over `/admin/geo-outlines.json`, and
+      // without it the renderer says the map could not be drawn. Fetched
+      // without a token, as the runtime does, and once per process. Only
+      // the drawing sees them: `json` stays the operation's own answer.
+      let drawnFrom = answer.json;
+      const known = table.pageFor(path);
+      if (known && known.assets && answer.status === 200 && answer.json) {
+        drawnFrom = Object.assign({}, answer.json);
+        for (const member of Object.keys(known.assets)) {
+          const held = await staticAsset(known.assets[member]);
+          if (held !== null) {
+            drawnFrom[member] = held;
+          }
+        }
+      }
       const html = answer.status === 200 && answer.json
-        ? table.render(path, answer.json,
+        ? table.render(path, drawnFrom,
                        table.kit.context(asked, this.mayWrite,
                                          this.translator || undefined)) ||
           "" : "";

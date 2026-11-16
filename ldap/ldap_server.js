@@ -7020,8 +7020,21 @@ function certificatePlan(info) {
         : null);
 
   let dn;
-  const already = naming ? existingUserEntry(naming.value) : null;
-  if (subject && isUnder(subject, baseDn()) && getEntry(parentDn(subject))) {
+  // A CERTIFICATE THIS SERVICE ISSUED NAMES ITS HOLDER, NOT A NAME (#33,
+  // 2026-11-15). `tls_server.js` passes `holder`, the person the issuance
+  // register's holder subject resolves to now (`tls_client_certificates.js`'s
+  // `currentHolderOf()`), because the CN is the name the person had when it
+  // was issued. Read off the CN, a certificate presented after an LDAP rename
+  // folded onto nobody and CREATED an entry under the old name — `origin:
+  // authentication`, a phantom an administrator could then not create the
+  // name over. With a holder, the holder's entry is the one, and it exists.
+  const holder = String(certificate.holder || '').trim();
+  const heldBy = holder ? existingUserEntry(holder) : null;
+  const already = heldBy || (naming ? existingUserEntry(naming.value) : null);
+  if (heldBy) {
+    dn = heldBy.dn;
+  } else if (subject && isUnder(subject, baseDn()) &&
+             getEntry(parentDn(subject))) {
     dn = subject;
   } else if (already) {
     // THE PERSON THIS CERTIFICATE NAMES IS ALREADY HERE, so this is not a new
@@ -21547,8 +21560,9 @@ server.del('', function (req, res, next) {
   if (isBootstrapAdministratorEntry(stored)) {
     log.debug('Leaving the LDAP delete handler. The bootstrap administrator.');
     return next(ldapRefusal(req, 'STS-LDAP-0077', 'a delete of ' + dn +
-      ' was refused: it is the default realm\'s bootstrap administrator, ' +
-      'which cannot be deleted', new ldap.UnwillingToPerformError(dn), dn));
+      ' was refused: it is ' + bootstrapAdministratorOwner() + ' bootstrap ' +
+      'administrator, which cannot be deleted',
+      new ldap.UnwillingToPerformError(dn), dn));
   }
   if (hasChildren(dn)) {
     log.debug('Leaving the LDAP delete handler. It is not a leaf.');
@@ -21777,7 +21791,7 @@ function ldapModifyNow(req, res, next) {
     const accountRefusal = serviceAccountWriteRefusal(working,
       req.changes.map(function (change) {
         return String(change.modification.type || '').toLowerCase();
-      }));
+      }), stored.attributes, boundDnOf(req));
     if (accountRefusal) {
       log.debug('Leaving the LDAP modify handler. The service account was ' +
                 'refused.');
@@ -21982,8 +21996,9 @@ server.modifyDN('', function (req, res, next) {
   if (isBootstrapAdministratorEntry(stored)) {
     log.debug('Leaving the LDAP modifyDN handler. The bootstrap administrator.');
     return next(ldapRefusal(req, 'STS-LDAP-0077', 'a rename of ' + dn +
-      ' was refused: it is the default realm\'s bootstrap administrator, ' +
-      'and a rename would delete that account under another name',
+      ' was refused: it is ' + bootstrapAdministratorOwner() + ' bootstrap ' +
+      'administrator, and a rename would delete that account under another ' +
+      'name',
       new ldap.UnwillingToPerformError(dn), dn));
   }
   if (hasChildren(dn)) {
@@ -25120,14 +25135,21 @@ function resolveServiceAccountOwner(value) {
 //     name come together;
 //   * `stsServiceAccountPolicy` (#1240) is held by a service account only,
 //     and names `default` or a named profile of this realm — whose
-//     `requireOwner` is then the one asked above.
+//     `requireOwner` is then the one asked above;
+//   * and, on a modify (`before` is the entry as it was), rcbj's rules of
+//     2026-11-15: a service account is never made a person again
+//     (STS-SVCACCT-0064), its owners are never all taken away (-0065,
+//     asked before `requireOwner`'s -0023), and the bound DN does not take
+//     itself off, nor the group that was its only way of owning the
+//     account (-0066, -0067) — `service_accounts.ownerChangeRefusal()`,
+//     the rules `set()` holds with the management API's codes.
 //
 // Answers null or the ldapjs error, recorded by the caller.
 const SERVICE_ACCOUNT_MAINTAINED = ['stspasswordrotatedat',
   'stspreviouspassword', 'stspreviouspasswordexpires',
   'stsrotationfailures', 'stsrotationlasterror', 'stsrotationlastattempt'];
 
-function serviceAccountWriteRefusal(working, touched) {
+function serviceAccountWriteRefusal(working, touched, before, boundDn) {
   log.debug('Entering serviceAccountWriteRefusal().');
   const changed = (touched || []).filter(function (type) {
     return SERVICE_ACCOUNT_ATTRIBUTES.indexOf(type) >= 0;
@@ -25135,6 +25157,16 @@ function serviceAccountWriteRefusal(working, touched) {
   if (!changed.length) {
     log.debug('Leaving serviceAccountWriteRefusal(). Not one of them.');
     return null;
+  }
+  // ONCE A SERVICE ACCOUNT, ALWAYS ONE: a delete or a replace of the flag on
+  // an entry that carries it. Deleting the whole entry is still allowed.
+  const wasOne = !!before && serviceAccounts.isServiceAccount(before);
+  if (wasOne && !serviceAccounts.isServiceAccount(working)) {
+    log.debug('Leaving serviceAccountWriteRefusal(). The flag was cleared.');
+    return coded('STS-SVCACCT-0064', new ldap.ConstraintViolationError(
+      'a service account cannot be made an ordinary person again: ' +
+      'stsServiceAccount may not be removed or changed; delete the entry ' +
+      'to end the account'));
   }
   const maintained = changed.filter(function (type) {
     return SERVICE_ACCOUNT_MAINTAINED.indexOf(type) >= 0;
@@ -25171,6 +25203,19 @@ function serviceAccountWriteRefusal(working, touched) {
   }).filter(function (one) {
     return !!one;
   });
+  if (wasOne) {
+    // THE OWNERS AS THEY WERE, against the owners as they will be, and who
+    // is bound: the rules every other door holds.
+    const ownerRefusal = serviceAccounts.ownerChangeRefusal(
+      (before.stsserviceaccountowner || []).map(String), owners,
+      String(boundDn || ''), 'ldap');
+    if (ownerRefusal) {
+      log.debug('Leaving serviceAccountWriteRefusal(). The owner rules.');
+      // STS-SVCACCT-0065, -0066 or -0067: `OWNER_RULE_CODES.ldap`.
+      return coded(ownerRefusal.code,
+                   new ldap.ConstraintViolationError(ownerRefusal.message));
+    }
+  }
   if (!owners.length && serviceAccountPolicy.requiresOwner(
     serviceAccountPolicy.profileForReference(
       first('stsserviceaccountpolicy'), first('uid')))) {
@@ -28299,20 +28344,43 @@ function writePerson(dn, attributes, options) {
 // was seeded, say — is still an ordinary person; the default realm's account
 // is protected by name, as before.
 // ---------------------------------------------------------------------------
+//
+// **THE NAME IS THE ONE IN FORCE IN THIS REALM, AND THE CONFIGURED ONE
+// (2026-11-14, #444's D12).** Product mode seeds a generated `admin-<hmac>`
+// where the configured name is a default one (#1447,
+// `common/bootstrap_name.ts`), and a realm can be product in a development
+// process, so comparing with `admin.bootstrapUsername` alone left the seeded
+// account unprotected. Both names are recognised: the generated one is the
+// account seeded now, the configured one an account seeded before #1447.
 function isBootstrapAdministratorEntry(stored) {
   log.debug('Entering isBootstrapAdministratorEntry().');
-  const wanted = String(config.value('admin.bootstrapUsername') || '')
-    .trim().toLowerCase();
+  const wanted = [String(config.value('admin.bootstrapUsername') || ''),
+                  String(require('../common/bootstrap_name').current() || '')]
+    .map(function (one) {
+      return one.trim().toLowerCase();
+    }).filter(Boolean);
   const flagged = !!(stored && stored.attributes &&
     (stored.attributes.stsbootstrapadministrator || [])
       .some(function (value) {
         return String(value).toUpperCase() === 'TRUE';
       }));
-  const answer = !!(stored && wanted && (realms.isDefault() || flagged) &&
+  const answer = !!(stored && wanted.length &&
+                    (realms.isDefault() || flagged) &&
                     isPersonEntry(stored) &&
-                    String(usernameOfEntry(stored)).toLowerCase() === wanted);
+                    wanted.indexOf(String(usernameOfEntry(stored))
+                      .toLowerCase()) >= 0);
   log.debug('Leaving isBootstrapAdministratorEntry(). ' + answer);
   return answer;
+}
+
+// Whose bootstrap administrator it is, for a refusal's words: the realm the
+// directory is answering in (2026-11-14, #444's D12 — a trust realm's seeded
+// account was called "the default realm's bootstrap administrator").
+function bootstrapAdministratorOwner() {
+  log.debug('Entering bootstrapAdministratorOwner().');
+  log.debug('Leaving bootstrapAdministratorOwner().');
+  return realms.isDefault() ? 'the default realm\'s'
+                            : 'the "' + realms.currentId() + '" realm\'s';
 }
 
 // ---------------------------------------------------------------------------
@@ -28768,6 +28836,23 @@ function moveGroupMemberships(oldDn, newDn, oldName, newName) {
 // which is how a service account under `ou=users` is found without paging
 // the people. A device's `owner` is its holder, not an authority, and is the
 // device register's (`common/devices.ts`); it is left alone.
+//
+// A SERVICE ACCOUNT WHOSE LAST OWNER IS DELETED IS GIVEN THE REALM'S
+// ADMINISTRATOR (2026-11-15, rcbj: "if the last owner is deleted, then the
+// realm admin account should be added as the owner"). #1813 made "once an
+// account has an owner, it always has one" true at every door that WRITES
+// the owners; a delete of the owner's own entry was the one way left to
+// strand an account. So where taking the deleted DN off would empty
+// `stsServiceAccountOwner`, the same write names realmAdministratorOwner()
+// instead — the realm's Admin Write group, else its bootstrap administrator,
+// the choice #1760 makes for a remote PEP's identity, so the two agree —
+// and an `admin.service-account.owner-added` row (actor `system`) names
+// both DNs. With neither the account is left with none, as before, and
+// STS-SVCACCT-0068 says so; an administrator's add-owner (the Service
+// account tab, `add-service-account-owner`, `set-service-account` with
+// `owners`, an LDAP modify adding a value) is what repairs it, and nothing
+// refuses that write. An account that named no owner before (requireOwner
+// off) names nothing to take off, so it is never visited here.
 // ---------------------------------------------------------------------------
 const OWNER_REFERENCE_ATTRIBUTES = ['owner', 'stsserviceaccountowner'];
 // The most entries one store question may answer; past it the line says some
@@ -28798,6 +28883,33 @@ function ownerValuesReplaced(values, key, to) {
   });
   log.debug('Leaving ownerValuesReplaced(). ' + out.length + '.');
   return out;
+}
+
+// Who a service account is given when its last owner is deleted: the
+// ambient realm's Admin Write group (`admin.writeGroup`, resolved in this
+// realm's directory, so its own roster), else its bootstrap administrator —
+// #1760's remotePepOwnerCandidates() order, so the two agree. Neither may be
+// one of `excluded` (normalised DNs: the deleted entry and the account
+// itself). Returns `{ kind, dn, name }`, or null where nothing qualifies.
+function realmAdministratorOwner(excluded) {
+  log.debug('Entering realmAdministratorOwner().');
+  const candidates = [String(config.value('admin.writeGroup') || ''),
+                      String(require('../common/bootstrap_name').current() ||
+                             '')];
+  for (const one of candidates) {
+    const text = one.trim();
+    if (!text) {
+      continue;
+    }
+    const owner = resolveServiceAccountOwner(text);
+    if ((owner.kind === 'group' || owner.kind === 'person') &&
+        (excluded || []).indexOf(normalizeDn(owner.dn)) < 0) {
+      log.debug('Leaving realmAdministratorOwner(). ' + owner.dn);
+      return owner;
+    }
+  }
+  log.debug('Leaving realmAdministratorOwner(). None.');
+  return null;
 }
 
 // The groups and service accounts of the ambient realm naming `key` (a
@@ -28898,6 +29010,12 @@ function rewriteOwnerReferences(oldDn, newDn, origin) {
     if (isPersonEntry(stored) &&
         ownerValuesName(at.stsserviceaccountowner, key)) {
       const owners = ownerValuesReplaced(at.stsserviceaccountowner, key, to);
+      // THE LAST OWNER DELETED: the realm's administrator, in this write.
+      const heir = owners.length ? null
+        : realmAdministratorOwner([key, normalizeDn(stored.dn)]);
+      if (heir) {
+        owners.push(heir.dn);
+      }
       if (writeServiceAccount(stored.dn,
                               { stsServiceAccountOwner: owners })) {
         changed += 1;
@@ -28908,6 +29026,28 @@ function rewriteOwnerReferences(oldDn, newDn, origin) {
                                 'the service account ' + stored.dn + why +
                                 (owners.length ? ''
                                   : '; it names no owner now') });
+        }
+        if (heir) {
+          audit.audit({ action: 'admin.service-account.owner-added',
+                        actor: 'system', target: stored.dn,
+                        channel: 'internal', outcome: 'success',
+                        summary: 'added ' + heir.dn + ', the realm\'s ' +
+                                 'administrator, to the owners of the ' +
+                                 'service account ' + stored.dn + ': its ' +
+                                 'last owner, ' + oldDn + ', was deleted' +
+                                 why,
+                        detail: { owner: heir.dn, deletedOwner: oldDn,
+                                  reason: 'last owner deleted' } });
+          log.info('ldap: the service account ' + stored.dn + ' lost its ' +
+                   'last owner, ' + oldDn + why + ', and is owned by ' +
+                   heir.dn + ' now.');
+        } else if (!to && !owners.length) {
+          log.warn(errorCodes.tag('STS-SVCACCT-0068') + 'ldap: the ' +
+                   'service account ' + stored.dn + ' lost its last ' +
+                   'owner, ' + oldDn + why + ', and names none now: this ' +
+                   'realm has neither an Admin Write group nor a bootstrap ' +
+                   'administrator to own it. An administrator adding an ' +
+                   'owner repairs it.');
         }
       } else {
         log.error(errorCodes.tag('STS-ADMIN-0922') + 'ldap: could not ' +
@@ -29030,8 +29170,8 @@ function deletePerson(dn, options) {
   }
   if (isBootstrapAdministratorEntry(stored)) {
     log.warn(errorCodes.tag('STS-LDAP-0077') + 'ldap: refused to delete ' +
-             stored.dn + ' — it is its realm\'s bootstrap ' +
-             'administrator (admin.bootstrapUsername).');
+             stored.dn + ' — it is ' + bootstrapAdministratorOwner() +
+             ' bootstrap administrator.');
     log.debug('Leaving deletePerson(). The bootstrap administrator.');
     return coded('STS-LDAP-0077', { ok: false, reason: 'protected',
                                     dn: stored.dn });

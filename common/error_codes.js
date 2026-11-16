@@ -2130,6 +2130,12 @@ const CODES = [
       'slower plan; the next start tries again, or the owner runs the ' +
       'upgrade script.',
     spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0174',
+    summary: 'A realm another process changed could not be applied in ' +
+      'this one: the realm registry refused the replicated update. This ' +
+      'process keeps the realm as it was until a later change applies, ' +
+      'and does not write its copy back over the store.',
+    spec: 'none — logged; the request that wrote it was already answered' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2831,6 +2837,13 @@ const CODES = [
       'slot had already run (#883\'s review): those runs were held back ' +
       'for this tick, neither run nor taken as finished, and are asked ' +
       'about again at the next; every other run in the tick went on.',
+    spec: '' },
+  { code: 'STS-SCHED-0024',
+    summary: 'A run of a cluster job waited because another run of the ' +
+      'same job in the same realm was still running, on this node or ' +
+      'another (#1757): a manual run waits until that run ends, and a ' +
+      'scheduled run until it ends or its slot does, after which the next ' +
+      'slot is due.',
     spec: '' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
@@ -4628,11 +4641,15 @@ const CODES = [
   { code: 'STS-PKI-0183',
     summary: 'A certificate authority was not built because the store could ' +
       'not be asked whether another node is building it.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+    spec: 'HTTP 503 with Retry-After from /admin-api/pki; the caller\'s ' +
+      'refusal (errors on a console reply) elsewhere' },
   { code: 'STS-PKI-0184',
-    summary: 'Another node held the build of a certificate authority for ' +
-      'longer than this node waits, and nothing appeared in the store.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+    summary: 'A build of a certificate authority was waited for longer than ' +
+      'a caller waits — held by another node or process under its claim, or ' +
+      'queued behind builds of the same scope in this process — so the ' +
+      'caller was refused rather than left waiting.',
+    spec: 'HTTP 503 with Retry-After from /admin-api/pki; the caller\'s ' +
+      'refusal (errors on a console reply) elsewhere' },
   { code: 'STS-PKI-0185',
     summary: 'A CRL was not signed because its CRL number could not be ' +
       'advanced in the store shared by this service\'s nodes.',
@@ -15841,13 +15858,15 @@ const CODES = [
       'the socket may test.',
     spec: 'LDAP result code 50, insufficientAccessRights' },
   { code: 'STS-LDAP-0076',
-    summary: 'In product mode, an add or modify named createTimestamp, ' +
-      'modifyTimestamp or entryDN, which the directory maintains itself.',
+    summary: 'An add or modify named an attribute the directory maintains ' +
+      'itself: entryUUID or stsProvisionedBy in every mode, and in product ' +
+      'mode createTimestamp, modifyTimestamp and entryDN as well.',
     spec: 'LDAP result code 19, constraintViolation' },
   { code: 'STS-LDAP-0077',
-    summary: 'A delete or rename of the default realm\'s bootstrap ' +
-      'administrator (admin.bootstrapUsername) was refused — over LDAP or ' +
-      'SCIM — because that account cannot be removed.',
+    summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
+      '(admin.bootstrapUsername, or the name product mode generates) was ' +
+      'refused — over LDAP or SCIM — because that account cannot be ' +
+      'removed.',
     spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
   { code: 'STS-LDAP-0078',
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +
@@ -22567,6 +22586,50 @@ const CODES = [
       'not be made a service account: the directory refused the write, or ' +
       'the owner it named was refused (#1760).',
     spec: '' },
+  { code: 'STS-SVCACCT-0060',
+    summary: 'A service account was asked to become an ordinary person ' +
+      'again (`serviceAccount` false); once a service account, always one ' +
+      '— delete the entry to end it (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0061',
+    summary: 'A change would have left a service account that names an ' +
+      'owner with none — the last owner removed, or `owners` emptied — ' +
+      'whatever the policy\'s requireOwner says (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0062',
+    summary: 'An owner tried to take their own DN off a service account\'s ' +
+      'owners; another administrator may (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0063',
+    summary: 'An owner tried to take off a service account the group that ' +
+      'was their only way of owning it, which removes themselves (rcbj, ' +
+      '2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0064',
+    summary: 'An LDAP modify removed or changed stsServiceAccount on a ' +
+      'service account; once a service account, always one (rcbj, ' +
+      '2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0065',
+    summary: 'An LDAP modify would have left a service account that names ' +
+      'an owner with no stsServiceAccountOwner, whatever requireOwner says ' +
+      '(rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0066',
+    summary: 'An LDAP modify by the bound DN took that DN off a service ' +
+      'account\'s stsServiceAccountOwner (rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0067',
+    summary: 'An LDAP modify took off a service account the group that was ' +
+      'the bound DN\'s only way of owning it (rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0068',
+    summary: 'A service account\'s last owner (a person or a group) was ' +
+      'deleted and the realm has neither an Admin Write group nor a ' +
+      'bootstrap administrator to own it instead, so it names no owner ' +
+      'now. An administrator adding an owner repairs it (rcbj, ' +
+      '2026-11-15).',
+    spec: 'none — a warning in the log' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

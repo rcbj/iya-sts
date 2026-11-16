@@ -1112,23 +1112,68 @@ class Logout {
           log.debug("Entering wsfed-rp.terminate().");
           const parts = String(r.handle).split('|');
           const session = authn.sessionById(parts[0]);
-          const realm = parts.slice(1).join('|');
           if (!session) {
             log.debug("Leaving wsfed-rp.terminate().");
             return { ok: false, message: 'the session that realm was signed ' +
                                          'into on has already ended, which ' +
                                          'took its cleanup list with it' };
           }
-          const target = wsfed.cleanupTargetsFor(session).filter((one) => {
+          // WHICH REALM THE HANDLE NAMES (2026-11-15). `collect()` gives a
+          // realm's first address `<sid>|<realm>` and each later one
+          // `<sid>|<realm>|<n>` (#747), so everything after the session id
+          // is the realm only on the first row. Until this, a later row read
+          // its realm as `<realm>|1`: it matched nothing, sent no cleanup,
+          // deleted a key that was never there and still said the realm was
+          // forgotten. The realm is whatever follows the id when the session
+          // holds that name (a realm may itself carry a `|`), and otherwise
+          // that less a trailing row index.
+          const held = session.wsfedRealms || {};
+          const named = parts.slice(1).join('|');
+          const realm = (Object.prototype.hasOwnProperty.call(held, named) ||
+                         parts.length < 3 ||
+                         !/^\d+$/.test(parts[parts.length - 1])) ?
+                        named : parts.slice(1, -1).join('|');
+          if (!Object.prototype.hasOwnProperty.call(held, realm)) {
+            // A sibling row of the same realm ended it first, and sent the
+            // cleanup to every one of its addresses as it did so (below).
+            log.debug("Leaving wsfed-rp.terminate().");
+            return { ok: true,
+                     message: realm + ' was already forgotten on session ' +
+                              session.id + ', with a cleanup request to ' +
+                              'each of its addresses' };
+          }
+          // EVERY ADDRESS THE REALM DECLARED IS TOLD (2026-11-15). The rows
+          // of one realm are one sign-in: the session holds the realm once,
+          // and its addresses are where the one relying party wants its
+          // cleanup (`wsfedSignOutUri`, every value). So whichever row of the
+          // realm is ended first sends a cleanup to all of them and forgets
+          // the realm. Until this, only the first address was ever sent one,
+          // because the lookup took the first match and the realm was gone by
+          // the time a later row looked. The list is read before the delete,
+          // which empties it.
+          const targets = wsfed.cleanupTargetsFor(session).filter((one) => {
             return one.realm === realm;
-          })[0];
-          if (target) ctx.cleanups.push(target);
-          if (session.wsfedRealms) delete session.wsfedRealms[realm];
+          });
+          const target = targets[0];
+          targets.forEach((one) => { ctx.cleanups.push(one); });
+          // AND THE STORE IS TOLD (2026-11-15, found by #444's D12): the
+          // delete edits an object the session store holds and does not
+          // journal, so without this the realm stayed on the session in the
+          // store — on another node, and after a restart — as the
+          // `oidc-rp` row's delete above has always told it.
+          // `authn.noteSessionChanged()` carries the argument.
+          if (session.wsfedRealms) {
+            delete session.wsfedRealms[realm];
+            authn.noteSessionChanged(session);
+          }
           log.debug("Leaving wsfed-rp.terminate().");
           return { ok: true,
                    message: realm + ' was forgotten on session ' + session.id +
-                            (target && target.url ? ' and a cleanup request ' +
-                                                    'was sent'
+                            (target && target.url ?
+                             (targets.length > 1 ?
+                              ' and a cleanup request was sent to each of ' +
+                              'its ' + targets.length + ' addresses' :
+                              ' and a cleanup request was sent')
                                                   : ' (there was nowhere to ' +
                                                     'send a cleanup request' +
                                                     ')') };
@@ -1183,8 +1228,10 @@ class Logout {
             return one.entityId === entityId;
           })[0];
           if (target) ctx.logoutRequests.push(target);
+          // And the store is told, as for `wsfed-rp` above (2026-11-15).
           if (session.saml2ServiceProviders) {
             delete session.saml2ServiceProviders[entityId];
+            authn.noteSessionChanged(session);
           }
           log.debug("Leaving saml2-sp.terminate().");
           return { ok: true,

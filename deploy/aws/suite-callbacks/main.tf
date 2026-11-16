@@ -91,8 +91,6 @@ locals {
   pep_name    = "remote-pep-1"
   pep_realm   = "pep-e2e"
 
-  task_ip_js = "fetch(process.env.ECS_CONTAINER_METADATA_URI_V4+'/task').then(r=>r.json()).then(t=>process.stdout.write(t.Containers[0].Networks[0].IPv4Addresses[0]))"
-
   container_log = {
     logDriver = "awslogs"
     options = {
@@ -346,9 +344,15 @@ resource "aws_ecs_task_definition" "callbacks" {
       essential   = false
       dependsOn   = [{ containerName = "pep-credential", condition = "COMPLETE" }]
       mountPoints = [{ sourceVolume = "shared", containerPath = "/shared" }]
-      entryPoint  = ["sh", "-c"]
+      # THE RUST BINARY (#444): the image holds `xacml-pep` and a shell, and
+      # no node, so `node pep.js` and a node health check cannot run in it.
+      # The PDP URL names the realm the job creates; the notify URL is this
+      # task's address, which pep-credential.sh wrote to the shared volume
+      # (`hostname -I` if it could not), on plain HTTP as docker-compose.yml
+      # has it: the nodes reach the task directly.
+      entryPoint = ["sh", "-c"]
       command = [
-        "export PEP_PDP_URL=\"${local.env.service_url}/realm/$${XACML_PEP_REALM}\"; export PEP_NOTIFY_URL=\"https://$(node -e \"${local.task_ip_js}\"):9443/notify\"; exec node pep.js",
+        "export PEP_PDP_URL=\"${local.env.service_url}/realm/$${XACML_PEP_REALM}\"; ip=\"$(cat /shared/pep/task-ip 2>/dev/null)\"; [ -n \"$ip\" ] || ip=\"$(hostname -I | cut -d' ' -f1)\"; export PEP_NOTIFY_URL=\"https://$ip:9443/notify\"; exec xacml-pep",
       ]
       environment = [
         { name = "XACML_PEP_REALM", value = local.pep_realm },
@@ -359,10 +363,9 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "PEP_HTTPS_KEY", value = "/shared/pep/server/pep-server.key" },
         { name = "PEP_HTTPS_PORT", value = "9443" },
         # Plain HTTP is off by default since #1760, and on here for the
-        # stack's one remaining reason (docker-compose-run-tests.yml): the
-        # job reaches 9090 before it issues the HTTPS pair. The CRLs would
-        # be served on 9090 by the CRL-only listener with it off, and the
-        # nudge is https only (9443) since 2026-11-14.
+        # stack's reasons (docker-compose-run-tests.yml): the job reaches
+        # 9090 before it issues the HTTPS pair. The nudge is https only
+        # (9443); an http notify URL is rejected.
         { name = "PEP_HTTP", value = "true" },
         { name = "PEP_PROXY_HTTP", value = "true" },
         { name = "PEP_HTTPS_RELOAD_INTERVAL_MS", value = "1000" },
@@ -375,9 +378,12 @@ resource "aws_ecs_task_definition" "callbacks" {
         # realm it polls to be found (docker-compose-run-tests.yml says why).
         { name = "PEP_BACKOFF_MAX_MS", value = "15000" },
         { name = "PEP_HEARTBEAT_INTERVAL_MS", value = "2000" },
+        { name = "PEP_LOG_LEVEL", value = "info" },
       ]
+      # The image's own HEALTHCHECK (xacml-pep/Dockerfile): the binary asks
+      # its own /healthcheck.
       healthCheck = {
-        command     = ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9090,path:'/healthcheck'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+        command     = ["CMD", "xacml-pep", "--healthcheck"]
         interval    = 10
         timeout     = 5
         retries     = 6

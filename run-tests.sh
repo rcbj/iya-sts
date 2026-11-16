@@ -108,6 +108,11 @@
 #   ./run-tests.sh --plan                     # print what a run of these
 #                                             # arguments would do, mode by
 #                                             # mode, and start nothing
+#   ./run-tests.sh --with-444                 # also run the jobs #444 created
+#                                             # (MANIFEST.js `optIn: '444'`);
+#                                             # off by default, each reported
+#                                             # SKIPPED (rcbj, 2026-11-15).
+#                                             # STS_TEST_444=on is the same
 #   ./run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -467,6 +472,10 @@ do
     # reads modes.sh and this file and touches no docker — so it is safe
     # beside somebody else's run, which a second stack is not.
     --plan)       PLAN_ONLY=1 ;;
+    # THE #444 JOBS (rcbj, 2026-11-15): the jobs #444 created are switched
+    # off unless this is given or STS_TEST_444=on; tests/CLAUDE.md, *The #444
+    # switch*. The runner reads the variable, which COMPOSE_ENV carries.
+    --with-444)   STS_TEST_444=on ;;
     # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
     # ./local-run-tests.sh (removed 2026-09-16) had `--modes=` since the
     # matrix arrived, and the asymmetry cost an afternoon: the failure being
@@ -493,6 +502,18 @@ then
   exec "${CURRENT_DIR}/tests/schema-validation/run.sh" ${STS_TEST_ARGS}
 fi
 STS_TEST_ARGS="${STS_TEST_ARGS# }"
+
+# The #444 switch's value, refused here rather than inside the first mode's
+# runner when it is neither word.
+STS_TEST_444="${STS_TEST_444:-off}"
+case "${STS_TEST_444}" in
+  on|off) ;;
+  *)
+    echo "run-tests.sh: STS_TEST_444 must be on or off, not" \
+         "'${STS_TEST_444}'." >&2
+    exit 2
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 # A MODE'S OWN JOB FILTER, AND THE OPERATOR'S (2026-11-14).
@@ -593,12 +614,99 @@ modeFilterLeavesNothing()
   return 0
 }
 
+# The protocol jobs behind the #444 switch: MANIFEST.js's entries carrying
+# `optIn: '444'`, read as candidateJobFiles() reads `conformance: true`. The
+# in-process ones are run-report.js's UNIT_OPT_IN, empty for 444.
+optIn444Jobs()
+{
+  awk '/\{ *file: *'"'"'/ { buf = ""; on = 1 }
+       on { buf = buf $0 " " }
+       on && /\}/ {
+         if (buf ~ /optIn: *'"'"'444'"'"'/ &&
+             match(buf, /file: *'"'"'[^'"'"']*'"'"'/)) {
+           s = substr(buf, RSTART, RLENGTH)
+           sub(/file: *'"'"'/, "", s); sub(/'"'"'$/, "", s); print s
+         }
+         on = 0
+       }' "${CURRENT_DIR}/tests/protocol/MANIFEST.js"
+}
+
+# The #444 jobs this run's --only keeps (all of them with no --only).
+optIn444Chosen()
+{
+  local job op ops
+  ops="$(operatorOnlyFragments)"
+  while IFS= read -r job;
+  do
+    [ -z "${job}" ] && continue
+    if [ -z "${ops}" ];
+    then
+      echo "${job}"
+      continue
+    fi
+    while IFS= read -r op;
+    do
+      case "${job}" in
+        *"${op}"*) echo "${job}"; break ;;
+      esac
+    done <<< "${ops}"
+  done < <(optIn444Jobs)
+}
+
+# 0 when the switch is off, an --only was typed, and every job it keeps is a
+# #444 one: the run would check nothing, which the runner fails in every mode
+# — so the launcher says so before building or starting anything.
+onlyChoosesSwitchedOff()
+{
+  local job op ops kept=0 tagged
+  [ "${STS_TEST_444}" = "on" ] && return 1
+  ops="$(operatorOnlyFragments)"
+  [ -z "${ops}" ] && return 1
+  tagged="$(optIn444Jobs)"
+  while IFS= read -r job;
+  do
+    while IFS= read -r op;
+    do
+      case "${job}" in
+        *"${op}"*)
+          if ! grep -qxF "${job}" <<< "${tagged}";
+          then
+            return 1
+          fi
+          kept=1
+          break
+          ;;
+      esac
+    done <<< "${ops}"
+  done < <(candidateJobFiles)
+  [ "${kept}" = "1" ]
+}
+
 # --plan: the run these arguments make, and nothing started. The bounds are
 # the mode's own plus what the launcher adds for the conformance suite and
 # the SAML peers, the same arithmetic as the loop below.
 printPlan()
 {
-  local mode bound filter total=0
+  local mode bound filter total=0 chosen444 n444
+  chosen444="$(optIn444Chosen)"
+  n444=0
+  [ -n "${chosen444}" ] && n444="$(wc -l <<< "${chosen444}")"
+  if [ "${STS_TEST_444}" = "on" ];
+  then
+    echo "#444 jobs: ON (STS_TEST_444=on): ${n444} job(s) run."
+  else
+    echo "#444 jobs: OFF (STS_TEST_444=off; --with-444 runs them):" \
+         "${n444} job(s) reported SKIPPED in every mode, with the reason" \
+         "\"#444 tests switched off (STS_TEST_444=off)\":"
+    # shellcheck disable=SC2001
+    [ -n "${chosen444}" ] && sed 's/^/  SKIPPED: /' <<< "${chosen444}"
+    if onlyChoosesSwitchedOff;
+    then
+      echo "  REFUSED: every job --only keeps is a #444 one, so this run" \
+           "would check nothing; --with-444 runs them."
+    fi
+  fi
+  echo ""
   echo "Modes, in order (${#RUN_MODES[@]}):"
   for mode in "${RUN_MODES[@]}";
   do
@@ -626,6 +734,11 @@ printPlan()
     stsModeIsCells "${mode}" && printf ' + %s' "${CELLS_COMPOSE_FILE}"
     echo ""
     echo "    jobs:   ${filter:-every job}${STS_TEST_ARGS:+ (narrowed by: ${STS_TEST_ARGS})}"
+    if [ "${STS_TEST_444}" != "on" ] && [ -z "${filter}" ] &&
+       [ "${n444}" != "0" ];
+    then
+      echo "    #444:   ${n444} job(s) SKIPPED (STS_TEST_444=off)"
+    fi
     if modeFilterLeavesNothing "${mode}";
     then
       echo "    SKIPPED: its own filter (${filter}) and the run's --only or --conformance-only keep no job"
@@ -642,6 +755,15 @@ if [ "${PLAN_ONLY}" = "1" ];
 then
   printPlan
   exit 0
+fi
+
+if onlyChoosesSwitchedOff;
+then
+  echo "run-tests.sh: every job --only keeps (${STS_TEST_ARGS}) is one #444" \
+       "created, and the #444 switch is off (STS_TEST_444=off), so this" \
+       "run would check nothing. ./run-tests.sh --with-444 (or" \
+       "STS_TEST_444=on) runs them." >&2
+  exit 2
 fi
 
 # ---------------------------------------------------------------------------
@@ -1141,6 +1263,9 @@ COMPOSE_ENV=(
   "XACML_PEP_UPSTREAM_URL=http://companion:9700"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
+  # The #444 switch (rcbj, 2026-11-15), `off` unless --with-444 or the host
+  # said `on`: the runner in the tests container reads it.
+  "STS_TEST_444=${STS_TEST_444}"
   # The token-exchange chain job's token log, off unless the host sets it.
   "STS_TOKEN_LOG=${STS_TOKEN_LOG:-}"
   # ---------------------------------------------------------------------

@@ -118,6 +118,15 @@ async function run(t_) {
            'hand to get back after `parseBody()` had already flattened it',
            two.ok ? two.value.resource.length : two.code);
 
+  // A MEMBER OF A LIST THAT IS REFUSED IS NAMED BY ITS PARAMETER, not by
+  // its index (2026-11-14, #444's D12): it read "the query parameter '0'".
+  const bare = validation.check(request({ query: { resource: 'rt-api' } }),
+                                'query', MANY);
+  t_.check(!bare.ok && bare.field === 'resource' &&
+           /"resource"/.test(String(bare.detail || '')),
+           'a refused `resource` member is named `resource`',
+           JSON.stringify(bare));
+
   t_.check(validation.check(request({ query:
                                         { resource: 'https://one.example' } }),
                             'query', MANY).value.resource.length === 1,

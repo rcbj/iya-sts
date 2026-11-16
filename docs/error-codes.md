@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5657** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5668** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,10 +53,10 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 108
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 54
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 113
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 23
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 263
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
-* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 35
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 210
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 123
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
@@ -450,6 +450,7 @@ Raised from: persistence/.
 | `STS-STORE-0171` | The service did not start because, in product mode, a database password was in a file or in the connection string rather than in a secret store. | ASVS 5.0.0 13.3.1 |
 | `STS-STORE-0172` | The store is owed an index added after release 1.0.0 (sts_sessions_subject_band, #876, or sts_sessions_started, #882): it is missing, or left invalid by an interrupted concurrent build, and the role this service dials with does not own the table to build it. The service starts and every question is answered, by a slower plan. Run postgres/upgrade-1.0.0.sql (or mariadb/upgrade-1.0.0.sql) as the table's owner; it builds the index without blocking writers. | none — the store opens without it |
 | `STS-STORE-0173` | A background build of an index the store was owed (#876, #882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER on MariaDB — failed. The service goes on without the index, by a slower plan; the next start tries again, or the owner runs the upgrade script. | none — the store opens without it |
+| `STS-STORE-0174` | A realm another process changed could not be applied in this one: the realm registry refused the replicated update. This process keeps the realm as it was until a later change applies, and does not write its copy back over the store. | none — logged; the request that wrote it was already answered |
 
 ## STS-CLUSTER
 
@@ -622,6 +623,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 | `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
 | `STS-SCHED-0023` | The store could not say whether some runs of the current slot had already run (#883's review): those runs were held back for this tick, neither run nor taken as finished, and are asked about again at the next; every other run in the tick went on. | — |
+| `STS-SCHED-0024` | A run of a cluster job waited because another run of the same job in the same realm was still running, on this node or another (#1757): a manual run waits until that run ends, and a scheduled run until it ends or its slot does, after which the next slot is due. | — |
 
 ## STS-KEYS
 
@@ -996,8 +998,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0180` | An application already holds pki.applicationTlsClientCertificateMax valid TLS client certificates, so another was not issued. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0181` | A TLS client certificate revocation named a serial the application holds no certificate under. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0182` | A certificate authority tier was built on this node and on another at the same moment; the other committed first and was kept. | the caller's refusal (errors on a console or /admin-api reply) for a deliberate build; none for a startup build, which adopts it |
-| `STS-PKI-0183` | A certificate authority was not built because the store could not be asked whether another node is building it. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-PKI-0184` | Another node held the build of a certificate authority for longer than this node waits, and nothing appeared in the store. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0183` | A certificate authority was not built because the store could not be asked whether another node is building it. | HTTP 503 with Retry-After from /admin-api/pki; the caller's refusal (errors on a console reply) elsewhere |
+| `STS-PKI-0184` | A build of a certificate authority was waited for longer than a caller waits — held by another node or process under its claim, or queued behind builds of the same scope in this process — so the caller was refused rather than left waiting. | HTTP 503 with Retry-After from /admin-api/pki; the caller's refusal (errors on a console reply) elsewhere |
 | `STS-PKI-0185` | A CRL was not signed because its CRL number could not be advanced in the store shared by this service's nodes. | HTTP 500 from the CRL distribution point |
 | `STS-PKI-0186` | A certificate was not recorded because the Issuing CA that signed it was replaced, repeatedly, while it was being signed. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0187` | The public crypto metadata document (/crypto/metadata) could not be built. | HTTP 500 server_error from /crypto/metadata |
@@ -3448,8 +3450,8 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0073` | In product mode, a bind was refused without checking its password because the bind DN or the address has had too many failed binds within the rate-limit window. | LDAP result code 53, unwillingToPerform |
 | `STS-LDAP-0074` | In product mode, a search or compare arrived on a connection that has not bound as anybody; the root DSE is the only read allowed before a bind. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0075` | In product mode, a compare named a credential attribute (userPassword, a client secret, a private key, a TOTP or recovery code, an activation token or a Kerberos key), which no reader of the socket may test. | LDAP result code 50, insufficientAccessRights |
-| `STS-LDAP-0076` | In product mode, an add or modify named createTimestamp, modifyTimestamp or entryDN, which the directory maintains itself. | LDAP result code 19, constraintViolation |
-| `STS-LDAP-0077` | A delete or rename of the default realm's bootstrap administrator (admin.bootstrapUsername) was refused — over LDAP or SCIM — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403 |
+| `STS-LDAP-0076` | An add or modify named an attribute the directory maintains itself: entryUUID or stsProvisionedBy in every mode, and in product mode createTimestamp, modifyTimestamp and entryDN as well. | LDAP result code 19, constraintViolation |
+| `STS-LDAP-0077` | A delete or rename of a realm's bootstrap administrator (admin.bootstrapUsername, or the name product mode generates) was refused — over LDAP or SCIM — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403 |
 | `STS-LDAP-0078` | A flag of the bootstrap administrator (pwdReset, stsBootstrapAdministrator or stsConsoleClaimedAt) could not be written because the account has no entry in this realm. | none — logged |
 | `STS-LDAP-0090` | A person was refused creation under a username that is a subject identifier (urn:uuid: or a bare UUID). | action result ok:false (console, /admin-api HTTP 400, SCIM 400) |
 | `STS-LDAP-0091` | No entry was created for an authentication whose identity is a urn:uuid: subject naming nobody in this realm's directory. | none — logged |
@@ -4921,6 +4923,15 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 | `STS-SVCACCT-0050` | stsServiceAccountPolicy was written, over LDAP or at a create, naming neither `default` nor a service-account policy of this realm (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
 | `STS-SVCACCT-0051` | A remote PEP's identity (a person holding REMOTE_PEPS) was not made a service account yet: the realm has neither an Admin Write group nor its bootstrap administrator to own it, and a service account is never written without an owner. Retried at the next start and the next membership change (#1760). | — |
 | `STS-SVCACCT-0052` | A remote PEP's identity (a person holding REMOTE_PEPS) could not be made a service account: the directory refused the write, or the owner it named was refused (#1760). | — |
+| `STS-SVCACCT-0060` | A service account was asked to become an ordinary person again (`serviceAccount` false); once a service account, always one — delete the entry to end it (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0061` | A change would have left a service account that names an owner with none — the last owner removed, or `owners` emptied — whatever the policy's requireOwner says (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0062` | An owner tried to take their own DN off a service account's owners; another administrator may (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0063` | An owner tried to take off a service account the group that was their only way of owning it, which removes themselves (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0064` | An LDAP modify removed or changed stsServiceAccount on a service account; once a service account, always one (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0065` | An LDAP modify would have left a service account that names an owner with no stsServiceAccountOwner, whatever requireOwner says (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0066` | An LDAP modify by the bound DN took that DN off a service account's stsServiceAccountOwner (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0067` | An LDAP modify took off a service account the group that was the bound DN's only way of owning it (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0068` | A service account's last owner (a person or a group) was deleted and the realm has neither an Admin Write group nor a bootstrap administrator to own it instead, so it names no owner now. An administrator adding an owner repairs it (rcbj, 2026-11-15). | none — a warning in the log |
 
 ## STS-XACML
 

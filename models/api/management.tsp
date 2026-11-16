@@ -7081,7 +7081,8 @@ namespace IyaSts.Api.Management {
     `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `type`?: string;
-    `definition`?: `JSONOperatorWroteIntoAccess`
+    `definition`?: `JSONOperatorWroteIntoAccess`;
+    @js(#{`description`:"On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`."}) `field`?: string
   }
 
 @component model `WithNameKindDn` {
@@ -17074,7 +17075,7 @@ op `stopRequiringUserSecondFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requ
 
 @js(#{
     `items`:#{`type`:"string"},
-    `description`:"The people and groups answerable for the account (#600), each a DN, a username or a group's cn: an array, or a string of one per line. It REPLACES the owners the account names; absent or empty is none, refused while the policy requires an owner.",
+    `description`:"The people and groups answerable for the account (#600), each a DN, a username or a group's cn: an array, or a string of one per line. It REPLACES the owners the account names; absent or empty is none, refused while the policy requires an owner, and always refused on a service account that names an owner now.",
     `$types`:#["array","string"]
   }) @hoisted model post_admin_api_users_set_service_account_b_application_json_owners_h2581 {}
 
@@ -17082,8 +17083,8 @@ op `stopRequiringUserSecondFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requ
   "post",
   #{
     `operationId`:"setUserServiceAccount",
-    `summary`:"Make somebody a service account, or a person again",
-    `description`:"A service account is a PERSON entry carrying `stsServiceAccount` (#221): everything a person is — a password, app passwords, Kerberos keys, groups, roles, Shared Signals under their `iss_sub` — and governed by the realm's service-account policy (`GET /admin-api/policies`, kind `serviceAccount`): whether the second factor is exempt, whether a browser sign-in is allowed (not by default), which password doors open, and whether its password rotates and is pushed to a secrets manager.\n\n`serviceAccount` true (the default) sets or changes it: `owners`, the WHOLE list of the people and groups in this realm who answer for it (#600) — it replaces the list the account names, at most 25, at least one while the policy's `requireOwner` is on; `destination`, a push destination's DN, and `secretName` go together. `serviceAccount` false makes them an ordinary person again and clears the owner, the destination and the rotation state.\n\nWhere the policy refuses a service account every browser sign-in, becoming one ENDS the person's sessions (`signedOut`). SCIM does not carry the flag; an LDAP modify by a holder of Admin Write may, under the same rules.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `summary`:"Make somebody a service account, or change one",
+    `description`:"A service account is a PERSON entry carrying `stsServiceAccount` (#221): everything a person is — a password, app passwords, Kerberos keys, groups, roles, Shared Signals under their `iss_sub` — and governed by the realm's service-account policy (`GET /admin-api/policies`, kind `serviceAccount`): whether the second factor is exempt, whether a browser sign-in is allowed (not by default), which password doors open, and whether its password rotates and is pushed to a secrets manager.\n\n`serviceAccount` true (the default) sets or changes it: `owners`, the WHOLE list of the people and groups in this realm who answer for it (#600) — it replaces the list the account names, at most 25, at least one while the policy's `requireOwner` is on; `destination`, a push destination's DN, and `secretName` go together. A service account is never made an ordinary person again (rcbj, 2026-11-15): `serviceAccount` false on one is REFUSED (STS-SVCACCT-0060), and on an ordinary person changes nothing; deleting the entry is the only way to end an account. Once an account names an owner its `owners` may not become empty, whatever `requireOwner` says (STS-SVCACCT-0061), and the caller may not take themselves off — their own DN, or the group that was their only way of owning it (STS-SVCACCT-0062, STS-SVCACCT-0063).\n\nWhere the policy refuses a service account every browser sign-in, becoming one ENDS the person's sessions (`signedOut`). SCIM does not carry the flag; an LDAP modify by a holder of Admin Write may, under the same rules.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
     `tags`:#["Users"],
     `responses`:#{
       `200`:#{
@@ -17114,7 +17115,7 @@ op `setUserServiceAccount`(@js(#{
     @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{
-      `description`:"true makes or keeps them a service account (the default); false makes them a person again."
+      `description`:"true makes or keeps them a service account (the default). false is refused on a service account, which is never made a person again, and changes nothing on an ordinary person."
     }) `serviceAccount`?: boolean;
     `owners`?: post_admin_api_users_set_service_account_b_application_json_owners_h2581;
     @js(#{`description`:"The DN of the push destination (an application entry)."}) `destination`?: string;
@@ -17170,7 +17171,7 @@ op `addServiceAccountOwner`(@js(#{
   #{
     `operationId`:"removeServiceAccountOwner",
     `summary`:"Take one owner off a service account",
-    `description`:"Takes one owner off the service account and writes at once, keeping the rest and the push destination (#602). `owner` is the DN the account lists. Refused for one it does not list, and for the last owner while the service-account policy requires one.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
+    `description`:"Takes one owner off the service account and writes at once, keeping the rest and the push destination (#602). `owner` is the DN the account lists. Refused for one it does not list; for the last owner, whatever the service-account policy says (STS-SVCACCT-0061); and for the caller themselves — their own DN, or the group that is their only way of owning the account (STS-SVCACCT-0062, STS-SVCACCT-0063). Another administrator may remove them.\n\n**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.",
     `tags`:#["Users"],
     `responses`:#{
       `200`:#{
@@ -34429,6 +34430,18 @@ op `removeTrustAnchor`(@js(#{
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_tls_connection_r200_application_json_clientCertificate_revocation_h2870 {}
 
+@js(#{
+    `additionalProperties`:false,
+    `properties`:#{
+      `status`:#{`type`:"string"},
+      `refused`:#{`type`:"boolean"},
+      `checked`:#{`type`:"boolean"},
+      `policy`:#{`type`:"string"},
+      `source`:#{`type`:"string"}
+    },
+    `$types`:#["object","null"]
+  }) @hoisted model get_admin_api_tls_connection_r200_application_json_clientCertificate_revocationStatus {}
+
 @endpoint("/admin-api/tls-connection",
   "get",
   #{
@@ -34461,11 +34474,13 @@ op `getTlsConnection`(`responses/200/content/application~1json/schema`: {
     `clientCertificate`?: {
       `presented`?: boolean;
       `verified`?: boolean;
+      `handshakeVerified`?: boolean;
       `authorizationError`?: NullableString;
       `certificate`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_certificate_h2867;
       `thumbprint`?: NullableString;
       `identity`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_identity_h2869;
       `revocation`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_revocation_h2870;
+      `revocationStatus`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_revocationStatus;
       `signIn`?: string;
       `note`?: string
     };

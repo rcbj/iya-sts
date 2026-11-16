@@ -21,6 +21,10 @@
 //      `/admin/ldap/directory`), which show the attribute masked.
 //   5. A PERSON's answer (`GET /admin-api/users?user=`) carries their entry
 //      as `ldap`, and since #446 without the password hash.
+//   6. A DYNAMICALLY REGISTERED client's `appRegistrationJson` — the RFC 7591
+//      response as it was answered — is in the GET with its `client_secret`
+//      and `registration_access_token` masked, the rest of the document
+//      standing (2026-11-14, #444's D12: both were answered in the clear).
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -129,6 +133,31 @@ function run(t) {
   t.check(held.length === 1 && held[0] === '(set — not returned)',
           '5. a person\'s answer shows their password masked, never its hash',
           JSON.stringify(held));
+
+  // --- 6. the registration document's two credentials ---------------------
+  const DYN = 'reveal-dyn-' + process.pid;
+  const dynSecret = applications.mintClientSecret();
+  const dynToken = 'rat-' + applications.mintClientSecret();
+  applications.register(DYN, {
+    client_id: DYN, client_secret: dynSecret,
+    registration_access_token: dynToken,
+    redirect_uris: ['https://dyn.example/cb'], client_name: 'Dynamic'
+  }, {});
+  const dynAnswer = adminViews.applicationDetailJson({ query: {} }, DYN).json;
+  const dynBody = JSON.stringify(dynAnswer);
+  const doc = JSON.parse(String([].concat(
+    ((dynAnswer.fields || {}).appRegistrationJson) || ['{}'])[0]));
+  t.check(dynBody.indexOf(dynSecret) < 0 && dynBody.indexOf(dynToken) < 0,
+          '6a. a registered client\'s GET carries neither its client secret ' +
+          'nor its registration access token',
+          dynBody.length + ' characters');
+  t.check(doc.client_secret === '(set — not returned)' &&
+          doc.registration_access_token === '(set — not returned)' &&
+          doc.client_name === 'Dynamic' &&
+          (doc.redirect_uris || [])[0] === 'https://dyn.example/cb',
+          '6b. its registration document masks the two members and keeps ' +
+          'the rest', JSON.stringify(doc));
+  adminActions.applicationsAction({ action: 'forget', application: DYN });
 
   adminActions.applicationsAction({ action: 'forget', application: ID });
   log.debug("Leaving run().");

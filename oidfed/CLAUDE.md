@@ -213,6 +213,25 @@ a Crawl now went unlisted for `oidfed.collectionMaxAgeS`.
 **`trust_anchor` may be only the realm itself** (rcbj's answer): the
 collection is of the realm's own subtree.
 
+**A REALM OF THIS SERVICE IS DESCRIBED ONLY WHEN A CALLER NEEDS IT**
+(2026-11-15, GitHub Actions run 43735265596). The listings filter on a
+subordinate's entity types and on its being an Intermediate, and for a realm
+of this service both are read off its Entity Configuration — which
+`configuration()` builds whole and SIGNS. In the default topology every
+realm is the default realm's subordinate, so `subordinateFacts()` describing
+every row made an unfiltered list page cost one signed configuration per
+realm the service held, whatever `limit` said: 2.3 s a page with the few
+hundred realms a protocol run leaves, and `sts_oidfed_extensions`' walk two
+at a time took N/2 such pages (107-174 s in the other modes of that run, past
+its 300 s in `cluster`, where it timed out). `subordinateFacts(req, false)`
+answers the rows as the register and the realm list have them
+(`described: false`); `describedFact()` describes one. A filter on
+`entity_type` or `intermediate` still describes every row (it must), a
+`trust_marks` claim only the page's rows, and the collection's
+`childrenOf()` — identifiers only — none. A filtered page on an anchor with
+many realms is still O(realms); nothing caches a description, because a
+realm's configuration changes with its settings on any node.
+
 **THE THREE ENDPOINTS ARE PUBLISHED BY A SUPERIOR**: the listing and the
 collection wherever the fetch and list endpoints are, and the events endpoint
 also while any history is kept — a superior whose last subordinate was
@@ -258,7 +277,8 @@ revoked still answers for it.
 - `tests/oidfed_extensions.js`: the page pointer; a subordinate's history
   through registration, updates, suspension, reinstatement and revocation;
   a realm's creation, rotation and deletion; the Extended Listing's paging,
-  claims and filters; the Entity Collection in process and by a CRAWL through
+  claims and filters, and (4e) a realm described only when a filter or a
+  `trust_marks` claim needs it, counted by Entity Configurations signed; the Entity Collection in process and by a CRAWL through
   a foreign Intermediate over a stub requester, with the fetch budget.
 - `tests/protocol/sts_oidfed_extensions.js` (local): the three endpoints over
   HTTP, and the acts through `/admin-api`.

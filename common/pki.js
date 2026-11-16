@@ -84,6 +84,9 @@
 // `crypto.js`, `config.js` and `keystore.js` all make their own for the same
 // reason.
 const bunyan = require('bunyan');
+// THE BOUND ON A BUILD'S WAIT, carried to the builds a build starts (CI run
+// #250; see `buildWaitFrame()`).
+const { AsyncLocalStorage } = require('async_hooks');
 const config = require('./config');
 
 const log = bunyan.createLogger({
@@ -1452,6 +1455,100 @@ function coordinatesPkiBuilds() {
 const CLUSTER_BUILD_CLAIM_MS = 120000;
 const CLUSTER_BUILD_WAIT_MS = 180000;
 const CLUSTER_BUILD_POLL_MS = 250;
+// The longest pause between two looks at a held claim: the poll backs off
+// from CLUSTER_BUILD_POLL_MS to this, doubling, so a caller that waits long
+// does not ask the store four times a second for all of it.
+const CLUSTER_BUILD_POLL_MAX_MS = 2000;
+
+// ---------------------------------------------------------------------------
+// A BUILD IS WAITED FOR A BOUNDED TIME, ALL OF IT COUNTED (CI run #250,
+// 2026-11-15).
+//
+// The fuzz mode's schemathesis waited 300 s for POST /admin-api/pki/
+// build-scope (twice), policies/transfer/export, scep/reissue-ra and
+// scim/clients/issue-certificate, and none of them was ever answered. Every
+// one of them ends in this module's per-scope queue (`oneBuildAtATime()`):
+// the three issuers through `ensureScope()`, which asks for the branch
+// INSIDE the queue. The queue had no bound at all, and the cluster claim's
+// wait had one of its own, CLUSTER_BUILD_WAIT_MS, counted from when the
+// claim was first asked for and not from when the caller arrived — so a
+// caller behind a build that waited out a held claim (the store's pool was
+// starved, and a release that failed left the claim held for its lifetime,
+// STS-CLUSTER-0014) waited that build's 180 s and then its own 180 s, and a
+// caller behind two such builds longer still. And a build nested in a build
+// (`buildScopeNow()` ensures the Root) started a bound of its own.
+//
+// So ONE DEADLINE per caller, set when it joins the queue, covers its place
+// in the queue, the claim's wait and every wait of a build it starts: the
+// deadline travels with the build through `buildWait` (AsyncLocalStorage),
+// and is honoured only while the build that set it is running, so work a
+// build merely kicked off is not bound by it afterwards. Past the deadline
+// the caller is refused STS-PKI-0184 — never left waiting — and
+// `/admin-api/pki/*` answers that refusal, and STS-PKI-0183's, 503 with
+// Retry-After (`isBusyRefusal()`), because both are about the moment and
+// not about the request.
+// ---------------------------------------------------------------------------
+const buildWait = new AsyncLocalStorage();
+let buildWaitMs = CLUSTER_BUILD_WAIT_MS;
+
+// The wait frame a caller here runs under: the running build's that started
+// it, or a new one whose deadline is now plus the bound.
+function buildWaitFrame() {
+  log.debug("Entering buildWaitFrame().");
+  const held = buildWait.getStore();
+  if (held && held.active) {
+    log.debug("Leaving buildWaitFrame(). Inherited.");
+    return { frame: held, own: false };
+  }
+  log.debug("Leaving buildWaitFrame(). A new one.");
+  return { frame: { deadline: Date.now() + buildWaitMs, active: true },
+           own: true };
+}
+
+// The refusal of a caller whose deadline passed while it waited.
+function waitedTooLong(label, where) {
+  log.debug("Entering waitedTooLong().");
+  log.error(errorCodes.tag('STS-PKI-0184') + 'pki: ' + label + ' was ' +
+            'waited for ' + where + ' for longer than ' +
+            (buildWaitMs / 1000) + 's; this caller is refused rather than ' +
+            'left waiting.');
+  log.debug("Leaving waitedTooLong().");
+  return errorCodes.mark({ ok: false,
+    errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' is being ' +
+             'built ' + where + ', and it was waited for longer than ' +
+             (buildWaitMs / 1000) + 's. Nothing was changed; try again ' +
+             'shortly.'] }, 'STS-PKI-0184');
+}
+
+/**
+ * Tells whether a refusal is about the moment rather than the request: a
+ * build that was waited for too long (STS-PKI-0184), or a store that could
+ * not be asked about one (STS-PKI-0183). `/admin-api` answers these 503 with
+ * Retry-After.
+ *
+ * @param result - a refusal this module answered
+ * @returns true for a refusal worth retrying
+ */
+function isBusyRefusal(result) {
+  log.debug("Entering isBusyRefusal().");
+  const code = result && !result.ok ? errorCodes.codeOf(result) : '';
+  log.debug("Leaving isBusyRefusal(). " + code);
+  return code === 'STS-PKI-0184' || code === 'STS-PKI-0183';
+}
+
+/**
+ * Sets how long a caller waits for a build, for the tests; with no argument
+ * it puts back the default.
+ *
+ * @param ms - the bound in milliseconds
+ * @returns the bound now in force
+ */
+function setBuildWaitMs(ms) {
+  log.debug("Entering setBuildWaitMs().");
+  buildWaitMs = Number(ms) > 0 ? Number(ms) : CLUSTER_BUILD_WAIT_MS;
+  log.debug("Leaving setBuildWaitMs(). " + buildWaitMs);
+  return buildWaitMs;
+}
 
 function sleepMs(ms) {
   log.debug("Entering sleepMs().");
@@ -1495,6 +1592,29 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
     log.debug("Leaving oneBuildInTheCluster(). Nothing to coordinate.");
     return build();
   }
+  // The caller's deadline — see buildWaitFrame() — and, for a caller that
+  // came straight here (the SCEP RA), the frame its build runs under.
+  const waiting = buildWaitFrame();
+  if (!waiting.own) {
+    log.debug("Leaving oneBuildInTheCluster(). Under the caller's deadline.");
+    return claimedBuild(scopeId, tier, existing, build, options,
+                        waiting.frame.deadline);
+  }
+  try {
+    log.debug("Leaving oneBuildInTheCluster(). Under a deadline of its own.");
+    return await buildWait.run(waiting.frame, function () {
+      return claimedBuild(scopeId, tier, existing, build, options,
+                          waiting.frame.deadline);
+    });
+  } finally {
+    waiting.frame.active = false;
+  }
+}
+
+// `oneBuildInTheCluster()`'s claim and its wait, which ends at `deadline`.
+async function claimedBuild(scopeId, tier, existing, build, options,
+                            deadline) {
+  log.debug("Entering claimedBuild(). scope=" + scopeId);
   // Required lazily: `cluster_claims.js` reaches the store through
   // `persistence.js`, which requires the keystore this file sits on.
   const claims = require('../cluster/cluster_claims');
@@ -1503,13 +1623,13 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
     : scopeId === SERVICE_SCOPE ? 'the service Root'
     : scopeId === PROCESS_SCOPE ? 'the process branch'
     : 'the "' + (scopeId || 'default') + '" branch';
-  const began = Date.now();
   let announced = false;
+  let pause = CLUSTER_BUILD_POLL_MS;
   for (;;) {
     await keystore.refreshPki(scopeId);
     const before = existing ? existing() : null;
     if (before) {
-      log.debug("Leaving oneBuildInTheCluster(). Another node built it.");
+      log.debug("Leaving claimedBuild(). Another node built it.");
       return before;
     }
     const claim = await claims.claim({ scope: 'pki.build',
@@ -1524,7 +1644,7 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
         await keystore.refreshPki(scopeId);
         const under = existing ? existing() : null;
         if (under) {
-          log.debug("Leaving oneBuildInTheCluster(). Built meanwhile.");
+          log.debug("Leaving claimedBuild(). Built meanwhile.");
           return under;
         }
         const made = await build();
@@ -1536,10 +1656,10 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
                      'was built here and by another node at the same ' +
                      'moment; the other node\'s committed first and is ' +
                      'the one this node now holds.');
-            log.debug("Leaving oneBuildInTheCluster(). Adopted theirs.");
+            log.debug("Leaving claimedBuild(). Adopted theirs.");
             return Object.assign({}, theirs, { adoptedFromCluster: true });
           }
-          log.debug("Leaving oneBuildInTheCluster(). Lost to another build.");
+          log.debug("Leaving claimedBuild(). Lost to another build.");
           return errorCodes.mark({ ok: false,
             errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' was ' +
                      'made again by another node at the same moment and ' +
@@ -1548,7 +1668,7 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
                      'build again if it is still not what you want.'] },
                                  'STS-PKI-0182');
         }
-        log.debug("Leaving oneBuildInTheCluster(). Built.");
+        log.debug("Leaving claimedBuild(). Built.");
         return made;
       } finally {
         await claims.release(claim.handle);
@@ -1558,30 +1678,25 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
       log.error(errorCodes.tag('STS-PKI-0183') + 'pki: ' + label + ' could ' +
                 'not be built, because the store could not be asked whether ' +
                 'another node is building it (' + claim.why + ').');
-      log.debug("Leaving oneBuildInTheCluster(). The store refused.");
+      log.debug("Leaving claimedBuild(). The store refused.");
       return errorCodes.mark({ ok: false,
         errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' was ' +
                  'not built: the store could not be asked whether another ' +
                  'node is building it, and two nodes building one would ' +
                  'publish two authorities of one name.'] }, 'STS-PKI-0183');
     }
-    if (Date.now() - began > CLUSTER_BUILD_WAIT_MS) {
-      log.error(errorCodes.tag('STS-PKI-0184') + 'pki: ' + label + ' is ' +
-                'being built by another node and has not appeared in ' +
-                (CLUSTER_BUILD_WAIT_MS / 1000) + 's; this node gives up ' +
-                'waiting.');
-      log.debug("Leaving oneBuildInTheCluster(). Waited too long.");
-      return errorCodes.mark({ ok: false,
-        errors: ['Another node has been building ' + label + ' for longer ' +
-                 'than ' + (CLUSTER_BUILD_WAIT_MS / 1000) + 's and it has ' +
-                 'not appeared in the store.'] }, 'STS-PKI-0184');
+    if (Date.now() >= deadline) {
+      log.debug("Leaving claimedBuild(). Waited too long.");
+      return waitedTooLong(label, 'by another node or process');
     }
     if (!announced) {
       announced = true;
       log.info('pki: another node is building ' + label + '; this node ' +
                'waits for it rather than building a second one.');
     }
-    await sleepMs(CLUSTER_BUILD_POLL_MS);
+    // Never past the deadline, and backing off (CLUSTER_BUILD_POLL_MAX_MS).
+    await sleepMs(Math.max(1, Math.min(pause, deadline - Date.now())));
+    pause = Math.min(CLUSTER_BUILD_POLL_MAX_MS, pause * 2);
   }
 }
 
@@ -1625,19 +1740,45 @@ function oneBuildAtATime(scopeId, build) {
   log.debug("Entering oneBuildAtATime().");
   const key = String(scopeId);
   const ahead = scopeBuilds.get(key) || Promise.resolve();
-  const mine = ahead.then(function () { return null; }, function (e) {
+  const settledAhead = ahead.then(function () { return null; }, function (e) {
     // The build ahead of this one failed. Its caller has that failure; this
     // caller only needed it to finish before starting.
     log.debug("Caught in oneBuildAtATime(): the build ahead failed: " +
               ((e && e.message) || e));
     return null;
-  }).then(function () {
-    return build();
   });
-  const tail = mine.then(function () { return null; }, function (e) {
+  // THE CALLER'S DEADLINE (CI run #250, buildWaitFrame()): its place in the
+  // queue counts, and a caller still waiting for the builds ahead of it when
+  // the deadline passes is refused without building. The queue's ORDER is
+  // kept all the same: the tail below still waits for the builds ahead, so
+  // a caller that gave up lets nobody overtake them.
+  const waiting = buildWaitFrame();
+  const mine = turnBefore(settledAhead, waiting.frame.deadline)
+    .then(function (turn) {
+      if (!turn) {
+        return waitedTooLong(key === SERVICE_SCOPE ? 'the service Root'
+          : key === PROCESS_SCOPE ? 'the process branch'
+          : 'the "' + (key || 'default') + '" branch', 'in this process');
+      }
+      return buildWait.run(waiting.frame, build);
+    });
+  if (waiting.own) {
+    mine.then(function () {
+      waiting.frame.active = false;
+    }, function (e) {
+      // The caller holds `mine` and has the failure; the frame only ends.
+      log.debug("Caught in oneBuildAtATime(): " + ((e && e.message) || e));
+      waiting.frame.active = false;
+    });
+  }
+  const tail = Promise.all([settledAhead, mine.then(function () {
+    return null;
+  }, function (e) {
     // This build's own caller holds `mine` and has the failure; the queue's
     // tail only has to settle.
     log.debug("Caught in oneBuildAtATime(): " + ((e && e.message) || e));
+    return null;
+  })]).then(function () {
     return null;
   });
   scopeBuilds.set(key, tail);
@@ -1648,6 +1789,25 @@ function oneBuildAtATime(scopeId, build) {
   });
   log.debug("Leaving oneBuildAtATime().");
   return mine;
+}
+
+// Whether `ahead` settles before `deadline`: true when it does, false when
+// the deadline comes first. A per-operation timeout, cleared as soon as the
+// race is decided (tests/no_periodic_timers.js). A deadline already passed
+// still lets an `ahead` that has settled win: the timer is a macrotask and
+// the settled promise is not.
+function turnBefore(ahead, deadline) {
+  log.debug("Entering turnBefore().");
+  log.debug("Leaving turnBefore().");
+  return new Promise(function (resolve) {
+    const timer = setTimeout(function () {
+      resolve(false);
+    }, Math.max(0, deadline - Date.now()));
+    ahead.then(function () {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
 }
 
 // Every build queued in this process, settled — for a caller that must not
@@ -1807,12 +1967,20 @@ function algorithmsFrom(options) {
  */
 async function buildScope(scopeId, opts) {
   log.debug("Entering buildScope().");
+  // Refused for what it asks for: answered now, not after the queue and the
+  // claim (scopeBuildChecks()).
+  const checked = scopeBuildChecks(scopeId, opts);
+  if (!checked.ok) {
+    log.debug("Leaving buildScope(). Refused before the queue.");
+    return checked;
+  }
   log.debug("Leaving buildScope().");
   return oneBuildAtATime(String(scopeId), function () {
     return oneBuildInTheCluster(String(scopeId), ['intermediate', 'issuing'],
                                 null,
                                 function () {
-                                  return buildScopeNow(scopeId, opts);
+                                  return buildScopeNow(scopeId, opts,
+                                                       checked);
                                 });
   });
 }
@@ -2144,8 +2312,17 @@ function listenerChainOptions(options, label, codes) {
            options: Object.assign({}, options, { keyAlg: classical }) };
 }
 
-async function buildScopeNow(scopeId, opts) {
-  log.debug('Entering buildScope(). scope=' + scopeId);
+// WHAT A BRANCH BUILD REFUSES BEFORE IT MAKES ANYTHING, as one check:
+// the key the listeners cannot load, the algorithms, the process listener's
+// chain and the lifetimes. `buildScope()` asks it BEFORE the build queue and
+// the cluster claim as well as `buildScopeNow()` inside them, because a
+// request refused for what it asked for has no reason to wait for somebody
+// else's build: CI run #250's fuzzer sent `build-scope` bodies whose
+// `keyAlg` or `altKeyAlg` this refuses at once, and they queued behind a
+// held claim until schemathesis gave up at 300 s. Answers `{ ok: true,
+// options, chosen, intermediateYears, issuingYears }` or the refusal.
+function scopeBuildChecks(scopeId, opts) {
+  log.debug('Entering scopeBuildChecks(). scope=' + scopeId);
   const id = String(scopeId);
   const kind = scopeKindOf(id);
   // Every branch is on a listener's chain — the process branch the main
@@ -2159,7 +2336,8 @@ async function buildScopeNow(scopeId, opts) {
                            { refused: 'STS-PKI-0274',
                              fallback: 'STS-PKI-0275' });
   if (!readable.ok) {
-    log.debug('Leaving buildScope(). A key the listeners cannot load.');
+    log.debug('Leaving scopeBuildChecks(). A key the listeners cannot ' +
+              'load.');
     return readable;
   }
   const options = readable.options;
@@ -2168,7 +2346,7 @@ async function buildScopeNow(scopeId, opts) {
   // impossible pair) creates nothing on its way to the refusal.
   const chosen = algorithmsFrom(options);
   if (!chosen.ok) {
-    log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
+    log.debug('Leaving scopeBuildChecks(). ' + chosen.errors.join(' '));
     return chosen;
   }
   // BEFORE the Root and BEFORE any tier is made, for the same reason as the
@@ -2181,7 +2359,7 @@ async function buildScopeNow(scopeId, opts) {
     const handshake = processListenerAltSignatureProblem(chosen.altKeyAlg,
                                                          chosen.keyAlg);
     if (handshake) {
-      log.debug('Leaving buildScope(). The listener chain.');
+      log.debug('Leaving scopeBuildChecks(). The listener chain.');
       return handshake;
     }
   }
@@ -2190,9 +2368,30 @@ async function buildScopeNow(scopeId, opts) {
   const lifetime = certificateLifetimeProblem(intermediateYears) ||
                    certificateLifetimeProblem(issuingYears);
   if (lifetime) {
-    log.debug('Leaving buildScope(). The lifetime.');
+    log.debug('Leaving scopeBuildChecks(). The lifetime.');
     return lifetime;
   }
+  log.debug('Leaving scopeBuildChecks(). Buildable.');
+  return { ok: true, options: options, chosen: chosen,
+           intermediateYears: intermediateYears, issuingYears: issuingYears };
+}
+
+// `checked` is `scopeBuildChecks()`'s answer when the caller already asked
+// it for these options (`buildScope()`), so a fallback is not logged twice.
+async function buildScopeNow(scopeId, opts, checked) {
+  log.debug('Entering buildScope(). scope=' + scopeId);
+  const id = String(scopeId);
+  const kind = scopeKindOf(id);
+  const ready = checked && checked.ok ? checked
+                                      : scopeBuildChecks(scopeId, opts);
+  if (!ready.ok) {
+    log.debug('Leaving buildScope(). Refused before anything was made.');
+    return ready;
+  }
+  const options = ready.options;
+  const chosen = ready.chosen;
+  const intermediateYears = ready.intermediateYears;
+  const issuingYears = ready.issuingYears;
   const removalsAtStart = removalCount(id);
   const rooted = await ensureRoot(options);
   if (!rooted.ok) {
@@ -15059,6 +15258,8 @@ module.exports = {
   // `scep/scep_ra.ts`'s RA certificate. `refreshScope()` lands this process's
   // queued writes of the row and takes what the store holds.
   oneBuildInTheCluster: oneBuildInTheCluster,
+  isBusyRefusal: isBusyRefusal,
+  setBuildWaitMs: setBuildWaitMs,
   /**
    * Lands this process's queued writes of a scope's row and takes what the
    * store holds, where the store arbitrates.

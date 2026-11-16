@@ -29,8 +29,7 @@ You can set the flag in three ways:
   the **Service account** tab of an existing person's page.
 - Through the management API, call
   `POST /admin-api/users/set-service-account` with `user`, `owners`,
-  `destination` and `secretName`. Send `serviceAccount: false` to make the
-  person an ordinary person again. `POST /admin-api/users/create` accepts
+  `destination` and `secretName`. `POST /admin-api/users/create` accepts
   the same fields with `serviceAccount: true`.
 - Over LDAP, an administrator with Admin Write can modify the entry. The same
   rules apply, and the directory adds or removes the auxiliary class with the
@@ -45,6 +44,30 @@ in the group become one when the service starts. See
 
 The person can never set the flag on their own entry, whatever
 `ldap.selfWritableAttributes` says. SCIM does not carry the flag.
+
+### It cannot be undone
+
+**Once a person is a service account, nothing makes them an ordinary person
+again.** The console has no button for it, and the other doors refuse it:
+
+- `POST /admin-api/users/set-service-account` with `serviceAccount: false`
+  on a service account is refused (STS-SVCACCT-0060). On a person who is
+  not a service account it changes nothing.
+- An LDAP modify that deletes or replaces `stsServiceAccount` on a service
+  account is refused with `constraintViolation` (STS-SVCACCT-0064).
+
+The console's **Make them a service account** button says so in an amber
+box, and you must tick **I understand that making them a service account
+cannot be undone** before the button works. **Users → New user** says it
+beside the **Service account** box.
+
+**Deleting the entry is still allowed**, by every door that deletes a
+person. That ends the account; it does not make it a person. A person
+created later with the same username is a new person and inherits nothing
+from the account.
+
+Until 1.1.0, `serviceAccount: false` cleared the flag, the owners, the
+destination and the rotation state. A program that sends it now gets a 400.
 
 | Attribute | What it is |
 |---|---|
@@ -67,6 +90,42 @@ in the realm, and a group stands for everyone in it. You can name at most 25
 owners. While the policy's `requireOwner` is on, which is the default, an
 account must have at least one.
 
+**Once an account has an owner, it always has one**, whatever `requireOwner`
+says. `requireOwner` off lets you make an account with no owner, and edit
+it while it has none. But a change that would take away the last owner is
+refused: the last owner's **Remove**, `owners: []` on
+`set-service-account` (STS-SVCACCT-0061), and an LDAP modify that deletes
+the last `stsServiceAccountOwner` (STS-SVCACCT-0065). Add the new owner
+first, then remove the old one.
+
+**An owner cannot remove themselves.** Removing your own DN is refused
+(STS-SVCACCT-0062; over LDAP, the bound DN, STS-SVCACCT-0066). So is
+removing a group when that group is your only way of owning the account
+(STS-SVCACCT-0063; STS-SVCACCT-0067), because it removes you too. You may
+remove a group you are in while you still own the account in another way.
+Another administrator may remove you, as long as an owner remains. The
+rules apply to whoever's token or bind makes the change; development's open
+management API, with no token, names nobody, so only the last-owner rule
+applies there.
+
+If the person or group that is an account's last owner is **deleted**, the
+deletion is not refused. Their DN is taken off the account's owners and, in
+the same change, **the realm's administrator becomes the owner**: the
+realm's Admin Write group (`admin.writeGroup`, `admin-write` by default),
+or its bootstrap administrator if the realm has no such group (or the group
+is what was deleted). This happens whichever way the entry is deleted: a
+SCIM `DELETE`, an LDAP delete, or a person moved to another cell. The audit
+log has two rows: the removal, and an `admin.service-account.owner-added`
+row by `system` naming the new owner and the deleted one.
+
+If the realm has neither, the account is left with no owner and
+STS-SVCACCT-0068 is logged. Add an owner on the **Service account** tab (or
+with `POST /admin-api/users/add-service-account-owner`, or an LDAP modify
+adding `stsServiceAccountOwner`); nothing refuses that.
+
+Deleting one of several owners only removes that one. An account that had
+no owner before (made with `requireOwner` off) is not changed.
+
 On the console, the **Service account** tab lists the owners in a table. To
 add an owner:
 
@@ -79,7 +138,7 @@ add an owner:
 For an account that is already a service account, **Add** and **Remove** save
 the change as soon as you press them. The search results stay on the page, so
 you can add several owners one after another. You cannot remove the last
-owner while the policy requires one.
+owner, or yourself.
 
 For a person who is not a service account yet, the table is a draft. Nothing
 is saved until you press **Make them a service account with these owners and
@@ -163,8 +222,7 @@ the realm it was made in and is never inherited by another realm.
 account's **Policies** tab, with
 `POST /admin-api/users/set-attribute`, or over LDAP. The value is `default`
 or a named policy the realm holds; anything else is refused. Only a service
-account may hold it (STS-SVCACCT-0048), and making the account an ordinary
-person again clears it.
+account may hold it (STS-SVCACCT-0048).
 
 Every rule follows the account's own policy: the doors, the browser, the
 second-factor exemption, whether an owner is required, and the rotation's

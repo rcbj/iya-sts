@@ -130,6 +130,30 @@ async function childBody() {
           'certificate calls them', JSON.stringify(seen));
   t.check(tlsClient.stillHeld(seen),
           'A3. and RFC 8705\'s still-held question still finds it');
+  // #33 (2026-11-15): the handshake's sighting is filed on the holder's
+  // entry, as tls_server.js's recordClientCertificate() now files it — the
+  // certificate's subject and CN are still the OLD name, and before the fix
+  // the directory's observer created an entry under it.
+  const leafFacts = new nodeCrypto.X509Certificate(made.issued.certificatePem);
+  require(ROOT + '/common/admin_stats').recordAuthentication({
+    presented: 'CN=chr-alice', protocol: 'TLS',
+    method: 'client certificate on the main port (a test)',
+    application: 'CN=chr-alice',
+    certificate: { subject: 'CN=chr-alice', commonName: 'chr-alice',
+                   issuer: 'CN=a test', serialNumber: leafFacts.serialNumber,
+                   validFrom: leafFacts.validFrom, validTo: leafFacts.validTo,
+                   fingerprint256: leafFacts.fingerprint256, email: '',
+                   holder: seen.username } });
+  const phantom = ldap.objectFor('chr-alice');
+  const holderDn = ((ldap.objectFor('chr-alicia') || {}).entry || {}).dn;
+  const bySubject = ((ldap.objectFor('CN=chr-alice') || {}).entry || {}).dn;
+  t.check(!(phantom && phantom.entry) && !!holderDn &&
+          bySubject === holderDn,
+          'A3b. a sighting of the certificate after the rename makes no ' +
+          'entry under the old name: it is filed on the holder (#33)',
+          JSON.stringify({ phantom: (phantom && phantom.entry &&
+                                     phantom.entry.dn) || '',
+                           holder: holderDn, bySubject: bySubject }));
   recreateUnderOldName('chr-alicia', 'chr-alice');
   seen = tlsClient.identityOf(input);
   t.check(!seen.accepted && seen.error === 'HOLDER_GONE',

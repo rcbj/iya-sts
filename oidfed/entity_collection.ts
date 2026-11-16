@@ -351,14 +351,16 @@ class EntityCollection {
       });
     };
     if (node.self) {
-      const ids = idsOf(await entity.subordinateFacts(req));
+      // Identifiers only, so no realm is described (`oidfed.ts`'s
+      // `subordinateFacts()` says what describing one costs).
+      const ids = idsOf(await entity.subordinateFacts(req, false));
       log.debug("Leaving EntityCollection.childrenOf(). This realm's.");
       return { ids: ids };
     }
     const local = entity.localRealmOf(node.id, req);
     if (local) {
       const facts = await entity.inRealm(local, req, function (r: Req) {
-        return entity.subordinateFacts(r);
+        return entity.subordinateFacts(r, false);
       });
       log.debug("Leaving EntityCollection.childrenOf(). A realm's.");
       return { ids: idsOf(facts) };
