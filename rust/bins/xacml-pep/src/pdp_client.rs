@@ -317,10 +317,24 @@ impl PdpClient {
         headers: &[(&str, String)],
         timeout: Option<Duration>,
     ) -> Answer {
-        let mut request = self
-            .http
-            .request(method, url)
-            .header("Accept", "application/json");
+        // ACCEPT FOLLOWS THE BODY (#1830): the one XML call is the PIP's,
+        // `POST /xacml/pip`, whose answers are XACML's XML, so it asks for
+        // XML; every other call is to a JSON endpoint. A caller's own Accept
+        // wins over both.
+        let accept = if headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("accept"))
+        {
+            None
+        } else if matches!(body, Some(Body::Xml(_))) {
+            Some("application/xml")
+        } else {
+            Some("application/json")
+        };
+        let mut request = self.http.request(method, url);
+        if let Some(accept) = accept {
+            request = request.header("Accept", accept);
+        }
         for (name, value) in headers {
             request = request.header(*name, value.as_str());
         }
@@ -782,5 +796,76 @@ mod tests {
         assert!(seen.forms.is_empty(), "no token request without a key");
         assert_eq!(seen.calls[0].0, "");
         assert_eq!(seen.calls[0].1, Value::Null);
+    }
+
+    /// ACCEPT FOLLOWS THE BODY (#1830): the PIP's XML query asks for XML,
+    /// a JSON call for JSON, and a caller's own Accept is the only one sent.
+    #[tokio::test]
+    async fn asks_for_the_media_type_it_reads() {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let record = seen.clone();
+        let router = axum::Router::new().fallback(
+            move |headers: axum::http::HeaderMap| {
+                let record = record.clone();
+                async move {
+                    let all: Vec<String> = headers
+                        .get_all("accept")
+                        .iter()
+                        .map(|v| v.to_str().unwrap_or("").to_string())
+                        .collect();
+                    record.lock().unwrap().push(all.join(" | "));
+                    "ok"
+                }
+            },
+        );
+        let socket =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Err(error) = axum::serve(socket, router).await {
+                panic!("stub: {}", error);
+            }
+        });
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = format!("http://127.0.0.1:{}", port);
+        let client = PdpClient::new(&options).unwrap();
+        // The plain call every authorized one goes through (#1836), so the
+        // rule holds whatever credential a call carries.
+        let base = format!("http://127.0.0.1:{}", port);
+        client
+            .call_url(
+                Method::POST,
+                &format!("{}/xacml/pip", base),
+                Some(Body::Xml("<x/>".into())),
+                &[],
+                None,
+            )
+            .await;
+        client
+            .call_url(
+                Method::GET,
+                &format!("{}/xacml/pep/policies", base),
+                None,
+                &[],
+                None,
+            )
+            .await;
+        client
+            .call_url(
+                Method::POST,
+                &format!("{}/x", base),
+                Some(Body::Json(serde_json::json!({}))),
+                &[("accept", "text/plain".to_string())],
+                None,
+            )
+            .await;
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                "application/xml".to_string(),
+                "application/json".to_string(),
+                "text/plain".to_string()
+            ]
+        );
     }
 }

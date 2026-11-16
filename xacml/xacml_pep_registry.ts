@@ -248,8 +248,23 @@ interface PepResult {
   name?: string;
   created?: boolean;
   current?: string;
-  // The HTTP status a refusal is answered with, where it is not the
-  // endpoint's usual one (a bad `hostname` is 400 on the heartbeat too).
+  // THE HTTP STATUS EVERY REFUSAL IS ANSWERED WITH (#1830), on register
+  // and heartbeat alike — each refusal says which it is, because the two
+  // handlers used to pick one status apiece (400 and 404) and so answered
+  // a service that had no directory as if the PEP had sent a bad request
+  // or had never registered. Chosen by whose fault it is and whether a
+  // retry can succeed:
+  //   400  the request: no usable name (0019), a bad hostname (0261);
+  //   404  no such row: a heartbeat from a PEP never registered (0021);
+  //   503  this process has no directory (0026): nothing the PEP sent is
+  //        wrong, and a later attempt — on another node, or after the
+  //        directory loads — can succeed;
+  //   507  the directory refused the write (0027), which `writePep()` does
+  //        only when ou=peps holds xacml.maxPeps or the directory its
+  //        entry cap: RFC 4918 section 11.5's "unable to store the
+  //        representation", temporary until an operator makes room.
+  // A deployed PEP treats any answer but 200 and 201 as a failure and tries
+  // again on its next poll, so none of these changes what it does.
   status?: number;
 }
 
@@ -920,7 +935,8 @@ class PepRegistry {
     const given = record || {};
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.register(). No directory.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 503,
                                why: 'There is no embedded directory, so ' +
                                     'there is nowhere to register a Policy ' +
                                     'Enforcement Point.' }, 'STS-XACML-0026');
@@ -928,7 +944,8 @@ class PepRegistry {
     const name = this.nameFrom(given.name);
     if (!name) {
       log.debug('Leaving PepRegistry.register(). No usable name.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 400,
                why: 'A remote PEP is named from the common name of the ' +
                     'client certificate it registered with, or — when ' +
                     'xacml.pepRequireCertificate is off — from the `name` ' +
@@ -1013,7 +1030,8 @@ class PepRegistry {
     const written = directory.writePep(name, attributes);
     if (!written) {
       log.debug('Leaving PepRegistry.register(). The directory refused it.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 507,
                why: 'The directory refused the entry. ou=peps may be at its ' +
                     'maximum of ' + config.value('xacml.maxPeps') +
                     ' (xacml.maxPeps).' }, 'STS-XACML-0027');
@@ -1060,14 +1078,16 @@ class PepRegistry {
     log.debug('Entering PepRegistry.heartbeat(). name=' + name);
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.heartbeat(). No directory.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 503,
                                why: 'There is no embedded directory.' },
                              'STS-XACML-0026');
     }
     const existing = this.read(name);
     if (!existing) {
       log.debug('Leaving PepRegistry.heartbeat(). Not registered.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 404,
                why: 'No Policy Enforcement Point is registered as "' + name +
                     '". Register first — POST /xacml/pep/register. A ' +
                     'heartbeat does not create a row, deliberately: a row ' +
@@ -1130,11 +1150,11 @@ class PepRegistry {
     const written = directory.writePep(name, attributes);
     log.debug('Leaving PepRegistry.heartbeat(). ' +
               (written ? 'Recorded.' : 'Refused.'));
-    return written ? { ok: true, name: name, current: this.syncToken() }
-                   : errorCodes.mark({ ok: false,
-                                       why: 'The directory refused the ' +
-                                            'entry.' },
-                                     'STS-XACML-0027');
+    if (written) {
+      return { ok: true, name: name, current: this.syncToken() };
+    }
+    return errorCodes.mark({ ok: false, status: 507, why: 'The directory ' +
+                             'refused the entry.' }, 'STS-XACML-0027');
   }
 
   // What happened to the last nudge, written back onto the row. Separate from

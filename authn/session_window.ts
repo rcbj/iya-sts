@@ -608,6 +608,28 @@ class SessionWindow {
       return 'keep';
     }
     const inMap = this.mapRead(realm, id).present;
+    // A HELD COPY WITH NO WRITE PENDING IS MERGED TOO, NEVER REPLACED (run
+    // #325, `cells`, `sts_jar_admin_client`). Another process's row is READ
+    // when its change-log page is prepared and APPLIED later, serially, and
+    // a page of a bulk load is slow to apply. A sign-in this process
+    // committed in between left its slot clean, so the row read before it —
+    // the arrival — was admitted over it, and the very next request here
+    // found the session not live (STS-AUTHN-0346) and sent the person to
+    // sign in again. `mergeRow()` (`authn.ts`'s `mergeSessionRows()`) is
+    // what the store holds after every write: the copy further along, the
+    // latest clocks, the unions. Merging the arriving row into the held copy
+    // is therefore never behind either of them, and a real change still
+    // lands — a later sign-in or rotation outranks, and an end or sign-out
+    // is a tombstone, taken above.
+    // Only a slot's copy: a map read may be a copy, and a merge into a copy
+    // would drop the arriving row's real changes with nothing kept.
+    if (slot && slot.session && typeof slot.session === 'object' &&
+        value && typeof value === 'object' && this.storeMerges()) {
+      this.negative.delete(key);
+      this.mergeIntoHeld(realm, id, slot, value);
+      log.debug("Leaving SessionWindow.considerApply(). Held, merged.");
+      return 'keep';
+    }
     if (slot || inMap || this.freshNegative(key)) {
       this.negative.delete(key);
       this.admit(realm, id, value, false);
@@ -632,6 +654,20 @@ class SessionWindow {
    * @param slot - the window's slot, or undefined
    * @param value - the other process's opened row
    */
+  // Hot path: asked for every replicated session row. No Entering/Leaving
+  // pair, which would drown the log.
+  // Whether the sessions store merges two copies of a row (`mergeRow`).
+  private storeMerges(): boolean {
+    try {
+      const store = realms.handleFor(HANDLE);
+      return !!(store && typeof store.mergeRow === 'function');
+    } catch (e) {
+      log.debug("Caught in SessionWindow.storeMerges(): " +
+                ((e && (e as Error).message) || e));
+      return false;
+    }
+  }
+
   private mergeIntoHeld(realm: string, id: string, slot: Slot | undefined,
                         value: any): void {
     log.debug("Entering SessionWindow.mergeIntoHeld().");

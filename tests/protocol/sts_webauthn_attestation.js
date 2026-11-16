@@ -873,21 +873,23 @@ async function attestationMatrix() {
   const portal = await portalSignin.signInToThePortal(realm.base, who, null,
     { password: PASSWORD });
 
-  // The newest audit row's `seq` in the realm, and the codes of the rows
-  // after it: two reads per registration rather than two per code.
-  const newestSeq = async function () {
-    log.debug("Entering newestSeq().");
+  // The newest audit row's `at` in the realm, and the codes of the rows
+  // after it: two reads per registration rather than two per code. BY TIME
+  // (#465): `seq` is not one order across processes, so a row a request
+  // worker numbered from a lower block was missed (run #325, 4A1, 4A3).
+  const newestAt = async function () {
+    log.debug("Entering newestAt().");
     const r = await k.call(realm, "GET", "/audit?per=1");
-    log.debug("Leaving newestSeq().");
-    return Number((((r.body && r.body.events) || [])[0] || {}).seq || 0);
+    log.debug("Leaving newestAt().");
+    return Number((((r.body && r.body.events) || [])[0] || {}).at || 0);
   };
-  const codesAfter = async function (seq, watched) {
+  const codesAfter = async function (since, watched) {
     log.debug("Entering codesAfter().");
     let found = "";
     for (let i = 0; i < 20 && !found; i += 1) {
       const r = await k.call(realm, "GET", "/audit?per=100");
       ((r.body && r.body.events) || []).forEach(function (row) {
-        if (!found && Number(row.seq) > seq &&
+        if (!found && Number(row.at) > since &&
             watched.indexOf(row.errorCode) >= 0) {
           found = row.errorCode;
         }
@@ -920,14 +922,14 @@ async function attestationMatrix() {
     const pending = (page.json && page.json.enrol &&
                      page.json.enrol.pending) || {};
     const built = await builtCredential(pending, o);
-    const seq = await newestSeq();
+    const since = await newestAt();
     const done = await portal.api("POST", "/account-api/keys",
       { action: "finish", enrolment_id: pending.id,
         credential: JSON.stringify(built.credential) });
     const refusedHere = !(done.status === 200 && done.json &&
                           done.json.ok !== false);
     const code = refusedHere && watched.length
-      ? await codesAfter(seq, watched) : "";
+      ? await codesAfter(since, watched) : "";
     log.debug("Leaving enrolOne(). " + done.status + " " + code);
     return { done: done, code: code, built: built, pending: pending };
   };

@@ -4046,6 +4046,65 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
 }
 
 // ---------------------------------------------------------------------------
+// A PERSON DELETED (rcbj, 2026-11-16): `POST /users/delete`, the directory's
+// one person delete. The documented example names somebody nobody is, so the
+// replay above meets only its referent refusal; this is the real round trip:
+// a person made and holding a token, deleted, read back through the users
+// listing (gone), their token introspected inactive, a second delete refused
+// about its referent, and nothing named refused about its shape.
+// ---------------------------------------------------------------------------
+async function thePersonDeleteRoundTrip() {
+  log.debug("Entering thePersonDeleteRoundTrip().");
+  log.info("=== Users: a person deleted ===");
+  const username = names.usernameFor("stsapi-deleted");
+  await ok("/users/create", {
+    username: username, invent: false,
+    attributes: { cn: "Deleted " + username, givenName: "Deleted",
+                  sn: username, displayName: "Deleted " + username,
+                  mail: username + "@admin-api-operations.test" },
+    credential: "password", password: MINT_PASSWORD
+  }, "created the person to delete");
+  const tokens = await mintTokens(username, "logout-client-" + REALM);
+  assert.ok(await introspectActive(tokens.access),
+    "the person's access token should introspect active before the delete");
+  const deleted = await ok("/users/delete", { user: username },
+                           "deleted the person");
+  assert.strictEqual(deleted.username, username,
+    "the delete should answer the username it deleted; it answered " +
+    JSON.stringify(deleted));
+  assert.ok(String(deleted.dn || "").indexOf("dc=" + REALM + ",") > 0,
+    "and the DN, in THIS realm's directory; it answered " + deleted.dn);
+  const listed = await get("/users?q=" + encodeURIComponent(username));
+  assert.strictEqual(listed.status, 200,
+    "GET /users?q=… should answer 200; it answered " + listed.status);
+  const still = (listed.body.users || []).filter(function (row) {
+    return row.inDirectory === true &&
+           (row.name === username || row.key === username);
+  });
+  assert.strictEqual(still.length, 0,
+    "the deleted person should no longer be listed as an entry the " +
+    "directory holds; read back through the users listing, they are: " +
+    JSON.stringify(still));
+  let active = true;
+  for (let i = 0; i < 20 && active; i += 1) {
+    active = await introspectActive(tokens.access);
+    if (active) {
+      await new Promise(function (r) { setTimeout(r, 150); });
+    }
+  }
+  assert.strictEqual(active, false,
+    "everything the person held is ended after the delete, so the access " +
+    "token minted for them should introspect inactive");
+  await refused("/users/delete", { user: username }, /Nobody called/,
+    "a second delete of somebody no longer here — about the referent");
+  await refused("/users/delete", { user: "" }, /Name the person/,
+    "a delete naming nobody");
+  log.info("[users/delete] OK — deleted, gone from the listing, the token " +
+           "inactive, and a second delete refused about its referent.");
+  log.debug("Leaving thePersonDeleteRoundTrip().");
+}
+
+// ---------------------------------------------------------------------------
 // THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12): add a freshly minted CA,
 // read it back, remove it, read back its absence — and touch nothing else.
 //
@@ -5912,6 +5971,7 @@ async function test() {
     await theTokenDoorsRoundTrip();
     await theIssuedListGroupsByIssuance();
     await theDirectoryAndSignOutDoorsRoundTrip();
+    await thePersonDeleteRoundTrip();
     await theAdminRolesRoundTrip();
     await theTruststoreRoundTrips();
     await theCertificateDetailsAnswer();

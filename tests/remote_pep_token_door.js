@@ -343,6 +343,16 @@ function childMain() {
          /^DPoP/.test(String(bearer.headers['www-authenticate'] || '')),
          'X7. the token sent as Bearer is refused 401 with a DPoP challenge',
          brief(bearer));
+    const pipBearer = await atDoor(PEP, 'POST', '/xacml/pip', token,
+      { scheme: 'Bearer', contentType: 'application/xml',
+        body: '<nonsense/>' });
+    note(pipBearer.status === 401 &&
+         /^DPoP/.test(String(pipBearer.headers['www-authenticate'] || '')) &&
+         /^application\/xml/.test(String(pipBearer.headers['content-type'] ||
+                                         '')) &&
+         /<PIPError [^>]*error="invalid_token"/.test(pipBearer.text),
+         'X7b. at /xacml/pip the same refusal is a <PIPError> with the DPoP ' +
+         'challenge, as every refusal there is (#1830)', brief(pipBearer));
     const once = proofFor(PEP, 'GET', BASE + '/xacml/pep/policies',
                           { ath: athOf(token) });
     const first = await atDoor(PEP, 'GET', '/xacml/pep/policies', token,

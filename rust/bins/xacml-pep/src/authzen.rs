@@ -173,19 +173,20 @@ pub fn endpoint_name(path: &str) -> &'static str {
 /// HTTP scheme to name).
 pub fn admit(
     options: &Options,
-    asks_for_certificates: bool,
+    verifies_certificates: bool,
     transport: &Transport,
     callers: &Callers,
     endpoint: &str,
 ) -> Result<Caller, Reply> {
-    if !asks_for_certificates {
+    if !verifies_certificates {
         return Err(Reply::error(
             401,
             "STS-XPEP-0039",
             "This edge PDP authenticates its caller by a client certificate \
-             (mutual TLS) on its HTTPS listener, and it is configured with \
-             no authority to verify one against (PEP_AUTHZEN_CLIENT_CA), so \
-             it admits nobody.",
+             (mutual TLS), and the listener this request arrived on asks \
+             for none it can verify (no PEP_AUTHZEN_CLIENT_CA or trust \
+             anchors, or its tuning asks for no certificate), so it admits \
+             nobody here.",
         ));
     }
     let peer = match (&transport.peer, transport.https) {
@@ -668,9 +669,21 @@ impl Pep {
             );
         }
         let callers = self.sync.callers();
+        // THE LISTENER THE REQUEST ARRIVED ON (#1830): an HTTPS listener
+        // admits by a certificate only if ITS acceptor asked for one and
+        // verifies it — the environment's listener's client CA says
+        // nothing about a listener the service defined, or one whose tuning
+        // asks for none. A plain-HTTP request has no certificate to ask
+        // about, and is answered as it always was: by whether the
+        // environment's HTTPS listener could admit it (0035), or not (0039).
+        let verifies = if transport.https {
+            transport.verifies_client_certificates
+        } else {
+            self.listener.verifies_client_certificates()
+        };
         let caller = match admit(
             &self.options,
-            self.listener.asks_for_client_certificates(),
+            verifies,
             transport,
             &callers,
             endpoint_name(if batch {
@@ -1139,6 +1152,7 @@ mod tests {
             https: true,
             remote: None,
             crl_only: false,
+            verifies_client_certificates: true,
             peer: Some(Peer {
                 sha256: sha256.to_string(),
                 subject: "CN=pep".into(),
@@ -1383,6 +1397,65 @@ mod tests {
         let out = forwarded_body(&named, "payments");
         assert_eq!(out["context"]["application"], "payments");
         assert_eq!(out["context"]["region"], "eu");
+    }
+
+    /// THE WIRE IS THE MODEL'S (#1830): every request the shared cases say
+    /// this edge accepts reads as `models/pep/pep_authzen.tsp`'s
+    /// `EvaluationRequest`, and the decision, a batch's failed item and an
+    /// error, as this file builds them, read as its answers.
+    #[test]
+    fn the_wire_is_the_model_s() {
+        use crate::authzen_map::{outcome, reasons};
+        use crate::enforce::Enforcer;
+        use crate::options::Bias;
+        use sts_model_pep::pep_authzen::{components, read_answer, read_body};
+        use sts_xacml::request::{Response, Status};
+        let cases = crate::authzen_map::tests::shared_cases();
+        let mut accepted = 0;
+        for case in cases["requests"].as_array().unwrap() {
+            if case["code"] != "" {
+                continue;
+            }
+            accepted += 1;
+            let read = read_body("postEvaluation", &case["body"]);
+            assert!(
+                matches!(read, Some(Ok(()))),
+                "{}: {:?}",
+                case["what"],
+                read
+            );
+        }
+        assert!(accepted > 0, "the shared cases accept some requests");
+        let answer = Response {
+            decision: Decision::Permit,
+            status: Status {
+                code: sts_xacml::model::StatusCode::Ok,
+                message: None,
+            },
+            obligations: Vec::new(),
+            advice: Vec::new(),
+            policy_identifiers: Vec::new(),
+        };
+        let enforced = Enforcer::new(Bias::DenyBiased)
+            .enforce(answer.decision, &answer.obligations);
+        let decided = outcome(&answer, &enforced, false);
+        for body in [
+            answer_of(decided.decision, None),
+            answer_of(decided.decision, Some(reasons(&decided))),
+        ] {
+            let read = read_answer("postEvaluation", 200, &body);
+            assert!(matches!(read, Some(Ok(()))), "{}: {:?}", body, read);
+        }
+        let failed = Reply::error(400, "STS-AUTHZEN-0001", "not an object");
+        let batch = json!({ "evaluations": [
+            answer_of(true, Some(reasons(&decided))),
+            { "decision": false, "context": { "error": failed.body["error"] } }
+        ] });
+        let read = read_answer("postEvaluations", 200, &batch);
+        assert!(matches!(read, Some(Ok(()))), "{}: {:?}", batch, read);
+        let error: Result<components::Error, _> =
+            serde_json::from_value(failed.body.clone());
+        assert!(error.is_ok(), "{}", failed.body);
     }
 
     fn answered(status: u16, body: Value) -> Answer {

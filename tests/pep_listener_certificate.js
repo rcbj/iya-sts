@@ -462,6 +462,34 @@ async function theNudgeTrustsThisCa(t) {
     t.check(synced.ok && fullBody.full === true &&
             fullBody.event === 'policy-repository-changed',
             'F1c. a Sync\'s nudge carries full: true', own.bodies[1]);
+    // F1d (#1830): `pdp` is the realm's PDP when the dispatcher passes ''
+    // (as every caller does) — the base the change's request was answered
+    // under, the realm prefix included — where it was always empty.
+    const audit = require('../common/audit');
+    const changeRequest = {
+      protocol: 'https', headers: { host: 'pdp.test:8443' },
+      originalUrl: '/admin-api/xacml/policies',
+      get: function (name) {
+        log.debug("Entering get(). " + name);
+        log.debug("Leaving get().");
+        return String(name).toLowerCase() === 'host' ? 'pdp.test:8443'
+                                                     : undefined;
+      }
+    };
+    const fromRequest = await audit.withSource({ req: changeRequest },
+      function () {
+        return inRealm(function () {
+          return pepHttp.nudge(ownUrl, '');
+        });
+      });
+    const pdpBody = JSON.parse(own.bodies[2] || '{}');
+    const pinnedBase = require('../common/helpers').pinnedBaseUrl('xacml');
+    t.check(fromRequest.ok &&
+            pdpBody.pdp ===
+              (pinnedBase || 'https://pdp.test:8443') + '/realm/' + REALM,
+            'F1d. a nudge dispatched with no issuer names the realm\'s PDP ' +
+            'as pdp, from the request that made the change',
+            own.bodies[2]);
 
     // F2. A FOREIGN CA: refused; accepted once that CA is the CA file.
     const ca = await testCa.makeCa();

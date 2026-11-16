@@ -148,7 +148,9 @@ const INTERNAL: ReadonlySet<string> = new Set([
   'x-sts-cell-reason', 'x-sts-ldap-drop', 'x-sts-listener',
   'x-sts-peer-authorized', 'x-sts-peer-certificate', 'x-sts-pool-phases',
   'x-sts-pool-phases-wanted', 'x-sts-pool-protocol-worker',
-  'x-sts-pool-revoking', 'x-sts-pool-ticket', 'x-sts-tls-client-hello'
+  'x-sts-pool-revoking', 'x-sts-pool-ticket', 'x-sts-tls-client-hello',
+  // The front to a worker and back about cookie names (`common/cookie_wire.ts`).
+  'x-sts-wire-prefix', 'x-sts-wire-tls'
 ]);
 
 const EXACT: ReadonlySet<string> = new Set(

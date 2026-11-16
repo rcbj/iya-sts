@@ -54,10 +54,13 @@ what the portable statements cover.
    development mode, or on memory or ldif, changes.
 4. **The fence is checked inside every write transaction, and a node that
    cannot renew its membership exits.**
-5. **A development-mode sign-in's auto-created entry gets a name-derived
-   `entryUUID`** wherever two processes can race to create it (a cluster mode,
-   or a dispatched pool) — `ldap/ldap_server.js` `putEntry()`; a single process
-   keeps random values.
+5. **A development-mode sign-in's auto-created entry gets a RANDOM
+   `entryUUID` on every node** (2026-11-16, #1612's rule; it was name-derived
+   wherever two processes could race from #46 until then, which handed a
+   namesake the deleted person's subject). Two nodes creating one name's entry
+   at once are reconciled by `mergeCreateRace()`, the loser's value kept as an
+   alias — `ldap/ldap_server.js` `putEntry()`; an entry already carrying a
+   derived value keeps it.
 6. **The barrier holds a response for its audit row only when that row is a
    REFUSAL** (chosen 2026-09-15). A successful call that wrote nothing else is
    answered at once and its row reaches the other nodes on their next pull, so
@@ -1023,6 +1026,13 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   newer generation (`receivePublishedKeys()`). A directory sign-out it makes
   goes to the front on the channel (`{ ldapDrop }`), since no response is in
   flight.
+* **AND THE WORKER CATCHES UP BEFORE IT RUNS THE BODY (2026-11-16, GitHub
+  Actions run 43913216604).** A request waits at the pool's read barrier; a
+  body handed over the channel did not, so it could read a realm's settings
+  from before a write another worker had just made. `sts_post_login_activities`
+  turned mail off, ran the reminder job at once, and the body still saw mail
+  on. `runSchedulerJob()` now calls `persistence.syncNow()` first; the time
+  it takes counts against the job's limit.
 * **Fenced, not interrupted.** At its time limit, on a lost lease or a
   removed realm, the leader sends `{ schedulerFence }` and stops waiting. The
   worker's `ctx.stillOwner()` answers false from then on. The front's timer

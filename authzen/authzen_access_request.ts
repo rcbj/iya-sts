@@ -155,7 +155,9 @@ const JOB_EVERY_MS = 60000;
 // same one (the minted-row rule of persistence/CLAUDE.md). A row is JSON
 // and an in-place edit is re-set (`save()`). No bearer value is a key: the
 // index holds an approval id, an idempotency key and a binding token's jti
-// as their SHA-256 (`stsCrypto.credentialDigest()`).
+// as their SHA-256 (`stsCrypto.credentialDigest()`) — and, since 2026-11-16,
+// each subject's tasks, under the SHA-256 of the subject id as the PEP sent
+// it (*THE SUBJECT INDEX*, below).
 // ---------------------------------------------------------------------------
 // A hot path (every row a flush writes): no Entering/Leaving pair.
 const tasks = realms.map({
@@ -640,7 +642,147 @@ class AccessRequests {
     log.debug("Entering AccessRequests.save(). " + task.id + " " +
               task.status);
     tasks.set(task.id, task);
+    this.noteSubject(task);
     log.debug("Leaving AccessRequests.save().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SUBJECT INDEX (2026-11-16, #1612's rule: a person deleted and made
+  // again under the same name inherits nothing).
+  //
+  // A task names its subject as the PEP sent it — a username, as often as
+  // not — and an approval is verified by an exact match of that subject. So
+  // a person made again under a deleted person's name was the subject of the
+  // deleted person's approvals: a PEP presenting one was answered approved.
+  // A person's delete therefore ends their tasks (`forgetSubject()`, from
+  // `ldap_server.js`'s `forgetPersonHoldings()`): a pending one is
+  // cancelled, an approved one's approval revoked, each with its audit row.
+  // To find them without walking the store, each subject's task ids are an
+  // index row — `subject:<SHA-256 of the lower-cased id>` in `index`, the
+  // module's own per-realm store — written by `save()` (one get, and a set
+  // only when the row changes) and kept as long as the latest of its tasks;
+  // a task the sweep removes leaves it. A task written before this existed
+  // is noted by the sweep job, which walks every task already: the
+  // backfill, within a minute of the upgrade, and never on the delete path.
+  // -------------------------------------------------------------------------
+  private static subjectKey(id: string): string {
+    log.debug("Entering AccessRequests.subjectKey().");
+    log.debug("Leaving AccessRequests.subjectKey().");
+    return 'subject:' + stsCrypto.credentialDigest(
+      String(id == null ? '' : id).trim().toLowerCase());
+  }
+
+  // A task's subject id, trimmed; '' when it has none.
+  private static subjectOf(task: Json): string {
+    log.debug("Entering AccessRequests.subjectOf().");
+    log.debug("Leaving AccessRequests.subjectOf().");
+    return String(((task && task.subject) || {}).id || '').trim();
+  }
+
+  // Notes a task under its subject.
+  private noteSubject(task: Json): void {
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.noteSubject().");
+    const subject = AccessRequests.subjectOf(task);
+    if (!subject || !task.id) {
+      log.debug("Leaving AccessRequests.noteSubject(). No subject.");
+      return;
+    }
+    const key = AccessRequests.subjectKey(subject);
+    const row = index.get(key);
+    const ids: string[] = row && Array.isArray(row.tasks)
+      ? row.tasks.slice(0) : [];
+    const was = row ? Number(row.until) || 0 : 0;
+    const until = Math.max(was, Number(task.keepUntil) || 0);
+    if (row && ids.indexOf(task.id) >= 0 && was >= until) {
+      log.debug("Leaving AccessRequests.noteSubject(). Already noted.");
+      return;
+    }
+    if (ids.indexOf(task.id) < 0) {
+      ids.push(task.id);
+    }
+    index.set(key, { tasks: ids, until: until });
+    log.debug("Leaving AccessRequests.noteSubject().");
+  }
+
+  // Takes a removed task out of its subject's row.
+  private unnoteSubject(task: Json): void {
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.unnoteSubject().");
+    const subject = AccessRequests.subjectOf(task);
+    const key = subject ? AccessRequests.subjectKey(subject) : '';
+    const row = key ? index.get(key) : null;
+    if (!row || !Array.isArray(row.tasks)) {
+      log.debug("Leaving AccessRequests.unnoteSubject(). Not noted.");
+      return;
+    }
+    const ids = row.tasks.filter(function (one: string) {
+      return one !== task.id;
+    });
+    if (!ids.length) {
+      index.delete(key);
+    } else if (ids.length !== row.tasks.length) {
+      index.set(key, { tasks: ids, until: row.until });
+    }
+    log.debug("Leaving AccessRequests.unnoteSubject().");
+  }
+
+  /**
+   * Ends every task of the ambient realm whose subject is one of a deleted
+   * person's identifiers, found through the subject index: a pending one
+   * cancelled, an approved one's approval revoked, each with its audit row.
+   * So a person made again under the name is the subject of none of them.
+   *
+   * @param ids - the deleted person's identifiers (the username, and the
+   *   `urn:uuid:` subject and mail addresses a PEP may have sent instead)
+   * @returns how many tasks were ended
+   */
+  forgetSubject(ids: string | string[]): number {
+    const self = this;
+    const { log, index, audit } = this.deps;
+    log.debug("Entering AccessRequests.forgetSubject().");
+    const wanted = ([] as string[]).concat(ids || [])
+      .map(function (one: string) {
+        return String(one == null ? '' : one).trim().toLowerCase();
+      }).filter(function (one: string) {
+        return !!one;
+      });
+    let ended = 0;
+    wanted.forEach(function (subject: string) {
+      const key = AccessRequests.subjectKey(subject);
+      const row = index.get(key);
+      ((row && row.tasks) || []).forEach(function (id: string) {
+        const task = self.task(String(id));
+        if (!task ||
+            AccessRequests.subjectOf(task).toLowerCase() !== subject) {
+          return;
+        }
+        const why = 'its subject, ' + AccessRequests.subjectOf(task) +
+                    ', was deleted from the directory';
+        if (task.status === 'pending') {
+          if (self.finish(task, 'cancelled',
+                          { actor: 'the directory', why: why })) {
+            ended += 1;
+          }
+        } else if (task.status === 'approved' && task.approval &&
+                   !task.approval.revokedAt) {
+          task.approval.revokedAt = self.nowS();
+          self.save(task);
+          audit.audit({ action: 'authzen.access-request.revoked',
+                        actor: 'the directory', protocol: 'AuthZEN',
+                        detail: 'The approval of ' + task.id + ' was ' +
+                                'revoked: ' + why + '; a re-evaluation ' +
+                                'carrying it is not approved from now on.' });
+          ended += 1;
+        }
+      });
+      // AFTER the saves above, which note the subject again.
+      if (row) {
+        index.delete(key);
+      }
+    });
+    log.debug("Leaving AccessRequests.forgetSubject(). " + ended);
+    return ended;
   }
 
   // One index row, kept until `until` (epoch seconds).
@@ -2047,6 +2189,9 @@ class AccessRequests {
         if (!row || !row.id) {
           continue;
         }
+        // THE SUBJECT INDEX'S BACKFILL (2026-11-16): a task written before
+        // it existed is noted here; a noted one costs a get.
+        self.noteSubject(row);
         if (row.status === 'pending' && Number(row.expiresAt) <= now) {
           if (self.finish(row, 'expired', {
                 actor: 'the access request service',
@@ -2056,6 +2201,7 @@ class AccessRequests {
         } else if (row.status !== 'pending' &&
                    Number(row.keepUntil) <= now) {
           tasks.delete(row.id);
+          self.unnoteSubject(row);
           if (row.approval) {
             index.delete('approval:' +
                          stsCrypto.credentialDigest(row.approval.id));
@@ -2210,6 +2356,7 @@ export = {
   metadata: slot.forward('metadata'),
   notify: slot.forward('notify'),
   sweep: slot.forward('sweep'),
+  forgetSubject: slot.forward('forgetSubject'),
   registerJobs: slot.forward('registerJobs'),
   resetForTests: slot.forward('resetForTests')
 };

@@ -1260,6 +1260,13 @@ class WebAnswers {
       return '/admin/applications?' + new URLSearchParams({
         application: String(answer.application.identifier) }).toString();
     }
+    // A PERSON DELETED (2026-11-16) has no page left to come back to: the
+    // list the page was reached from, without the person.
+    if (page === '/admin/users' && action === 'delete') {
+      at.searchParams.delete('user');
+      const query = at.searchParams.toString();
+      return '/admin/users' + (query ? '?' + query : '');
+    }
     if (page === '/admin/groups' && answer.dn &&
         (action === 'create' || action === 'add-member')) {
       at.searchParams.set('group', String(answer.dn));

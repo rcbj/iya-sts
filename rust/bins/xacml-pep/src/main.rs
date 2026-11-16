@@ -56,7 +56,7 @@ use sts_core::log::{self, tag};
 use sts_core::version;
 use tokio::net::TcpListener;
 
-use crate::listener::{peer_of, HttpsListener, Transport};
+use crate::listener::{peer_of, ClientAuth, HttpsListener, Transport};
 use crate::listener_pool::{drive, ListenerRuntime};
 use crate::listeners::{plain_kind, EnvKind, ListenerSet, PlainStatus};
 use crate::options::Options;
@@ -248,7 +248,7 @@ async fn serve_https(
         let Ok((stream, _)) = listener.accept().await else {
             continue;
         };
-        let Some(acceptor) = https.current() else {
+        let Some((acceptor, client_auth)) = https.current_served() else {
             continue;
         };
         let pep = pep.clone();
@@ -269,6 +269,8 @@ async fn serve_https(
                 peer: peer_of(tls.ssl()),
                 remote: None,
                 crl_only: false,
+                verifies_client_certificates: client_auth
+                    == ClientAuth::Verifying,
             };
             drive(tls, tower_service(pep, transport), cfg, offer_h2, job).await;
         });

@@ -1651,6 +1651,7 @@ class RiscRegister {
     const after = asked.after || {};
     const accountId = deleted ? kind.slice('deleted:'.length)
       : String(asked.username || '');
+    this.retireNamesake(asked);
     if (!this.enabled() || !accountId) {
       log.debug("Leaving RiscRegister.observe(). Off, or nothing named.");
       return [];
@@ -1784,6 +1785,69 @@ class RiscRegister {
     log.debug("Leaving RiscRegister.observe(). " + due.length + ' event(s) ' +
               'due.');
     return due;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A NAME TAKEN AGAIN STARTS FRESH (2026-11-16, rcbj's rule on #1612: a
+  // person deleted and made again under the same name inherits nothing).
+  //
+  // The register is keyed by the NAME and its `purged` row is kept on
+  // purpose — it is the evidence that `account-purged` went out, which
+  // /admin/risc-accounts exists to show. But a person made again under the
+  // name found that row: its opt-out (RISC section 2.8, the holder's choice,
+  // which gate() honours by suppressing every event about the account), its
+  // credential standing, its counts and its identifiers, all the deleted
+  // account's. So when a write names an entry whose `urn:uuid:` is NOT the
+  // one the row recorded, the row is about another account, and it is MOVED
+  // out of the name — refiled under the subject it recorded (the deleted
+  // entry's, which nobody else can hold), and still matched by it
+  // (`matchAccount()` tries the account id first) — and the name starts
+  // with no row, as any new account does. A row with no recorded subject (one
+  // written before 2026-09-14) is moved when it is `purged`, under the name
+  // and the time it was last written. A rename keeps the subject and its row;
+  // a re-homing deletes and adopts the same entry and never meets this.
+  // Asked on every person's write, RISC and SSF on or off (`ssf.ts`'s
+  // riscAutoEmit() asks before it looks at either), and again by observe().
+  // ---------------------------------------------------------------------------
+  /**
+   * Moves a register row out of a name a new entry now holds, so the new
+   * account starts without it.
+   *
+   * @param notice - the directory's account observer notice
+   */
+  retireNamesake(notice?: Record<string, any> | null): void {
+    const { log, iso } = this.deps;
+    log.debug("Entering RiscRegister.retireNamesake().");
+    const asked = notice || {};
+    const kind = String(asked.kind || '');
+    const accountId = kind.indexOf('deleted') === 0 ? ''
+      : String(asked.username || '');
+    const entryUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+                                        asked.after || {});
+    const row = accountId ? register.get(accountId) : null;
+    const subject = entryUuid ? 'urn:uuid:' + String(entryUuid).toLowerCase()
+                              : '';
+    const other = !!row && (row.subject
+      ? !!subject && row.subject !== subject
+      : row.lifecycle === 'purged');
+    if (!row || !other) {
+      log.debug("Leaving RiscRegister.retireNamesake(). The same account.");
+      return;
+    }
+    const key = row.subject && !register.has(row.subject) ? row.subject
+      : accountId + '#' + String(row.updatedAt || iso());
+    register.delete(accountId);
+    row.accountId = key;
+    row.notes.push('The name ' + accountId + ' was given to a new account ' +
+                   'on ' + iso() + ', so this row is filed under ' + key +
+                   ' and the new account starts without it.');
+    row.notes = row.notes.slice(-5);
+    register.set(key, row);
+    log.info('risc: the register\'s row for ' + accountId + ' was about an ' +
+             'account that no longer has the name (' + row.lifecycle + '); ' +
+             'it is filed under ' + key + ' and the new account starts ' +
+             'fresh.');
+    log.debug("Leaving RiscRegister.retireNamesake(). Moved.");
   }
 
   // ---------------------------------------------------------------------------
@@ -2890,6 +2954,7 @@ export = {
   buildPayload: slot.forward('buildPayload'),
   gate: slot.forward('gate'),
   applyToState: slot.forward('applyToState'),
+  retireNamesake: slot.forward('retireNamesake'),
   applyDue: slot.forward('applyDue'),
   refusals: slot.forward('refusals'),
   noteTransmitted: slot.forward('noteTransmitted'),

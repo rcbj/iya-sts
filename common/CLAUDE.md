@@ -3680,8 +3680,10 @@ anything without restarting it, and no list anywhere of what could be changed at
 — the answer was a grep, and the grep only found the ones spelt the way you guessed.
 
 **A new setting is a row in `SETTINGS` and a regenerated `env/defaults.js`** —
-`node env/generate_defaults.js`, and the service tells you when you have forgotten
-by refusing to start and naming the row. The row carries the key
+`node env/generate_defaults.js`, and `tests/config_defaults_layer.js` tells you
+when you have forgotten, by failing and naming the row (until 2026-11-16 the
+service refused to start instead; *The image's floor*, below, says why it no
+longer does). The row carries the key
 (which is both the dot path in the appconfig file and the name every surface uses),
 the environment variable, the type, the default, the prose, and `runtime`. From that
 one row it appears in the admin console — on the page for the protocol it
@@ -3819,7 +3821,8 @@ module-level `const`s became functions — `vciBatchSize()`, `clockSkewSeconds()
 cannot change, and it fails in the direction that looks like the console is broken.
 
 **Resolution order is override, env var, LEGACY env var, the appconfig file
-`CONFIG_FILE` names, `env/defaults.js`.** Env beating the file is what keeps every
+`CONFIG_FILE` names, `env/defaults.js`, and the row's own `dflt`** (the sixth,
+since 2026-11-16 — below). Env beating the file is what keeps every
 existing container and test working: nothing in the parent project sets these
 variables in compose, but
 `tests/krb5_spnego_http.js` sets `KRB5_REALM`, `KRB5_KDC_PORT` and
@@ -3831,36 +3834,72 @@ name became the realm's OAuth issuer (`issuer_names.ts`). A start that still nam
 one is refused (`REPLACED_SETTINGS`, `STS-CORE-0105`). The level, and `legacyEnv`,
 stay for the next one.
 
-**AND THERE IS NO SIXTH LEVEL — `requireComplete()` REFUSES TO START INSTEAD.**
-A setting with no value in either appconfig file and no environment variable
-stops the process, by name, listing both places its value could go. That is the
-2026-08-24 change and it is the point of the table rather than a strictness bolted
-onto it: a value arriving from a constant buried in a module is a value nobody
-can find, change or see on a page, which is the state this file exists to end,
-and a silent fallback underneath it was one way back in. The `dflt` column is
-still there and is still where a default is WRITTEN DOWN — beside the paragraph
-saying why it is the default — but it is documentation and a generator input
-rather than a source the service leans on. `process.exit(1)` rather than a throw,
-because a throw out of a require lands as a stack trace whose top frame is node's
-module loader and the reason ends up three screens above where anybody looks.
+**THE IMAGE'S FLOOR: THE ROW'S OWN `dflt` IS THE SIXTH LEVEL (2026-11-16).**
+From 2026-08-24 until then there was no sixth level: a setting with no value in
+either appconfig file and no environment variable stopped the process
+(`requireComplete()`, `STS-CORE-0002`), on the argument that a value arriving
+from a constant buried in a module is a value nobody can find, change or see on
+a page, and that the refusal could only ever catch a MAINTAINER's mistake — a
+row added and `env/defaults.js` not regenerated — because an operator's file is
+unioned over `env/defaults.js` and so can never be incomplete, only smaller.
 
-**WHAT THAT REFUSAL CAN ACTUALLY CATCH IS A MAINTAINER'S MISTAKE, NOT AN
-OPERATOR'S**, and knowing which is the difference between the rule being useful
-and being a trap. **The appconfig layer is TWO FILES unioned**: `env/defaults.js`
-carries a default for every non-derived row, and the file `CONFIG_FILE` names is
-merged over it key by key with the operator's value winning. So an operator's
-file can never be incomplete — only smaller — and three things follow, each of
-which had to be true at once:
+**The second half of that argument was false, and an upgrade found it.** It
+assumed `env/defaults.js` is always the IMAGE's, and `env/` is the directory an
+operator customises: the port-8081 deployment mounts a host directory over
+`/usr/src/sts/env`, copied from an older checkout, so its `defaults.js` hid the
+image's own. An image adding `xacml.pepAuthentication` then had no value for it
+anywhere and crash-looped on `STS-CORE-0002` until the mount was moved. An
+upgrade that needs the operator to edit files first breaks rcbj's
+backwards-compatibility directive (2026-11-11).
 
-* a config file that is NOT this service's still loads every module here, which
-  is what the parent project's in-process Kerberos jobs need (`CONFIG_FILE`
-  pointing at the TEST suite's config, which carries `logLevel` and nothing else
-  of ours);
-* a row added to `SETTINGS` tomorrow does not break every config file in the
-  world on the day it is added;
-* so the refusal fires on the one case left — a row here with no row in
-  `env/defaults.js`, which is a setting somebody added and did not finish adding,
-  caught at the first start after the mistake.
+**Why the floor is the `dflt` and not a defaults file moved out of `env/`.** The
+other shape considered was to keep the image's generated defaults outside the
+mountable directory and make `env/defaults.js` an optional operator layer. It
+moves the problem rather than ending it — any file is replaceable by somebody's
+copy of it — and it would have changed the path the parent project's
+`tests/Dockerfile` copies and `snapshot()`'s `defaultsFile` reports. The `dflt`
+lives in `common/config.js`, which no supported customisation replaces, and it
+is not the "constant buried in a module" the refusal was written against: it is
+the same value `/admin/config`, `GET /admin-api/config`, the OpenAPI `default`
+property and `docs/configuration.md`'s table already publish as the default, and
+a value taken from it says so (`source: 'default'`). So:
+
+* **a setting an older `env/defaults.js` lacks takes the `dflt`**, and the start
+  logs one WARNING, `STS-CORE-0177`, naming every such setting and the file
+  (`reportStaleDefaults()`); a MISSING `env/defaults.js` is the same case for
+  every setting, said in the same line;
+* **a value in `env/defaults.js` that is not the `dflt` is USED**, and the start
+  logs `STS-CORE-0178` naming each one. It is what the service ran on before the
+  upgrade and an operator may have meant it; but a stale copy pins every default
+  a later release changed, which nobody would otherwise see;
+* neither is said for a setting a layer ABOVE the file supplies.
+
+**What still refuses, and why each survives.** A row with NO `dflt` and no value
+anywhere still stops the start with `STS-CORE-0002` (`floorVerdict()` answers
+`refuse`) — a value that must be supplied, a required secret being the example;
+there is none today, and the rule keeps the door for one. A value somebody DID
+set that the console would refuse still stops the start with `STS-CORE-0108`,
+in every layer, the defaults file included: the floor is beneath the files, not
+a repair of them. An `env/defaults.js` that is PRESENT and does not load stops
+the start with `STS-CORE-0179`, for the reason an unloadable `CONFIG_FILE` does
+(`STS-CORE-0001`): whatever it meant to say is unknown. **And the maintainer's
+mistake the old refusal existed for is caught before an image is built**:
+`tests/config_defaults_layer.js` fails while `env/defaults.js` and the table
+disagree in either direction — a row missing, a value different, a derived row
+present, a key the table does not know. That is cheaper than the first start
+after the mistake, which is where it used to be caught.
+
+**`process.exit(1)` rather than a throw** in each refusal, because a throw out
+of a require lands as a stack trace whose top frame is node's module loader and
+the reason ends up three screens above where anybody looks.
+
+**The appconfig layer is TWO FILES unioned**: `env/defaults.js` carries a
+default for every non-derived row, and the file `CONFIG_FILE` names is merged
+over it key by key with the operator's value winning. So an operator's file
+can never be incomplete — only smaller — which is what lets a config file that
+is NOT this service's still load every module here (the parent project's
+in-process Kerberos jobs point `CONFIG_FILE` at the TEST suite's config, which
+carries `logLevel` and nothing else of ours).
 
 **`env/defaults.js` IS GENERATED AND MUST NOT BE HAND-EDITED.** `node
 env/generate_defaults.js` writes it from the `dflt` column. Two copies of a
@@ -3869,9 +3908,9 @@ service running on one value while the console, the OpenAPI document's
 `default` property and `docs/configuration.md`'s table all report the other.
 That generator
 neutralises `process.exit` for the length of its own `require` of this module,
-because regenerating the file is the one moment when an incomplete
-`env/defaults.js` is EXPECTED; the bypass is in the build tool and deliberately
-not a flag here, since a flag in the service is a flag somebody can leave on.
+because a row being added may be half-written when it runs; the bypass is in the
+build tool and deliberately not a flag here, since a flag in the service is a
+flag somebody can leave on.
 
 **3q. THE RUNTIME OVERRIDE LAYER IS DURABLE SINCE 2026-08-27, AND IT IS STILL
 ONE LAYER.** `setOverrideStore()` is an inverted hook filled by
@@ -3893,7 +3932,7 @@ that is easy to miss: a store told only about writes would still hold a cleared
 override and would put it back on the next start, which is worse than no reset at
 all.
 
-**THERE IS STILL NO SIXTH LAYER**, and the reason is `applyPersistedOverrides()`:
+**THE STORE IS NOT A SEVENTH LAYER**, and the reason is `applyPersistedOverrides()`:
 saved values are put back through the same `setOverride()` path a caller uses, so
 what comes out of the store is a layer-1 runtime override and nothing else. The
 ordering above is untouched, and an environment variable still does NOT beat a
@@ -8019,6 +8058,78 @@ stored value when the key can produce it and the right default when it cannot.
 `tests/spiffe_pki.js` guards both, and it is the only place in the service where
 either can be asked.
 
+### A REBUILD RE-MINTS ONLY WHAT IS STILL GOOD (2026-11-16)
+
+**`recertifyUseCase()` re-minted EVERY slot of a register, revoked ones
+included, and that undid revocation.** A slot is a person's or an
+application's TLS client or message-signing certificate, a pinned pair, a
+remote PEP's listener, the realm's own signing-key certificates. A renewal
+(*Renew certificates*, `POST /admin-api/pki/recertify`), a reissue and an
+import each issue a NEW certificate over the key of every slot, and a new
+serial is on no list: a person's certificate revoked for `keyCompromise` came
+back valid from the renewed authority, and a `certificateHold` became a
+certificate nobody had put on hold. `recertifyOrphanedSlots()` — what a
+cluster merge calls for a slot left under an authority the row no longer
+holds (`keystore.onOrphanedCertificates()`) — did the same.
+
+**The rule: a revoked record (any reason, a hold included) and an expired one
+are LEFT AS THEY ARE** — in their slot, under the authority that signed them,
+their serial on the use case's list with its entry (reason and date)
+untouched. One predicate decides it, `pki_merge.js`'s `notReMintable()`,
+asked by `recertifyUseCase()` (through `reMintable()`, and again before each
+signature, since a holder may revoke while the others are signed),
+`recertifyOrphanedSlots()` and the merge's `orphanedSlots()`, so the three
+cannot disagree. A reissue asks BEFORE it supersedes every leaf, because
+after that a revoked certificate and a merely replaced one look alike. The
+answer carries `skipped` (`{ slot, serialHex, why }`), and the log names
+them.
+
+**What keeps the revocation answerable afterwards:**
+
+* **A renewal** keeps the authority and its key, so its CRL and OCSP responder
+  go on answering `revoked` for the serial, which is still in the register.
+* **A reissue** supersedes the old Issuing CA on its Intermediate's list, as it
+  always did; the old authority's own CRL is no longer signed by anybody, and
+  OCSP about a leaf it signed answers `unauthorized`, but the leaf chains to a
+  revoked authority, which every validator that checks refuses.
+* **An import (`importCa()`) now does the same.** It replaced the Issuing CA
+  WITHOUT superseding it, so the old authority stayed valid under the
+  Intermediate and the Root while its CRL address and OCSP responder came to
+  answer for the imported one — a leaf revoked under it was good to every
+  relying party that could no longer ask. The replaced authority now goes on
+  its Intermediate's list as `superseded` (not when the same certificate is
+  imported again).
+* **A branch rebuild** (`build`, `build-scope`) supersedes the old Intermediate
+  at the Root, which is unchanged, so the whole old branch is revoked where it
+  can be asked. It re-certifies only the realm's own keys and re-mints no
+  person's slot (`ssf/service_signals.ts`).
+* **Replacing the Root is the one act after which nothing is answerable for
+  the old tree**: the old Root is a trust anchor nobody can revoke, the new
+  Root signs the `root` list, and no key of the old tree signs anything any
+  more. A relying party still trusting the old Root and checking revocation
+  hard-fails on every old certificate (it cannot verify any list); one that
+  soft-fails accepts them all, a revoked one included. Keeping the replaced
+  authorities' keys to go on signing their lists is the fix, and it is not
+  built: the Root is replaced so that the old one is no longer trusted, and
+  `docs/pki.md` tells the operator to remove it.
+
+**What is still re-certified whatever was revoked: the realm's own LIVE
+signing keys.** `certifyKeySet()` (a build, a rotation, a start) and
+`certifyPqKeys()` / `certifySignerGroups()` / `certifyStandbyKeys()` certify
+the keys the key set holds, not records — a key the realm still signs with is
+certified from the live authority whether or not an operator revoked an
+earlier certificate over it. Revoking that certificate does not stop the key
+signing; rotating the key (`signing.rotate-now`) does, and retires and revokes
+in the same act.
+
+**Unchanged by this, and checked:** a cluster merge never loses a revocation
+(`mergeRevokedList()`, a union, the earlier date winning; only a hold one side
+released goes); a PKI row moves between stores whole (`cell_convert.js`
+copies `sts_keys` byte for byte), so a person re-homed to another cell takes
+nothing and leaves nothing; there is no import of a PKI row from a backup —
+restoring a database from before a revocation is the one way to lose it, and
+that is the operator's restore. `tests/pki_rebuild_keeps_revocations.js`.
+
 ### THE OPENID4VP VERIFIER'S CERTIFICATE, AND A RENEWAL THAT KEEPS A NAME (2026-09-26, #230)
 
 `certifyVerifierKey()` issues the certificate the Verifier's `x509_san_dns`
@@ -11716,6 +11827,36 @@ carries, or `HOLDER_GONE` when the subject names nobody. `stillHeld()` compares 
 with the certified name, and `cert_enrollment.findEnrolled()` resolves the subject too. A
 record written before the subject was kept is answered by its name, as before.
 
+**A DELETED HOLDER'S CERTIFICATES ARE REVOKED AND LEAVE ITS NAME (2026-11-16, #1612's
+rule).** The gate above refused a deleted person's certificate to a namesake, but the
+LISTING did not: `listFor()` read the holder off the slot, so a person deleted and made
+again under the name was listed every certificate the deleted one had — seen on
+`/admin-api/users`' `mfa.tls.certificates` after a revoked certificate's holder was
+deleted with `users/delete`. Three things now:
+
+* **`forgetDeletedHolder()`, from the directory's one delete** — `removePersonEntry()`
+  (SCIM, an LDAP delete, `/admin-api/users/delete` and the console) and
+  `noteApplicationRemoved()` (every application delete), through `ldap_server.js`'s
+  `forgetHolderCertificates()`. Every certificate the holder had that is still valid is
+  REVOKED `cessationOfOperation`: this module's two registers (`tls-client`,
+  `message-signing`), a person's RFC 7523 and RFC 7522 key pairs and an enrolled ACME,
+  EST or SCEP leaf (the last two read out of the deleted entry's attributes). An expired
+  or already revoked one is left: the earlier revocation wins. A failure is logged
+  `STS-PKI-0279` and the delete stands.
+* **`pki.detachCertificate()`** moves each register record OUT OF ITS SLOT into
+  `issuedKeyPairs`, as `subjectKind` `deleted-person` / `deleted-application`, keyed by
+  the deleted entry's `urn:uuid:` and naming no name. Not forgotten: `issuedList()` still
+  finds the serial, so OCSP does not answer `unknown`, and `revoked` keeps it on the CRL.
+  Not left in `certs` either, where `recertifyUseCase()` would re-mint it under a rebuilt
+  authority. `currentHolderOf()` looks in the issued register too, so a detached record
+  is `HOLDER_GONE` rather than "no subject recorded". `STS-PKI-0280` when it fails.
+* **`listFor()` matches a person's record by `holderSubject`** where it carries one, so a
+  record a delete before this left behind is not listed to the namesake either, and a
+  renamed person is listed their certificates under the new name.
+
+**A re-homing is not a delete**: `cell_rehome.ts` passes `moved`, and nothing is
+revoked. `tests/deleted_certificates.js` holds all of it.
+
 ## 3ag. `cert_enrollment.ts`: ACME, EST AND SCEP ISSUE THROUGH ONE CORE (2026-09-13)
 
 Asked for as *implement ACME, EST and SCEP, tied to the embedded CA, isolated
@@ -12333,6 +12474,14 @@ each argued there:
   both (phase 4). Built and tested now; the doors are phase 3.
 * **The device outlives its secret**; a new owner takes the device WITHOUT
   its Native SSO secret and WITH its keys.
+* **A deleted owner's devices are REMOVED, not detached** (2026-11-16,
+  #1612's rule): a person made again under the username has the same DN, so
+  the new entry owned them — the `device_id` claim, recognition, the risk
+  level. `forgetOwner()`, from the directory's person delete
+  (`ldap/CLAUDE.md`), removes each and revokes its certificates, finds them
+  by the owner index, and looks for no session (the delete ends them all)
+  and sends no signal about a holder already gone (`STS-DEVICE-0053`). A
+  re-homing moves them instead.
 * **Bounds**: `devices.maxPerPerson` (it was `oauth2.maxDevicesPerPerson`) —
   a Native SSO sign-in evicts at it, an administrator is refused;
   `devices.maxPerApplication`; `devices.maxKeysPerDevice`.
@@ -15839,12 +15988,24 @@ response is validated against it, always.** There is no setting, in either mode.
 
 Three modules exist for it. `docs/product-security.md` is the user's account.
 
-**`cookie_wire.ts` runs in the main thread only**, right after `enterRealm` and
+**`cookie_wire.ts` runs in the main thread**, right after `enterRealm` and
 before the request pool routes on a cookie's name: a worker is behind a unix
 socket and cannot see TLS. Inside the service a cookie keeps its plain name; on
 the wire, in product over TLS, it is `__Host-` or `__Secure-`. So a new cookie
 needs nothing, and a cookie whose NAME a document must state asks
 `CookieWire.wireName()` (DBSC does). HSTS is there for the same reason.
+
+**A request a worker answers is named by THE WORKER'S view of the realm's mode**
+(2026-11-16, GitHub Actions run 43884417831). The names follow the realm's mode,
+a worker answers `config/set global.mode`, and the front learns of it from the
+change log up to a second later; translating by its own view it wrote a cookie
+unprefixed just after a realm went to product and dropped it as unprefixed on
+the next request. So the front translates for its own routing only, and the
+pool sends the worker the header as it arrived with `x-sts-wire-tls` (stripped
+from clients first); the worker translates (`CookieWire.inWorker()`) and says on
+`x-sts-wire-prefix` whether the front is to prefix its cookies. The read
+barrier already holds a browser's request behind an administrator's write, so
+the worker's view is the current one. A relayed request carries neither header.
 
 **`bootstrap_name.ts` derives a generated name and stores nothing**: an HMAC under
 the cluster's `csrf` key, so nodes and restarts agree. Read the name through

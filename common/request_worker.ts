@@ -1556,8 +1556,25 @@ class RequestWorker {
     // and the channel's message is not delivered inside one today; said
     // here so that a later change to how messages arrive cannot hand a job
     // a console request's spent budget (`common/sync_query.ts`).
-    const started: Promise<any> = require('./sync_query').outsideBudget(
-      () => scheduler.runDelegated(message));
+    //
+    // **THIS WORKER CATCHES UP FIRST** (GitHub Actions run 43913216604,
+    // mariadb mode). The run was queued after writes other workers made — an
+    // administrator's setting, then "run now" — and nothing held this worker
+    // to them: a request waits at the pool's read barrier, a body handed over
+    // the channel did not. `sts_post_login_activities` turned a realm's mail
+    // transport off, ran the reminder job 300 ms later, and the body here
+    // still read the transport on and held two people back instead of saying
+    // STS-AUTHN-0495. syncNow() resolves rather than rejects and gives up at
+    // its own deadline, which counts against the job's time limit; a body is
+    // background work and can spend it.
+    const started: Promise<any> = Promise.resolve()
+      .then(() => persistence.syncNow())
+      .then(null, (e: any) => {
+        log.debug("Caught in RequestWorker.runSchedulerJob(): " +
+                  ((e && e.message) || e));
+      })
+      .then(() => require('./sync_query').outsideBudget(
+        () => scheduler.runDelegated(message)));
     started.then((answer: any) => {
       if (answer && (answer.unknownJob || answer.unknownRealm)) {
         report(answer);

@@ -243,12 +243,14 @@ function form(fields) {
 }
 
 // ------------------------------------------------------ the error code
-async function newestSeq(realm) {
-  log.debug("Entering newestSeq().");
+async function newestAt(realm) {
+  log.debug("Entering newestAt().");
   const r = await K.send(K.rb(realm) + "/admin-api/audit?per=1&action=" +
                          "protocol.call");
-  log.debug("Leaving newestSeq().");
-  return Number((r.json || {}).newestSeq || 0);
+  log.debug("Leaving newestAt().");
+  // BY TIME (#465): `seq` is not one order across processes, so a row a
+  // request worker numbered from a lower block would be missed.
+  return Number((((r.json || {}).events || [])[0] || {}).at || 0);
 }
 
 async function codeSince(realm, before, target) {
@@ -260,7 +262,7 @@ async function codeSince(realm, before, target) {
     const r = await K.send(K.rb(realm) + "/admin-api/audit?per=5&action=" +
                            "protocol.call");
     const rows = ((r.json || {}).events || []).filter(function (one) {
-      return Number(one.seq || 0) > before &&
+      return Number(one.at || 0) > before &&
              String(one.target || one.summary || "").indexOf(pathOnly) >= 0;
     });
     if (rows.length) {
@@ -538,7 +540,7 @@ async function conversation(modeName, recorded, realm, product) {
   const step = async function (name, method, target, cookie, body,
                                contentType) {
     log.debug("Entering step(). " + name);
-    const before = await newestSeq(realm);
+    const before = await newestAt(realm);
     const r = await request(method, target, cookie, body, contentType);
     const code = await codeSince(realm, before, target);
     wire.push({ mode: modeName, step: name, method: method,

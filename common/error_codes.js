@@ -704,9 +704,11 @@ const CODES = [
       'the service refused to start.',
     spec: '' },
   { code: 'STS-CORE-0002',
-    summary: 'One or more settings have no value in the appconfig layer or ' +
-      'the environment (env/defaults.js has not been regenerated), so ' +
-      'the service refused to start.',
+    summary: 'One or more settings have no default of their own and no ' +
+      'value in the appconfig layer or the environment, so the service ' +
+      'refused to start. Since 2026-11-16 a setting WITH a default takes it ' +
+      'when env/defaults.js lacks it (STS-CORE-0177) rather than stopping ' +
+      'the start.',
     spec: '' },
   { code: 'STS-CORE-0003',
     summary: 'A runtime setting change could not be handed to persistence. ' +
@@ -1272,6 +1274,27 @@ const CODES = [
       'on a save (STS-CORE-0006).',
     spec: 'saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning ' +
       'logged at startup; nothing is refused' },
+  // AN env/ OLDER THAN THE IMAGE COSTS A WARNING, NOT THE START (2026-11-16).
+  { code: 'STS-CORE-0177',
+    summary: 'One or more settings have no row in env/defaults.js (or the ' +
+      'file is not there) and no value in any layer above it, so each takes ' +
+      'the image\'s own default. The defaults file is older than the image ' +
+      '— usually an env/ directory mounted or copied from an earlier ' +
+      'release. The service starts; the warning names each setting and ' +
+      'the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0178',
+    summary: 'One or more settings in env/defaults.js hold a value that is ' +
+      'not the image\'s default. The file\'s value is used, as before the ' +
+      'upgrade; a defaults file copied from an earlier release pins every ' +
+      'default changed since. The warning names each setting and the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0179',
+    summary: 'env/defaults.js is present and could not be loaded (it does ' +
+      'not parse, or throws), so the service refused to start. A missing ' +
+      'file is not this: the image\'s own defaults are used ' +
+      '(STS-CORE-0177).',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -5202,6 +5225,19 @@ const CODES = [
       'read (#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0279',
+    summary: 'A certificate a deleted person or application still held ' +
+      'valid (a TLS client or message-signing certificate, an RFC 7523 or ' +
+      'RFC 7522 key pair, an enrolled leaf) could not be revoked ' +
+      '(cessationOfOperation) when its holder was deleted. The delete ' +
+      'stands; revoke the serial on /admin/pki.',
+    spec: 'none: a log line; the delete is answered as it was' },
+  { code: 'STS-PKI-0280',
+    summary: 'A deleted person\'s or application\'s TLS client or ' +
+      'message-signing certificate could not be detached from its name in ' +
+      'the certificate register, so a holder made again under that name is ' +
+      'listed it.',
+    spec: 'none: a log line; the delete is answered as it was' },
   { code: 'STS-PKI-0281',
     summary: 'A certificate request for a person\'s RFC 7523 key carries a ' +
       'key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, ' +
@@ -15912,9 +15948,10 @@ const CODES = [
   { code: 'STS-LDAP-0077',
     summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
       '(admin.bootstrapUsername, or the name product mode generates) was ' +
-      'refused — over LDAP or SCIM — because that account cannot be ' +
-      'removed.',
-    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
+      'refused — over LDAP, SCIM or the management API — because that ' +
+      'account cannot be removed.',
+    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403; /admin-api ' +
+      'HTTP 400' },
   { code: 'STS-LDAP-0078',
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +
       'stsBootstrapAdministrator or stsConsoleClaimedAt) could not be ' +
@@ -16573,6 +16610,16 @@ const CODES = [
     summary: 'A person import created the entry but could not write the ' +
       'credentials the file carried. The person is there without them.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0222',
+    summary: 'Something a deleted person held outside their entry, under ' +
+      'their name or DN (devices, post-login progress, mail preferences, ' +
+      'federation blocks, GNAP approvals, the identity register, pending ' +
+      'enrolments, rich authorization Allows, the risk standing; the RISC ' +
+      'register row, moved ' +
+      'out of the name when it is taken again), could not be forgotten, so ' +
+      'a person made again under the name may inherit it. The delete ' +
+      'itself stands.',
+    spec: '' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -16819,6 +16866,9 @@ const CODES = [
     summary: 'In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell\'s result as unreachable).',
     spec: 'HTTP 400 (/admin-api) when the act named that cell; none ' +
       'otherwise' },
+  { code: 'STS-SCIMC-0035',
+    summary: 'A create answered 409 uniqueness (RFC 7644 section 3.3) and the resource found by userName or displayName carries the externalId of another entry — a deleted person\'s User that deprovisioning left there, or another client\'s — so it was not adopted (a person made again under a deleted person\'s name inherits nothing, #1612); dead-lettered for an operator.',
+    spec: 'none' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',
@@ -22476,6 +22526,11 @@ const CODES = [
       'device\'s keys are rechecked only once a later write of it derives ' +
       'the marker (#615).',
     spec: '' },
+  { code: 'STS-DEVICE-0053',
+    summary: 'A device of a deleted person could not be removed from the ' +
+      'register, so a person made again under the name owns it. Remove it ' +
+      'on the Devices page.',
+    spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -22689,12 +22744,12 @@ const CODES = [
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
       'switched off (xacml.enabled).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0002',
     summary: 'A request reached a remote-PEP endpoint or POST /xacml/pip ' +
       'while remote enforcement points are switched off ' +
       '(xacml.remotePeps).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0003',
     summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) ' +
       'was refused to a caller that presented no client certificate.',
@@ -22720,17 +22775,17 @@ const CODES = [
   { code: 'STS-XACML-0008',
     summary: 'A remote-PEP endpoint was refused to a caller whose client ' +
       'certificate did not verify against this service\'s truststore.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0009',
     summary: 'A remote-PEP endpoint was refused to a verified certificate ' +
       'whose subject resolves to no directory entry holding ' +
       'REMOTE_PEPS (not in roles.remotePepGroup).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0010',
     summary: 'A remote-PEP endpoint was refused by the access policy to a ' +
       'verified caller that does hold REMOTE_PEPS — an ' +
       'operator-edited access-control document denied it.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0011',
     summary: 'A decision request to POST /xacml/pdp was not a well-formed ' +
       'JSON Profile request.',
@@ -22806,14 +22861,14 @@ const CODES = [
       'because no embedded directory is loaded in this process.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '503 server_error' },
   { code: 'STS-XACML-0027',
     summary: 'The embedded directory refused a write or removal in ' +
       'ou=policies, ou=peps or ou=roles — usually a container at its ' +
       'maximum.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '507 server_error' },
   { code: 'STS-XACML-0028',
     summary: 'A policy document was refused at write: it does not parse or ' +
       'fails XACML static type checking.',
@@ -23174,13 +23229,13 @@ const CODES = [
       'outside certificate authority that is not stored in ' +
       'userCertificate on any entry of the realm, so it resolved to ' +
       'nobody (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0180',
     summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
       'POST /xacml/pip): the client certificate verified and is from an ' +
       'outside certificate authority that is stored in userCertificate ' +
       'on more than one entry of the realm (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0181',
     summary: 'The access gate had no decider, or its decider answered ' +
       'nothing: refused in product mode, allowed in development (#1450).',
@@ -23791,6 +23846,11 @@ const CODES = [
       'urn:sts:sa:<name> (#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0300',
+    summary: 'A reverse-proxy route\'s `path` is /.iya-pep or under ' +
+      '/.iya-pep/, the prefix the proxy reserves for its own callback and ' +
+      'sign-out (#1830): an updated PEP refuses the whole configuration.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
   { code: 'STS-XACML-0301',
     summary: 'issue-pep-credential named a service account that does not ' +
       'hold REMOTE_PEPS (it is not in the group roles.remotePepGroup ' +
@@ -24004,7 +24064,10 @@ const CODES = [
     summary: 'The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, ' +
       'unreadable or holding no certificate), so its HTTPS listener asks ' +
       'no caller for a certificate and its AuthZEN edge PDP admits nobody ' +
-      '(#1179).',
+      '(#1179); or an AuthZEN request arrived on an HTTPS listener whose ' +
+      'acceptor asks for no certificate it can verify (no client CA or ' +
+      'trust anchors, or its tuning asks for none) — asked of that ' +
+      'listener, not of the environment\'s (#1830).',
     spec: 'HTTP 401 from the AuthZEN endpoints; logged at start' },
   { code: 'STS-XPEP-0040',
     summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
@@ -24032,7 +24095,8 @@ const CODES = [
     spec: 'HTTP 501, an error message' },
   { code: 'STS-XPEP-0045',
     summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
-      'identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), ' +
+      'identifier to name (no identifier set, and plain HTTP or no usable ' +
+      'Host header or HTTP/2 authority), ' +
       'or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path ' +
       'and was ignored (#1179).',
     spec: 'HTTP 404 from GET /.well-known/authzen-configuration; logged at ' +
@@ -24547,6 +24611,23 @@ const CODES = [
       'again after the PEP dropped it and fetched a new one. The PEP ' +
       'retries once only; the call\'s answer stands.',
     spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0132',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-in ' +
+      'callback, /.iya-pep/callback, with a method other than GET or HEAD; ' +
+      'it was refused before its state was looked up, so no pending ' +
+      'sign-in was spent (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0133',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-out, ' +
+      '/.iya-pep/logout, with a method other than GET or HEAD; no session ' +
+      'was ended (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0134',
+    summary: 'A request on a remote PEP reverse proxy named a path under ' +
+      '/.iya-pep/ that is none of the proxy\'s own pages. The prefix is ' +
+      'the proxy\'s whole, so the path never reaches the route table and ' +
+      'is never forwarded upstream (#1830).',
+    spec: 'HTTP 404, not_found' },
   // #1827's follow-up, phase 4 (rcbj, 2026-11-16): the PEP's client
   // certificate retired for authenticating to the service. 0132-0134 are
   // #1830's.
@@ -26938,6 +27019,18 @@ const CODES = [
     summary: 'A person\'s TLS client certificate was not revoked. The ' +
       'certificate module\'s own code names the specific refusal when it ' +
       'has one.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0943',
+    summary: 'An administrator asked to delete their own directory entry ' +
+      '(POST /admin-api/users/delete, the Delete control on a person\'s ' +
+      'console page). Another administrator has to.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0944',
+    summary: 'A person delete was refused because the person is the last ' +
+      'one the realm\'s console roster lists for Admin Write or the ' +
+      'Security Administrator, and nobody would be left to grant it.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-API-0001',

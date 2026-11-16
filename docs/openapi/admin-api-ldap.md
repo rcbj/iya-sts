@@ -245,6 +245,7 @@ Scope: `admin:read`.
 | `schema.attributes[].from` | string |  |  |
 | `schema.attributes[].identifier` | boolean |  |  |
 | `schema.attributes[].identifierName` | string |  |  |
+| `schema.attributes[].jsonBlob` | boolean |  | True when the attribute's value is one JSON document rather than a set of separate fields. |
 | `schema.attributes[].kind` | string |  |  |
 | `schema.attributes[].name` | string |  |  |
 | `schema.attributes[].overrides` | string |  |  |
@@ -329,6 +330,7 @@ Scope: `admin:read`.
 | `schema.attributes[].from` | string |  |  |
 | `schema.attributes[].identifier` | boolean |  |  |
 | `schema.attributes[].identifierName` | string |  |  |
+| `schema.attributes[].jsonBlob` | boolean |  | True when the attribute's value is one JSON document rather than a set of separate fields. |
 | `schema.attributes[].kind` | string |  |  |
 | `schema.attributes[].name` | string |  |  |
 | `schema.attributes[].overrides` | string |  |  |
@@ -621,6 +623,7 @@ Scope: `admin:read`.
 | `schema.attributes[].from` | string |  |  |
 | `schema.attributes[].identifier` | boolean |  |  |
 | `schema.attributes[].identifierName` | string |  |  |
+| `schema.attributes[].jsonBlob` | boolean |  | True when the attribute's value is one JSON document rather than a set of separate fields. |
 | `schema.attributes[].kind` | string |  |  |
 | `schema.attributes[].name` | string |  |  |
 | `schema.attributes[].overrides` | string |  |  |
@@ -714,6 +717,7 @@ Scope: `admin:read`.
 | `schema.attributes[].from` | string |  |  |
 | `schema.attributes[].identifier` | boolean |  |  |
 | `schema.attributes[].identifierName` | string |  |  |
+| `schema.attributes[].jsonBlob` | boolean |  | True when the attribute's value is one JSON document rather than a set of separate fields. |
 | `schema.attributes[].kind` | string |  |  |
 | `schema.attributes[].name` | string |  |  |
 | `schema.attributes[].overrides` | string |  |  |
@@ -808,6 +812,7 @@ Scope: `admin:read`.
 | `schema.attributes[].from` | string |  |  |
 | `schema.attributes[].identifier` | boolean |  |  |
 | `schema.attributes[].identifierName` | string |  |  |
+| `schema.attributes[].jsonBlob` | boolean |  | True when the attribute's value is one JSON document rather than a set of separate fields. |
 | `schema.attributes[].kind` | string |  |  |
 | `schema.attributes[].name` | string |  |  |
 | `schema.attributes[].overrides` | string |  |  |
@@ -905,6 +910,7 @@ Scope: `admin:read`.
 | `schema.attributes[].from` | string |  |  |
 | `schema.attributes[].identifier` | boolean |  |  |
 | `schema.attributes[].identifierName` | string |  |  |
+| `schema.attributes[].jsonBlob` | boolean |  | True when the attribute's value is one JSON document rather than a set of separate fields. |
 | `schema.attributes[].kind` | string |  |  |
 | `schema.attributes[].name` | string |  |  |
 | `schema.attributes[].overrides` | string |  |  |
@@ -1339,6 +1345,7 @@ Scope: `admin:read`.
 | `schema.attributes[].from` | string |  |  |
 | `schema.attributes[].identifier` | boolean |  |  |
 | `schema.attributes[].identifierName` | string |  |  |
+| `schema.attributes[].jsonBlob` | boolean |  | True when the attribute's value is one JSON document rather than a set of separate fields. |
 | `schema.attributes[].kind` | string |  |  |
 | `schema.attributes[].name` | string |  |  |
 | `schema.attributes[].overrides` | string |  |  |

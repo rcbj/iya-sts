@@ -394,6 +394,8 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'require-mfa', 'stop-requiring-mfa',
                        // A disabled account (2026-09-17).
                        'disable', 'enable',
+                       // The person deleted (rcbj, 2026-11-16).
+                       'delete',
                        // A partner's subject linked to, or unlinked from,
                        // a person (#109, 2026-09-22).
                        'federation-link', 'federation-unlink',
@@ -4283,6 +4285,164 @@ class AdminActions {
     return evidence ? '; identity verified by: ' + evidence : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // A PERSON DELETED BY AN ADMINISTRATOR (rcbj, 2026-11-16: "Add a user
+  // delete endpoint to the admin api"). `POST /admin-api/users/delete` and
+  // the Delete control on the person's console page.
+  //
+  // **ONE DELETE.** The entry goes through the directory's `deletePerson()`,
+  // the function SCIM's `DELETE /Users/{id}` calls, which takes the same
+  // `removePersonEntry()` path an LDAP delete takes: the entry and its
+  // indexes, the passkey report, every group and role that named it
+  // (#1612/#1613), every owner list (a service account's last owner handed
+  // to the realm's Admin Write group), the profile photo, the account
+  // observers (RISC `account-purged`, OpenID Provider Commands), and — after
+  // the answer — everything the person held ended as a disable ends it
+  // (`account_state.ts`, #241). The bootstrap administrator (STS-LDAP-0077)
+  // and an entry with children (STS-LDAP-0014) are refused there, for every
+  // door. Nothing here deletes anything itself.
+  //
+  // **TWO REFUSALS ARE THIS DOOR'S OWN**, because they are about the
+  // ADMINISTRATOR rather than the entry, and SCIM and LDAP have no console
+  // in front of them to protect: the person whose token this is may not
+  // delete their own entry (STS-ADMIN-0943), and nobody may delete the last
+  // person a console role's roster lists for Admin Write or the Security
+  // Administrator (STS-ADMIN-0944) — nobody would be left to grant the role
+  // again. Neither is an authorization decision (the access-control policy
+  // has made that before this runs, the Security Administrator's `holder`
+  // kind among it, `common/security_operations.ts`): each is about the state
+  // the act would leave, as the bootstrap administrator's rule is.
+  // ---------------------------------------------------------------------------
+  private deletePersonAction(body: any, ctx: any) {
+    const { log, auditLog, realms, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.deletePersonAction().");
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving AdminActions.deletePersonAction(). No person named.");
+      return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person in `user`.'] });
+    }
+    const audit = function (outcome, summary, code, dn) {
+      auditLog.record({ category: 'directory', action: 'user.delete',
+        actor: ctx.actor, target: dn || who, outcome: outcome,
+        errorCode: code || '', protocol: 'Management API',
+        channel: ctx.via === 'api' ? 'http' : 'internal',
+        summary: summary, detail: { username: who, via: ctx.via } });
+    };
+    const ldap = require('../ldap/ldap_server');
+    const located = ldap.locateEntry(who);
+    const stored = located && located.stored;
+    if (!stored || !ldap.isPersonEntry(stored)) {
+      audit('refused', 'nobody called ' + who + ' was here to delete',
+            'STS-LDAP-0013', '');
+      log.debug("Leaving AdminActions.deletePersonAction(). Nobody.");
+      return this.refused('STS-LDAP-0013', { ok: false, errors: ['Nobody ' +
+        'called "' + who + '" is in this realm\'s directory, so nothing ' +
+        'was deleted.'] });
+    }
+    const dn = String(stored.dn);
+    const attrs = stored.attributes || {};
+    const username = String([].concat(attrs.uid || [])[0] || who);
+    const subject = attrs.entryuuid
+      ? 'urn:uuid:' + String([].concat(attrs.entryuuid)[0]).toLowerCase()
+      : '';
+    // THE BOOTSTRAP ADMINISTRATOR is refused by `deletePerson()` below, for
+    // every door, and that refusal is the one it meets here too: it holds
+    // both console roles, and would otherwise be told it is the last holder.
+    const seeded = ldap.isBootstrapAdministratorEntry(stored);
+    // THEMSELVES: the token's person, in the realm the token was issued in.
+    // A default-realm administrator acting in a trust realm is never the
+    // trust realm's namesake.
+    const admin = ctx.admin;
+    const sameRealm = !!admin && (!admin.realm ||
+                                  String(admin.realm) === realms.currentId());
+    if (!seeded && sameRealm &&
+        ((subject && String(admin.sub || '').toLowerCase() === subject) ||
+         String(admin.username || '').toLowerCase() ===
+           username.toLowerCase())) {
+      audit('refused', ctx.actor + ' tried to delete their own entry',
+            'STS-ADMIN-0943', dn);
+      log.debug("Leaving AdminActions.deletePersonAction(). Themselves.");
+      return this.refused('STS-ADMIN-0943', { ok: false, errors: ['You ' +
+        'cannot delete your own entry: ask another administrator.'] });
+    }
+    const last = seeded ? '' : this.lastRoleHolder(username, dn);
+    if (last) {
+      audit('refused', username + ' is the last person holding ' + last,
+            'STS-ADMIN-0944', dn);
+      log.debug("Leaving AdminActions.deletePersonAction(). The last " +
+                "holder.");
+      return this.refused('STS-ADMIN-0944', { ok: false, errors: ['"' +
+        username + '" is the last person holding ' + last + ' in this ' +
+        'realm, and nobody would be left to grant it. Grant it to ' +
+        'somebody else first.'] });
+    }
+    const removed = ldap.deletePerson(dn, { door: ctx.via === 'api'
+      ? 'POST /admin-api/users/delete' : 'the admin console' });
+    if (!removed || !removed.ok) {
+      const code = errorCodes.codeOf(removed) || 'STS-LDAP-0013';
+      const reason = String((removed && removed.reason) || '');
+      audit('refused', username + ' was not deleted (' + reason + ')', code,
+            dn);
+      log.debug("Leaving AdminActions.deletePersonAction(). Refused: " +
+                reason);
+      return this.refused(code, { ok: false, errors: [reason === 'protected'
+        ? '"' + username + '" is this realm\'s bootstrap administrator, ' +
+          'which no door may delete.'
+        : (reason === 'notLeaf'
+          ? 'The entry ' + dn + ' has entries beneath it, and this ' +
+            'directory deletes only a leaf (RFC 4511 section 4.8). Delete ' +
+            'what is under it first.'
+          : 'Nobody called "' + who + '" is in this realm\'s directory, ' +
+            'so nothing was deleted.')] });
+    }
+    audit('success', (ctx.actor || 'an unnamed caller') + ' deleted ' + dn,
+          '', dn);
+    log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+             ctx.via + ') deleted ' + dn + '.');
+    log.debug("Leaving AdminActions.deletePersonAction(). Deleted.");
+    return { ok: true, changed: true, username: username, dn: dn,
+             message: '"' + username + '" was deleted. Every group and role ' +
+                      'that named them has let them go, and everything ' +
+                      'they held — sessions, tokens, codes, connections — ' +
+                      'is being ended. Somebody made again under the name ' +
+                      'starts with nothing.' };
+  }
+
+  // The console role a person is the last roster member of, as its label,
+  // or '' (STS-ADMIN-0944). Admin Write and the Security Administrator only:
+  // each can grant its role again, and Admin Read implies neither. A member
+  // counts when the roster resolves them to an entry that is there
+  // (`present`), by the group's own list or by their own `memberOf`.
+  private lastRoleHolder(username: string, dn: string): string {
+    const { log, rbac, realms } = this.deps;
+    log.debug("Entering AdminActions.lastRoleHolder().");
+    if (!rbac.available()) {
+      log.debug("Leaving AdminActions.lastRoleHolder(). No roster.");
+      return '';
+    }
+    const ldap = require('../ldap/ldap_server');
+    const mine = ldap.normalizeDn(dn);
+    // The roster of the realm this act is in, named rather than inherited.
+    const realm = realms.currentId();
+    const held = (rbac.rolesOf(username, realm).groups || []).map(function (
+        one) {
+      return String(one.role);
+    });
+    const last = ['write', 'security'].filter(function (id) {
+      if (held.indexOf(id) < 0) {
+        return false;
+      }
+      const roster = rbac.rosterFor(id, realm) || { members: [] };
+      return !(roster.members || []).some(function (member) {
+        return member.present && member.dn &&
+               ldap.normalizeDn(member.dn) !== mine;
+      });
+    })[0];
+    log.debug("Leaving AdminActions.lastRoleHolder(). " + (last || 'none'));
+    return last ? (rbac.roleFor(last) || { label: last }).label : '';
+  }
+
   /**
    * Performs a `/admin/users` action on a person: create, set a password or
    * mail address, issue an activation link, clear a second factor, disable or
@@ -4322,9 +4482,12 @@ class AdminActions {
                   // the service-account owner rules (rcbj, 2026-11-15): an
                   // owner may not take themselves off. Null for a client's
                   // token and for development's open API.
+                  // And the realm the token was issued in, for the delete's
+                  // "not yourself" (2026-11-16): '' where it was not said.
                   admin: given.admin && given.admin.username
                     ? { username: String(given.admin.username),
-                        sub: String(given.admin.sub || '') }
+                        sub: String(given.admin.sub || ''),
+                        realm: String(given.admin.realm || '') }
                     : null };
 
     // AN ADMINISTRATOR UPGRADES A PERSON'S CLASSICAL PASSKEY (#939). The
@@ -4493,6 +4656,13 @@ class AdminActions {
       return { ok: true, username: who, disabled: answer.disabled,
                changed: answer.changed, ended: answer.ended || null,
                message: answer.message };
+    }
+
+    // THE PERSON DELETED (rcbj, 2026-11-16): the directory's one person
+    // delete, behind this door's own two refusals. deletePersonAction().
+    if (action === 'delete') {
+      log.debug("Leaving AdminActions.usersAction(). delete.");
+      return this.deletePersonAction(body, ctx);
     }
 
     // ONE OF A PERSON'S ATTRIBUTES, SET, ADDED TO OR REMOVED FROM (#228).
