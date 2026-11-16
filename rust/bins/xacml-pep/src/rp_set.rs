@@ -362,9 +362,8 @@ impl RpSet {
             let headers = member.clone().map(|name| {
                 Arc::new(move || {
                     vec![("X-Iya-Pep-Name".to_string(), name.clone())]
-                }) as Arc<
-                    dyn Fn() -> Vec<(String, String)> + Send + Sync,
-                >
+                })
+                    as Arc<dyn Fn() -> Vec<(String, String)> + Send + Sync>
             });
             let made = SignalsReceiver::new(
                 &issuer,
@@ -559,9 +558,8 @@ impl RpSet {
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
         let bounds = self.bounds();
-        let age = |at: Option<f64>| {
-            at.map(|t| ((now - t).max(0.0) * 1000.0) as u64)
-        };
+        let age =
+            |at: Option<f64>| at.map(|t| ((now - t).max(0.0) * 1000.0) as u64);
         let entries = lock(&self.entries);
         let mut rows: Vec<(String, Value)> = entries
             .iter()
@@ -716,12 +714,8 @@ mod tests {
             2000,
             member_name(Some("pep-2")).as_deref(),
         );
-        let bare = party_digest(
-            &config,
-            1000,
-            2000,
-            member_name(None).as_deref(),
-        );
+        let bare =
+            party_digest(&config, 1000, 2000, member_name(None).as_deref());
         let blank = party_digest(
             &config,
             1000,

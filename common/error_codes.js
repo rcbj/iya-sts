@@ -23636,9 +23636,9 @@ const CODES = [
     spec: 'HTTP 400 on /admin-api' },
   { code: 'STS-XACML-0283',
     summary: 'A remote PEP\'s Sync was refused because nudging is stopped ' +
-      'for that PEP (disable-pep): an administrator said this service does ' +
-      'not dial it.',
-    spec: 'HTTP 400 on /admin-api' },
+      'for that PEP (disable-pep). Retired the day it was added: Sync dials ' +
+      'a PEP whose change nudges are stopped (rcbj, 2026-11-16).',
+    spec: 'HTTP 400 on /admin-api', retired: true },
   { code: 'STS-XACML-0284',
     summary: 'A remote PEP\'s Sync was refused because the PEP has no ' +
       'notify URL, or its notify URL cannot be dialled (not https, or ' +
@@ -24310,6 +24310,17 @@ const CODES = [
       'served yet. sessionTimeoutS other than 300 is left at 300 seconds ' +
       'and the other settings are applied. A thread-pool worker that does ' +
       'not start leaves the workers already running (#1760).',
+    spec: 'none — an error in the PEP\'s log' },
+  { code: 'STS-XPEP-0120',
+    summary: 'A remote PEP was nudged with `full` within a poll interval of ' +
+      'its last full pull, so it pulled as usual: a full pull is honoured ' +
+      'at most once a poll interval, because POST /notify is not ' +
+      'authenticated (2026-11-16).',
+    spec: 'none — an info line in the PEP\'s log' },
+  { code: 'STS-XPEP-0121',
+    summary: 'A job on a remote PEP listener\'s thread pool panicked. Its ' +
+      'connection is lost; the worker catches the panic and takes the next ' +
+      'job (2026-11-16).',
     spec: 'none — an error in the PEP\'s log' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',

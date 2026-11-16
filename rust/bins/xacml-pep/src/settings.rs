@@ -73,11 +73,31 @@ const DAY_MS: u64 = 86_400_000;
 /// EVERY SETTING THE SERVICE MAY MANAGE, in the order the console draws
 /// them. The bounds are the service's.
 pub const SETTINGS: &[Row] = &[
-    Row { key: "description", env: "PEP_DESCRIPTION", kind: Kind::Text(1024) },
-    Row { key: "resource", env: "PEP_RESOURCE", kind: Kind::Text(2048) },
-    Row { key: "notifyUrl", env: "PEP_NOTIFY_URL", kind: Kind::Url },
-    Row { key: "bias", env: "PEP_BIAS", kind: Kind::Enum(BIASES) },
-    Row { key: "pip", env: "PEP_PIP", kind: Kind::Bool },
+    Row {
+        key: "description",
+        env: "PEP_DESCRIPTION",
+        kind: Kind::Text(1024),
+    },
+    Row {
+        key: "resource",
+        env: "PEP_RESOURCE",
+        kind: Kind::Text(2048),
+    },
+    Row {
+        key: "notifyUrl",
+        env: "PEP_NOTIFY_URL",
+        kind: Kind::Url,
+    },
+    Row {
+        key: "bias",
+        env: "PEP_BIAS",
+        kind: Kind::Enum(BIASES),
+    },
+    Row {
+        key: "pip",
+        env: "PEP_PIP",
+        kind: Kind::Bool,
+    },
     Row {
         key: "pollIntervalMs",
         env: "PEP_POLL_INTERVAL_MS",
@@ -113,7 +133,11 @@ pub const SETTINGS: &[Row] = &[
         env: "PEP_LOG_LEVEL",
         kind: Kind::Enum(LOG_LEVELS),
     },
-    Row { key: "authzen", env: "PEP_AUTHZEN", kind: Kind::Bool },
+    Row {
+        key: "authzen",
+        env: "PEP_AUTHZEN",
+        kind: Kind::Bool,
+    },
     Row {
         key: "authzenPdpIdentifier",
         env: "PEP_AUTHZEN_PDP_IDENTIFIER",
@@ -218,11 +242,9 @@ pub fn check(row: &Row, value: &Value) -> Result<Value, String> {
             .ok_or_else(|| format!("{} must be true or false", row.key)),
         Kind::Enum(values) => match value.as_str() {
             Some(s) if values.contains(&s) => Ok(json!(s)),
-            _ => Err(format!(
-                "{} must be one of {}",
-                row.key,
-                values.join(", ")
-            )),
+            _ => {
+                Err(format!("{} must be one of {}", row.key, values.join(", ")))
+            }
         },
         Kind::Text(max) => match value.as_str() {
             Some(s) if text_ok(s, max) => Ok(json!(s)),
@@ -299,8 +321,9 @@ impl Managed {
         for (key, value) in members {
             match row_of(key) {
                 None => out.unknown.push(key.clone()),
-                Some(row) if row.key == DERIVED_KEY
-                    && value.as_str().is_some_and(notify_rejected) =>
+                Some(row)
+                    if row.key == DERIVED_KEY
+                        && value.as_str().is_some_and(notify_rejected) =>
                 {
                     out.rejected_notify =
                         value.as_str().map(|s| s.trim().to_string());
@@ -325,7 +348,10 @@ impl Managed {
     }
 
     pub fn str(&self, key: &str) -> Option<String> {
-        self.values.get(key).and_then(Value::as_str).map(str::to_string)
+        self.values
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::to_string)
     }
 }
 
@@ -409,8 +435,10 @@ impl Held {
         }
         match current.values.get(row.key) {
             None => false,
-            Some(value) => row.key != DERIVED_KEY
-                || value.as_str().is_some_and(|s| !s.trim().is_empty()),
+            Some(value) => {
+                row.key != DERIVED_KEY
+                    || value.as_str().is_some_and(|s| !s.trim().is_empty())
+            }
         }
     }
 
@@ -454,9 +482,7 @@ impl Held {
             "service"
         } else if self.env_set.contains(row.env) {
             "environment"
-        } else if row.key == DERIVED_KEY
-            && !self.derived_notify().is_empty()
-        {
+        } else if row.key == DERIVED_KEY && !self.derived_notify().is_empty() {
             "derived"
         } else {
             "default"

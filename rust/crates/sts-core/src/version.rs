@@ -374,8 +374,7 @@ mod tests {
             .join(format!("sts-version-rel-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(VERSION_FILE), "1.0.0\n").unwrap();
-        let written =
-            stamp_with(&dir, Some("true"), Some("0"), at()).unwrap();
+        let written = stamp_with(&dir, Some("true"), Some("0"), at()).unwrap();
         assert_eq!(written.version, "1.0.0.0");
         assert_eq!(written.build, "0");
         assert!(written.release);

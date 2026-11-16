@@ -298,18 +298,44 @@ impl Pep {
             );
         }
         if method == Method::POST && path == "/notify" {
-            // THE NUDGE: answered 204 IMMEDIATELY and pulled after, and its
-            // body is neither read nor trusted — what changed is discovered
-            // by pulling from this PEP's own configured PDP.
+            // THE NUDGE: answered 204 IMMEDIATELY and pulled after. What
+            // changed is discovered by pulling from this PEP's own
+            // configured PDP; the body is TRUSTED FOR NOTHING. One member is
+            // read since 2026-11-16, `full`, which a Sync from the console
+            // sends: it asks for every document whole rather than answered
+            // 304, and carries nothing a pull does not fetch. Because anybody
+            // reaching this listener can send it, a full pull is honoured at
+            // most once a poll interval; another is an ordinary pull.
+            let body = axum::body::to_bytes(request.into_body(), 4096)
+                .await
+                .map(|b| b.to_vec())
+                .unwrap_or_default();
+            let asked_full = serde_json::from_slice::<Value>(&body)
+                .ok()
+                .and_then(|v| v.get("full").and_then(Value::as_bool))
+                .unwrap_or(false);
+            let full = asked_full && self.sync.claim_full_pull();
+            if asked_full && !full {
+                tracing::info!(
+                    "{}xacml-pep: a full pull was asked for within a poll \
+                     interval of the last one; pulling as usual instead.",
+                    tag("STS-XPEP-0120")
+                );
+            }
             tracing::info!(
-                "xacml-pep: nudged by the PDP; pulling now rather than \
-                 waiting up to {}ms for the next poll. Nothing in the nudge \
-                 was read — what changed is discovered by pulling.",
+                "xacml-pep: nudged by the PDP; pulling {}now rather than \
+                 waiting up to {}ms for the next poll.",
+                if full { "every document whole " } else { "" },
                 self.options.now().poll_interval_ms
             );
             let sync = self.sync.clone();
             tokio::spawn(async move {
-                if !sync.pull("nudge").await {
+                let pulled = if full {
+                    sync.pull_full("nudge").await
+                } else {
+                    sync.pull("nudge").await
+                };
+                if !pulled {
                     tracing::warn!(
                         "{}xacml-pep: the nudged pull failed. The scheduled \
                          poll will try again.",
@@ -455,8 +481,9 @@ impl Pep {
         req.target(resource, Some(types::ANYURI))
             .requested_action(action);
         let answer = self.evaluate_against(named, &policies, req.build()).await;
-        let outcome =
-            self.enforcer().enforce(answer.decision, &answer.obligations);
+        let outcome = self
+            .enforcer()
+            .enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
         Some((answer.decision, outcome))
     }
@@ -555,8 +582,9 @@ impl Pep {
         query: &IndexMap<String, String>,
     ) -> (StatusCode, Value) {
         let answer = self.decide(query).await;
-        let outcome =
-            self.enforcer().enforce(answer.decision, &answer.obligations);
+        let outcome = self
+            .enforcer()
+            .enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
         let obligations: Vec<Value> = answer
             .obligations
@@ -772,8 +800,8 @@ impl Pep {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pdp_client::PdpClient;
     use crate::options::Bias;
+    use crate::pdp_client::PdpClient;
     use crate::settings::Managed;
 
     /// A bias the service sets (#1760) is the one a decision is enforced
@@ -823,8 +851,12 @@ mod tests {
         ))
     }
 
-    fn ask(pep: &Arc<Pep>, method: Method, path: &str,
-           transport: Transport) -> (StatusCode, String) {
+    fn ask(
+        pep: &Arc<Pep>,
+        method: Method,
+        path: &str,
+        transport: Transport,
+    ) -> (StatusCode, String) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
             let mut request = Request::builder()
@@ -847,11 +879,14 @@ mod tests {
     #[test]
     fn the_nudge_is_answered_on_https_only() {
         let pep = a_pep();
-        let (plain, body) = ask(&pep, Method::POST, "/notify",
-                                Transport::default());
+        let (plain, body) =
+            ask(&pep, Method::POST, "/notify", Transport::default());
         assert_eq!(plain, StatusCode::NOT_FOUND);
         assert!(body.contains("HTTPS listener only"), "{}", body);
-        let https = Transport { https: true, ..Transport::default() };
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
         let (secure, _) = ask(&pep, Method::POST, "/notify", https);
         assert_eq!(secure, StatusCode::NO_CONTENT);
     }
@@ -860,19 +895,31 @@ mod tests {
     #[test]
     fn the_crl_only_listener_serves_crls_alone() {
         let pep = a_pep();
-        let crl = Transport { crl_only: true, ..Transport::default() };
-        for (method, path) in [(Method::GET, "/"),
-                               (Method::GET, "/protected"),
-                               (Method::GET, "/healthcheck"),
-                               (Method::POST, "/notify")] {
+        let crl = Transport {
+            crl_only: true,
+            ..Transport::default()
+        };
+        for (method, path) in [
+            (Method::GET, "/"),
+            (Method::GET, "/protected"),
+            (Method::GET, "/healthcheck"),
+            (Method::POST, "/notify"),
+        ] {
             let (status, body) = ask(&pep, method, path, crl.clone());
             assert_eq!(status, StatusCode::NOT_FOUND, "{}", path);
-            assert!(body.contains("only this PEP's own credential's CRLs"),
-                    "{}: {}", path, body);
+            assert!(
+                body.contains("only this PEP's own credential's CRLs"),
+                "{}: {}",
+                path,
+                body
+            );
         }
         let (status, body) = ask(&pep, Method::GET, "/crl/root.crl", crl);
         assert_eq!(status, StatusCode::NOT_FOUND);
-        assert!(!body.contains("only this PEP's own credential's CRLs"),
-                "a CRL path is the CRL lookup's to answer: {}", body);
+        assert!(
+            !body.contains("only this PEP's own credential's CRLs"),
+            "a CRL path is the CRL lookup's to answer: {}",
+            body
+        );
     }
 }

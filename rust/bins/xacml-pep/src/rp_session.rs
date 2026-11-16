@@ -162,10 +162,8 @@ impl Inner {
         };
         let empty = match self.sets.get_mut(&set_id) {
             Some(set) => {
-                if let Some(at) = set
-                    .accounts
-                    .iter()
-                    .position(|a| a.session_id == session_id)
+                if let Some(at) =
+                    set.accounts.iter().position(|a| a.session_id == session_id)
                 {
                     let gone = set.accounts.remove(at);
                     if set.active.get(&gone.client_id) == Some(&gone.account) {
@@ -400,8 +398,7 @@ impl Stores {
         max: usize,
     ) -> Result<Added, AddRefused> {
         let mut inner = self.lock();
-        let set_id = if !set_id.is_empty() && inner.sets.contains_key(set_id)
-        {
+        let set_id = if !set_id.is_empty() && inner.sets.contains_key(set_id) {
             set_id.to_string()
         } else {
             random_token(24).ok_or(AddRefused::NoRandom)?
@@ -431,8 +428,7 @@ impl Stores {
                     }
                     return Err(AddRefused::Full(held));
                 }
-                let account =
-                    random_token(9).ok_or(AddRefused::NoRandom)?;
+                let account = random_token(9).ok_or(AddRefused::NoRandom)?;
                 set.accounts.push(Account {
                     account: account.clone(),
                     session_id: session_id.to_string(),
@@ -468,7 +464,8 @@ impl Stores {
         let mut inner = self.lock();
         let set = inner.sets.get_mut(set_id)?;
         let one = set.accounts.iter().find(|a| a.account == account)?.clone();
-        set.active.insert(one.client_id.clone(), one.account.clone());
+        set.active
+            .insert(one.client_id.clone(), one.account.clone());
         Some(one)
     }
 
@@ -517,21 +514,32 @@ mod tests {
     use super::*;
 
     fn held(stores: &Stores, id: &str, sub: &str) {
-        stores.create(id, Session {
-            client_id: "app".into(), sid: format!("sid-{}", id),
-            sub: sub.into(), username: sub.into(), id_token: String::new(),
-            created: Instant::now(), last_checked: Instant::now(),
-        }).unwrap();
+        stores
+            .create(
+                id,
+                Session {
+                    client_id: "app".into(),
+                    sid: format!("sid-{}", id),
+                    sub: sub.into(),
+                    username: sub.into(),
+                    id_token: String::new(),
+                    created: Instant::now(),
+                    last_checked: Instant::now(),
+                },
+            )
+            .unwrap();
     }
 
     #[test]
     fn several_accounts_one_active_switched_and_ended_alone() {
         let stores = Stores::new(100, 60_000);
         held(&stores, "s1", "alice");
-        let a = stores.add_account("", "s1", "app", "alice", "alice", 3)
+        let a = stores
+            .add_account("", "s1", "app", "alice", "alice", 3)
             .unwrap();
         held(&stores, "s2", "bob");
-        let b = stores.add_account(&a.set_id, "s2", "app", "bob", "bob", 3)
+        let b = stores
+            .add_account(&a.set_id, "s2", "app", "bob", "bob", 3)
             .unwrap();
         assert_eq!(a.set_id, b.set_id, "one set for the browser");
         let set = stores.account_set(&a.set_id).unwrap();
@@ -539,10 +547,19 @@ mod tests {
         // The account added last is the active one, and only one is.
         assert_eq!(set.active_for("app").unwrap().sub, "bob");
         // Switching makes the other active.
-        assert_eq!(stores.switch_account(&a.set_id, &a.account).unwrap().sub,
-                   "alice");
-        assert_eq!(stores.account_set(&a.set_id).unwrap()
-                     .active_for("app").unwrap().sub, "alice");
+        assert_eq!(
+            stores.switch_account(&a.set_id, &a.account).unwrap().sub,
+            "alice"
+        );
+        assert_eq!(
+            stores
+                .account_set(&a.set_id)
+                .unwrap()
+                .active_for("app")
+                .unwrap()
+                .sub,
+            "alice"
+        );
         assert!(stores.switch_account(&a.set_id, "nobody").is_none());
         // A session ended (a CAEP signal, a sign-out) ends ITS account
         // only, and no other account is made active in its place.
@@ -550,8 +567,7 @@ mod tests {
         let set = stores.account_set(&a.set_id).unwrap();
         assert_eq!(set.accounts.len(), 1);
         assert_eq!(set.accounts[0].sub, "bob");
-        assert!(set.active_for("app").is_none(),
-                "never switched silently");
+        assert!(set.active_for("app").is_none(), "never switched silently");
         assert!(stores.get("s2").is_some(), "bob's session is untouched");
         // The last one ended: the set is gone.
         stores.end("s2");
@@ -562,10 +578,13 @@ mod tests {
     fn the_set_is_bounded_and_the_same_person_is_replaced() {
         let stores = Stores::new(100, 60_000);
         held(&stores, "s1", "alice");
-        let a = stores.add_account("", "s1", "app", "alice", "alice", 2)
+        let a = stores
+            .add_account("", "s1", "app", "alice", "alice", 2)
             .unwrap();
         held(&stores, "s2", "bob");
-        stores.add_account(&a.set_id, "s2", "app", "bob", "bob", 2).unwrap();
+        stores
+            .add_account(&a.set_id, "s2", "app", "bob", "bob", 2)
+            .unwrap();
         held(&stores, "s3", "carol");
         assert_eq!(
             stores.add_account(&a.set_id, "s3", "app", "carol", "carol", 2),
@@ -590,7 +609,8 @@ mod tests {
     fn an_expired_session_leaves_the_set() {
         let stores = Stores::new(100, 1);
         held(&stores, "s1", "alice");
-        let a = stores.add_account("", "s1", "app", "alice", "alice", 3)
+        let a = stores
+            .add_account("", "s1", "app", "alice", "alice", 3)
             .unwrap();
         std::thread::sleep(Duration::from_millis(5));
         assert!(stores.account_set(&a.set_id).is_none());
@@ -672,9 +692,13 @@ mod tests {
         assert_eq!(stores.get("s1").unwrap().username, "alice");
         stores.named("s1", "", "Alice Example");
         let set = stores.account_set(&added.set_id).unwrap();
-        assert_eq!((set.accounts[0].username.as_str(),
-                    set.accounts[0].name.as_str()),
-                   ("alice", "Alice Example"));
+        assert_eq!(
+            (
+                set.accounts[0].username.as_str(),
+                set.accounts[0].name.as_str()
+            ),
+            ("alice", "Alice Example")
+        );
         stores.named("s1", "", "");
         let set = stores.account_set(&added.set_id).unwrap();
         assert_eq!(set.accounts[0].username, "alice", "empty keeps it");
