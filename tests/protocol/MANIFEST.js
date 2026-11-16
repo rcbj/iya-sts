@@ -1151,6 +1151,20 @@ const JOBS = [
   { file: 'sts_uma.js',                  browser: false },
   { file: 'sts_xacml_remote_pep.js',     browser: false,
     docker: true },
+  // A REMOTE PEP REVERSE-PROXY CLUSTER BEHIND A LOAD BALANCER (2026-11-16,
+  // rcbj: "add the reverse proxy cluster test. Model it after the two node
+  // remote pep cluster we have on 8081"): two members on their own RFC 7523
+  // keys, one cluster's routes in front of the companion's /pep-app, an
+  // HAProxy sticky by source on 9543 and round robin on 9443 — public, a
+  // role holder, an administrator and a person without the role, one route
+  // edit and the audit, asserted by the SAME functions first against one
+  // standalone PEP holding the document as its own and then against the
+  // cluster through the balancer and on each member. The LAUNCHER provides the
+  // topology (the `pep-cluster` profile, STS_TEST_PEP_CLUSTER_MODES), so it
+  // runs in CI; with none it declines to run, saying why. Not `docker`: it
+  // starts nothing. A realm of its own, left standing. `local: true`: the
+  // remote PEP, its cluster and the proxy are ours.
+  { file: 'sts_xacml_pep_proxy_cluster.js', browser: false, local: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
   // (2026-09-18): every one of these families was covered in process and by
   // nothing driven over the network, so a stack behind a load balancer said
