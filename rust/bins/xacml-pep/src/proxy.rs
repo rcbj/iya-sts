@@ -813,7 +813,7 @@ impl Proxy {
                 allow: Some("GET, HEAD"),
                 ..Refusal::new(
                     405,
-                    "STS-XPEP-0126",
+                    "STS-XPEP-0132",
                     "the sign-in callback takes GET and HEAD only",
                 )
             };
@@ -830,7 +830,7 @@ impl Proxy {
                 allow: Some("GET, HEAD"),
                 ..Refusal::new(
                     405,
-                    "STS-XPEP-0127",
+                    "STS-XPEP-0133",
                     "the sign-out takes GET and HEAD only",
                 )
             };
@@ -872,7 +872,7 @@ impl Proxy {
         {
             let refusal = Refusal::new(
                 404,
-                "STS-XPEP-0128",
+                "STS-XPEP-0134",
                 "the path is under /.iya-pep/, which is the proxy's own, and \
                  is none of its pages",
             );

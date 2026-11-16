@@ -480,7 +480,7 @@ op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `Authze
 
 @component model `ProxyRoute` {
   @js(#{`pattern`:"^[A-Za-z0-9._-]{1,64}$"}) `id`: string;
-  @js(#{`pattern`:"^/",`description`:"Never /.iya-pep or under /.iya-pep/, which the proxy keeps (STS-XACML-0298 at the save; a stored one makes the pull configured: false)."}) `path`: string;
+  @js(#{`pattern`:"^/",`description`:"Never /.iya-pep or under /.iya-pep/, which the proxy keeps (STS-XACML-0300 at the save; a stored one makes the pull configured: false)."}) `path`: string;
   `match`: "prefix" | "exact";
   @js(#{`description`:"Empty denies every method."}) `methods`: ("GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS")[];
   `mechanisms`: ("session" | "oauth2" | "saml2" | "basic")[];

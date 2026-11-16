@@ -3717,10 +3717,10 @@ async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
     use sts_model_pep::pep_proxy::components;
     let h = harness().await;
     for (method, path, code) in [
-        (reqwest::Method::POST, "/.iya-pep/callback?state=s", "0126"),
-        (reqwest::Method::PUT, "/.iya-pep/callback", "0126"),
-        (reqwest::Method::POST, "/.iya-pep/logout", "0127"),
-        (reqwest::Method::DELETE, "/.iya-pep/logout", "0127"),
+        (reqwest::Method::POST, "/.iya-pep/callback?state=s", "0132"),
+        (reqwest::Method::PUT, "/.iya-pep/callback", "0132"),
+        (reqwest::Method::POST, "/.iya-pep/logout", "0133"),
+        (reqwest::Method::DELETE, "/.iya-pep/logout", "0133"),
     ] {
         let r = h
             .http
@@ -3792,5 +3792,5 @@ async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
         before + 1,
         "nothing under /.iya-pep/ went upstream"
     );
-    assert!(!proxy::logged::holding("STS-XPEP-0128").is_empty());
+    assert!(!proxy::logged::holding("STS-XPEP-0134").is_empty());
 }

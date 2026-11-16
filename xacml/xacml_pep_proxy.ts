@@ -1025,7 +1025,7 @@ class PepProxy {
     }
     // THE PROXY'S OWN PREFIX (#1830). `/.iya-pep/callback` and
     // `/.iya-pep/logout` are the session mechanism's, answered before any
-    // route, and the PEP answers 404 (STS-XPEP-0128) to anything else under
+    // route, and the PEP answers 404 (STS-XPEP-0134) to anything else under
     // the prefix — so a route there could never be reached, and an updated
     // PEP refuses the whole configuration holding one and keeps its last
     // good one. Refused here so it is never saved; a document stored before
@@ -1036,7 +1036,7 @@ class PepProxy {
       return this.refuse(where + ' ("' + id + '"): a route `path` may not ' +
         'be ' + RESERVED_PREFIX + ' or under ' + RESERVED_PREFIX + '/, ' +
         'which the proxy keeps for its own callback and sign-out.',
-        'STS-XACML-0298');
+        'STS-XACML-0300');
     }
     const match = route.match === undefined ? 'prefix' : route.match;
     if (typeof match !== 'string' || MATCHES.indexOf(match) < 0) {

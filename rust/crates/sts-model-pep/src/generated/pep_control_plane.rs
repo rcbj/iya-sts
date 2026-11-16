@@ -887,7 +887,7 @@ pub mod components {
     pub struct ProxyRoute {
         pub id: String,
         /// Never /.iya-pep or under /.iya-pep/, which the proxy keeps
-        /// (STS-XACML-0298 at the save; a stored one makes the pull configured:
+        /// (STS-XACML-0300 at the save; a stored one makes the pull configured:
         /// false).
         pub path: String,
         #[serde(rename = "match")]

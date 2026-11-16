@@ -1326,9 +1326,9 @@ only the members the model names:
   the rule every request-less URL here follows. KEPT rather than removed,
   because the model and the PEP's generated type require it; the PEP reads
   nothing in the body but `full`. (`pep_listener_certificate.js` F1d.)
-* **A route may not be `/.iya-pep` or under `/.iya-pep/`** (`STS-XACML-0298`,
+* **A route may not be `/.iya-pep` or under `/.iya-pep/`** (`STS-XACML-0300`,
   `PepProxy.reservedPath()`): the proxy keeps that prefix for its callback
-  and sign-out and answers 404 (`STS-XPEP-0128`) to the rest, and an updated
+  and sign-out and answers 404 (`STS-XPEP-0134`) to the rest, and an updated
   PEP refuses the whole configuration holding such a route and keeps its
   last good one. A document stored before this fails the pull's validation
   like any stored document the grammar refuses — logged `STS-XACML-0200`,

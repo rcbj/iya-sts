@@ -1250,10 +1250,10 @@ whole. The pair is upgraded together.
    serves are one string.
 2. `/.iya-pep/callback` and `/.iya-pep/logout` are the session mechanism's,
    ahead of the route table, and take GET and HEAD: any other method is 405
-   with `Allow: GET, HEAD` (`STS-XPEP-0126`, `-0127`; #1830), the callback's
+   with `Allow: GET, HEAD` (`STS-XPEP-0132`, `-0133`; #1830), the callback's
    state not looked up and so not spent. **`/.iya-pep/` is the proxy's
    WHOLE** (#1830): after the accounts pages, any other path under it is 404
-   (`STS-XPEP-0128`) and never reaches the route table, so a prefix route at
+   (`STS-XPEP-0134`) and never reaches the route table, so a prefix route at
    `/` cannot forward one upstream; and a configured route there is refused
    with the configuration (`proxy_config.rs`'s `path_problem()`), as a path
    holding `//` is. Until #1830 only the eight paths were the proxy's and
@@ -1909,8 +1909,8 @@ without one; `0118` every path before the first configuration since the
 start (503, *Not configured YET*); `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
-says is not usable (D10); `0095`–`0098` the identity (D11); `0126` and `0127`
-a method other than GET or HEAD on the callback and the sign-out, `0128` a
+says is not usable (D10); `0095`–`0098` the identity (D11); `0132` and `0133`
+a method other than GET or HEAD on the callback and the sign-out, `0134` a
 path under `/.iya-pep/` that is none of the proxy's (#1830). **No log line carries
 a token, an assertion, a password, a session id or a query string**: the
 method, the normalised path (at most 200 characters, quoted), the route and
@@ -1963,7 +1963,7 @@ those readers, not of the model.
 declared. The PEP's own (the nudge's 204, `full`, the identity door's
 `code`, the PIP's Accept, `GET /`'s values in force, HEAD, `:authority`,
 admission per listener, the proxy's methods and its reserved `/.iya-pep/`
-prefix, STS-XPEP-0126 to 0128) are argued where each lives in this file. The
+prefix, STS-XPEP-0132 to 0134) are argued where each lives in this file. The
 service's are argued in `xacml/CLAUDE.md`, *What modelling the control plane
 corrected (#1830)*: a pull touches the certificate's row and not `?pep=`'s;
 all five pulls answer 304 to a matching `If-None-Match` (RFC 9110 13.1.2)
@@ -1974,7 +1974,7 @@ refusal, the gate's 403 and the off switches' 501 included, as a PIPError;
 the listener certificate's 200 has no `ok`; the nudge's `pdp` names the
 realm's PDP; every validation door answers one 429 shape,
 `{error, error_description, retryAfterS}`; and the service refuses to save a
-route under `/.iya-pep/` (STS-XACML-0298), a stored one being pulled as
+route under `/.iya-pep/` (STS-XACML-0300), a stored one being pulled as
 `configured: false`.
 
 ## Error codes

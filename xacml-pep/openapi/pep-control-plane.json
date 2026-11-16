@@ -1338,7 +1338,7 @@
           "path": {
             "type": "string",
             "pattern": "^/",
-            "description": "Never /.iya-pep or under /.iya-pep/, which the proxy keeps (STS-XACML-0298 at the save; a stored one makes the pull configured: false)."
+            "description": "Never /.iya-pep or under /.iya-pep/, which the proxy keeps (STS-XACML-0300 at the save; a stored one makes the pull configured: false)."
           },
           "match": {
             "type": "string",

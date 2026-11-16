@@ -5148,7 +5148,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0283` *(retired)* | A remote PEP's Sync was refused because nudging is stopped for that PEP (disable-pep). Retired the day it was added: Sync dials a PEP whose change nudges are stopped (rcbj, 2026-11-16). | HTTP 400 on /admin-api |
 | `STS-XACML-0284` | A remote PEP's Sync was refused because the PEP has no notify URL, or its notify URL cannot be dialled (not https, or outside xacml.pepNotifyAllowedHosts). | HTTP 400 on /admin-api |
 | `STS-XACML-0285` | A remote PEP's Sync dialled the PEP and the nudge was not delivered: the connection failed, the certificate did not verify, or the PEP refused it. The result is recorded on the PEP's row. | HTTP 400 on /admin-api |
-| `STS-XACML-0298` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 
 ## STS-XPEP
 
@@ -5279,9 +5279,9 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0119` | A remote PEP could not apply one part of a listener's tuning. A TLS knob the library refused keeps the acceptor already served, or serves the certificate without that knob when none is served yet. sessionTimeoutS other than 300 is left at 300 seconds and the other settings are applied. A thread-pool worker that does not start leaves the workers already running (#1760). | none — an error in the PEP's log |
 | `STS-XPEP-0120` | A remote PEP was nudged with `full` within a poll interval of its last full pull, so it pulled as usual: a full pull is honoured at most once a poll interval, because POST /notify is not authenticated (2026-11-16). | none — an info line in the PEP's log |
 | `STS-XPEP-0121` | A job on a remote PEP listener's thread pool panicked. Its connection is lost; the worker catches the panic and takes the next job (2026-11-16). | none — an error in the PEP's log |
-| `STS-XPEP-0126` | A request reached a remote PEP reverse proxy's sign-in callback, /.iya-pep/callback, with a method other than GET or HEAD; it was refused before its state was looked up, so no pending sign-in was spent (#1830). | HTTP 405, method_not_allowed, Allow: GET, HEAD |
-| `STS-XPEP-0127` | A request reached a remote PEP reverse proxy's sign-out, /.iya-pep/logout, with a method other than GET or HEAD; no session was ended (#1830). | HTTP 405, method_not_allowed, Allow: GET, HEAD |
-| `STS-XPEP-0128` | A request on a remote PEP reverse proxy named a path under /.iya-pep/ that is none of the proxy's own pages. The prefix is the proxy's whole, so the path never reaches the route table and is never forwarded upstream (#1830). | HTTP 404, not_found |
+| `STS-XPEP-0132` | A request reached a remote PEP reverse proxy's sign-in callback, /.iya-pep/callback, with a method other than GET or HEAD; it was refused before its state was looked up, so no pending sign-in was spent (#1830). | HTTP 405, method_not_allowed, Allow: GET, HEAD |
+| `STS-XPEP-0133` | A request reached a remote PEP reverse proxy's sign-out, /.iya-pep/logout, with a method other than GET or HEAD; no session was ended (#1830). | HTTP 405, method_not_allowed, Allow: GET, HEAD |
+| `STS-XPEP-0134` | A request on a remote PEP reverse proxy named a path under /.iya-pep/ that is none of the proxy's own pages. The prefix is the proxy's whole, so the path never reaches the route table and is never forwarded upstream (#1830). | HTTP 404, not_found |
 
 ## STS-AUTHZEN
 

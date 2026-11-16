@@ -23649,7 +23649,7 @@ const CODES = [
       'delivered: the connection failed, the certificate did not verify, ' +
       'or the PEP refused it. The result is recorded on the PEP\'s row.',
     spec: 'HTTP 400 on /admin-api' },
-  { code: 'STS-XACML-0298',
+  { code: 'STS-XACML-0300',
     summary: 'A reverse-proxy route\'s `path` is /.iya-pep or under ' +
       '/.iya-pep/, the prefix the proxy reserves for its own callback and ' +
       'sign-out (#1830): an updated PEP refuses the whole configuration.',
@@ -24331,18 +24331,18 @@ const CODES = [
       'connection is lost; the worker catches the panic and takes the next ' +
       'job (2026-11-16).',
     spec: 'none — an error in the PEP\'s log' },
-  { code: 'STS-XPEP-0126',
+  { code: 'STS-XPEP-0132',
     summary: 'A request reached a remote PEP reverse proxy\'s sign-in ' +
       'callback, /.iya-pep/callback, with a method other than GET or HEAD; ' +
       'it was refused before its state was looked up, so no pending ' +
       'sign-in was spent (#1830).',
     spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
-  { code: 'STS-XPEP-0127',
+  { code: 'STS-XPEP-0133',
     summary: 'A request reached a remote PEP reverse proxy\'s sign-out, ' +
       '/.iya-pep/logout, with a method other than GET or HEAD; no session ' +
       'was ended (#1830).',
     spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
-  { code: 'STS-XPEP-0128',
+  { code: 'STS-XPEP-0134',
     summary: 'A request on a remote PEP reverse proxy named a path under ' +
       '/.iya-pep/ that is none of the proxy\'s own pages. The prefix is ' +
       'the proxy\'s whole, so the path never reaches the route table and ' +
