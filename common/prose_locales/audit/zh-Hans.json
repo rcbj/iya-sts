@@ -919,6 +919,18 @@
     "en": "9a9264e25acb9778",
     "text": "一次 AuthZEN 访问评估已作出决策"
   },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "远程 PEP 执行了一项决定"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "远程 PEP 对一项 AuthZEN 访问评估作出了决定"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "远程 PEP 的反向代理对一项请求作出了决定"
+  },
   "audit.actions.authzen.search.label": {
     "en": "c7d970c13ae99f25",
     "text": "一次 AuthZEN 搜索已应答"
@@ -998,6 +1010,10 @@
   "audit.actions.xacml.pep.certificate.label": {
     "en": "419007622035492d",
     "text": "向远程 PEP 签发了 HTTPS 监听器证书"
+  },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "远程 PEP 的断言密钥已根据其请求完成认证"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",

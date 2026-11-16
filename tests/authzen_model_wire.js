@@ -44,7 +44,9 @@
 // wire is MEANT to change. It was rewritten once, for #936 (2026-11-13):
 // a member AuthZEN 1.0 does not define is ignored (section 10.1.1), so the
 // stray-member steps answer as the same request without the member does,
-// and STS-AUTHZEN-0009 is gone from it.
+// and STS-AUTHZEN-0009 is gone from it. And again for #1827 and its
+// follow-up (2026-11-16): the realm seeds `sts-remote-pep` and
+// `sts-xacml-pep-api`, so a search over applications finds two more.
 //
 // A CHILD PROCESS, as tests/oauth_model_wire.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.

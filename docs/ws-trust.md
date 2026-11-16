@@ -414,7 +414,8 @@ application, and nothing else does:
 
 * a **message-signing certificate** this realm issued — from the realm's
   `message-signing` Issuing CA ([PKI](pki.md)), `digitalSignature` only, the
-  holder's `urn:sts:person:` or `urn:sts:application:` name. An administrator
+  holder's `urn:sts:person:`, `urn:sts:sa:` (a service account) or
+  `urn:sts:application:` name. An administrator
   issues one to a person on `/admin/users` or to an application on
   `/admin/applications` (and through `/admin-api`); the private key is handed
   over once;

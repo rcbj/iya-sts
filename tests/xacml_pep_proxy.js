@@ -1766,12 +1766,26 @@ async function childBody() {
   t.check(refusedIn(productCatalogue) ===
             'proxyUpstreamInsecure,proxyRpAllowInsecure' &&
           refusedIn(devCatalogue) === '' &&
-          devCatalogue.settings.length === 25 &&
+          // 25, and since #1827 the four decision-record settings.
+          devCatalogue.settings.length === 29 &&
+          ['auditEnabled', 'auditIntervalMs', 'auditBatch', 'auditBuffer']
+            .every(function (key) {
+              return devCatalogue.settings.some(function (one) {
+                return one.key === key;
+              });
+            }) &&
           devCatalogue.bootstrap.map(function (one) {
             return one.env;
           }).indexOf('PEP_PDP_URL') >= 0 &&
+          ['PEP_CLIENT_ID', 'PEP_ASSERTION_KEY', 'PEP_AUDIT_CLIENT_ID']
+            .every(function (env) {
+              return devCatalogue.bootstrap.map(function (one) {
+                return one.env;
+              }).indexOf(env) >= 0;
+            }) &&
           devCatalogue.precedence.join(',') === 'service,environment,default',
-          'S10. the catalogue names the 25 settings, the bootstrap ' +
+          'S10. the catalogue names the 29 settings (the four decision-' +
+          'record ones among them), the bootstrap ' +
           'environment and the precedence; refusedInProduct follows the mode',
           refusedIn(productCatalogue) + ' / ' + refusedIn(devCatalogue));
   // Kept across a registration and a heartbeat; the report held to its

@@ -5631,7 +5631,8 @@ class OAuth2Server {
     // every grant mints through this function, and the certificate on this
     // connection is known only now — `adminApiBindingRefusal()` argues it.
     const adminUnbound = self.adminApiBindingRefusal(opts.client_id,
-      plan.audiences, opts.request || null, base, !!opts.request);
+      plan.audiences, opts.request || null, base, !!opts.request,
+      String(opts.jkt || ''));
     if (adminUnbound) {
       log.debug("Leaving OAuth2Server.tokenSet(). An /admin-api token for a " +
                 "certificate client, and no certificate to bind it to.");
@@ -8916,16 +8917,29 @@ class OAuth2Server {
    * @param fromClient - whether `req` is the CLIENT's connection (the token
    *   endpoint's), whose certificate a token can be bound to; the
    *   authorization endpoint's is the browser's
+   * @param jkt - the DPoP key the token will be bound to, '' for none
    * @returns null, or `{ error, description }` marked STS-OAUTH-0489 (the
    *   token endpoint) or STS-OAUTH-0490 (the authorization endpoint)
    */
   private adminApiBindingRefusal(clientId: Json, audiences: Json, req: Json,
-                                 base: Json, fromClient: boolean): Json {
+                                 base: Json, fromClient: boolean,
+                                 jkt?: string): Json {
     const { log, mtls, errorCodes, applications } = this.deps;
     log.debug("Entering OAuth2Server.adminApiBindingRefusal().");
     if (fromClient && req && mtls.presentedThumbprint(req)) {
       log.debug("Leaving OAuth2Server.adminApiBindingRefusal(). A " +
                 "certificate to bind to.");
+      return null;
+    }
+    // A REMOTE PEP'S DPoP KEY STANDS FOR ITS CERTIFICATE (#1827's
+    // follow-up): `sts-remote-pep` declares certificate-bound tokens through
+    // phase 3 of the PEP's token plan, and its PEPs move to a DPoP key over
+    // those phases, so a token bound to that key is bound — the rule this
+    // function holds is "bound, not bearer", and only for that client.
+    if (jkt && this.deps.senderConstraints
+          .dpopStandsForCertificate(String(clientId || ''))) {
+      log.debug("Leaving OAuth2Server.adminApiBindingRefusal(). A remote " +
+                "PEP's DPoP key to bind to.");
       return null;
     }
     const forApi = this.audienceList(audiences)
@@ -15907,7 +15921,11 @@ class OAuth2Server {
     // refusals do not wait for a mode; it reads the observation above, so the
     // certificate is not verified a second time.
     const declared = mtls.declaredRefusal({
-      registered: registeredClient, observation: clientObservation, request: req
+      registered: registeredClient, observation: clientObservation, request: req,
+      // #1827's follow-up: a remote PEP's DPoP proof (verified above) stands
+      // for the certificate `sts-remote-pep`'s entry still declares.
+      boundByDpop: !!dpopJkt &&
+        senderConstraints.dpopStandsForCertificate(client.client_id)
     });
     if (declared) {
       log.debug("Leaving the token endpoint. RFC 8705: the client's " +

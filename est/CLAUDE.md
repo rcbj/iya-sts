@@ -247,7 +247,8 @@ records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
 `Est.placeRequest()` runs first in `enrollmentRequest()` — before the
 throttle, the credential and the body — and relays the request WHOLE to the
 home cell of the person its credential names: an HTTP Basic username, or,
-with no Authorization header, the `urn:sts:person:` of the TLS client
+with no Authorization header, the `urn:sts:person:` (or a service account's
+`urn:sts:sa:`, #1827, `common/CLAUDE.md` 3df) of the TLS client
 certificate (read, not verified; the channel forwards the certificate, so
 the home cell checks it as its own). An application's client_id is served
 where it arrives: its entry is the global tier's. The certificate is then

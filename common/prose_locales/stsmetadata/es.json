@@ -768,8 +768,8 @@
     "text": "Cada política tal como la ve el PDP, CON LOS DOCUMENTOS INCLUIDOS, junto con los problemas estáticos de comprobación de tipos de cada una. Los documentos se muestran deliberadamente, a diferencia de los secretos que oculta /admin/ldap/*: una política es una regla y no una credencial, y una regla que nadie puede leer es una regla que nadie puede comprobar. QUIÉN PUEDE LEERLA ES UNA PREGUNTA DISTINTA DE SI SE OCULTA, y esto requiere XACML_USER: desde que se integraron los PEP de acceso y de emisión, estos documentos son con los que este servicio decide sus propias admisiones, y entregar a un llamador anónimo las condiciones exactas en las que deja entrar a las personas no es el mismo acto que publicar una política de demostración. El almacén es ou=policies en el directorio integrado: ese contenedor ES el repositorio."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "Un Policy Enforcement Point en OTRO PROCESO anuncia que existe, mediante TLS mutuo en este mismo puerto; server.js ya establece requestCert: true, así que esto no necesitó una nueva escucha. EL ÚNICO ENDPOINT DE ESTA FAMILIA QUE PIDE UNA CREDENCIAL, y hace una pregunta distinta de la de /xacml/pdp: no sobre quién trata la decisión, sino QUÉ PEP es este, porque un registro escribe una entrada y aporta una dirección a la que este servicio se conectará más tarde. Es un torniquete como cualquier otro control de aquí (el certificado no necesita encadenar a nada, el argumento de la sección 3 de RFC 8705) y NO es lo que permite a un PEP aplicar decisiones: uno no registrado obtiene las políticas y decide igual de bien. xacml.pepRequireCertificate lo desactiva."
+    "en": "f25896a0df078725",
+    "text": "Un Policy Enforcement Point en OTRO PROCESO anuncia que existe, mediante TLS mutuo en este mismo puerto; server.js ya establece requestCert: true, así que esto no necesitó una nueva escucha. EL ÚNICO ENDPOINT DE ESTA FAMILIA QUE PIDE UNA CREDENCIAL, y hace una pregunta distinta de la de /xacml/pdp: no sobre quién trata la decisión, sino QUÉ PEP es este, porque un registro escribe una entrada y aporta una dirección a la que este servicio se conectará más tarde. Es un torniquete como cualquier otro control de aquí (el certificado no necesita encadenar a nada, el argumento de la sección 3 de RFC 8705) y NO es lo que permite a un PEP aplicar decisiones: uno no registrado obtiene las políticas y decide igual de bien. xacml.pepRequireCertificate lo desactiva. Un token de acceso vinculado por DPoP emitido a sts-remote-pep, con audiencia /xacml/pep y que lleva xacml:pep, puede sustituir al certificado aquí y en cada endpoint /xacml/pep y /xacml/pip, según lo permita xacml.pepAuthentication; el PEP se nombra entonces por el nombre de usuario de su entrada."
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -1894,6 +1894,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "establece el cumplimiento de un dispositivo o de un lote"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). Un PEP XACML remoto envía los registros de las decisiones que tomó en su propio proceso — las aplicaciones de /protected, las evaluaciones AuthZEN que decidió, nunca una que reenvió, y las solicitudes de su proxy inverso a una ruta — al menos una vez y en orden, hasta 500 por lote, cada uno confirmado por su seq. El token lleva el ámbito PROTEGIDO xacml:pep-audit y nada más aquí lo acepta: la autoaserción RFC 7523 del propio PEP, a través del cliente público precargado sts-remote-pep, vinculada a su certificado, emitida y aceptada solo mientras su entrada esté en el grupo de PEP remotos (REMOTE_PEPS). El PEP debe estar registrado en el dominio. Filas xacml.remote.enforcement, authzen.remote.decision y, para las solicitudes del proxy inverso, xacml.remote.proxy en /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "registra como filas de auditoría un lote de decisiones tomadas por un PEP remoto"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",

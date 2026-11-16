@@ -90,4 +90,19 @@ else
   echo "pep-credential: the credential could not be minted; the PEP starts" \
        "without one and sts_xacml_remote_pep will say so." >&2
 fi
+# THE ASSERTION KEY AND ITS REQUEST (#1827's follow-up, phase 3), beside
+# pep.key: the PEP signs its RFC 7523 self-assertion with it
+# (PEP_ASSERTION_KEY), and sts_xacml_remote_pep sends the request to
+# issue-pep-credential once it has made the PEP's entry in its realm, which
+# does not exist yet here. The key never leaves this volume. 0644 for the
+# reason pep.key is: the PEP container is another user.
+if node tests/tools/pep-credential.js --assertion --csr-only --out="${OUT}" \
+     --name="${XACML_PEP_NAME:-remote-pep-1}" > /dev/null;
+then
+  chmod 0644 "${OUT}/pep-assertion.key" 2>/dev/null || true
+  echo "pep-credential: generated the assertion key and its request in ${OUT}."
+else
+  echo "pep-credential: the assertion key could not be generated; the PEP" \
+       "authenticates by its client certificate alone." >&2
+fi
 exit 0
