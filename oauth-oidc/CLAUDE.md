@@ -1076,7 +1076,21 @@ so must `admin-ui/admin.ts`.
    the configured `adminApi.audience` where there is none. A token for any
    other resource is untouched: binding stays the client's choice there, and
    the rule is the one resource server where a stolen token administers the
-   service. **The gate holds the other end** (`STS-API-0137`,
+   service. **ONE CLIENT'S DPoP KEY STOOD FOR ITS CERTIFICATE THROUGH
+   PHASE 3 OF THE PEP TOKEN PLAN (#1827's follow-up), AND NO LONGER DOES:**
+   `sts-remote-pep` declared the section 3.4 flag from #1827, and while it
+   did, `sender_constraints.js`'s `dpopStandsForCertificate()` let a
+   verified DPoP proof satisfy `declaredRefusal()`, a `jkt` satisfy
+   `adminApiBindingRefusal()` and a `cnf.jkt` token pass `0137`. **Phase 4
+   (rcbj, 2026-11-16) retired the PEP's client certificate**: the seed no
+   longer declares the flag, an entry an earlier build seeded has it
+   CLEARED at every start (`applications.js`'s `fillRetiredClientFlags()`,
+   audited as `application.update`), and the exception is gone — so
+   `sts-remote-pep` meets these rules as any client does, and declares
+   nothing they ask about. A token request from it with no DPoP proof is
+   `STS-OAUTH-1012` (`sender_constraints.js`'s `REMOTE_PEP_CLIENT`),
+   reachable now that `0487` no longer answers first.
+   **The gate holds the other end** (`STS-API-0137`,
    `mgmt-api/CLAUDE.md`), reading the declaration NOW, so a token issued
    before the rule or before the declaration is refused too. In every mode,
    for `declaredRefusal()`'s reason. `tests/rfc8705_mtls.js` section m.
@@ -1263,7 +1277,10 @@ so must `admin-ui/admin.ts`.
    on the entry and for a certificate presented in an `x5c` that this service
    can see it issued to a person — that second path does not consult the
    registry at all, which is the point of it, so `common/pki.js` puts the answer
-   in the certificate as a `urn:sts:person:<name>` subjectAltName. That
+   in the certificate as a `urn:sts:person:<name>` subjectAltName — a service
+   account's `urn:sts:sa:<name>` since #1827, read as the person whichever
+   spelling names them (rcbj: the grant follows WS-Trust; `common/CLAUDE.md`
+   3df). That
    file argues the whole thing; what belongs here is that `keysForParty()` is
    told which KIND of party it is reading rather than trying every attribute
    name it knows, because the store is schemaless and a function that read both
@@ -4375,7 +4392,10 @@ secret.
 **WHAT DID NOT CHANGE, AND SAYS SO.** `urn:sts:client:` (the RFC 9700
 client subject) and the `urn:sts:application:` / `urn:sts:person:`
 certificate SANs are identifiers already inside issued tokens and certificates;
-renaming them is a migration, not a setting.
+renaming them is a migration, not a setting. **#1827 is the one such
+migration, and it is additive**: a service account's NEW leaves say
+`urn:sts:sa:`, and `urn:sts:person:` stays read for it for ever
+(`common/CLAUDE.md` 3df).
 
 
 ## 3x / 3z, CONTINUED: SEVERAL KEY PAIRS PER PERSON (#1290, 2026-11-03)

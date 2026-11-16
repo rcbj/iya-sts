@@ -205,5 +205,6 @@
   "shell.menu.another.title": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
   "nav.broadcast": "Sänd ett meddelande",
   "nav.sign-in-appearance": "Inloggningens utseende",
-  "nav.post-login-activities": "Aktiviteter efter inloggning"
+  "nav.post-login-activities": "Aktiviteter efter inloggning",
+  "nav.xacml-pep-clusters": "PEP-kluster"
 }

@@ -768,8 +768,8 @@
     "text": "Bawat policy ayon sa nakikita ng PDP, KASAMA ANG MGA DOKUMENTO, at ang mga static type-check problem ng bawat isa. Sadyang ipinapakita ang mga dokumento, hindi gaya ng mga secret na itinatago ng /admin/ldap/*: ang policy ay isang patakaran at hindi credential, at ang patakarang walang makabasa ay patakarang walang makasuri. IBANG TANONG KUNG SINO ANG PUWEDENG BUMASA NITO KAYSA KUNG NAKA-REDACT ITO, at nangangailangan ito ng XACML_USER: mula nang i-embed ang access at issuance PEP, ang mga dokumentong ito ang ginagamit ng serbisyong ito sa pagpapasya ng sarili nitong mga pagtanggap, at ang pagbibigay sa isang anonymous na caller ng eksaktong mga kondisyon kung kailan nito pinapapasok ang mga tao ay hindi kapareho ng paglalathala ng isang demonstration policy. Ang store ay ou=policies sa embedded directory — ang container na iyon ANG repository."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "Isang Policy Enforcement Point sa IBANG PROCESS ang nagsasabing umiiral ito, sa mutual TLS sa parehong port na ito — itinatakda na ng server.js ang requestCert: true, kaya hindi ito nangailangan ng bagong listener. ANG NAG-IISANG ENDPOINT SA FAMILY NA ITO NA HUMIHINGI NG CREDENTIAL, at iba ang tanong nito kaysa sa /xacml/pdp: hindi kung tungkol kanino ang desisyon, kundi KUNG ALING PEP ito — dahil ang registration ay nagsusulat ng entry at nagbibigay ng address na tatawagan ng serbisyong ito sa ibang pagkakataon. Turnstile ito gaya ng bawat ibang gate dito (hindi kailangang mag-chain ang certificate sa anuman, ang argumento ng RFC 8705 section 3) at HINDI ito ang nagpapahintulot sa isang PEP na magpatupad: ang hindi nakarehistro ay nakaka-pull at nakakapagpasya rin nang kasinghusay. Pinapatay ito ng xacml.pepRequireCertificate."
+    "en": "f25896a0df078725",
+    "text": "Isang Policy Enforcement Point sa IBANG PROCESS ang nagsasabing umiiral ito, sa mutual TLS sa parehong port na ito — itinatakda na ng server.js ang requestCert: true, kaya hindi ito nangailangan ng bagong listener. ANG NAG-IISANG ENDPOINT SA FAMILY NA ITO NA HUMIHINGI NG CREDENTIAL, at iba ang tanong nito kaysa sa /xacml/pdp: hindi kung tungkol kanino ang desisyon, kundi KUNG ALING PEP ito — dahil ang registration ay nagsusulat ng entry at nagbibigay ng address na tatawagan ng serbisyong ito sa ibang pagkakataon. Turnstile ito gaya ng bawat ibang gate dito (hindi kailangang mag-chain ang certificate sa anuman, ang argumento ng RFC 8705 section 3) at HINDI ito ang nagpapahintulot sa isang PEP na magpatupad: ang hindi nakarehistro ay nakaka-pull at nakakapagpasya rin nang kasinghusay. Pinapatay ito ng xacml.pepRequireCertificate. Ang DPoP-bound na access token mula sa sts-remote-pep, na ang audience ay /xacml/pep at may dalang xacml:pep, ay maaaring pumalit sa certificate dito at sa bawat /xacml/pep endpoint at /xacml/pip, ayon sa pinahihintulutan ng xacml.pepAuthentication; ang PEP ay pinangangalanan noon ng username ng entry nito."
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -782,6 +782,38 @@
   "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
     "en": "59db273e0a0989c3",
     "text": "Kung sino ang tinatanggap ngayon ng realm na ito sa AuthZEN API nito, upang ayon dito tumanggap ang edge PDP ng container na xacml-pep: bawat tumatawag na tinatanggap ng access-control policy sa /access/v1/* (AUTHZEN_PEPS, ayon sa pasya ng policy), pinangalanan kung paano ito nakikita ng isang policy sa urn:sts:xacml:authzen:caller, kasama ang SHA-256 ng DER ng bawat certificate na itutugma ng serbisyong ito sa pangalang iyon, ang saklaw ng application nito at ang mga endpoint kung saan ito tinatanggap, at isang sariling sync token; ang ?since=<token> ay sumasagot ng 304. Gumagalaw ang token kapag may nagbago sa isang miyembro, isang certificate, isang saklaw o sa sagot ng policy, at humahabol ang edge sa susunod nitong poll. Nangangailangan ng REMOTE_PEPS, gaya ng pagkuha ng mga policy, kaya sinumang may hawak ng role na iyon ay makababasa kung sino ang maaaring magtanong sa PDP (rcbj sa #1189). Karagdagan lamang: hindi nagbabago ang /xacml/pep/policies at /xacml/pep/authzen-catalogue."
+  },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Ang ipinapatupad ng xacml-pep container kapag nakatayo ito sa harap ng isang application (#1760): ang upstream na pinagpapasahan nito, ang nakaayos na mga route kasama ang mga mekanismong tinatanggap ng bawat isa at ang XACML resource at action na tinutumbasan ng bawat isa, ang application ng bawat route na nalutas mula sa registry, ang mga realm fact na ginagamit nito sa lokal na validation (issuer, JWKS, ang mga sign-in endpoint, ang mga SAML signing certificate, ang chain ng listener, ang mga client ng mga session route) at ang apat na validation URL sa ibaba, sa ilalim ng sarili nitong sync token; sumasagot ng 304 ang ?since=<token>. Ang PEP na walang configuration ay configured: false at tinatanggihan ng proxy nito ang lahat. Nangangailangan ng REMOTE_PEPS, tulad ng policy pull; walang nudge."
+  },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "Ang mga setting na itinakda ng isang administrator para sa PEP na ito sa pahina nito sa console (#1760) — ang paglalarawan at resource nito, ang notify URL, ang bias, ang switch ng PIP, ang mga interval ng poll, heartbeat at back-off, ang timeout at hangganan ng body, ang log level, ang switch, identifier at forward timeout ng AuthZEN edge, at ang mga hangganan ng reverse proxy — sa ilalim ng sarili nitong sync token; ?since=<token> ay sumasagot ng 304. Ang itinakda lamang ang ipinapadala: ginagamit ng PEP ang environment nito para sa iba, at ang pinakamababang kailangan nito para kumonekta ay hindi kailanman narito. Nangangailangan ng REMOTE_PEPS, gaya ng pag-pull ng policy; walang siko."
+  },
+  "stsmetadata.endpoints./xacml/pep/listener-certificate.what": {
+    "en": "2e12c8c3ee45d622",
+    "text": "Ang sertipiko ng isang HTTPS listener na itinakda ng isang administrator para sa PEP na ito sa pahina nito sa console (#1760): ginagawa ng PEP ang susi at nagpo-POST ito ng { listener, csr }, isang PKCS #10 na kahilingan na ang lagda ay nagpapatunay na hawak nito iyon, at tumatanggap ito ng sertipiko mula sa pep-tls Issuing CA ng realm at ng chain nito hanggang sa Root, no-store at walang anumang susi. Ang mga pangalan ay sa PEP at sa definition, hindi kailanman sa kahilingan; ang parehong susi na hiniling muli ay sinasagot ng hawak na sertipiko habang may natitira pang ikatlo ng buhay nito. Nangangailangan ng REMOTE_PEPS, gaya ng heartbeat."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "Ang sariling RFC 7662 na pagbasa ng authorization server sa isang OAuth 2.0 access token na hindi ma-verify ng proxy (isang opaque token, o key na wala sa JWKS), sa pamamagitan ng mutual TLS ng PEP sa halip na sariling client registration. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "Ang username at password ng isang tao, bina-verify dito at hindi kailanman sa PEP, sa likod ng sariling mga limit ng sign-in (429 na may retryAfterS); ang pagtanggi ay { valid: false } at wala nang iba pang sinasabi. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "Isang assertion na inilabas ng realm na ito, sinusuri dito kapag hindi ito masuri ng proxy: ang enveloped signature sa root assertion laban sa mga XML signing certificate ng realm, ang issuer, ang mga condition at ang audience ng route. Tinatanggihan ang EncryptedAssertion. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Kung buhay pa ang sign-on session na pinangangalanan ng sid ng isang ID Token, kaya tinatapos ng pag-sign out dito ang sariling session ng proxy sa susunod nitong pagsusuri. Nangangailangan ng REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "Para sa route ng nagtatanong na PEP, ang pagkakakilanlang pinangangalanan ng ebidensya nito (isang access token, isang SAML assertion o isang Basic ticket, bina-validate muli), sa mode ng route: mga claim para sa mga header nito, isang access token para sa application, o isang nilagdaang SAML Response sa assertion consumer service nito. Nangangailangan ng REMOTE_PEPS."
   },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
@@ -1030,6 +1062,10 @@
   "stsmetadata.endpoints./admin-api/xacml/peps.what": {
     "en": "102e5302d8a29ce7",
     "text": "Ang register, at ang huling iniulat ng bawat PEP: kung hawak nito ang kasalukuyang repository, kailan ito huling narinig, ang bias na sinasabi nitong pinapatakbo nito, at kung ano ang nangyari sa huling nudge — na siyang nag-iisang lugar kung saan itinatala ang nabigong nudge, dahil hindi ito nakikita mula sa tumatanggap na dulo ayon sa kahulugan."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Bawat cluster ng mga remote PEP na may iisang configuration: ang reverse proxy, mga setting at mga depinisyon ng listener nito gaya ng pagkuha ng bawat miyembro, at bawat miyembro kasama ang sarili nitong mga address at kung bakit ito tatanggihan ngayon ng isang pag-save."
   },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
@@ -1858,6 +1894,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "itinatakda ang compliance ng isang device o ng isang batch"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). Ipinapadala ng isang remote na XACML PEP ang mga talaan ng mga desisyong ginawa nito sa sarili nitong proseso — ang mga pagpapatupad sa /protected, ang mga AuthZEN evaluation na ito mismo ang nagpasya, hindi kailanman ang ipinasa nito, at ang mga kahilingan ng reverse proxy nito sa isang route — kahit isang beses at nang sunud-sunod, hanggang 500 bawat batch, bawat isa ay kinikilala sa pamamagitan ng seq nito. Dala ng token ang PROTEKTADONG scope na xacml:pep-audit at walang iba rito ang tumatanggap nito: ang sariling RFC 7523 self-assertion ng PEP sa pamamagitan ng naka-seed na pampublikong client na sts-remote-pep, nakatali sa sertipiko nito, ibinibigay at tinatanggap lamang habang ang entry nito ay nasa grupo ng mga remote na PEP (REMOTE_PEPS). Dapat nakarehistro ang PEP sa realm. Mga row na xacml.remote.enforcement, authzen.remote.decision at, para sa mga kahilingan ng reverse proxy, xacml.remote.proxy sa /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "itinatala bilang mga audit row ang isang batch ng mga desisyong ginawa ng isang remote na PEP"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",

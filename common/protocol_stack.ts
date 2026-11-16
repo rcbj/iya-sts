@@ -1985,8 +1985,19 @@ class ProtocolStack {
                'XacmlTemplates');
     this.build('xacml/xacml_alfa', require('../xacml/xacml_alfa'),
                'AlfaLanguage');
+    // A remote PEP's listeners (#1760): a library, the definitions'
+    // grammar and the reading of the PEP's report. Before the TLS module,
+    // which issues a defined HTTPS listener's certificate through it.
+    this.build('xacml/xacml_pep_listeners',
+               require('../xacml/xacml_pep_listeners'), 'PepListeners');
     this.build('xacml/xacml_pep_tls', require('../xacml/xacml_pep_tls'),
                'PepTls');
+    this.build('xacml/xacml_pep_proxy', require('../xacml/xacml_pep_proxy'),
+               'PepProxy');
+    // A remote PEP's managed settings (#1760): a library, its table and the
+    // pull's body.
+    this.build('xacml/xacml_pep_settings',
+               require('../xacml/xacml_pep_settings'), 'PepSettings');
     this.build('xacml/xacml_admin', require('../xacml/xacml_admin'),
                'XacmlAdmin');
     this.build('xacml/xacml_role_pep', require('../xacml/xacml_role_pep'),

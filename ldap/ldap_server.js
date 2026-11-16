@@ -265,6 +265,8 @@ const spiffeRegistry = require('../spiffe/spiffe_registry');
 // whatever point those files were first loaded.
 const xacmlStore = require('../xacml/xacml_store');
 const xacmlPepRegistry = require('../xacml/xacml_pep_registry');
+// Remote PEP clusters (#1760): `ou=pepClusters`, filled below.
+const xacmlPepClusters = require('../xacml/xacml_pep_clusters');
 const xacmlPip = require('../xacml/xacml_pip');
 // The audit log. A plain require and it cannot become anything else: audit.js
 // requires helpers.js and config.js only, so it can be reached from the deepest
@@ -935,6 +937,17 @@ function pepsDn() {
   log.debug("Entering pepsDn().");
   log.debug("Leaving pepsDn().");
   return 'ou=peps,' + baseDn();
+}
+
+// ou=pepClusters (#1760, Remote PEP clusters): one entry per logical
+// cluster of remote PEPs sharing one configuration. A container of its own
+// rather than entries in ou=peps, because a cluster is not a party that
+// registers: ou=peps is named from certificates, and a cluster is named by
+// an administrator. `xacml/xacml_pep_clusters.ts` owns the schema.
+function pepClustersDn() {
+  log.debug("Entering pepClustersDn().");
+  log.debug("Leaving pepClustersDn().");
+  return 'ou=pepClusters,' + baseDn();
 }
 
 // ou=trustAnchors is the DURABLE half of the client-certificate truststore
@@ -3693,6 +3706,9 @@ xacmlStore.SCHEMA.attributes.forEach(function (row) {
 xacmlPepRegistry.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML PEP registry schema');
 });
+xacmlPepClusters.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the XACML PEP cluster schema');
+});
 
 // The SCIM mapping's invention, `scimExternalId`, was a FIFTH list learnt
 // here until #1579; it is in the model's own names (`models/directory/
@@ -3936,9 +3952,10 @@ function hasChildren(dn) {
 //     over the realm and the DN — and every other entry's is random (version
 //     4). The seed runs on every start, so a random value would give alice a
 //     new `sub` on every restart of a development service; nothing created by
-//     a door is treated that way (bar a sign-in's entry where two processes
-//     can race — see putEntry()), because a deterministic value is exactly
-//     what makes a re-created person the same subject again (rcbj's choice).
+//     a door is treated that way — a sign-in's entry on a clustered node was
+//     until 2026-11-16, see putEntry() — because a deterministic value is
+//     exactly what makes a re-created person the same subject again (rcbj's
+//     choice).
 //   * **A RESTORED OR REPLICATED ROW WITHOUT ONE IS BACKFILLED THE SAME WAY**
 //     (version 5 over the realm and the stored key), so every process that
 //     reads a row written before this change computes the SAME value without
@@ -3953,23 +3970,6 @@ const ENTRY_UUID_NAMESPACE = Buffer.from('3b2f8c4e6d1a4e9f8a7c5d2e1f0b9a86',
 
 const UUID_SHAPED =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// Whether another process can create the same entry at the same moment: this
-// process is a node of a cluster (asked of `cluster/cluster.js` LAZILY — a leaf
-// this file needs only at this one decision), or one of several request
-// workers answering one port (`workers.requestCount` with something in
-// `workers.dispatch`, the question `persistence_minted.js` asks the same way).
-// See putEntry()'s note on a sign-in's entry.
-function clusteredNode() {
-  log.debug("Entering clusteredNode().");
-  const cluster = require('../cluster/cluster');
-  // The #364 rule: the default of one worker is none on a store that
-  // cannot coordinate.
-  const workers = require('../common/process_memory').requestWorkers() > 0 &&
-    String(config.value('workers.dispatch') || '').trim() !== '';
-  log.debug("Leaving clusteredNode().");
-  return cluster.mode() !== 'off' || workers;
-}
 
 // RFC 9562 section 5.5: SHA-1 over the namespace and the name, the version and
 // variant bits set. Node has a v4 generator and no v5 one.
@@ -4766,22 +4766,24 @@ function putEntry(dn, attributes, options) {
   // writer that rebuilt the attribute set from a copy of the entry may well be
   // handing one back, and one that did not is handing none; neither decides.
   //
-  // **AND AN ENTRY A SIGN-IN CREATED ON A CLUSTERED NODE (2026-09-14, #46)**
-  // takes the seed's deterministic value too — rcbj's choice, narrowed to the
-  // one case that needs it. `autoCreateUser()` runs synchronously inside every
-  // protocol's credential check, so two nodes seeing a name's first sign-in at
-  // once both create `uid=<name>,ou=users` and cannot claim it first; with a
-  // random value each, the directory merge keeps one entry and the other
-  // node's tokens carry a `sub` naming nobody. With the value derived from the
-  // realm and the DN both nodes create the SAME entry, and the merge makes them
-  // one. The cost is the one the rule above was written against — a person
-  // deleted and signing in again under the same name gets the same subject —
-  // and it is taken only where two processes can race (a cluster, or a
-  // dispatched pool): auto-create is development mode's (`mode.autoCreates()`),
-  // and a single process keeps random values.
+  // **AN ENTRY A SIGN-IN CREATED ON A CLUSTERED NODE IS RANDOM TOO
+  // (2026-11-16, #1612's rule; it was name-derived from 2026-09-14, #46).**
+  // Two nodes seeing one name's first sign-in at once each create
+  // `uid=<name>,ou=users`, and from #46 that entry took the seed's version 5
+  // value over the realm and the DN so that both created the same entry. The
+  // cost was the one the rule above was written against: on a cluster or a
+  // dispatched pool, a person deleted and signing in again under the name
+  // got the deleted person's `entryUUID`, so their subject and every store
+  // keyed by it. rcbj's rule since #1612 is that a namesake inherits nothing.
+  // The race does not need the derived value: the flush keeps the first
+  // committed entry (`STS-STORE-0052`), `applyEntry()` hands the losing node
+  // the winner's row, and `mergeCreateRace()` keeps the loser's value as an
+  // alias (`stsEntryUuidAlias`), so the tokens it already issued still name
+  // the entry. Only the SEED is name-derived now, and an entry that already
+  // carries a value keeps it — so every entry created under #46's rule keeps
+  // the subject it has (`tests/cluster_autocreate_subject.js`).
   stored.attributes.entryuuid = [entryUuidOf(previous) ||
-    (stored.origin === 'seed' || (stored.origin === 'authentication' &&
-                                  clusteredNode())
+    (stored.origin === 'seed'
       ? backfilledEntryUuid(realms.currentId(), normalizeDn(dn))
       : stsCrypto.randomUuid())];
   // And its aliases, the same way: the entry's, never the caller's.
@@ -4977,8 +4979,8 @@ function toSearchEntry(stored, requested, messageId, rule) {
 // demonstrable — two containers, three people, two groups, and one account that
 // looks like the one a client would bind as.
 // ---------------------------------------------------------------------------
-function seed() {
-  log.debug('Entering seed().');
+function seedTree() {
+  log.debug('Entering seedTree().');
   const dcValue = baseDn().split(',')[0].split('=')[1] || 'example';
   putEntry(baseDn(), {
     objectClass: ['top', 'domain', 'dcObject'],
@@ -5227,6 +5229,7 @@ function seed() {
       'place on /admin/xacml/peps and an address for the change nudge. ' +
       'xacml/xacml_pep_registry.ts holds the schema.'
   }, { origin: 'seed' });
+  putPepClustersContainer();
   // STRUCTURAL, so not behind `mode.seedsDemoData()` below — and in the DEFAULT
   // realm only, because the truststore is the process's. See trustAnchorsDn().
   if (realms.currentId() === realms.DEFAULT_ID) {
@@ -5541,6 +5544,24 @@ function seed() {
   let seeded = 0;
   eachEntryInRealm(function () { seeded++; });
   log.info('ldap: seeded ' + seeded + ' entries under ' + baseDn() + '.');
+  log.debug('Leaving seedTree().');
+}
+
+// THE SEED, MARKED WHILE IT RUNS (#1760): a membership write made by the seed
+// is not handed to the remote-PEP designation (designateJoinedRemotePeps()),
+// because the realm's administrators who are to own the identity are seeded
+// after it; the designation runs for the seed once they exist. A counter, not
+// a flag, so a nested call cannot clear it early.
+let seeding = 0;
+
+function seed() {
+  log.debug('Entering seed().');
+  seeding += 1;
+  try {
+    seedTree();
+  } finally {
+    seeding -= 1;
+  }
   log.debug('Leaving seed().');
 }
 
@@ -11289,7 +11310,9 @@ if (typeof serviceAccounts.setDirectory === 'function') {
     writeServiceAccount: writeServiceAccount,
     serviceAccountNames: serviceAccountNames,
     serviceAccountNamesAsync: serviceAccountNamesAsync,
-    resolveOwner: resolveServiceAccountOwner
+    resolveOwner: resolveServiceAccountOwner,
+    // A remote PEP's identity is a service account (#1760).
+    remotePepMembers: remotePepMemberDns
   });
 } else {
   log.warn('ldap: common/service_accounts.ts offers no setDirectory(), so no ' +
@@ -11397,6 +11420,16 @@ if (typeof xacmlPepRegistry.setDirectory === 'function') {
            '/admin/xacml/peps is empty. Policy DISTRIBUTION is unaffected — ' +
            'a PEP pulls GET /xacml/pep/policies without registering — so ' +
            'what is lost is the register and the nudge, not the mechanism.');
+}
+
+// ou=pepClusters (#1760): the container and nothing else. A cluster is named
+// by an administrator, so no certificate naming crosses here.
+if (typeof xacmlPepClusters.setDirectory === 'function') {
+  xacmlPepClusters.setDirectory({
+    allPepClusters: allPepClusters,
+    writePepCluster: writePepCluster,
+    deletePepCluster: deletePepCluster
+  });
 }
 
 // `locateEntry` and nothing else. It is the function that already resolves all
@@ -17024,7 +17057,15 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
                // A DISABLED ACCOUNT (2026-09-17) is refused an AS-REQ —
                // `krb5_person_keys.ts` answers `disabled` and the KDC
                // KDC_ERR_CLIENT_REVOKED (18).
-               disabled: !!firstValue(stored, 'pwdaccountlockedtime') };
+               disabled: !!firstValue(stored, 'pwdaccountlockedtime'),
+               // The entry's entryUUID and its aliases (2026-11-16): the
+               // KDC binds a person's RID to the entry, so a namesake gets
+               // a SID of its own (`krb5_principals.js`).
+               entryUuids: [entryUuidOf(stored)]
+                 .concat(entryUuidAliasesOf(stored))
+                 .filter(function (one) {
+                   return !!one;
+                 }) };
     },
     writePerson: function (username, keysValue, infoValue) {
       log.debug('Entering writePerson(). username=' + username);
@@ -19833,8 +19874,10 @@ require('../common/cell_channel').registerOp('ldap-bind', answerCellBind);
 // ONE MAPPING, NOT A SECOND (#520's rule): the certificate is an entry only
 // where `common/tls_client_certificates.js` says it is an identity in THIS
 // realm (`checkSocket()`, which is `identityOf()` under the ambient realm),
-// issued to a PERSON — `urn:sts:person:<name>` in its subjectAltName, which
-// is the same name a simple bind's entry has — whose record still lists it
+// issued to a PERSON — `urn:sts:person:<name>` in its subjectAltName, or a
+// service account's `urn:sts:sa:<name>` (#1827, refused where the entry is
+// not one), which is the same name a simple bind's entry has — whose record
+// still lists it
 // (`stillHeld()`) and whose entry EXISTS. Nothing is read off a CN or a
 // subject, and no entry is ever created from a certificate. Three things a
 // verified certificate can be that are NOT that, each refused with its own
@@ -25290,6 +25333,97 @@ function writePep(name, attributes) {
 }
 
 // ---------------------------------------------------------------------------
+// ou=pepClusters AS A STORE (#1760, Remote PEP clusters).
+//
+// ou=peps' three functions again, for entries an administrator names. The
+// container is seeded with a realm's tree, and a realm built before it has
+// none, so a first write makes it too (the signer truststore's rule).
+// ---------------------------------------------------------------------------
+function putPepClustersContainer() {
+  log.debug("Entering putPepClustersContainer().");
+  putEntry(pepClustersDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'pepClusters',
+    description: 'Logical clusters of remote XACML Policy Enforcement ' +
+      'Points that share one configuration: the reverse proxy, the managed ' +
+      'settings and the listener definitions are held on the cluster once, ' +
+      'and every member pulls them as its own, differing only in its name ' +
+      'and its addresses. xacml/xacml_pep_clusters.ts holds the schema.'
+  }, { origin: 'seed' });
+  log.debug("Leaving putPepClustersContainer().");
+}
+
+function pepClusterDn(name) {
+  log.debug("Entering pepClusterDn().");
+  log.debug("Leaving pepClusterDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + pepClustersDn();
+}
+
+function allPepClusters() {
+  log.debug('Entering allPepClusters().');
+  const rows = [];
+  const base = normalizeDn(pepClustersDn());
+  eachResidentEntry(function (stored) {
+    if (isUnder(stored.dn, pepClustersDn()) &&
+        normalizeDn(stored.dn) !== base) {
+      const object = entryObject(stored);
+      object.name = (stored.attributes.cn || [])[0] ||
+                    stored.dn.split(',')[0].replace(/^cn=/i, '');
+      rows.push(object);
+    }
+  });
+  log.debug('Leaving allPepClusters(). ' + rows.length + ' cluster(s).');
+  return rows;
+}
+
+// Create or REPLACE, writePep()'s rule: the attributes were read from this
+// entry a moment ago and changed, and a document cleared must go.
+function writePepCluster(name, attributes) {
+  log.debug('Entering writePepCluster(). name=' + name);
+  const dn = pepClusterDn(name);
+  const existing = entries.get(normalizeDn(dn));
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writePepCluster(). The directory is full.');
+    return false;
+  }
+  if (!entries.get(normalizeDn(pepClustersDn()))) {
+    putPepClustersContainer();
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin : 'xacml' });
+  if (!stored || stored.ok === false) {
+    log.debug('Leaving writePepCluster(). Refused.');
+    return false;
+  }
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writePepCluster(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deletePepCluster(name) {
+  log.debug('Entering deletePepCluster(). name=' + name);
+  const dn = pepClusterDn(name);
+  const existing = entries.get(normalizeDn(dn));
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+    auditPolicyDirectory('entry.delete', dn,
+                         existing ? existing.attributes : {}, false);
+  }
+  log.debug('Leaving deletePepCluster(). ' + gone);
+  return gone;
+}
+
+// ---------------------------------------------------------------------------
 // THE TRUSTSTORE'S DURABLE HALF: read, write and delete one anchor.
 //
 // All three are handed to `tls/tls_server.js` pinned to the DEFAULT realm (see
@@ -27668,8 +27802,90 @@ function memberDnsOf(attributes) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760). THE CHOKEPOINT: every
+// write of a group's members comes through noteMembershipChange() below — a
+// putEntry() (the console's and the API's add-member, roles, a bulk import),
+// an LDAP add, modify, delete or modifyDN — so a PERSON who JOINS the group
+// that grants REMOTE_PEPS (`roles.remotePepGroup`, the name it has AFTER the
+// write, so a group renamed to it counts every member) is handed to
+// `service_accounts.designateRemotePep()` here, in the group's realm.
+// Asked before the observer check, because it is no observer's business.
+//
+// A SEED IS NOT TOLD (`seeding`, set by seed()): the seed runs before the
+// realm's bootstrap administrator exists, so the owner would be missing and the
+// identity deferred; `designateRemotePeps()` runs for the seed right after
+// that administrator is (server.js, admin_actions.ts's realm create).
+// ---------------------------------------------------------------------------
+function remotePepGroupKey() {
+  log.debug('Entering remotePepGroupKey().');
+  log.debug('Leaving remotePepGroupKey().');
+  return String(config.value('roles.remotePepGroup') || '').trim()
+    .toLowerCase();
+}
+
+function designateJoinedRemotePeps(groupDn, before, after, options) {
+  log.debug('Entering designateJoinedRemotePeps(). ' + groupDn);
+  const wanted = remotePepGroupKey();
+  const named = function (attributes) {
+    return ((attributes && attributes.cn) || []).some(function (one) {
+      return String(one).trim().toLowerCase() === wanted;
+    });
+  };
+  if (!wanted || seeding > 0 || !named(after)) {
+    log.debug('Leaving designateJoinedRemotePeps(). Not the PEP group.');
+    return;
+  }
+  const was = new Set(named(before) ? memberDnsOf(before) : []);
+  const joined = memberDnsOf(after).filter(function (dn) {
+    return !was.has(dn);
+  });
+  if (!joined.length) {
+    log.debug('Leaving designateJoinedRemotePeps(). Nobody joined.');
+    return;
+  }
+  // A failure here never undoes the membership write it follows.
+  try {
+    realms.run(realmFor(groupDn), function () {
+      joined.forEach(function (dn) {
+        const stored = getEntry(dn);
+        if (stored && isPersonEntry(stored)) {
+          serviceAccounts.designateRemotePep(stored.dn,
+            'joined ' + String(groupDn));
+        }
+      });
+    });
+  } catch (e) {
+    log.warn(errorCodes.tag('STS-SVCACCT-0052') + 'ldap: a member who ' +
+             'joined ' + groupDn + ' could not be made a service account: ' +
+             ((e && e.message) || e));
+  }
+  log.debug('Leaving designateJoinedRemotePeps(). ' + joined.length +
+            ' joined.');
+}
+
+// The persons in the ambient realm's REMOTE_PEPS group, by DN: the hook
+// `service_accounts.designateRemotePeps()` walks (#1760). Direct members
+// only, as REMOTE_PEPS itself reads the group.
+function remotePepMemberDns() {
+  log.debug('Entering remotePepMemberDns().');
+  const name = String(config.value('roles.remotePepGroup') || '').trim();
+  const group = name && nameUsableInDn(name)
+    ? readGroupEntry(groupDnFor(name)) : null;
+  const out = group ? group.members.map(function (one) {
+    return getEntry(String(one.dn || one.value || ''));
+  }).filter(function (stored) {
+    return !!stored && isPersonEntry(stored);
+  }).map(function (stored) {
+    return String(stored.dn);
+  }) : [];
+  log.debug('Leaving remotePepMemberDns(). ' + out.length);
+  return out;
+}
+
 function noteMembershipChange(groupDn, before, after, options) {
   log.debug('Entering noteMembershipChange(). ' + groupDn);
+  designateJoinedRemotePeps(groupDn, before, after, options);
   if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteMembershipChange(). Nobody is observing.');
     return;
@@ -27923,6 +28139,11 @@ function noteApplicationRemoved(stored, via) {
                   detail: '"' + identifier + '" no longer confers the role "' +
                           role + '": the application was deleted by ' + via });
   });
+  // AND ITS CERTIFICATES ARE REVOKED AND LEAVE ITS IDENTIFIER (2026-11-16):
+  // an application's TLS client certificates are recorded under it, so one
+  // registered again under it was listed them (forgetHolderCertificates()).
+  forgetHolderCertificates('application', identifier, '', a,
+                           String(stored.dn), via);
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,
@@ -28883,10 +29104,13 @@ function moveOwnerReferences(oldDn, newDn) {
 // marked BY ITS DN (a DN-less touch invalidates every cached listing and makes
 // the next flush diff the whole store), and the consequences are noted: the
 // observers at once, what the person held through the ambient batch.
-function removePersonEntry(stored, door) {
+// `options.moved` is a re-homing (`common/cell_rehome.ts`): the person goes
+// on in another cell, so what they hold outside the entry is not ended here.
+function removePersonEntry(stored, door, options) {
   log.debug('Entering removePersonEntry(). dn=' + stored.dn);
   const goneAttributes = attributeSnapshot(stored);
   const goneName = usernameOfEntry(stored);
+  const goneUuid = entryUuidOf(stored);
   // The passkeys the person held leave the report with them (#942).
   const gonePasskeys = (stored.attributes.stswebauthncredential || [])
     .slice(0);
@@ -28919,7 +29143,151 @@ function removePersonEntry(stored, door) {
   // (#607), and somebody made again at this DN would own it all again
   // (forgetOwnerReferences()).
   forgetOwnerReferences(stored.dn, door);
+  // AND EVERY CERTIFICATE THEY HAD IS REVOKED AND LEAVES THEIR NAME
+  // (2026-11-16, #1612's rule): the TLS client and message-signing register
+  // finds a holder by name, so somebody made again under the username was
+  // listed every certificate this person had (forgetHolderCertificates()).
+  if (!(options && options.moved)) {
+    forgetHolderCertificates('person', goneName,
+                             goneUuid ? 'urn:uuid:' + goneUuid : '',
+                             goneAttributes, stored.dn, door);
+    // AND EVERYTHING ELSE KEPT UNDER THEIR NAME OR DN (2026-11-16, rcbj:
+    // "address all those things a recreated user inherits")
+    // — forgetPersonHoldings().
+    forgetPersonHoldings(goneName, stored.dn, door,
+                         { uuid: goneUuid,
+                           mail: goneAttributes.mail || [] });
+  }
   log.debug('Leaving removePersonEntry().');
+}
+
+// A deleted person's or application's certificates, revoked and detached from
+// its name by `common/tls_client_certificates.js`'s `forgetDeletedHolder()`,
+// which argues it. In the entry's realm, after the entry is gone; nothing it
+// does may stop the delete, which has happened.
+function forgetHolderCertificates(kind, id, subject, attributes, dn, door) {
+  log.debug('Entering forgetHolderCertificates(). ' + kind + ' ' + id);
+  try {
+    require('../common/tls_client_certificates').forgetDeletedHolder({
+      kind: kind, id: id, subject: subject, attributes: attributes,
+      realm: realmFor(dn).id, door: door });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0280') + 'ldap: the certificates of ' +
+              'the deleted ' + kind + ' ' + dn + ' could not be revoked and ' +
+              'detached from its name: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving forgetHolderCertificates().');
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A DELETED PERSON HELD OUTSIDE THEIR ENTRY, UNDER THEIR NAME OR DN
+// (2026-11-16, rcbj: "address all those things a recreated user inherits";
+// the rule is #1612's, a deleted object made again under the same name
+// inherits nothing). A person made again under the username has the same name
+// and the same DN and a NEW `entryUUID`, so every store keyed by either found
+// the deleted person's rows and handed them over. Each store's own door
+// forgets them, in the entry's realm, synchronously — before this delete is
+// answered, so nothing made under the name afterwards can be what is
+// forgotten (the deferred step `account_state.ts` takes for sessions has to
+// read its ids first for the same reason):
+//
+//   * the devices they owned, removed and their certificates revoked
+//     (`devices.forgetOwner()`, found by the owner index);
+//   * their post-login progress (`post_login.forgetPerson()`, a key per
+//     activity);
+//   * the mail they declined (`mail.forgetPerson()`, one key);
+//   * a partner's stop on them through each federation relationship
+//     (`federation_blocks.forgetPerson()`, a key per relationship);
+//   * their name on every GNAP application's approvers
+//     (`gnap_signals.forgetApprover()`, a list per application);
+//   * their `/admin/users` row and token-holder row
+//     (`admin_stats.forgetIdentity()`, a key each);
+//   * the enrolments pending for them — the authenticator app, a security
+//     key, an administrator's ceremony (`credentials.forgetPending()`) —
+//     and the rich authorization Allows they gave
+//     (`authorization_details.forgetPerson()`), both minutes-long;
+//   * the risk standing this process holds for them
+//     (`risk_engine.forgetStanding()`, one key);
+//   * their Kerberos principal record, RETIRED rather than removed — it
+//     keeps the sign-out stamp that refuses their tickets — so the next
+//     person under the name gets a RID, a SID, of their own
+//     (`krb5_principals.retirePerson()`, one key);
+//   * the AuthZEN access requests naming them as the subject — by the
+//     username, the `urn:uuid:` subject or a mail address, as a PEP sent
+//     it: a pending one cancelled, an approval revoked
+//     (`authzen_access_request.forgetSubject()`, through its subject
+//     index, a key per identifier).
+//
+// The RISC register's `purged` row is not forgotten here: it is the evidence
+// that the purge went out, and `ssf/risc.ts` moves it out of the name when
+// the name is given to a new entry (`retireNamesake()`). Group and role
+// memberships, owner lists, certificates, the photo and what the person held
+// live are each forgotten above, by their own doors. Nothing here may stop
+// the delete, which has happened: a step that throws is logged under
+// STS-LDAP-0222 and the rest go on. A re-homing (`moved`) never comes here.
+// ---------------------------------------------------------------------------
+function forgetPersonHoldings(name, dn, door, also) {
+  log.debug('Entering forgetPersonHoldings(). ' + dn);
+  const via = String(door || 'a directory delete');
+  const more = also || {};
+  // Every name a PEP may have given AuthZEN for this person: the username,
+  // the `urn:uuid:` subject and the mail addresses.
+  const subjectIds = [name]
+    .concat(more.uuid ? ['urn:uuid:' + more.uuid] : [])
+    .concat(more.mail || []);
+  const steps = [
+    { what: 'devices', act: function () {
+      require('../common/devices').forgetOwner(dn, via);
+    } },
+    { what: 'post-login progress', act: function () {
+      require('../common/post_login').forgetPerson(name);
+    } },
+    { what: 'mail preferences', act: function () {
+      require('../common/mail').forgetPerson(name);
+    } },
+    { what: 'federation blocks', act: function () {
+      const federations = require('../federation/federation').list()
+        .map(function (one) {
+          return String(one.fedId || '');
+        });
+      require('../federation/federation_blocks').forgetPerson(name,
+                                                              federations);
+    } },
+    { what: 'GNAP approvals', act: function () {
+      require('../gnap/gnap_signals').forgetApprover(name);
+    } },
+    { what: 'identity register', act: function () {
+      require('../common/admin_stats').forgetIdentity(name);
+    } },
+    { what: 'pending enrolments', act: function () {
+      require('../common/credentials').forgetPending(name);
+    } },
+    { what: 'authorization details allowed', act: function () {
+      require('../oauth-oidc/authorization_details').forgetPerson(name);
+    } },
+    { what: 'risk standing', act: function () {
+      require('../risk/risk_engine').forgetStanding(realmFor(dn).id, name);
+    } },
+    { what: 'Kerberos principal', act: function () {
+      require('../kerberos/krb5_principals').retirePerson(name);
+    } },
+    { what: 'AuthZEN access requests', act: function () {
+      require('../authzen/authzen_access_request').forgetSubject(subjectIds);
+    } }
+  ];
+  realms.run(realmFor(dn), function () {
+    steps.forEach(function (step) {
+      try {
+        step.act();
+      } catch (e) {
+        log.error(errorCodes.tag('STS-LDAP-0222') + 'ldap: the ' + step.what +
+                  ' of the deleted person ' + dn + ' could not be forgotten ' +
+                  '(' + via + '), so a person made again under the name may ' +
+                  'inherit them: ' + ((e && e.message) || e));
+      }
+    });
+  });
+  log.debug('Leaving forgetPersonHoldings().');
 }
 
 // Delete a person's entry. Since 2026-11-10 (#1612, rcbj) it takes that DN out
@@ -28935,7 +29303,8 @@ function removePersonEntry(stored, door) {
  * outside one, as a batch of one.
  *
  * @param dn - the SCIM id or DN
- * @param options - `door`, the words the sign-out names (a SCIM DELETE)
+ * @param options - `door`, the words the sign-out names (a SCIM DELETE);
+ *   `moved`, a re-homing to another cell, which keeps the certificates
  * @returns `{ ok: true, dn }`, or a refusal marked with its error code
  */
 function deletePerson(dn, options) {
@@ -28963,7 +29332,8 @@ function deletePerson(dn, options) {
                  { ok: false, reason: 'notLeaf', dn: stored.dn });
   }
   removePersonEntry(stored,
-                    String((options && options.door) || 'a SCIM DELETE'));
+                    String((options && options.door) || 'a SCIM DELETE'),
+                    { moved: !!(options && options.moved) });
   log.debug('Leaving deletePerson(). ' + entries.size + ' entry/entries left.');
   return { ok: true, dn: stored.dn };
 }
@@ -31792,6 +32162,10 @@ module.exports = {
   readPerson: readPerson,
   writePerson: writePerson,
   deletePerson: deletePerson,
+  // Whether an entry is its realm's bootstrap administrator, which no door
+  // deletes: the management API's person delete asks it before its own
+  // refusals (2026-11-16), so the account meets STS-LDAP-0077 first.
+  isBootstrapAdministratorEntry: isBootstrapAdministratorEntry,
   inPersonBatch: inPersonBatch,
   personBatchStep: personBatchStep,
   groupDnFor: groupDnFor,

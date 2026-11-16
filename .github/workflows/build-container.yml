@@ -394,13 +394,15 @@ jobs:
           }
 
       # The PEP's liveness only: it starts, binds 9090 and answers
-      # /healthcheck. Registering with a PDP needs a client certificate a
+      # /healthcheck. Plain HTTP is off by default since #1760, and turned
+      # on here because this container holds no HTTPS pair to probe:
+      # issuing one needs a realm it registered to. Registering with a PDP needs a client certificate a
       # realm issued, which the test stacks arrange and this job does not; a
       # PEP that cannot reach its PDP keeps retrying and stays live, which
       # is the behaviour xacml-pep/CLAUDE.md argues.
       - name: Check the XACML PEP image starts
         run: |
-          docker run -d --name pep-ci -p 9090:9090 \
+          docker run -d --name pep-ci -p 9090:9090 -e PEP_HTTP=true \
             -e PEP_PDP_URL=https://localhost:8081 rcbj/xacml-pep:ci
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:9090/healthcheck; then

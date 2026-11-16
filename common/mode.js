@@ -1181,6 +1181,24 @@ function createsIncompletePeople() {
   return !isProduct();
 }
 
+// May a remote PEP's reverse proxy be reached by a browser over plain http
+// (#1760)? Its `publicBaseUrl` is where the session mechanism's sign-in
+// comes back with an authorization code and where its Secure session cookie
+// lives, so product holds it to https (`xacml/xacml_pep_proxy.ts`,
+// STS-XACML-0188). Development allows http so a laptop stack needs no
+// listener certificate for the proxy.
+/**
+ * Tells whether a remote PEP's reverse proxy may name a plain-http public
+ * origin.
+ *
+ * @returns true in development mode
+ */
+function servesProxyBrowsersInTheClear() {
+  log.debug("Entering servesProxyBrowsersInTheClear().");
+  log.debug("Leaving servesProxyBrowsersInTheClear().");
+  return !isProduct();
+}
+
 // May a response be delivered to an address the REQUEST named and no
 // registration did? A SAML AssertionConsumerServiceURL, a SAML 1.1 `shire`, a
 // WS-Federation `wreply`, a wallet URL on a query string. Development accepts
@@ -4325,7 +4343,17 @@ const REQUIREMENTS = [
              'with a TPM attestation is therefore issued over EST only, ' +
              'after /nonce (draft-ietf-lamps-attestation-freshness section ' +
              '5.1).',
-    where: 'common/cert_enrollment.ts, common/device_enrolment.ts, est/est.ts' }
+    where: 'common/cert_enrollment.ts, common/device_enrolment.ts, est/est.ts' },
+  // 2026-11-14 (#1760).
+  { id: 'pep-proxy-origin',
+    what: 'A remote PEP\'s reverse proxy is reached by a browser over https',
+    development: 'A proxy configuration may name a plain-http publicBaseUrl, ' +
+                 'so a stack on one machine needs no listener certificate ' +
+                 'for the proxy.',
+    product: 'A publicBaseUrl that is not https is refused (STS-XACML-0188): ' +
+             'the session mechanism\'s sign-in returns an authorization code ' +
+             'there and its session cookie is Secure.',
+    where: 'xacml/xacml_pep_proxy.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -4887,6 +4915,7 @@ module.exports = {
   inventsClaimValues: inventsClaimValues,
   createsIncompletePeople: createsIncompletePeople,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
+  servesProxyBrowsersInTheClear: servesProxyBrowsersInTheClear,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
   opensConsoleToAnyone: opensConsoleToAnyone,

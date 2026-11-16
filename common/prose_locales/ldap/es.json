@@ -1947,6 +1947,10 @@
     "en": "eb941b100ed53ed4",
     "text": "Cuándo se eliminó la aplicación propietaria. La política se conserva, deshabilitada, para la auditoría, hasta que un administrador la elimine."
   },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "El PEP remoto y la ruta, como el nombre del PEP, una barra y el id de la ruta, para los que se GENERÓ esta política mediante la elección de autorización de la ruta (simple o pública) en los formularios de rutas del proxy inverso o mediante la acción generate-pep-route-policy (#1760). Una política así se reescribe cuando se guarda la ruta, se renombra con la ruta y se quita con ella; nunca es la raíz. Puede editarse en el editor de políticas, y el siguiente guardado de la elección simple o pública de la ruta la vuelve a escribir: elige una política existente en la ruta para conservar una escrita a mano."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Un Policy Enforcement Point remoto que se ha registrado en este Policy Decision Point. LA FILA ES UN REGISTRO Y NO UN PERMISO — un PEP que nunca se registra puede igualmente obtener el repositorio y aplicarlo. Lo que aporta una fila es un lugar en la consola y una dirección para el aviso de cambios."
@@ -2019,12 +2023,64 @@
     "en": "b6078cbbbfdb9576",
     "text": "Lo que el PEP remoto dice que es. Texto libre."
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "El nombre de host que el PEP remoto comunica al registrarse y en su latido (#1760): la variable de entorno HOSTNAME, si no la del kernel, si no /etc/hostname — el nombre con el que se conoce al contenedor en su red, y del que deriva su URL de notificación cuando el certificado de su escucha HTTPS lo incluye. Limitado a un nombre DNS de 253 caracteres como máximo, en minúsculas, nunca una dirección IP; un registro o latido que lleve otra cosa se rechaza (STS-XACML-0261). El certificado de escucha predeterminado del dominio lo incluye junto al nombre registrado del PEP y su host de notificación. Un registro sin él lo elimina, un latido sin él lo conserva. Ausente en un PEP más antiguo, cuyos nombres de certificado son los de antes."
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
     "en": "a4283bfe7916574e",
     "text": "Qué le ocurrió al último aviso — el estado, o la frase de rechazo. EL ÚNICO LUGAR DONDE SE REGISTRA UN AVISO FALLIDO, por la razón que da ssf_streams.js sobre un envío rechazado: por definición es invisible desde el extremo receptor."
   },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "La configuración de proxy inverso que el PEP remoto obtiene de GET /xacml/pep/proxy (#1760): un documento JSON — enabled, la URL base de la aplicación de destino, la URL base pública por la que un navegador llega al proxy, los tiempos de espera y la tabla ordenada de rutas, cada ruta con su ruta de acceso, sus métodos, sus mecanismos de autenticación, la aplicación del registro del reino que protege, y el recurso y la acción XACML. Lo escribe la acción set-pep-proxy de la consola y de la API de gestión, se valida entero allí y de nuevo al construir la obtención, de modo que un valor escrito con ldapmodify que no es válido se obtiene como configured: false. Se conserva en un registro y un latido; se elimina con la fila."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "973f5fff5b5df8e8",
+    "text": "La salud de los flujos de señales CAEP/RISC del proxy inverso tal como el PEP remoto la informó por última vez en un latido (#1760): un documento JSON solo de recuentos y antigüedades — los receptores, cuántos están sanos y obsoletos, el umbral de obsolescencia y el intervalo de consulta, la antigüedad del éxito más antiguo, el mayor número de fallos seguidos, los SET aceptados y rechazados, las sesiones terminadas, y los valores held, max, TTL, evicted y expired de los almacenes de sesiones de la biblioteca — con cuándo llegó y, de un PEP que las informa, una fila por flujo: el cliente OIDC al que sirve y su identificador de flujo, cada uno limitado a un juego de caracteres, si está en marcha y sano, cuándo se inició, cuándo consultó por última vez y cuándo tuvo éxito por última vez (calculado aquí a partir de las antigüedades que envió el PEP y de la llegada, nunca de un reloj del PEP), y sus contadores. Cualquier otro miembro se descarta y todo valor que no sea un entero no negativo es 0, así que nunca se guarda una URL ni un texto de error. Un latido sin él lo conserva, uno con null lo borra y un registro lo elimina, ya que un registro es un proceso nuevo. Ausente en un PEP que nunca lo informó, lo que la consola muestra como no informado."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "Los ajustes que un administrador fijó para este PEP remoto en su página de la consola o con la acción set-pep-settings de la API de gestión (#1760): un documento JSON que contiene solo los ajustes que se fijaron, cada uno por su nombre de miembro (description, resource, notifyUrl, bias, pip, los intervalos de sondeo, de latido y de espera de reintento, el tiempo de espera y el límite del cuerpo, el intervalo de recarga HTTPS, el nivel de registro, el interruptor, el identificador y el tiempo de espera del reenvío de AuthZEN, y los límites de sesión, JWKS, destino, usuario de confianza y flujo de señales del proxy inverso), validado entero al escribirse y de nuevo cuando el PEP los obtiene de GET /xacml/pep/settings. Un ajuste que no está en él es la variable de entorno del PEP, o su valor predeterminado. Lo mínimo que el PEP necesita para conectarse la primera vez nunca está aquí. Se conserva tras un registro y un latido; se elimina con la fila."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "Lo que el PEP remoto informó por última vez, en un latido, tener en vigor para cada ajuste gestionado (#1760): un documento JSON de { token, values: { setting: { value, source } } }, con source service, environment o default, junto con cuándo llegó. Se descarta todo ajuste que la tabla no nombre, todo valor que no sea del tipo de su ajuste y cualquier otro origen. Un latido sin él lo conserva, uno con null lo borra, y un registro lo descarta. Ausente en un PEP anterior a los ajustes, que la consola muestra como no informado."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Las escuchas que un administrador definió para este PEP remoto en su página de la consola o con la acción set-pep-listener de la API de gestión (#1760), además de las cuatro que enlaza su entorno: un array JSON, cada escucha con su identificador, su protocolo (http o https), su función (api o proxy), su dirección y su puerto, y para una HTTPS los nombres DNS y las direcciones IP que lleva su certificado, su algoritmo de clave y un contador de renovación. Se valida completo al escribirse y de nuevo cuando el PEP las obtiene de GET /xacml/pep/settings, que las enlaza y desenlaza mientras funciona. El PEP genera la clave de cada escucha HTTPS y pide su certificado a POST /xacml/pep/listener-certificate, así que nunca hay aquí una clave privada. Se conserva en un registro y en un latido; se elimina con la fila."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Lo que el PEP remoto informó por última vez, en un latido, sobre cada una de sus escuchas (#1760), las cuatro de su entorno y las definidas: un documento JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, con cuándo llegó. El estado es uno de listening, waiting, failed y off y el motivo uno de un conjunto cerrado, nunca el texto del sistema operativo; el certificado es el sujeto, el emisor, el número de serie, el subjectAltName, la validez y la huella del que sirve. Cualquier otro miembro se descarta. Un latido sin él lo conserva, uno con null lo borra y un registro lo elimina. Ausente en un PEP anterior a las escuchas, lo que la consola muestra como no informado."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Lo que el PEP dijo de sí mismo cuando se registró."
+  },
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "Un clúster lógico de puntos de aplicación de políticas (PEP) remotos que comparten una configuración (#1760): el proxy inverso, los ajustes gestionados y las definiciones de escuchas se guardan aquí una sola vez, y cada miembro las obtiene como propias. Un miembro solo se diferencia por su nombre y sus direcciones. La pertenencia se guarda aquí, así que un PEP puede figurar antes de registrarse, y un PEP pertenece como mucho a un clúster."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "La configuración del proxy inverso que cada miembro del clúster obtiene de GET /xacml/pep/proxy (#1760): el mismo documento que el del PEP (xacmlPepProxy), validado con la misma gramática, con las políticas generadas de sus rutas llamadas pepc-<cluster>-<route> y marcadas @<cluster>/<route>. Su publicBaseUrl es la URL base lógica del clúster, a partir de la cual se construye el recurso predeterminado de una ruta simple o pública y que se envía a un miembro sin publicBaseUrl propio. La escriben las acciones set-pep-cluster-proxy y set-pep-cluster-route."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "Los ajustes gestionados que cada miembro del clúster obtiene de GET /xacml/pep/settings (#1760): el mismo documento que el del PEP (xacmlPepSettings), validado con la misma tabla, salvo la URL de notificación, que es una dirección del miembro y se establece en el miembro. La escribe la acción set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "Las escuchas definidas para cada miembro del clúster (#1760): el mismo arreglo que el del PEP (xacmlPepListeners), validado con la misma gramática. Un miembro puede sustituir la dirección y el puerto de una escucha y añadir nombres DNS a su certificado; el certificado de cada miembro es el suyo, emitido para su propia clave. La escriben las acciones set-pep-cluster-listener y remove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "Los miembros del clúster (#1760): un arreglo JSON de { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, cada pep el nombre de un PEP registrado o de uno aún no registrado, y el resto las direcciones propias del miembro. Un PEP es miembro de un clúster como mucho. La escriben las acciones create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member y remove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "Lo que un administrador dijo del clúster al crearlo."
   }
 }

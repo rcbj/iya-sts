@@ -1240,8 +1240,8 @@
     "text": "Mga password-only na pinto na tumatanggap ng password lang"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Product mode lang. Isang listahang pinaghihiwalay ng kuwit ng mga password-only na pinto — ldap, wstrust, scim, ssf, est — kung saan ang taong may hawak o dapat may hawak ng second factor ay TINATANGGAP PA RIN gamit ang sarili nilang password. Ang walang laman, ang default, ay tumatanggi sa password na iyon sa lahat ng lima (sinasagot bilang maling password) at app password lang ang tinatanggap doon. **BABALA: ang bawat pintong nakalista ay nagbababa sa bawat ganoong tao sa IISANG factor sa pintong iyon** (NIST SP 800-63B section 4.2: nagiging AAL1 ang AAL2), kaya mabubuksan ito ng ninakaw na password nang walang second factor. Mas mainam ang mga app password; maglista lang ng pinto para sa client na hindi mabibigyan ng isa. Walang password na sinusuri ang development kahit saan at binabalewala ito."
+    "en": "a01fe4fce9df1599",
+    "text": "Product mode lang. Isang listahang pinaghihiwalay ng kuwit ng mga password-only na pinto — ldap, wstrust, scim, ssf, est, xacml-pep — kung saan ang taong may hawak o dapat may hawak ng second factor ay TINATANGGAP PA RIN gamit ang sarili nilang password. Ang walang laman, ang default, ay tumatanggi sa password na iyon sa lahat ng anim (sinasagot bilang maling password) at app password lang ang tinatanggap doon. **BABALA: ang bawat pintong nakalista ay nagbababa sa bawat ganoong tao sa IISANG factor sa pintong iyon** (NIST SP 800-63B section 4.2: nagiging AAL1 ang AAL2), kaya mabubuksan ito ng ninakaw na password nang walang second factor. Mas mainam ang mga app password; maglista lang ng pinto para sa client na hindi mabibigyan ng isa. Walang password na sinusuri ang development kahit saan at binabalewala ito."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",
@@ -4348,8 +4348,8 @@
     "text": "Tanggapin ang TLS client certificate"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Isang client certificate na iniisyu ng REALM NA ITO, vine-verify hanggang sa Intermediate nito at ini-map sa entry nito gamit ang urn:sts:person: o urn:sts:application: name na nasa loob nito (RFC 7030 section 3.3.2). Kailangan para sa simplereenroll na walang Basic credential."
+    "en": "a9bb56c470b2a73f",
+    "text": "Isang client certificate na iniisyu ng REALM NA ITO, vine-verify hanggang sa Intermediate nito at ini-map sa entry nito gamit ang urn:sts:person:, urn:sts:sa: (service account) o urn:sts:application: name na nasa loob nito (RFC 7030 section 3.3.2). Kailangan para sa simplereenroll na walang Basic credential."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7779,6 +7779,22 @@
     "en": "e41d92adf65ec5bc",
     "text": "NAKA-ON bilang default. Minsan itong naging ANG TANGING pagtanggi sa family na ito; humihingi na ng certificate ang bawat /xacml endpoint ngayon, at ang pinamamahalaan pa rin ng setting na ito ay ang REGISTRATION mismo — nagsusulat ito ng entry, ito ang inililista ng console, at ito ang address na pinapadalhan ng nudge, kaya ang \"aling PEP ito\" ang eksaktong tanong doon at ang client certificate ang sagot. Ang access-policy layer sa itaas nito ay iba at mas malakas na check (roles.remotePepGroup, at xacml.enforceAccess para i-off ito); ang isang ito ay tungkol sa kung tinatanggap man lang ang registration na WALANG certificate at minamarkahang unauthenticated. Gaya ng bawat ibang gate sa serbisyong ito, TURNSTILE ito: hindi kailangang mag-chain ang certificate sa anuman, dahil nalalapat nang walang pagbabago ang argumento ng RFC 8705 — ang napapatunayan ay ang parehong key ang nakatapos ng handshake. Ang pag-off dito ay nagpapahintulot sa PEP na mag-register sa plain HTTP, na siyang kailangan ng run na naka-off ang global.https; ang ganitong registration ay minamarkahang UNAUTHENTICATED sa entry nito at sa console sa halip na tahimik na hindi makilala mula sa isang nakapagpatunay ng isang bagay."
   },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "Paano nagpapatunay ang isang remote PEP"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "223363d0264d3558",
+    "text": "token, ang default mula 1.1.0: naaabot ng isang remote PEP ang /xacml/pep/* at POST /xacml/pip sa pamamagitan lamang ng isang DPoP-bound na access token (RFC 9449) na nakukuha nito mula sa sarili nitong RFC 7523 self-assertion sa pamamagitan ng client na sts-remote-pep, na ang audience ay ang /xacml/pep ng realm na ito at may dalang xacml:pep; tinatanggihan ang client certificate nang mag-isa. either: ang token o isang client certificate na bine-verify ng serbisyong ito; kapag may ipinakitang token, ang token ang nagpapasya — itakda ito bago mag-upgrade habang may PEP pang nag-a-authenticate gamit ang certificate nito. certificate: ang certificate lamang, at hindi binabasa ang Authorization header. Sa alinmang kaso, dapat hawak ng entry ng PEP ang REMOTE_PEPS (roles.remotePepGroup) at ang access-control policy ang nagpapasya. Ang parehong sagot ang namamahala sa token ng isang remote PEP sa /access/v1, ang pagpapasa ng edge PDP ng isang fine-grained na ebalwasyon, anuman ang sabihin ng authzen.callerAuthentication."
+  },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "Maaaring magtakda ang isang remote PEP ng plain-HTTP na reverse-proxy listener"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "NAKA-OFF bilang default, at binabasa lang sa product mode, kung saan tinatanggihan ang isang listener na itinakda sa pahina ng isang remote PEP (#1760) na nagse-serve ng reverse proxy nito sa plain HTTP (STS-XACML-0249): ang proxy ang lugar kung saan nagsa-sign in ang isang browser at dala nito ang session cookie nito, kaya kapag walang encryption ay tama lang ito kung may nasa harap nito na nagtatapos ng TLS — isang katotohanan tungkol sa deployment na isang administrator lang ang makapagsasabi, at iyon ang sinasabi ng pag-on sa setting na ito. Pinapayagan ng development mode ang ganitong listener anuman ang sabihin nito. Ang mga listener lang na itinakda sa pahina ang saklaw nito; ang apat na ibinibigkis ng environment ng PEP (kasama ang PEP_PROXY_PORT) ay sa operator nito."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "Mga PIP query na magagawa ng isang caller kada rate-limit window"
@@ -7828,28 +7844,28 @@
     "text": "Mga host name na ina-nudge ng serbisyong ito. ANG WALANG LAMAN AY NANGANGAHULUGANG KAHIT ALIN, na siyang default at eksaktong tumutugma sa ssf.pushAllowedHosts — ang deployment na naaabot ng sinumang hindi nito pinagkakatiwalaan ay nagtatakda ng listahan, at tinatanggihan AYON SA PANGALAN ang bawat ibang host sa sariling row ng PEP. Mga host sa halip na mga URL, sa dahilang ibinibigay ng SSF: lehitimong inililipat ng isang component ang path nito at hindi lehitimong lumilipat sa ibang host."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Payagan ang http:// para sa nudge (development lang)"
+    "en": "37d9db04e27a17a9",
+    "text": "Payagan ang http:// para sa nudge (retirado, binabalewala)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "NAKA-OFF bilang default, gaya ng mga katumbas ng federation at SSF — at ang dumadaan dito ay MAS MAHINA kaysa sa alinman sa mga iyon, na sulit sabihin sa halip na ipagpalagay. Walang dalang credential o event ang nudge: ang buong body nito ay nagsasabing nagbago ang repository, na malalaman din naman ng PEP. Naka-off pa rin ito bilang default, dahil ang URL ay kinonfigure ng isang tao at ang request na ginagawa ng serbisyong ito nang hindi naka-encrypt ay request na masasagot ng ibang tao. Pinapayagan ng ON ang http:// na notify URL sa development; sa product mode, tinatanggihan ang plain http anuman ang sinasabi nito (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "NIRETIRO NOONG 2026-11-14 AT BINABALEWALA. Sa https lang ipinapadala ang nudge, sa anumang mode, kaya iniuulat na hindi magagamit ang http:// na notify URL sa row ng PEP at nagko-converge ang PEP sa pamamagitan ng polling. Tinatanggap pa rin ang setting, kaya patuloy na nagsisimula ang configuration na nagpapangalan dito; kapag naka-on, wala itong binabago at isang beses itong itinatala bawat proseso (STS-XACML-0258). Alisin ito."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Laktawan ang TLS verification para sa nudge (development lang)"
+    "en": "da9e36587928e192",
+    "text": "Laktawan ang pag-verify ng TLS para sa nudge (retirado, binabalewala)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "BABALA — PARA SA DEVELOPMENT MODE LANG. Kapag naka-on, ina-nudge ang https na notify URL NANG HINDI vine-verify ang certificate ng PEP, kaya masasagot ito ng sinumang makaka-intercept ng connection. Naglo-log ng babala ang bawat ganitong request. Sa product mode, hindi ito pinapansin (STS-XACML-0074, naka-log nang isang beses) at hindi maitatakda (STS-CORE-0103): pangalanan na lang ang private CA sa xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "NIRETIRO NOONG 2026-11-14 AT BINABALEWALA. Palaging bine-verify ng nudge ang certificate ng PEP: laban sa Remote PEP listeners (pep-tls) Issuing CA ng realm, na nag-iisyu ng certificate ng HTTPS listener ng PEP, at laban sa xacml.pepNotifyCaFile at sa sariling store ng node. Tinatanggap pa rin ang setting, kaya patuloy na nagsisimula ang configuration na nagpapangalan dito; kapag naka-on, wala itong binabago at isang beses itong itinatala bawat proseso (STS-XACML-0258). Sa product mode, hindi pa rin ito maitatakda (STS-CORE-0103). Alisin ito."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "Mga CA certificate para sa nudge"
+    "en": "ba76eb67fd7510d1",
+    "text": "Karagdagang CA certificate para sa nudge"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "Isang PEM file ng mga CA certificate na maaaring pag-chain-an ng notify listener ng PEP, KATABI ng sariling CA store ng node — ganito ina-nudge nang naka-on ang verification ang PEP na sine-certify ng private CA. Binabasa sa bawat nudge; ang file na hindi mabasa o walang hawak na certificate ay tumatanggi sa nudge (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "Isang PEM file ng mga CA certificate na maaaring pagkadenahan ng notify listener ng PEP, BUKOD sa Remote PEP listeners (pep-tls) Issuing CA ng realm at sa sariling CA store ng node. Hindi kailangan para sa PEP na ang certificate ng HTTPS listener ay inisyu ng realm na ito: nabe-verify iyon nang walang anumang setting. Para ito sa PEP na sertipikado ng sarili nitong CA. Binabasa sa bawat nudge; tinatanggihan ang nudge ng file na hindi mabasa o walang certificate (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

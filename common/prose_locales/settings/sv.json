@@ -1240,8 +1240,8 @@
     "text": "Lösenordsdörrar som godtar enbart ett lösenord"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Endast produktionsläge. En kommaseparerad lista över de dörrar som bara tar lösenord — ldap, wstrust, scim, ssf, est — där en person som har eller måste ha en andra faktor ÄNDÅ godtas med sitt eget lösenord. Tomt, standardvärdet, vägrar det lösenordet vid alla fem (besvaras som ett felaktigt lösenord) och godtar där bara ett applösenord. **VARNING: varje listad dörr sänker varje sådan person till EN faktor vid den dörren** (NIST SP 800-63B avsnitt 4.2: AAL2 blir AAL1), så ett stulet lösenord öppnar den utan den andra faktorn. Föredra applösenord; lista en dörr bara för en klient som inte kan få ett. Utvecklingsläget kontrollerar inga lösenord någonstans och ignorerar detta."
+    "en": "a01fe4fce9df1599",
+    "text": "Endast produktionsläge. En kommaseparerad lista över de dörrar som bara tar lösenord — ldap, wstrust, scim, ssf, est, xacml-pep — där en person som har eller måste ha en andra faktor ÄNDÅ godtas med sitt eget lösenord. Tomt, standardvärdet, vägrar det lösenordet vid alla sex (besvaras som ett felaktigt lösenord) och godtar där bara ett applösenord. **VARNING: varje listad dörr sänker varje sådan person till EN faktor vid den dörren** (NIST SP 800-63B avsnitt 4.2: AAL2 blir AAL1), så ett stulet lösenord öppnar den utan den andra faktorn. Föredra applösenord; lista en dörr bara för en klient som inte kan få ett. Utvecklingsläget kontrollerar inga lösenord någonstans och ignorerar detta."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",
@@ -4348,8 +4348,8 @@
     "text": "Godta ett TLS-klientcertifikat"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person: eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
+    "en": "a9bb56c470b2a73f",
+    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person:, urn:sts:sa: (ett tjänstekonto) eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7779,6 +7779,22 @@
     "en": "e41d92adf65ec5bc",
     "text": "PÅ som standard. Det var en gång det ENDA avslaget i den här familjen; varje /xacml-slutpunkt ber nu om ett certifikat, och det den här inställningen fortfarande styr är just REGISTRERINGEN — den skriver en post, den är vad konsolen listar, och den är adressen som en knuff skickas till, så \"vilken PEP är det här\" är precis frågan där och ett klientcertifikat är svaret. Åtkomstpolicylagret ovanför är en annan och starkare kontroll (roles.remotePepGroup, och xacml.enforceAccess för att stänga av den); den här handlar om huruvida en registrering UTAN certifikat över huvud taget accepteras och märks som oautentiserad. Som varje annan grind i den här tjänsten är den ett VÄNDKORS: certifikatet behöver inte kedja till något, eftersom RFC 8705:s argument gäller oförändrat — det som bevisas är att samma nyckel slutförde handskakningen. Att stänga av den låter en PEP registrera sig över okrypterad HTTP, vilket är vad en körning med global.https avstängd behöver; en sådan registrering märks som OAUTENTISERAD på sin post och i konsolen i stället för att i tysthet inte gå att skilja från en som bevisade något."
   },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "Hur en fjärr-PEP autentiserar sig"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "223363d0264d3558",
+    "text": "token, standardvärdet sedan 1.1.0: en fjärr-PEP når /xacml/pep/* och POST /xacml/pip endast med en DPoP-bunden åtkomsttoken (RFC 9449) som den får från sitt eget RFC 7523-självintygande via klienten sts-remote-pep, med denna realms /xacml/pep som mottagare och med xacml:pep; ett klientcertifikat ensamt avvisas. either: token eller ett klientcertifikat som denna tjänst verifierar; när en token visas är det den som avgör — sätt det före uppgraderingen så länge någon PEP fortfarande autentiserar sig med sitt certifikat. certificate: endast certifikatet, och Authorization-huvudet läses inte. I alla fall måste PEP:ens post ha REMOTE_PEPS (roles.remotePepGroup) och åtkomstpolicyn avgör. Samma svar gäller en fjärr-PEP:s token vid /access/v1, edge-PDP:ns vidarebefordran av en finkornig utvärdering, oavsett vad authzen.callerAuthentication säger."
+  },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "En fjärr-PEP får definiera en lyssnare för den omvända proxyn över vanlig HTTP"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "AV som standard, och läses bara i produktläge, där en lyssnare som definierats på en fjärr-PEP:s sida (#1760) och som serverar dess omvända proxy över vanlig HTTP avvisas (STS-XACML-0249): proxyn är där en webbläsare loggar in och bär sin sessionskaka, så okrypterat är den rätt bara när något framför den avslutar TLS — ett faktum om driftsättningen som bara en administratör kan slå fast, och som det att slå på den här inställningen slår fast. Utvecklingsläget tillåter en sådan lyssnare oavsett vad den här säger. Den styr bara lyssnarna som definieras på sidan; de fyra som PEP:ens miljö binder (PEP_PROXY_PORT bland dem) är dess operatörs."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "PIP-frågor som en anropare får göra per hastighetsbegränsningsfönster"
@@ -7828,28 +7844,28 @@
     "text": "Värdnamn som den här tjänsten knuffar. TOMT BETYDER VILKEN SOM HELST, vilket är standardvärdet och motsvarar ssf.pushAllowedHosts exakt — en driftsättning som kan nås av vem som helst den inte litar på ställer in listan, och varje annan värd avvisas MED NAMN på PEP:ens egen rad. Värdar snarare än URL:er, av det skäl som SSF anger: en komponent flyttar legitimt sin sökväg men flyttar inte legitimt till en annan värd."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Tillåt http:// för en knuff (endast utveckling)"
+    "en": "37d9db04e27a17a9",
+    "text": "Tillåt http:// för en notifiering (pensionerad, ignoreras)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "AV som standard, som federationens och SSF:s motsvarigheter — och det som skickas här är SVAGARE än någon av dem, vilket är värt att säga i stället för att lämna åt antaganden. En knuff bär ingen inloggningsuppgift och ingen händelse: hela dess innehåll säger att repositoryt har ändrats, vilket PEP:en ändå är på väg att få reda på. Den är ändå av som standard, eftersom URL:en är en som någon konfigurerat och en begäran som den här tjänsten gör i klartext är en begäran som någon annan kan svara på. PÅ tillåter en http://-notify-URL i utvecklingsläge; i produktläge vägras okrypterad http oavsett vad detta säger (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "PENSIONERAD 2026-11-14 OCH IGNORERAS. En notifiering skickas bara över https, i alla lägen, så en http://-notifierings-URL rapporteras som oanvändbar på PEP:ens rad och PEP:en konvergerar genom hämtning. Inställningen accepteras fortfarande, så en konfiguration som nämner den startar ändå; påslagen ändrar den ingenting och loggas en gång per process (STS-XACML-0258). Ta bort den."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Hoppa över TLS-verifiering för en knuff (endast utveckling)"
+    "en": "da9e36587928e192",
+    "text": "Hoppa över TLS-verifiering för en notifiering (pensionerad, ignoreras)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "VARNING — ENDAST I UTVECKLINGSLÄGE. På knuffar en https-notify-URL UTAN att verifiera PEP:ens certifikat, så att vem som helst som kan avlyssna anslutningen kan svara i dess ställe. Varje sådan begäran loggas som en varning. I produktläge ignoreras den (STS-XACML-0074, loggas en gång) och kan inte ställas in (STS-CORE-0103): ange i stället en privat CA i xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "PENSIONERAD 2026-11-14 OCH IGNORERAS. En notifiering verifierar alltid PEP:ens certifikat: mot sfärens utfärdande CA för fjärr-PEP-lyssnare (pep-tls), som utfärdar certifikatet för en PEP:s HTTPS-lyssnare, och mot xacml.pepNotifyCaFile och nodes egen lagring. Inställningen accepteras fortfarande, så en konfiguration som nämner den startar ändå; påslagen ändrar den ingenting och loggas en gång per process (STS-XACML-0258). I produktläge kan den fortfarande inte sättas (STS-CORE-0103). Ta bort den."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "CA-certifikat för en knuff"
+    "en": "ba76eb67fd7510d1",
+    "text": "Fler CA-certifikat för en notifiering"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "En PEM-fil med CA-certifikat som en PEP:s notify-lyssnare får kedja till, UTÖVER nodes eget CA-lager — så knuffas en PEP som certifierats av en privat CA med verifiering påslagen. Läses vid varje knuff; en fil som inte kan läsas eller inte innehåller något certifikat avvisar knuffen (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "En PEM-fil med CA-certifikat som en PEP:s notifieringslyssnare får kedja till, UTÖVER sfärens utfärdande CA för fjärr-PEP-lyssnare (pep-tls) och nodes egen CA-lagring. Behövs inte för en PEP vars HTTPS-lyssnarcertifikat den här sfären utfärdade: det verifieras utan någon inställning. Den är till för en PEP som certifierats av en egen CA. Läses vid varje notifiering; en fil som inte kan läsas eller saknar certifikat avvisar notifieringen (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

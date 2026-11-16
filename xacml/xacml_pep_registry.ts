@@ -105,6 +105,8 @@
 // default when this module loads. `PepRegistry` is exported for the root.
 // ---------------------------------------------------------------------------
 
+// For `hostnameOf()`: an IP literal is never a reported hostname.
+import net = require('net');
 // The one place this service hashes (#453).
 import ModelTables = require('../common/model_tables');
 import DomainClasses = require('../common/domain_classes');
@@ -122,6 +124,12 @@ import errorCodes = require('../common/error_codes');
 // depends on, so it can neither move a route nor close a cycle.
 import realms = require('../common/realms');
 import store = require('./xacml_store');
+// The managed settings' table and the reading of a PEP's report (#1760): a
+// library requiring only leaves, so it can neither move a route nor close
+// a cycle.
+import pepSettings = require('./xacml_pep_settings');
+// A remote PEP's listeners (#1760): the reading of what the PEP reports.
+import pepListeners = require('./xacml_pep_listeners');
 
 // The directory functions `ldap/ldap_server.js` installs.
 interface PepDirectory {
@@ -148,6 +156,9 @@ interface PepRow {
   resource: string;
   description: string;
   version: string;
+  // The hostname the PEP reports (#1760), validated by `hostnameOf()`; ''
+  // when it never reported one (an older PEP).
+  hostname: string;
   enabled: boolean;
   registeredAt: string;
   lastSeen: string;
@@ -158,8 +169,75 @@ interface PepRow {
   refused: number;
   undischargeable: number;
   lastNotify: string;
+  // The reverse-proxy configuration (#1760) as stored: the JSON text, or ''
+  // when none was ever set. Read and validated by `xacml_pep_proxy.ts`.
+  proxy: string;
+  // The reverse proxy's CAEP/RISC signal-stream health as the PEP last
+  // reported it on a heartbeat (#1760), normalised by `signalsOf()`; null
+  // when it never reported any (an older PEP, or one with no proxy).
+  signals: PepSignals | null;
+  // The settings an administrator set for this PEP (#1760), as stored:
+  // the JSON text, or '' when none. Read and validated by
+  // `xacml_pep_settings.ts`.
+  settings: string;
+  // What the PEP last reported having in force, normalised by
+  // `xacml_pep_settings.ts`'s `inUseOf()`; null when it never reported.
+  settingsInUse: any;
+  // The listeners an administrator defined for this PEP (#1760), as stored:
+  // the JSON text, or '' when none. Read and validated by
+  // `xacml_pep_listeners.ts`.
+  listeners: string;
+  // What the PEP last reported about every listener it has, normalised by
+  // `xacml_pep_listeners.ts`'s `inUseOf()`; null when it never reported.
+  listenersInUse: any;
   current: boolean;
   stale: boolean;
+}
+
+// What a remote PEP reports about its reverse proxy's CAEP/RISC receivers
+// (#1760): COUNTS AND AGES ONLY, and only these members. `at` is when this
+// service received the report, so the ages are as of that instant.
+interface PepSignals {
+  at: string;
+  receivers: number;
+  healthy: number;
+  stale: number;
+  staleAfterMs: number;
+  pollIntervalMs: number;
+  oldestSuccessAgeMs: number | null;
+  mostConsecutiveFailures: number;
+  setsAccepted: number;
+  setsRefused: number;
+  sessionsEnded: number;
+  librarySessions: {
+    held: number;
+    max: number;
+    ttlSec: number;
+    evicted: number;
+    expired: number;
+  };
+  // ONE ROW PER STREAM (#1760), from a PEP that reports them on its
+  // heartbeat; absent from an older one. The client id and stream id are
+  // held to a charset, the times are computed here from the ages the PEP
+  // sent and when the report arrived, and every other member is dropped.
+  streams?: PepSignalStream[];
+}
+
+// One CAEP/RISC receiver as the PEP reported it.
+interface PepSignalStream {
+  clientId: string;
+  streamId: string;
+  running: boolean;
+  healthy: boolean;
+  startedAt: string | null;
+  lastPollAt: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  polls: number;
+  failedPolls: number;
+  setsAccepted: number;
+  setsRefused: number;
+  sessionsEnded: number;
 }
 
 // What a register or heartbeat answers. A refusal carries its code under a
@@ -170,6 +248,24 @@ interface PepResult {
   name?: string;
   created?: boolean;
   current?: string;
+  // THE HTTP STATUS EVERY REFUSAL IS ANSWERED WITH (#1830), on register
+  // and heartbeat alike — each refusal says which it is, because the two
+  // handlers used to pick one status apiece (400 and 404) and so answered
+  // a service that had no directory as if the PEP had sent a bad request
+  // or had never registered. Chosen by whose fault it is and whether a
+  // retry can succeed:
+  //   400  the request: no usable name (0019), a bad hostname (0261);
+  //   404  no such row: a heartbeat from a PEP never registered (0021);
+  //   503  this process has no directory (0026): nothing the PEP sent is
+  //        wrong, and a later attempt — on another node, or after the
+  //        directory loads — can succeed;
+  //   507  the directory refused the write (0027), which `writePep()` does
+  //        only when ou=peps holds xacml.maxPeps or the directory its
+  //        entry cap: RFC 4918 section 11.5's "unable to store the
+  //        representation", temporary until an operator makes room.
+  // A deployed PEP treats any answer but 200 and 201 as a failure and tries
+  // again on its next poll, so none of these changes what it does.
+  status?: number;
 }
 
 // The parts of the policy repository the sync token reads.
@@ -452,6 +548,184 @@ class PepRegistry {
   // (RFC 4512), which cost a boot in phase two — `xacml/CLAUDE.md` records it
   // as the first of four silent defects.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // A REVERSE PROXY'S SIGNAL-STREAM HEALTH (#1760), held to its members.
+  //
+  // **ONLY COUNTS AND AGES ARE KEPT, WHATEVER THE PEP SENT.** The PEP's own
+  // `GET /` reports the same numbers and promises no client id, URL or error
+  // text, because an error can carry the service's address; this is the
+  // other end of that promise, so a member this function does not name is
+  // dropped rather than stored, and a value that is not a non-negative
+  // integer is 0. A REMOTE_PEPS holder cannot use the row to put text on an
+  // administrator's page. The same function reads the stored value back, so
+  // an ldapmodify that wrote something else is drawn as these members too,
+  // and text that is not JSON as "not reported".
+  // -------------------------------------------------------------------------
+  /**
+   * Normalises a reported (or stored) signal-health document.
+   * @param raw - the heartbeat's `signals` member, or the stored JSON text
+   * @param at - when it was received; the stored `at` when omitted
+   * @returns the members this service keeps, or null when there is no
+   * object to read
+   */
+  static signalsOf(raw: unknown, at?: string): PepSignals | null {
+    const { log } = helpers;
+    log.debug('Entering PepRegistry.signalsOf().');
+    let said: any = raw;
+    if (typeof said === 'string') {
+      try {
+        said = said ? JSON.parse(said) : null;
+      } catch (e) {
+        // Not JSON: nothing a person could be shown as health.
+        log.debug('Caught in PepRegistry.signalsOf(): ' +
+                  ((e && (e as Error).message) || e));
+        said = null;
+      }
+    }
+    if (!said || typeof said !== 'object' || Array.isArray(said)) {
+      log.debug('Leaving PepRegistry.signalsOf(). Nothing to read.');
+      return null;
+    }
+    // No Entering/Leaving pair on `count`: it runs fifteen times for every
+    // report and every row drawn, and a pair would drown the log.
+    const count = function (value: unknown): number {
+      return typeof value === 'number' && Number.isSafeInteger(value) &&
+        value >= 0 ? value : 0;
+    };
+    const library = said.librarySessions &&
+      typeof said.librarySessions === 'object' ? said.librarySessions : {};
+    const stamp = at !== undefined ? at
+      : (typeof said.at === 'string' && !isNaN(Date.parse(said.at))
+          ? new Date(Date.parse(said.at)).toISOString() : '');
+    const signals: PepSignals = {
+      at: stamp,
+      receivers: count(said.receivers),
+      healthy: count(said.healthy),
+      stale: count(said.stale),
+      staleAfterMs: count(said.staleAfterMs),
+      pollIntervalMs: count(said.pollIntervalMs),
+      // Null, not 0, when no receiver has polled or started: "no age" and
+      // "polled just now" are different facts.
+      oldestSuccessAgeMs: said.oldestSuccessAgeMs === null ||
+        said.oldestSuccessAgeMs === undefined
+        ? null : count(said.oldestSuccessAgeMs),
+      mostConsecutiveFailures: count(said.mostConsecutiveFailures),
+      setsAccepted: count(said.setsAccepted),
+      setsRefused: count(said.setsRefused),
+      sessionsEnded: count(said.sessionsEnded),
+      librarySessions: {
+        held: count(library.held),
+        max: count(library.max),
+        ttlSec: count(library.ttlSec),
+        evicted: count(library.evicted),
+        expired: count(library.expired)
+      }
+    };
+    // THE STREAMS, when reported (#1760). A time is the arrival minus the
+    // age the PEP sent, so no clock of the PEP's is believed; the stored
+    // report is read back as it was written.
+    if (Array.isArray(said.streams)) {
+      const base = Date.parse(stamp);
+      const timeOf = function (age: unknown, stored: unknown): string | null {
+        // A report's own times are not read: only a stored one's.
+        if (at === undefined && typeof stored === 'string' &&
+            !isNaN(Date.parse(stored))) {
+          return new Date(Date.parse(stored)).toISOString();
+        }
+        return typeof age === 'number' && Number.isSafeInteger(age) &&
+          age >= 0 && !isNaN(base)
+          ? new Date(base - age).toISOString() : null;
+      };
+      const ident = function (value: unknown, max: number): string {
+        return typeof value === 'string' && value.length <= max &&
+          /^[A-Za-z0-9._:~@/+-]*$/.test(value) ? value : '';
+      };
+      signals.streams = said.streams.slice(0, 64)
+        .filter(function (one: any) {
+          return one && typeof one === 'object';
+        }).map(function (one: any): PepSignalStream {
+          return {
+            clientId: ident(one.clientId, 256),
+            streamId: ident(one.streamId, 128),
+            running: one.running === true,
+            healthy: one.healthy === true,
+            startedAt: timeOf(one.startedAgeMs, one.startedAt),
+            lastPollAt: timeOf(one.lastPollAgeMs, one.lastPollAt),
+            lastSuccessAt: timeOf(one.lastSuccessAgeMs, one.lastSuccessAt),
+            consecutiveFailures: count(one.consecutiveFailures),
+            polls: count(one.polls),
+            failedPolls: count(one.failedPolls),
+            setsAccepted: count(one.setsAccepted),
+            setsRefused: count(one.setsRefused),
+            sessionsEnded: count(one.sessionsEnded)
+          };
+        });
+    }
+    log.debug('Leaving PepRegistry.signalsOf(). ' + signals.receivers +
+              ' receiver(s).');
+    return signals;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE HOSTNAME A PEP REPORTS (#1760).
+  //
+  // A PEP that derives its notify URL picks the DNS name of its HTTPS
+  // listener certificate that EQUALS ITS HOSTNAME, and the realm's default
+  // certificate names only what this row holds — so on a fresh install,
+  // where the PEP registered with no notify URL because it had no
+  // certificate yet, the defaults were the registered name alone and the
+  // derivation fell through to it (`remote-pep-1`, which nothing resolves).
+  // The PEP therefore reports the hostname it derives from, and
+  // `xacml_pep_tls.ts`'s `derivedNames()` puts it in the certificate.
+  //
+  // IT BECOMES A NAME IN A CERTIFICATE THIS SERVICE SIGNS, so it is held to
+  // exactly what a DNS subjectAltName may be: labels of letters, digits and
+  // hyphens, 1-63 each, 253 in all, the last not all digits, and never an
+  // IP literal (which would have to be an IP subjectAltName, and is not what
+  // a container is known by). Lower-cased, a trailing dot dropped. Anything
+  // else is REFUSED with STS-XACML-0261 rather than dropped, so a PEP that
+  // sends junk finds out; the PEP applies the same rule before it sends, so
+  // a well-behaved one never meets the refusal. Absent, null or '' is "not
+  // reported", which is what an older PEP sends.
+  // -------------------------------------------------------------------------
+  /**
+   * Validates the hostname a PEP reports on its registration or heartbeat.
+   *
+   * @param value - the `hostname` member as it arrived
+   * @returns `{ ok: true, hostname }` (lower-cased, '' when not reported),
+   *   or `{ ok: false, why, status: 400 }` carrying STS-XACML-0261
+   */
+  static hostnameOf(value: unknown): { ok: boolean; hostname?: string;
+                                       why?: string; status?: number } {
+    const { log } = helpers;
+    log.debug('Entering PepRegistry.hostnameOf().');
+    if (value === undefined || value === null || value === '') {
+      log.debug('Leaving PepRegistry.hostnameOf(). Not reported.');
+      return { ok: true, hostname: '' };
+    }
+    const text = typeof value === 'string'
+      ? value.trim().toLowerCase().replace(/\.$/, '') : null;
+    const labels = text === null ? [] : text.split('.');
+    const good = text !== null && text.length > 0 && text.length <= 253 &&
+      !net.isIP(text.replace(/^\[|\]$/g, '')) &&
+      labels.every(function (label) {
+        return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label);
+      }) &&
+      !/^[0-9]+$/.test(labels[labels.length - 1]);
+    if (!good) {
+      const why = '`hostname` must be this PEP\'s hostname as a DNS name: ' +
+        'letters, digits and hyphens in dot-separated labels of at most 63 ' +
+        'characters, 253 in all, not an IP address. It is put in the ' +
+        'realm\'s default listener certificate, so nothing else is ' +
+        'accepted. Leave it out to report none.';
+      log.debug('Leaving PepRegistry.hostnameOf(). Refused.');
+      return errorCodes.mark({ ok: false, status: 400, why: why },
+                             'STS-XACML-0261');
+    }
+    log.debug('Leaving PepRegistry.hostnameOf(). ' + text);
+    return { ok: true, hostname: text };
+  }
+
   private number(value: unknown): number {
     const { log } = this.deps;
     log.debug("Entering PepRegistry.number().");
@@ -565,6 +839,7 @@ class PepRegistry {
         resource: pep.resource || '',
         description: (pep.description || [])[0] || '',
         version: pep.version || '',
+        hostname: pep.hostname || '',
         // A missing mark is not FALSE: only one that says so disables it.
         enabled: pep.enabled !== false,
         registeredAt: pep.registeredAt || '',
@@ -576,6 +851,12 @@ class PepRegistry {
         refused: pep.refused || 0,
         undischargeable: pep.undischargeable || 0,
         lastNotify: pep.lastNotify || '',
+        proxy: pep.proxy || '',
+        signals: PepRegistry.signalsOf(pep.signals || ''),
+        settings: pep.settings || '',
+        settingsInUse: pepSettings.inUseOf(pep.settingsInUse || ''),
+        listeners: pep.listeners || '',
+        listenersInUse: pepListeners.inUseOf(pep.listenersInUse || ''),
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row
@@ -654,7 +935,8 @@ class PepRegistry {
     const given = record || {};
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.register(). No directory.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 503,
                                why: 'There is no embedded directory, so ' +
                                     'there is nowhere to register a Policy ' +
                                     'Enforcement Point.' }, 'STS-XACML-0026');
@@ -662,7 +944,8 @@ class PepRegistry {
     const name = this.nameFrom(given.name);
     if (!name) {
       log.debug('Leaving PepRegistry.register(). No usable name.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 400,
                why: 'A remote PEP is named from the common name of the ' +
                     'client certificate it registered with, or — when ' +
                     'xacml.pepRequireCertificate is off — from the `name` ' +
@@ -670,6 +953,12 @@ class PepRegistry {
                     'after folding to letters, digits, dot, dash and ' +
                     'underscore.' },
                              'STS-XACML-0019');
+    }
+    // THE HOSTNAME (#1760), refused before anything is written.
+    const host = PepRegistry.hostnameOf(given.hostname);
+    if (!host.ok) {
+      log.debug('Leaving PepRegistry.register(). A bad hostname.');
+      return host as PepResult;
     }
     const existing = this.read(name);
     const now = new Date().toISOString();
@@ -706,6 +995,33 @@ class PepRegistry {
       // reconnecting.
       xacmlPepEnabled: existing && !existing.enabled ? 'FALSE' : 'TRUE'
     };
+    // THE PROXY CONFIGURATION IS KEPT (#1760): it is an administrator's, set
+    // through `setProxy()`, and a PEP that re-registers must not be able to
+    // drop or replace what it is told to enforce by reconnecting — the
+    // disabled flag's argument above.
+    if (existing && existing.proxy) {
+      attributes.xacmlPepProxy = existing.proxy;
+    }
+    // THE MANAGED SETTINGS ARE KEPT TOO (#1760), for the same reason; what
+    // the PEP reported having in force is NOT, as the signal health is not:
+    // a registration is a new process, and its first heartbeat reports.
+    if (existing && existing.settings) {
+      attributes.xacmlPepSettings = existing.settings;
+    }
+    // AND THE DEFINED LISTENERS (#1760), for the same reason; what the PEP
+    // reported about them is dropped, as the settings in force are.
+    if (existing && existing.listeners) {
+      attributes.xacmlPepListeners = existing.listeners;
+    }
+    // THE HOSTNAME IS THE REGISTRATION'S (#1760): a registration is a new
+    // process, so one without it (an older PEP) drops it, and an entry that
+    // never had one is written exactly as it always was.
+    if (host.hostname) {
+      attributes.xacmlPepHostname = host.hostname;
+    }
+    // THE SIGNAL HEALTH IS NOT KEPT across a registration: a PEP registers
+    // when its process starts, so the last snapshot describes receivers that
+    // no longer exist. The next heartbeat reports the new ones.
     if (given.description) {
       attributes.description = String(given.description);
     } else if (existing && existing.description) {
@@ -714,14 +1030,20 @@ class PepRegistry {
     const written = directory.writePep(name, attributes);
     if (!written) {
       log.debug('Leaving PepRegistry.register(). The directory refused it.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 507,
                why: 'The directory refused the entry. ou=peps may be at its ' +
                     'maximum of ' + config.value('xacml.maxPeps') +
                     ' (xacml.maxPeps).' }, 'STS-XACML-0027');
     }
     log.info('xacml: remote PEP "' + name + '" ' +
              (existing ? 're-registered' : 'registered') +
-             (given.authenticated
+             (given.authenticated && !given.certificateSubject
+               // #1827's follow-up: a token names no certificate subject;
+               // the thumbprint is its DPoP key's.
+               ? ' with a DPoP-bound access token (key ' +
+                 String(given.thumbprint || '') + ')'
+               : given.authenticated
                ? ' with client certificate ' + given.certificateSubject
                : ' WITHOUT a client certificate ' +
                  '(xacml.pepRequireCertificate is off)') + '.');
@@ -756,14 +1078,16 @@ class PepRegistry {
     log.debug('Entering PepRegistry.heartbeat(). name=' + name);
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.heartbeat(). No directory.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 503,
                                why: 'There is no embedded directory.' },
                              'STS-XACML-0026');
     }
     const existing = this.read(name);
     if (!existing) {
       log.debug('Leaving PepRegistry.heartbeat(). Not registered.');
-      return errorCodes.mark({ ok: false,
+      // error-code: none — the code is the mark()'s, after the reason.
+      return errorCodes.mark({ ok: false, status: 404,
                why: 'No Policy Enforcement Point is registered as "' + name +
                     '". Register first — POST /xacml/pep/register. A ' +
                     'heartbeat does not create a row, deliberately: a row ' +
@@ -772,8 +1096,36 @@ class PepRegistry {
                     'PEP nobody could nudge.' }, 'STS-XACML-0021');
     }
     const said = report || {};
-    const attributes = this.attributesOf(existing, {
-      xacmlPepLastSeen: new Date().toISOString(),
+    // THE HOSTNAME (#1760): absent keeps, as every member here does; a bad
+    // one refuses the heartbeat before anything is written.
+    const host = said.hostname === undefined
+      ? { ok: true, hostname: existing.hostname }
+      : PepRegistry.hostnameOf(said.hostname);
+    if (!host.ok) {
+      log.debug('Leaving PepRegistry.heartbeat(). A bad hostname.');
+      return host as PepResult;
+    }
+    // THE SIGNAL HEALTH (#1760): an absent member keeps the last snapshot,
+    // as every member here does (the pull's own `heartbeat(name, {})` sends
+    // none), null clears it (a PEP whose proxy is off), and an object
+    // replaces it, normalised and stamped with when it arrived.
+    const now = new Date().toISOString();
+    const signals = said.signals === undefined ? existing.signals
+      : PepRegistry.signalsOf(said.signals, now);
+    // THE SETTINGS IN FORCE AT THE PEP (#1760), the signal health's rule:
+    // absent keeps, null clears, an object replaces, held to its members.
+    const inUse = said.settings === undefined ? existing.settingsInUse
+      : pepSettings.inUseOf(said.settings, now);
+    // EVERY LISTENER THE PEP HAS AND WHAT IT IS DOING (#1760), the same
+    // rule again: held to the closed sets, stamped on arrival.
+    const listening = said.listeners === undefined ? existing.listenersInUse
+      : pepListeners.inUseOf(said.listeners, now);
+    const attributes = this.attributesOf(
+      Object.assign({}, existing, { signals: signals,
+                                    settingsInUse: inUse,
+                                    listenersInUse: listening,
+                                    hostname: host.hostname || '' }), {
+      xacmlPepLastSeen: now,
       xacmlPepNotifyUrl: said.notifyUrl === undefined
         ? existing.notifyUrl : String(said.notifyUrl || ''),
       xacmlPepBias: said.bias === undefined
@@ -798,11 +1150,11 @@ class PepRegistry {
     const written = directory.writePep(name, attributes);
     log.debug('Leaving PepRegistry.heartbeat(). ' +
               (written ? 'Recorded.' : 'Refused.'));
-    return written ? { ok: true, name: name, current: this.syncToken() }
-                   : errorCodes.mark({ ok: false,
-                                       why: 'The directory refused the ' +
-                                            'entry.' },
-                                     'STS-XACML-0027');
+    if (written) {
+      return { ok: true, name: name, current: this.syncToken() };
+    }
+    return errorCodes.mark({ ok: false, status: 507, why: 'The directory ' +
+                             'refused the entry.' }, 'STS-XACML-0027');
   }
 
   // What happened to the last nudge, written back onto the row. Separate from
@@ -864,6 +1216,101 @@ class PepRegistry {
   }
 
   // -------------------------------------------------------------------------
+  // THE REVERSE-PROXY CONFIGURATION (#1760). The text is written as given:
+  // `xacml_pep_proxy.ts` validates it before this is called, and again when
+  // the pull is built, because `ldapmodify` reaches this attribute too.
+  // -------------------------------------------------------------------------
+  /**
+   * Sets or clears a registered PEP's reverse-proxy configuration.
+   * @param name - the PEP's entry name
+   * @param text - the validated JSON document, or null to remove it
+   * @returns true when written
+   */
+  setProxy(name: string, text: string | null): boolean {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.setProxy(). name=' + name);
+    if (!this.haveDirectory()) {
+      log.debug('Leaving PepRegistry.setProxy(). No directory.');
+      return false;
+    }
+    const existing = this.read(name);
+    if (!existing) {
+      log.debug('Leaving PepRegistry.setProxy(). Not registered.');
+      return false;
+    }
+    const attributes: Record<string, unknown> =
+      this.attributesOf(Object.assign({}, existing, { proxy: '' })) as
+        Record<string, unknown>;
+    if (text) {
+      attributes.xacmlPepProxy = text;
+    }
+    const written = directory.writePep(name, attributes);
+    log.debug('Leaving PepRegistry.setProxy(). ' +
+              (written ? 'Written.' : 'Refused.'));
+    return written;
+  }
+
+  /**
+   * Sets or clears a registered PEP's managed settings (#1760).
+   * @param name - the PEP's entry name
+   * @param text - the validated JSON document, or null to remove it
+   * @returns true when written
+   */
+  setSettings(name: string, text: string | null): boolean {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.setSettings(). name=' + name);
+    if (!this.haveDirectory()) {
+      log.debug('Leaving PepRegistry.setSettings(). No directory.');
+      return false;
+    }
+    const existing = this.read(name);
+    if (!existing) {
+      log.debug('Leaving PepRegistry.setSettings(). Not registered.');
+      return false;
+    }
+    const attributes: Record<string, unknown> =
+      this.attributesOf(Object.assign({}, existing, { settings: '' })) as
+        Record<string, unknown>;
+    if (text) {
+      attributes.xacmlPepSettings = text;
+    }
+    const written = directory.writePep(name, attributes);
+    log.debug('Leaving PepRegistry.setSettings(). ' +
+              (written ? 'Written.' : 'Refused.'));
+    return written;
+  }
+
+  /**
+   * Sets or clears a registered PEP's defined listeners (#1760).
+   * @param name - the PEP's entry name
+   * @param text - the validated JSON array, or null to remove them
+   * @returns true when written
+   */
+  setListeners(name: string, text: string | null): boolean {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.setListeners(). name=' + name);
+    if (!this.haveDirectory()) {
+      log.debug('Leaving PepRegistry.setListeners(). No directory.');
+      return false;
+    }
+    const existing = this.read(name);
+    if (!existing) {
+      log.debug('Leaving PepRegistry.setListeners(). Not registered.');
+      return false;
+    }
+    const attributes: Record<string, unknown> =
+      this.attributesOf(Object.assign({}, existing, { listeners: '' })) as
+        Record<string, unknown>;
+    if (text) {
+      attributes.xacmlPepListeners = text;
+    }
+    const written = directory.writePep(name, attributes);
+    log.debug('Leaving PepRegistry.setListeners(). ' +
+              (written ? 'Written.' : 'Refused.'));
+    return written;
+  }
+
+  // -------------------------------------------------------------------------
   // THE WHOLE ENTRY AS ATTRIBUTES, with an override or two applied.
   //
   // `writePep()` REPLACES rather than merges — `writePolicy()`'s decision,
@@ -900,6 +1347,35 @@ class PepRegistry {
     if (row.description) {
       attributes.description = row.description;
     }
+    // Only when reported (#1760), so an older PEP's entry is written as it
+    // always was.
+    if (row.hostname) {
+      attributes.xacmlPepHostname = row.hostname;
+    }
+    // Only when set, so an entry that never had one is written exactly as it
+    // always was (#1760); `setProxy(name, null)` passes it as an override.
+    if (row.proxy) {
+      attributes.xacmlPepProxy = row.proxy;
+    }
+    // Only when reported, for the same reason (#1760).
+    if (row.signals) {
+      attributes.xacmlPepSignals = JSON.stringify(row.signals);
+    }
+    // Only when set, and only when reported (#1760).
+    if (row.settings) {
+      attributes.xacmlPepSettings = row.settings;
+    }
+    if (row.settingsInUse) {
+      attributes.xacmlPepSettingsInUse = JSON.stringify(row.settingsInUse);
+    }
+    // Only when defined, and only when reported (#1760).
+    if (row.listeners) {
+      attributes.xacmlPepListeners = row.listeners;
+    }
+    if (row.listenersInUse) {
+      attributes.xacmlPepListenersInUse =
+        JSON.stringify(row.listenersInUse);
+    }
     log.debug("Leaving PepRegistry.attributesOf().");
     return Object.assign(attributes, overrides || {});
   }
@@ -934,7 +1410,18 @@ class PepRegistry {
   notifiable(): PepRow[] {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.notifiable().');
-    const rows = this.all().filter(function (row) {
+    // THE URL AN ADMINISTRATOR SET WINS (#1760): the row is answered with
+    // it, so the nudge dials the managed address and the PEP's registered
+    // one only where none is set.
+    // A MEMBER OF A CLUSTER IS NUDGED AT ITS OWN ADDRESS (#1760, Remote
+    // PEP clusters): its effective row carries the notify URL set on its
+    // membership. Required lazily: the clusters module reads this one.
+    const clusters = require('./xacml_pep_clusters');
+    const rows = this.all().map(function (row) {
+      const effective = clusters.effectiveRow(row) || row;
+      return Object.assign({}, row,
+                           { notifyUrl: pepSettings.notifyUrlOf(effective) });
+    }).filter(function (row) {
       return row.enabled && row.notifyUrl;
     });
     log.debug('Leaving PepRegistry.notifiable(). ' + rows.length +
@@ -990,8 +1477,13 @@ export = {
   read: slot.forward('read'),
   register: slot.forward('register'),
   heartbeat: slot.forward('heartbeat'),
+  signalsOf: PepRegistry.signalsOf,
+  hostnameOf: PepRegistry.hostnameOf,
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),
+  setProxy: slot.forward('setProxy'),
+  setSettings: slot.forward('setSettings'),
+  setListeners: slot.forward('setListeners'),
   remove: slot.forward('remove'),
   notifiable: slot.forward('notifiable')
 };

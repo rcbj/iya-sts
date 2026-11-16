@@ -393,7 +393,9 @@ restart-only, on by default. Four things are this directory's:
 * **THE SESSION IS STARTED IN THE CERTIFICATE'S REALM.** `inCertificateRealm()`
   wraps `startCertificateSessionIn()` and the authentication recording in
   `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
-  username is the leaf's `urn:sts:person:` name. A certificate from an anchor
+  username is the leaf's `urn:sts:person:` name (or a service account's
+  `urn:sts:sa:`, #1827 — refused, STS-TLS-0063, where the entry is not one;
+  `common/CLAUDE.md` 3df). A certificate from an anchor
   somebody installed signs in, since #1061, in the REQUEST's realm as the
   entry storing it (below); it was default realm and common name until then.
 * **THE CONTEXT IS RE-APPLIED WHEN THE CERTIFICATE IS CERTIFIED.** A listener
@@ -2202,15 +2204,22 @@ module's:
 * **`certificatePeer()` READS NO NAME OFF THE CERTIFICATE.** It answers only
   the gate's `username`; with no accepted identity it refuses, naming the CN in
   the sentence and nothing else. An outside issuer could write anybody's CN.
-* **THE HANDSHAKE NO LONGER RECORDS AN OUTSIDE CERTIFICATE.**
-  `recordClientCertificate()` returns before recording when `!issuedHere`: it
-  used to file the subject and the observer SEEDED `cn=<CN>,ou=users` through
-  `certificatePlan()` — an entry made out of a name somebody else's authority
-  chose. A handshake has no realm to look the stored entry up in, so the door
-  that signs the holder in records the authentication instead. The connection
-  page (`/admin/tls-connection`) still calls `issuedIdentityOf()` WITHOUT
-  `stored`: it describes what arrived, and reports an outside certificate as
-  `issuedHere: false` as before.
+* **THE HANDSHAKE RECORDS THE MAPPED PERSON.** `recordClientCertificate()`
+  passes `presented` as `gated.username`, and the RFC 4514 subject stays in
+  the note and in `detail.application` (an application's
+  `oauthTlsClientAuthSubjectDn`). Filing the subject made `identityOf()` keep
+  that DN whole, so Directory → Users → Authentication attempts for the
+  username listed nothing while the info line said the certificate
+  authenticated. An outside certificate is recorded only when
+  `issuedIdentityOf(socket, { stored: true })` names exactly one person, and
+  then under that username with no certificate object — passing the subject
+  still seeded `cn=<CN>,ou=users` through `certificatePlan()`. The lookup is
+  the ambient realm, the default realm at a handshake, which has no request;
+  a certificate stored only in another realm stays the door's. Nothing
+  stored, stored twice, or stored on an application is still not recorded
+  here. The connection page (`/admin/tls-connection`) still calls
+  `issuedIdentityOf()` WITHOUT `stored`: it describes what arrived, and
+  reports an outside certificate as `issuedHere: false` as before.
 * **WHAT HAS NO IN-PROCESS TEST**: a stored outside certificate over a real
   HTTP request to `/tls/sign-in` is held only by the protocol jobs that
   present one (`sts_tls_connection`, `sts_main_port_pooling`,

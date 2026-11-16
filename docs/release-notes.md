@@ -4,6 +4,251 @@ title: Release notes
 
 # Release notes
 
+## Unreleased
+
+These changes are on a feature branch and are not part of any release yet.
+
+### The remote PEP authenticates with its key; the client certificate is retired
+
+A remote XACML PEP authenticates every call it makes to the service — the
+registration, the pulls, the heartbeat, the PIP, the decision records and
+the AuthZEN forward — with a DPoP-bound access token from an RFC 7523
+assertion it signs with its own key (`PEP_ASSERTION_KEY`). The key is
+generated where the PEP runs and certified with `issue-pep-credential`; the
+service never holds it ([How the PEP authenticates to the service](remote-pep.md#how-the-pep-authenticates-to-the-service)).
+
+* **`xacml.pepAuthentication` defaults to `token`.** A PEP that presents only
+  a client certificate is refused (401, `STS-XACML-0289`). `either` and
+  `certificate` stay available for an older PEP image or another
+  implementation.
+* **The 1.1.0 upgrade script keeps a 1.0.0 deployment's PEPs working.**
+  Every PEP 1.0.0 registered authenticated by its client certificate, so
+  `postgres/upgrade-1.0.0.sql` and `mariadb/upgrade-1.0.0.sql` store
+  `xacml.pepAuthentication` = `either` in every realm with at least one
+  registered remote PEP (an entry under its `ou=peps`), only where the realm
+  stores no value. When the default realm has a PEP its `either` is
+  service-wide, so the script also stores `token` in each other realm with no
+  PEP and no value. A realm with no PEP, and a new installation, get
+  `token`.
+* **Then move each realm to `token`**: give each PEP its key
+  (`issue-pep-credential`, then `PEP_ASSERTION_KEY` on the 1.1.0 PEP image),
+  and once every PEP in the realm holds its tokens, set
+  `xacml.pepAuthentication` to `token` or reset it
+  ([Upgrading a deployment whose PEPs use a certificate](remote-pep.md#upgrading-a-deployment-whose-peps-use-a-certificate)).
+  Without the script (the LDIF store, or a split cell database), set
+  `either` yourself before the PEPs reconnect. If a PEP is refused anyway,
+  the 401 says that `either` would accept its certificate, and the service
+  logs a warning under `STS-XACML-0289` once per realm.
+* **The PEP ignores `PEP_TLS_CERT`** and says so once at start
+  (`STS-XPEP-0135`). `PEP_TLS_KEY` is still read as the assertion key while
+  `PEP_ASSERTION_KEY` is unset. `GET /`'s `credential.clientCertificate` is
+  always `false`.
+* **The CRL-only plain listener binds only with `PEP_CRL_HTTP=true`.** It
+  served the client certificate's CRLs. A PEP with a CRL directory and no
+  switch says once that it is not bound (`STS-XPEP-0136`).
+* **An anonymous request to `/xacml/pep/*`** is now a 401 (`STS-XACML-0289`)
+  in a realm on the default, where it was the access policy's 403.
+* **The seeded client `sts-remote-pep`** no longer declares
+  certificate-bound tokens; an entry a pre-release build seeded with the flag
+  has it removed at the next start (audited as `application.update`). A token
+  request through it with no DPoP proof is `STS-OAUTH-1012`.
+* **The test stacks and the AWS suite runner** mint no client certificate
+  for the PEP and post no trust anchor for it.
+
+### A remote PEP's directory entry is a service account
+
+The entry a remote XACML PEP's client certificate maps to is now a
+[service account](service-accounts.md), owned by the realm's Admin Write
+group, or by its bootstrap administrator where that group does not exist
+([details](remote-pep.md#the-peps-entry-is-a-service-account)).
+
+* **When it happens.** An entry becomes one when it joins `remote-peps`. The
+  seeded `remote-pep-1` and every entry already in the group become one at
+  the next start, so an existing deployment needs no step of its own.
+* **What changes.** The PEP's connection is unaffected: mutual TLS is not a
+  service-account door. A browser sign-in as the entry is now refused
+  (STS-SVCACCT-0010) unless the realm's service-account policy allows it.
+* **When it waits.** A realm with no Admin Write group and no bootstrap
+  administrator leaves the entry as it is and logs STS-SVCACCT-0051: a
+  service account is never made without an owner.
+* **The console and the API.** The PEP's Overview tab shows it, with the
+  owners and a link to the person's Service account tab. Each row of
+  `GET /admin-api/xacml/peps` carries `identityAccount`. The change is
+  additive.
+
+### The remote PEP binds no plain-HTTP listener by default
+
+The remote XACML PEP container (`iyasec/iya-sts-xacml-pep`) no longer binds
+its plain-HTTP decision API on 9090 or its plain-HTTP reverse proxy on 9180
+unless you ask for them. Over HTTPS, 9443 and 9543 behave as before.
+
+* **To keep the old behaviour**, add `PEP_HTTP=true` (the API) and
+  `PEP_PROXY_HTTP=true` (the proxy) to the container's environment. With
+  `docker-compose.yml`, set `XACML_PEP_HTTP=true` and
+  `XACML_PEP_PROXY_HTTP=true` on the host.
+* **A container that sets `PEP_PORT` or `PEP_PROXY_PORT` without the
+  switch** logs `STS-XPEP-0106` once at start, naming the line that brings
+  the listener back. A switch set to anything other than `true` or `false`
+  leaves the listener off and logs `STS-XPEP-0107`.
+* **The image's healthcheck** probes `/healthcheck` over HTTPS on
+  `PEP_HTTPS_PORT` when plain HTTP is off. A PEP with no HTTPS pair yet
+  reports itself unhealthy until it has one. If something gates on that
+  health, turn `PEP_HTTP=true` on.
+* **`docker-compose.yml`'s default `PEP_NOTIFY_URL`** is now
+  `https://xacml-pep:9443/notify`. The old `http://` default was refused unless
+  `xacml.pepNotifyAllowHttp` was on.
+* **The client credential's CRL stays reachable.** A credential minted with
+  `tests/tools/pep-credential.js --crl-base=http://<pep>:9090/crl` names the
+  PEP's plain port, and with plain HTTP off nothing answered there, so the
+  service could not fetch the list and refused every pull as
+  unauthenticated. With `PEP_HTTP` off the PEP now binds `PEP_PORT` for
+  `GET /crl/<name>` and nothing else, whenever it has a CRL directory to
+  serve. `PEP_CRL_HTTP=false` turns it off and `PEP_CRL_HTTP=true` binds it
+  even with no directory; a value that is neither logs `STS-XPEP-0115`.
+  **Since the client certificate was retired (above), only
+  `PEP_CRL_HTTP=true` binds it.**
+  Anything else asked of that port is a 404 (`STS-XPEP-0114`). The Listener
+  tab shows it as *listening, CRLs only*.
+* **Admin console**: the remote PEP's Listener tab shows the two listeners as
+  *off*, each with its switch. A listener the PEP reports *off* no longer
+  holds its port, so a listener defined on the tab may use 9090. A listener
+  the PEP has not reported, or reported with no state, reads *not reported*
+  (it read *listening* before), and an environment plain-HTTP listener with
+  no report reads as its default, *off*.
+
+### The nudge to a remote PEP is HTTPS only, and verifies with no setting
+
+The service sends a remote PEP's "pull now" nudge over HTTPS only, in every
+mode, and always verifies the PEP's certificate.
+
+* **Trust with nothing set.** The PEP's HTTPS listener certificate is issued
+  by the realm's Remote PEP listeners (`pep-tls`) Issuing CA, and the nudge
+  verifies against that chain by default, with the host checked against the
+  notify URL's. A certificate from this service's Root but another Issuing
+  CA (another realm's PEP, a custom listener) is refused (`STS-XACML-0260`).
+  `xacml.pepNotifyCaFile` is still read, as an additional anchor for a PEP
+  certified elsewhere. The nudge that 8081 refused with "self-signed
+  certificate in certificate chain" (`STS-XACML-0070`) is delivered.
+* **`xacml.pepNotifyAllowHttp` and `xacml.pepNotifySkipTlsVerification` are
+  retired.** Both are still accepted, so a configuration naming them keeps
+  starting, and both are ignored; one that is on logs `STS-XACML-0258` once
+  per process. Remove them. `GET /admin-api/xacml/peps`' `notify.transport`
+  reports `allowHttp` and `skipTlsVerification` as `false`.
+* **A PEP registered with an `http://` notify URL** is shown with that URL
+  unusable, *plain http, the nudge is sent over HTTPS only*, and goes on
+  converging by polling. Set its notify URL to
+  `https://<host>:<PEP_HTTPS_PORT>/notify` (the PEP's Settings tab now
+  refuses an `http://` one, `STS-XACML-0239`). `STS-XACML-0259` is recorded
+  for a nudge refused that way; `STS-XACML-0073` and `STS-XACML-0074` are
+  retired.
+* **The PEP** answers `POST /notify` on its HTTPS listener only (a 404 over
+  plain HTTP, `STS-XPEP-0112`), and **rejects** an `http://`
+  `PEP_NOTIFY_URL`, or an `http://` `notifyUrl` an older service stored
+  (`STS-XPEP-0113`, at ERROR, once per value). A rejected URL means the PEP
+  advertises no notify URL at all, not the derived one, until it is fixed
+  or unset. It is reported with `rejected: true`
+  (`peps[].settingsInUse.values.notifyUrl.rejected` on
+  `GET /admin-api/xacml/peps`), and the PEP's Settings tab and Notify column
+  say it is rejected.
+* **Admin console**: the Notify column of the Remote PEPs tab, and the PEP's
+  Overview, show *usable*, *unusable* with a one-line reason, or *none*, and
+  two words about the last nudge; the full sentences are under *Details*.
+* **The PEP derives its notify URL when none is set.** With neither the
+  PEP's Settings tab `notifyUrl` nor `PEP_NOTIFY_URL` set, the PEP advertises
+  `https://<host>:<PEP_HTTPS_PORT>/notify`. `<host>` is the DNS name in the
+  HTTPS listener certificate it serves that equals its hostname, else the
+  certificate's first DNS name, else `PEP_NAME` if that is a DNS name, else
+  the container's hostname. So a certificate naming the PEP's registered
+  name first and `xacml-pep` second, on a container named `xacml-pep`, gives
+  `xacml-pep`. A PEP with no HTTPS certificate yet
+  advertises none until it has one, and a new certificate derives the URL
+  again. The PEP logs the derived URL at INFO, and reports its source as
+  `derived` (`GET /admin-api/xacml/peps`'
+  `peps[].settingsInUse.values.notifyUrl.source`). The Notify column says
+  *derived by the PEP from its HTTPS listener certificate*. The service still
+  checks the URL as before: https only, the certificate verified, and the
+  host checked against it. **`docker-compose.yml` and the test stack no
+  longer set a notify URL**, so they derive it. `XACML_PEP_NOTIFY_URL`
+  still sets one, and an empty one now means unset.
+* **The PEP reports its hostname, and the realm's default certificate names
+  it.** The PEP sends `hostname` (the value the derivation reads) on its
+  registration and heartbeat. The service stores it and adds it to the
+  default names of the PEP's HTTPS listener certificate, beside the
+  registered name and the notify host, for both the environment pair and a
+  defined listener's certificate. So on a fresh install the derived notify
+  URL uses the hostname with no names added by hand. The PEP's Overview tab
+  and `GET /admin-api/xacml/peps` (`peps[].hostname`) show it. The service
+  accepts only a DNS name, never an IP address, and refuses anything else
+  with 400 (`STS-XACML-0261`). A PEP that reports none keeps today's
+  defaults, and an older service ignores the member. A certificate issued
+  before this does not name the hostname: issue it again, or let a defined
+  listener renew.
+
+### The reverse proxy's fixes from the 8081 demonstration
+
+* **The service's cookies never reach the application.** A browser sends
+  cookies by host, not port, so where the service and the proxy share a host
+  `__Host-sts_session` and the rest were forwarded upstream. The proxy now
+  strips every cookie the service names on the pull
+  (`realm.serviceCookiePrefixes`: `sts_*`, `__Host-sts_*`, `__Secure-sts_*`),
+  and the managed setting `proxyStripCookies` (`PEP_PROXY_STRIP_COOKIES`) adds
+  names, a trailing `*` for a prefix. The application's own cookies are
+  untouched. A service older than this sends no list, and the PEP strips the
+  same three prefixes.
+* **An identity header with no value is not sent.** A person in no group sent
+  an empty `X-Iya-Groups`; an empty string or list now sends no header, for
+  every identity header.
+* **`X-Iya-Amr` is sent.** The identity endpoint answered every proxy
+  session's access token with no `amr`; it now reads the token's own `amr`,
+  `acr` and `auth_time`.
+* **A proxy session a CAEP signal ended clears its cookie** on the redirect
+  to sign in, as the documentation said.
+* **Between a sign-out and its signal**, a browser whose identity the service
+  refused because its session had ended got a 403; it is now sent to sign in
+  with the proxy session ended, and anything else gets a 401.
+* **The account chooser shows usernames.** The service's ID Token carries no
+  `preferred_username`, so an account was labelled by its `urn:uuid` subject;
+  the sign-in now asks the service's session endpoint, whose answer also
+  carries the person's display name (`name`), shown beside it.
+* **A route's identity is edited on the route's own page.** The Reverse
+  proxy tab drew a *How route … forwards the identity* form under its table
+  for every route; that is now only the identity part of the route page's
+  form, which the route id in the table links to.
+  `POST /admin-api/xacml/set-pep-route-identity` is unchanged.
+* **`/admin-api/xacml/*` PEP acts take `pep` as well as `name`**, the name
+  `GET /admin-api/xacml/peps` takes as `?pep=`. `name` still works; both
+  naming different PEPs is refused (`STS-XACML-0038`).
+
+[Plain HTTP is off by default](remote-pep.md#plain-http-is-off-by-default)
+has the precedence and the reasons.
+
+### New: a remote PEP route's own page, and several accounts in one browser
+
+* Each reverse-proxy route has a console page of its own, where every
+  value can be edited and the route renamed
+  ([A route's own page](remote-pep.md#a-routes-own-page)).
+* A session route can let one browser hold several signed-in accounts and
+  switch between them (`multipleAccounts`, off by default; the bound is
+  `proxyMaxAccounts`, `PEP_PROXY_MAX_ACCOUNTS`, default 5;
+  [Several accounts in one browser](remote-pep.md#several-accounts-in-one-browser)).
+
+### Changed: every reverse-proxy route is authorized by its own policy
+
+* **Every request on every route is decided in XACML by that route's own
+  policy, never by the realm's root.** Each route makes one `authorization`
+  choice: an existing policy, a simple generated policy (a resource, CRUD
+  or read/write, and the roles for each action), or Public, which generates
+  a policy too ([Authorizing a route](xacml.md#authorizing-a-route)). The
+  route forms draw the choice as one selector, with a search for the policy
+  and for each action's roles.
+* **An empty methods list is deny-all**, and a route takes any method by
+  listing all seven. Every route states its `methods`.
+* **Not compatible with the proxy documents of earlier builds**, which the
+  proxy feature's unreleased state allows: `public`, `resource` and
+  `action` are refused as members, `methods` and `authorization` are
+  required, and a remote PEP and the service upgrade together. Save each
+  route's choice again (or edit the document) after the upgrade.
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the
@@ -23,6 +268,14 @@ Release 1.0.0's database is schema version 31. 1.1.0 adds two indexes on
 * `sts_sessions_started`, so the console's session pages can list sessions
   newest first without sorting the whole table.
 * `sts_sessions_subject_band`, used by the per-subject session sweep.
+
+The script also stores `xacml.pepAuthentication` = `either` in every realm
+that has a registered remote PEP and no value of its own, so PEPs that
+authenticate by client certificate keep working on 1.1.0's new default,
+`token` ([The remote PEP authenticates with its key](#the-remote-pep-authenticates-with-its-key-the-client-certificate-is-retired)).
+It prints what it stored. That step needs the directory and the settings
+in the same database; in a cell or tier database that lacks either, it
+writes nothing and says so.
 
 Run the script as the table owner, from a checkout of 1.1.0. On the
 compose stack the owner is `sts`. The application role `sts_app` cannot
@@ -83,7 +336,9 @@ Returning to the 1.0.0 image ignores both indexes. Leave them.
 ### MariaDB
 
 MariaDB is the [second engine](persistence.md#a-second-engine-mariadb).
-Its upgrade adds `sts_sessions_started` and records schema version 32.
+Its upgrade adds `sts_sessions_started`, records schema version 32, and
+stores `xacml.pepAuthentication` = `either` in each realm with a registered
+remote PEP, as the PostgreSQL script does.
 `sts_sessions_subject_band` is PostgreSQL only. The build does not block
 writers. Run it as an account that can `ALTER` the table,
 in the service's database, and pass `--abort-source-on-error`:

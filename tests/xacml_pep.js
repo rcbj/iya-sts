@@ -388,6 +388,55 @@ async function run(t) {
           'and one holding anything else is not — which is a comparison this ' +
           'service performs rather than a claim the PEP makes about itself');
 
+  // THE HOSTNAME A PEP REPORTS (#1760): stored lower-cased, kept by a
+  // heartbeat that does not carry it, dropped by a registration that does
+  // not, and junk refused with its code before anything is written.
+  const errorCodes = require('../common/error_codes');
+  const hostReg = registry.register({ name: 'pep-1', identity: identity.dn,
+    certificateSubject: identity.subject, authenticated: true,
+    notifyUrl: 'https://pep.example.com/notify', hostname: 'Xacml-Pep.' });
+  t.check(hostReg.ok, 'a registration carrying a hostname is accepted',
+          hostReg.why || '');
+  t.equal(registry.read('pep-1').hostname, 'xacml-pep',
+          'and the hostname is stored, lower-cased, its trailing dot gone');
+  registry.heartbeat('pep-1', { decisions: 1 });
+  t.equal(registry.read('pep-1').hostname, 'xacml-pep',
+          'a heartbeat without it keeps it');
+  registry.heartbeat('pep-1', { hostname: 'pep-host.internal' });
+  t.equal(registry.read('pep-1').hostname, 'pep-host.internal',
+          'a heartbeat carrying one replaces it');
+  const junk = ['10.0.0.1', '[::1]', '::1', 'a_b', 'a..b', '-a', '123',
+                '*.example', 'a b', 'a'.repeat(64) + '.test',
+                ('abc.'.repeat(64)) + 'x', 7, { x: 1 }, ['a']];
+  junk.forEach(function (bad) {
+    const viaHeartbeat = registry.heartbeat('pep-1', { hostname: bad,
+                                                       decisions: 99 });
+    const viaRegister = registry.register({ name: 'pep-1',
+      identity: identity.dn, authenticated: true, hostname: bad });
+    t.check(!viaHeartbeat.ok && viaHeartbeat.status === 400 &&
+            errorCodes.codeOf(viaHeartbeat) === 'STS-XACML-0261' &&
+            !viaRegister.ok &&
+            errorCodes.codeOf(viaRegister) === 'STS-XACML-0261',
+            'a reported hostname that is not a DNS name is refused with ' +
+            'STS-XACML-0261: ' + JSON.stringify(bad),
+            JSON.stringify({ heartbeat: viaHeartbeat.ok,
+                             register: viaRegister.ok }));
+  });
+  t.check(registry.read('pep-1').hostname === 'pep-host.internal' &&
+          registry.read('pep-1').decisions !== 99 &&
+          registry.read('pep-1').notifyUrl === 'https://pep.example.com/notify',
+          'and a refused one writes nothing: the row is as it was');
+  registry.register({ name: 'pep-1', identity: identity.dn,
+                      certificateSubject: identity.subject,
+                      authenticated: true,
+                      notifyUrl: 'https://pep.example.com/notify' });
+  t.equal(registry.read('pep-1').hostname, '',
+          'a registration without it (an older PEP, or a new process with ' +
+          'none) drops it');
+  t.check(!('xacmlpephostname' in directory.entries.get('pep-1')),
+          'and an entry that holds none is written without the attribute, ' +
+          'as an older service wrote it');
+
   // A HEARTBEAT DOES NOT CREATE A ROW.
   const orphan = registry.heartbeat('never-registered', { decisions: 1 });
   t.check(!orphan.ok, 'a heartbeat from something unregistered is refused',
@@ -396,6 +445,50 @@ async function run(t) {
           'and the refusal names the registration endpoint rather than ' +
           'leaving the caller to guess');
   t.equal(registry.all().length, 1, 'and created nothing');
+
+  // EVERY REFUSAL CARRIES THE STATUS IT IS ANSWERED WITH (#1830): register
+  // and heartbeat answer the registry's status, so each is asserted here,
+  // where each refusal can be reached.
+  t.check(orphan.status === 404 &&
+          errorCodes.codeOf(orphan) === 'STS-XACML-0021',
+          'a heartbeat from a PEP never registered is 404 (STS-XACML-0021)',
+          JSON.stringify(orphan));
+  const nameless = registry.register({ name: '   ', authenticated: false });
+  t.check(!nameless.ok && nameless.status === 400 &&
+          errorCodes.codeOf(nameless) === 'STS-XACML-0019',
+          'a registration with no usable name is 400 (STS-XACML-0019)',
+          JSON.stringify(nameless));
+  registry.setDirectory(null);
+  const noDirRegister = registry.register({ name: 'pep-2' });
+  const noDirHeartbeat = registry.heartbeat('pep-1', { decisions: 1 });
+  registry.setDirectory(directory);
+  t.check(!noDirRegister.ok && noDirRegister.status === 503 &&
+          errorCodes.codeOf(noDirRegister) === 'STS-XACML-0026' &&
+          !noDirHeartbeat.ok && noDirHeartbeat.status === 503 &&
+          errorCodes.codeOf(noDirHeartbeat) === 'STS-XACML-0026',
+          'with no directory, register and heartbeat are 503 ' +
+          '(STS-XACML-0026): the fault is this service\'s, not the PEP\'s',
+          JSON.stringify({ register: noDirRegister,
+                           heartbeat: noDirHeartbeat }));
+  const full = Object.assign({}, directory, {
+    writePep: function () {
+      log.debug("Entering writePep(). Full.");
+      log.debug("Leaving writePep(). Full.");
+      return false;
+    }
+  });
+  registry.setDirectory(full);
+  const fullRegister = registry.register({ name: 'pep-2' });
+  const fullHeartbeat = registry.heartbeat('pep-1', { decisions: 1 });
+  registry.setDirectory(directory);
+  t.check(!fullRegister.ok && fullRegister.status === 507 &&
+          errorCodes.codeOf(fullRegister) === 'STS-XACML-0027' &&
+          !fullHeartbeat.ok && fullHeartbeat.status === 507 &&
+          errorCodes.codeOf(fullHeartbeat) === 'STS-XACML-0027',
+          'when the directory refuses the write (ou=peps full), register ' +
+          'and heartbeat are 507 (STS-XACML-0027)',
+          JSON.stringify({ register: fullRegister,
+                           heartbeat: fullHeartbeat }));
 
   // A FAILED NUDGE IS RECORDED AND DOES NOT MOVE `lastSeen`. That distinction
   // is the whole value of the field: a nudge that failed is evidence the PEP
@@ -448,7 +541,7 @@ async function run(t) {
   config.setOverride('xacml.pepNotifyAllowHttp', false);
   config.setOverride('xacml.pepNotifyAllowedHosts', '');
   t.check(!!pepHttp.urlProblem('http://pep/notify'),
-          'plain http is refused while pepNotifyAllowHttp is off');
+          'plain http is refused');
   t.equal(pepHttp.urlProblem('https://pep.example.com/notify'), null,
           'and https with an empty allowlist is fine — empty means ANY, ' +
           'which is the default and the one deliberate looseness here');
@@ -463,9 +556,14 @@ async function run(t) {
           'while the allowed host is fine at ANY path — hosts rather than ' +
           'URLs, because a component legitimately moves its path and does ' +
           'not legitimately move to another host');
+  // RETIRED ON 2026-11-14: the setting is accepted and IGNORED. A nudge is
+  // https only, in every mode, so plain http stays refused with it on.
   config.setOverride('xacml.pepNotifyAllowHttp', true);
-  t.equal(pepHttp.urlProblem('http://allowed.example.com/notify'), null,
-          'and http is allowed once the setting says so');
+  t.check(!!pepHttp.urlProblem('http://allowed.example.com/notify') &&
+          pepHttp.urlVerdict('http://allowed.example.com/notify').errorCode ===
+            'STS-XACML-0259',
+          'and http stays refused with the retired pepNotifyAllowHttp on ' +
+          '(STS-XACML-0259)');
   t.check(!!pepHttp.urlProblem('ftp://allowed.example.com/notify'),
           'a scheme that is neither http nor https is refused whatever the ' +
           'settings say');

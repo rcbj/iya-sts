@@ -98,6 +98,7 @@
   "tls.key": "Key",
   "tls.goodUntil": "Valid hanggang",
   "tls.how": "<strong>Paano ito ginagamit ng application.</strong> Ipakita ito sa TLS connection papunta sa token endpoint na may <code>client_id={client}</code> at <code>token_endpoint_auth_method</code> na <code>tls_client_auth</code> sa entry: ina-authenticate ito ng RFC 8705 section 2.1 dahil ibinigay ito ng realm na ito sa application na ito, nang walang ibang naka-register. Ang bawat access token na ibinigay sa connection na iyon ay may dalang <code>cnf[\"x5t#S256\"]</code> ng certificate na ito (section 3), kaya ipinapakita ng application ang parehong certificate sa mga resource server. <code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a mutual-TLS client does with the chain <code>{chain}</code> and the key <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "Realm",
   "pep.names": "Mga pangalan",
   "validUntil": "Valid hanggang",
@@ -111,5 +112,15 @@
   "person.certificate": "Ang certificate, na public at nasa entry din:",
   "once.signingCertificate": "Message-signing certificate",
   "signing.warn": "<strong>Ito lang ang pagkakataong mada-download ang mga file na ito.</strong> Hindi iniingatan ng serbisyong ito ang private key — wala sa entry ng may-hawak, wala sa certificate register — at walang anuman sa console na ito o sa <code>/admin-api</code> ang magbibigay nito ulit. Kung mawala ito, bawiin ang certificate at maglabas ng iba.",
-  "signing.how": "<strong>Paano ito ginagamit.</strong> Lagdaan ang bawat WS-Trust request gamit ang key sa <code>{key}</code> (o ang PKCS#12): isang WS-Security 1.1 signature sa SOAP Body at sa Timestamp, na nasa isang BinarySecurityToken ang certificate na ito at <code>{chain}</code> ang chain nito. Pagkatapos ay napapatunayan ang request bilang <code>{name}</code>, dahil inilabas ng realm na ito ang certificate sa pangalang iyon, nang walang ibang nirehistro."
+  "signing.how": "<strong>Paano ito ginagamit.</strong> Lagdaan ang bawat WS-Trust request gamit ang key sa <code>{key}</code> (o ang PKCS#12): isang WS-Security 1.1 signature sa SOAP Body at sa Timestamp, na nasa isang BinarySecurityToken ang certificate na ito at <code>{chain}</code> ang chain nito. Pagkatapos ay napapatunayan ang request bilang <code>{name}</code>, dahil inilabas ng realm na ito ang certificate sa pangalang iyon, nang walang ibang nirehistro.",
+  "cluster.back": "Bumalik sa cluster",
+  "cluster.discardedDownload": "I-download ang itinapon",
+  "cluster.discardedLead": "Wala nang sariling reverse proxy, setting o listener ang PEP: kinukuha nito ang sa cluster. Ito ang hawak nito dati, isang beses lang.",
+  "cluster.discardedTitle": "Sumali ang isang PEP sa isang cluster",
+  "once.pepCredential": "Assertion key ng PEP",
+  "pepCredential.keyPath": "(ang path ng key file na ginamit mo sa paggawa ng request)",
+  "pepCredential.urn": "Pangalan",
+  "pepCredential.env": "Simulan ang PEP gamit ang environment na ito. Hindi kailanman umalis ang private key sa makinang gumawa ng request; walang maibibigay ang serbisyong ito.",
+  "pepCredential.chain": "Ang certificate at ang chain nito hanggang sa Root ng serbisyo. Pampubliko: hindi ito kailangan ng PEP para mag-authenticate, at nasa listahan ito ng mga key ng entry.",
+  "pepCredential.download": "I-download ang certificate"
 }

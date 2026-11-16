@@ -102,7 +102,8 @@ so the service starts without the pinned management API secret.
 | 8082 | 8082 | Plain-HTTP revocation listener: the CRL, OCSP and issuer certificate every issued certificate points at | `STS_PKI_HOST_PORT` |
 | 88, TCP and UDP | 88 | The Kerberos KDC, so `kinit` and a browser's SPNEGO sign-in work from the host ([Kerberos](#kerberos)) | `STS_KDC_HOST_PORT` |
 | 8444 | 8444 | The [embedded debugger](admin-console.md#the-embedded-protocol-debugger), signed in to through this service and open to console administrators only. **Both sides move together**, because its sign-in sends the browser back by the host and port it used | `STS_DEBUGGER_PORT` |
-| 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
+| 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only). **9090 answers the decision API only with `XACML_PEP_HTTP=true`**, and otherwise only its credential's CRLs: plain HTTP is off by default ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
+| 9180, 9543 | 9180, 9543 | The remote PEP's reverse proxy, HTTP and HTTPS (`xacml` profile only). It answers 404 until a proxy is configured for that PEP; 9543 serves the same certificate as 9443. **9180 answers only with `XACML_PEP_PROXY_HTTP=true`** | `XACML_PEP_PROXY_HOST_PORT`, `XACML_PEP_PROXY_HTTPS_HOST_PORT` |
 | 9700 | 9700 | The development companion, plain HTTP (`companion` profile only) | `COMPANION_HOST_PORT` (and `COMPANION_PUBLIC_URL`) |
 | 8888 | 8888 | The companion's Kerberos-protected TCP service (`companion` profile only) | `COMPANION_KRB5_HOST_PORT` |
 
@@ -170,6 +171,15 @@ rebuild. The service never writes to it. Setting changes made in the console go
 to the store, which overrides the file. Do not edit `env/defaults.js`; it is
 generated from `common/config.js`.
 
+**On an upgrade the mount is NOT upgraded with the image.** A newer image whose
+release added a setting starts on an older `env/` all the same: the setting
+takes the image's own default and the start logs a warning, `STS-CORE-0177`,
+naming it and the older `env/defaults.js`. A default the release changed is
+kept at the older file's value and logged as `STS-CORE-0178`. Update the
+checkout the mount comes from to the release you run, or mount a directory
+that holds only your own appconfig file and no `defaults.js`. See
+[Upgrading with a mounted env/](configuration.md#upgrading-with-a-mounted-env).
+
 ## Network and SPIFFE addresses
 
 The stack declares its own network, `172.29.0.0/24` (`STS_NETWORK_SUBNET`), and
@@ -228,6 +238,10 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_BAO_PRINT_CREDENTIALS` | `true` | Whether the seeder prints the operator token, and on the first run the recovery key |
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
+| `XACML_PEP_HTTP`, `XACML_PEP_PROXY_HTTP` | `false` | `true` binds the remote PEP's plain-HTTP decision API on 9090, and its plain-HTTP reverse proxy on 9180. Both are off by default ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
+| `XACML_PEP_CRL_HTTP` | empty | `PEP_CRL_HTTP`: with plain HTTP off, `true` makes the remote PEP serve the CRLs in its CRL directory on 9090; empty or `false` does not (since 1.1.0 empty no longer binds it where there are CRLs, because the PEP presents no client certificate whose lists the service would fetch) ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
+| `XACML_PEP_NOTIFY_URL` | *(empty)* | Where the service nudges the remote PEP. Empty, the PEP derives it from its HTTPS listener certificate, `https://xacml-pep:9443/notify` when the certificate names the hostname `xacml-pep` ([Remote PEP](remote-pep.md#the-pep-derives-its-notify-url)). It must be HTTPS: an `http://` one is rejected ([Remote PEP](remote-pep.md#a-notify-url-that-is-not-https-is-rejected)) |
+| `XACML_PEP_PROXY_SESSION_RECHECK_MS` | `5000` | How old the remote PEP's last answer about a proxy session's sign-on session may be before it asks the service again. `0` asks on every request, so a sign-out at the service ends access at once |
 | `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
 | `GIT_COMMIT` | empty | Build argument: see [Which build am I running?](getting-started.md#which-build-am-i-running) |
 | `DEBUGGER_IMAGE` | `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3` | Build argument: the [embedded debugger](admin-console.md#the-embedded-protocol-debugger) the image carries, a tagged release of id-proto-debugger. `debugger-none` builds an image without one |
@@ -295,6 +309,15 @@ verifier's web site would:
   not served.
   [The companion dummy of each provider](federation-consumer-providers.md#the-companion-dummy-of-each-provider)
   lists the document each dummy follows.
+* **An application for the remote PEP to protect** (`/pep-app`). Point a
+  PEP's reverse proxy at `http://companion:9700` and route paths under
+  `/pep-app` (`/pep-app/public`, `/pep-app/protected`, `/pep-app/api/items`
+  for writes). Every page answers JSON: the method, the path, the query and
+  every header that reached it, including the identity headers the proxy
+  adds, and for a write the body's length and SHA-256.
+  `/pep-app/_hits` counts what reached each path; read it at the
+  companion directly, not through the proxy. It needs no service and no
+  secret.
 
 It calls `/admin-api` as an application of its own, `iya-sts-companion`,
 holding Admin Read and Admin Write. Give it either

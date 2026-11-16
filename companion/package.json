@@ -9,8 +9,10 @@
     "start": "node companion.js"
   },
   "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
     "bunyan": "1.8.15",
     "kerberos": "7.0.0",
-    "qrcode": "1.5.4"
+    "qrcode": "1.5.4",
+    "xml-crypto": "6.1.2"
   }
 }

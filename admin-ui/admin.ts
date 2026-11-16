@@ -2047,6 +2047,19 @@ const SECTIONS = [
                'refusal is the <a href="/admin/audit">audit log</a>, and the ' +
                'policies these decisions are made with are under ' +
                '<a href="/admin/xacml">Protocols</a>.' },
+      // A remote PEP's own traffic, beside the decision counts above: what
+      // each listener and its thread pool are doing, which paths are being
+      // asked, and the process's memory. The figures are the PEP's, reported
+      // on its heartbeat. Configuring a listener stays under Protocols.
+      { path: '/admin/xacml/pep/monitor', label: 'Remote PEPs',
+        blurb: 'What each remote PEP is serving rather than how it is ' +
+               'configured: every listener\'s accepted, open and refused ' +
+               'connections, its thread pool, the requests it has counted ' +
+               'per path, and the process\'s memory. The figures are ' +
+               '<strong>reported by the PEP</strong> on its heartbeat and ' +
+               'are cumulative since that process started. A PEP that has ' +
+               'not reported them yet says so. The listeners themselves ' +
+               'are set under <a href="/admin/xacml">Protocols</a>.' },
       // GNAP's traffic, filed here beside XACML's for the same reason: what the
       // applications using it have DONE is a monitoring question, and the
       // configuration is on Protocols -> GNAP.
@@ -2907,7 +2920,8 @@ const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
 // `tests/person_fields.js` now holds every sub-tab the page draws to this
 // list.
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
-  'ucred-keys', 'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
+  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos'].concat(
+  personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
 
@@ -4079,7 +4093,11 @@ class AdminConsole {
       'textarea{width:100%;min-height:7rem;font-family:ui-monospace,' +
       'SFMono-Regular,Menlo,monospace}.formrow{display:flex;flex-wrap:wrap;' +
       'gap:8px;align-items:center;margin:.5em 0}.formrow ' +
-      'label{font-size:.78em;font-weight:600;color:#555}' +
+      // `.formlabel` is a row's label that labels a GROUP rather than one
+      // control (a `role="group"`'s name: the PEP route forms' Methods and
+      // Mechanisms), drawn exactly as a row's `<label>` is.
+      'label,.formrow .formlabel{font-size:.78em;font-weight:600;' +
+      'color:#555}' +
 
       // ---------------------------------------------------------------------
       // THE SEARCH PANE UNDER A CHOOSER (chooserPane()). `max-height` with
@@ -4135,6 +4153,29 @@ class AdminConsole {
       // about four screens of empty box. They are sized by their `rows`
       // attribute here instead, which is what the markup already says.
       // ---------------------------------------------------------------------
+      // A SECTION FRAME: a box around a block of a panel that holds its own
+      // heading, table and forms, so a reader can see which fields belong to
+      // which block. A frame inside a frame is white on the outer's tint, and
+      // a third level tinted again, so the nesting reads without a heavier
+      // border. Drawn around every section of a person's Credentials > Key
+      // pairs: the RFC 7523/7522 key pairs (each profile a frame inside, each
+      // Add form a frame inside that), and the stored, message-signing and
+      // TLS client certificates (each Add or Issue form a frame inside).
+      //
+      // **THE BORDER IS #c5c5d3 ON #f6f6fa, HEAVIER THAN `.pki-col`'s
+      // #e2e2ea ON #fbfbfd**: a `.pki-col` sits beside two others, and the
+      // columns themselves show the boundary; a frame here is stacked in a
+      // white card, and at the lighter pair its edge and tint were hard to
+      // tell from the card. The tint is the tab lists'. The console has
+      // one (light) theme, with no `prefers-color-scheme` rule anywhere, so
+      // the frame needs no second set of colours.
+      '.secframe{border:1px solid #c5c5d3;border-radius:8px;padding:10px ' +
+      '14px 12px;margin:0 0 16px;background:#f6f6fa;min-width:0}' +
+      '.secframe .secframe{background:#fff;margin:.7em 0 0}' +
+      '.secframe .secframe .secframe{background:#f6f6fa}' +
+      '.secframe>h2:first-child,.secframe>h3:first-child,' +
+      '.secframe>h4:first-child{margin-top:0}' +
+      '.secframe>:last-child{margin-bottom:0}' +
       '.pki-cols{display:grid;grid-template-columns:repeat(auto-fit,' +
       'minmax(22rem,1fr));gap:14px;margin:.6em 0 ' +
       '1em;align-items:start}.pki-col{border:1px solid ' +
@@ -4369,6 +4410,18 @@ class AdminConsole {
       // box, because a diagram scaled down is one whose labels have stopped
       // being legible while still looking as though they should be.
       '.diagram svg{display:block;max-width:none}' +
+      // THE PEP PICTURE (`xacml/web_pep_picture.ts`) is drawn twice: three
+      // columns, and stacked below the console's breakpoint, where three
+      // columns would open on the PEP alone. The stacked one is laid out
+      // 240 wide to fit a phone's card (2026-11-15: at 390px its boxes ran
+      // past the card's edge), so its box keeps a thinner padding, and only
+      // on a screen narrower than any phone it was laid out for is it scaled
+      // down to the box — the one picture here allowed to be, because there
+      // it is that or a sideways scroll on the device it was drawn for.
+      '.pep-picture-stacked{display:none}' +
+      '@media (max-width:56rem){.pep-picture-wide{display:none}' +
+      '.pep-picture-stacked{display:block;padding:6px}' +
+      '.pep-picture-stacked svg{max-width:100%;height:auto}}' +
       // The key. A table like every other, with the shape column sized to the
       // swatches rather than to its heading.
       'table.key td.art{width:5.5rem;text-align:center;vertical-align:middle;' +
@@ -4625,7 +4678,8 @@ class AdminConsole {
        'vc-tab-claims', 'vc-tab-oid4vp',
        'vc-tab-verifier-request', 'xacml-tab-metadata',
        'xacml-tab-settings', 'xacml-tab-policies', 'xacml-tab-editor',
-       'xacml-tab-peps', 'xacml-tab-decide', 'xacml-tab-authzen',
+       'xacml-tab-peps', 'xacml-tab-pep-clusters', 'xacml-tab-decide',
+       'xacml-tab-authzen',
        'ssf-tab-metadata',
        'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
        'kerberos-tab-metadata', 'kerberos-tab-settings',
@@ -4669,6 +4723,27 @@ class AdminConsole {
       // xacml/web_xacml.ts's warnings and scim/web_scim.ts's top-aligned
       // tiles, which were `style=""` until the families' pages followed.
       '.xacml-alert{color:#b00}.tiles.tiles-top{align-items:flex-start}' +
+      // A remote PEP's Configured Listeners: the Listener column kept whole
+      // (8081 at 1280px broke "api-http/s" mid-word); `.wide` scrolls the
+      // table sideways when the row is wider than the card.
+      'th.pep-listener-id{white-space:nowrap}' +
+      // The environment's pair as issued, on Create a new listener: its
+      // names and expiry drawn as the table cell draws them, small.
+      '.pep-envpair-held .sub{color:#666;font-size:.85em}' +
+      // At phone width a fieldset is as wide as its widest box by default
+      // (`min-width: min-content`), so a 40-column DNS names box pushed the
+      // Certificate legend past the card at 390px.
+      '.pep-listener-form fieldset,.pep-envpair-form fieldset{min-width:0}' +
+      '.pep-listener-form label,.pep-envpair-form label{max-width:100%}' +
+      '.pep-listener-form input,.pep-envpair-form input{max-width:100%}' +
+      // A drill-down's title inside its parent's tabs (`kit.drillTitle()`,
+      // rcbj 2026-11-15): indented under the innermost tab row, with the
+      // tab colour's bar down its left, the level below that row.
+      '.drilltitle{display:flex;flex-wrap:wrap;align-items:baseline;' +
+      'gap:.3em 1.2em;margin:.4em 0 1em .6em;padding:.2em 0 .2em .8em;' +
+      'border-left:4px solid #12107c}' +
+      '.drilltitle h2{margin:0;font-size:1.15em}' +
+      '.drillback{margin:.2em 0 .4em;font-weight:600}' +
       [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) {
         return '.indent-' + n + '{padding-left:' + (n * 1.4).toFixed(1) +
                'rem}';

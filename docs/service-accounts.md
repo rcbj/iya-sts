@@ -35,6 +35,13 @@ You can set the flag in three ways:
   rules apply, and the directory adds or removes the auxiliary class with the
   flag.
 
+**A remote XACML PEP's identity is one automatically.** An entry that joins
+the `remote-peps` group (`roles.remotePepGroup`) becomes a service account
+owned by the realm's Admin Write group, or by its bootstrap administrator in
+a realm without that group. The seeded `remote-pep-1` and any entry already
+in the group become one when the service starts. See
+[The PEP's entry is a service account](remote-pep.md#the-peps-entry-is-a-service-account).
+
 The person can never set the flag on their own entry, whatever
 `ldap.selfWritableAttributes` says. SCIM does not carry the flag.
 
@@ -273,6 +280,38 @@ which is raised as an alarm at once.
 
 Destinations are application entries registered under **Directory → Secret
 destinations**. Each one holds the write credential for its secrets manager.
+
+## Its certificates name it `urn:sts:sa:`
+
+Every certificate this service issues names its holder in a URI
+subjectAltName. An ordinary person's says `urn:sts:person:<username>`; a
+service account's says **`urn:sts:sa:<username>`**. Underneath it is the same
+person entry. Every place that reads a certificate treats it as that person,
+so the same rules apply: an RFC 7523 assertion it signs may name only itself,
+and it binds to LDAP as its own entry.
+
+The name is chosen when a certificate is issued, from whether the entry is a
+service account at that moment. That covers TLS client and message-signing
+certificates, RFC 7523 and RFC 7522 key pairs, and certificates enrolled over
+ACME, EST or SCEP.
+
+- **A certificate issued before keeps working.** One that says
+  `urn:sts:person:<username>` and was issued before the entry became a
+  service account (or before this change) is still accepted everywhere it
+  was. Only certificates issued from now on use `urn:sts:sa:`. To move a
+  holder to the new name, issue a new certificate and revoke the old one.
+- **`urn:sts:sa:` is a claim about the entry.** A certificate naming
+  `urn:sts:sa:<name>` where that entry is not a service account, or does
+  not exist, is refused. The codes are STS-TLS-0063 (a TLS client
+  certificate), STS-PKI-0277 (an
+  uploaded certificate) and STS-ENROLL-0097 (ACME, EST or SCEP). WS-Trust
+  and the RFC 7523 assertion grant are the exceptions: a valid certificate
+  naming a user signs in there whichever of the two names it carries.
+- **An enrollment request may ask for either name.** The certificate it
+  gets carries `urn:sts:sa:<username>`.
+
+A remote PEP's identity is a service account, so a PEP certificate issued
+now names `urn:sts:sa:<username>`.
 
 ## A service account is not a Kerberos service principal
 

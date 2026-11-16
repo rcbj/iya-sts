@@ -436,7 +436,8 @@ const PHRASE_MODULES: Record<string, Array<string | { path: string,
   // Directory → the LDAP pages, and the application register's schema
   // wherever the applications pages carry it.
   ldap: ['../ldap/ldap_server', './applications', './devices',
-         '../xacml/xacml_store', '../xacml/xacml_pep_registry'],
+         '../xacml/xacml_store', '../xacml/xacml_pep_registry',
+         '../xacml/xacml_pep_clusters'],
   // Federation: the roles, protocols, mechanisms, subject policies and the
   // relationship schema, and the map's labels.
   federation: ['../federation/federation', '../federation/federation_graph'],

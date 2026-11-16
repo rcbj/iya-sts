@@ -471,8 +471,9 @@ class SsfStreams {
    *
    * @param asked - the Stream Configuration the receiver posted
    * @param context - `principal` (the authenticated receiver, recorded as the
-   * owner), `issuer`, and, for this service's own receivers, `internalSurface`,
-   * `streamId` and `audience`
+   * owner), `issuer`, `pepMember` (a cluster member's registered name, from
+   * `X-Iya-Pep-Name` and never the body), and, for this service's own
+   * receivers, `internalSurface`, `streamId` and `audience`
    * @returns `{ ok, stream, errors }`
    */
   createStream(asked?, context?) {
@@ -596,6 +597,13 @@ class SsfStreams {
       // caller could present itself as whatever string the internal streams
       // were created under. A marked stream is owned by no remote receiver.
       internalSurface: internal ? String(ctx.internalSurface) : undefined,
+      // A CLUSTER MEMBER'S STREAM (#1760 phase 3). From the context, which
+      // read X-Iya-Pep-Name, and never from the body: the members share
+      // one client, so a body field would let one of them tag the stream
+      // it creates as another's. This service's own streams are not
+      // members. Bookkeeping, like `subjects`: the wire form omits it.
+      pepMember: !internal && ctx.pepMember
+        ? String(ctx.pepMember) : undefined,
       // SSF 1.0 section 8.1.1's "eligible Receiver activity", in epoch
       // seconds: set here, on every management call naming the stream and on
       // every poll. What the inactivity timeout counts from.
@@ -2968,10 +2976,10 @@ class SsfStreams {
   }
 
   // The wire form of a stream configuration — what a receiver gets back from
-  // the management API. It is NOT the record: `subjects`, the queue, the log
-  // and the counters are this service's own bookkeeping and no member of SSF
-  // 1.0's Stream Configuration, so sending them would be inventing members a
-  // receiver might come to depend on.
+  // the management API. It is NOT the record: `subjects`, the queue, the log,
+  // the counters and `pepMember` are this service's own bookkeeping and no
+  // member of SSF 1.0's Stream Configuration, so sending them would be
+  // inventing members a receiver might come to depend on.
   /**
    * Returns a stream's wire form, as the management API answers it, without
    * this service's own bookkeeping.

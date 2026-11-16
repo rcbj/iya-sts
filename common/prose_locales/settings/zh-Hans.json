@@ -1240,8 +1240,8 @@
     "text": "仅凭密码即可通过的纯密码入口"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "仅限产品模式。纯密码入口——ldap、wstrust、scim、ssf、est——的逗号分隔列表，在列出的入口处，持有或必须持有第二因素的人仍可凭其自己的密码被接受。留空（默认）则在全部五个入口拒绝该密码（按密码错误应答），只在那里接受应用密码。**警告：列出的每个入口都会把所有这类人在该入口降为单一因素**（NIST SP 800-63B 第 4.2 节：AAL2 变为 AAL1），因此被盗的密码无需第二因素即可通过。请优先使用应用密码；只为无法提供应用密码的客户端列出入口。开发模式在任何地方都不检查密码，并忽略此项。"
+    "en": "a01fe4fce9df1599",
+    "text": "仅限产品模式。纯密码入口——ldap、wstrust、scim、ssf、est、xacml-pep——的逗号分隔列表，在列出的入口处，持有或必须持有第二因素的人仍可凭其自己的密码被接受。留空（默认）则在全部六个入口拒绝该密码（按密码错误应答），只在那里接受应用密码。**警告：列出的每个入口都会把所有这类人在该入口降为单一因素**（NIST SP 800-63B 第 4.2 节：AAL2 变为 AAL1），因此被盗的密码无需第二因素即可通过。请优先使用应用密码；只为无法提供应用密码的客户端列出入口。开发模式在任何地方都不检查密码，并忽略此项。"
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",
@@ -4348,8 +4348,8 @@
     "text": "接受 TLS 客户端证书"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person: 或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
+    "en": "a9bb56c470b2a73f",
+    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person:、urn:sts:sa:（服务账户）或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7779,6 +7779,22 @@
     "en": "e41d92adf65ec5bc",
     "text": "默认开启。它曾是此协议族中唯一的拒绝；现在每个 /xacml 端点都要求证书，而此设置仍专门管辖的是注册——注册会写入一个条目，是控制台所列出的内容，也是发送提醒的地址，因此“这是哪个 PEP”恰恰是那里的问题，而客户端证书就是答案。其上的访问策略层是另一种更强的检查（roles.remotePepGroup，以及用于关闭它的 xacml.enforceAccess）；此项关注的是没有证书的注册是否会被接受并标记为未认证。与本服务中其他所有门禁一样，它是一道闸机：不要求证书链接到任何东西，因为 RFC 8705 的论证同样适用——所证明的是同一个密钥完成了握手。关闭它允许 PEP 通过明文 HTTP 注册，这是 global.https 关闭的运行所需要的；此类注册会在其条目和控制台上被标记为未认证，而不是悄无声息地与经过证明的注册无从区分。"
   },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "远程 PEP 的认证方式"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "223363d0264d3558",
+    "text": "token，自 1.1.0 起的默认值：远程 PEP 只能凭借经 DPoP 绑定的访问令牌（RFC 9449）访问 /xacml/pep/* 和 POST /xacml/pip，该令牌由其自身的 RFC 7523 自断言通过客户端 sts-remote-pep 获得，受众为本领域的 /xacml/pep 并带有 xacml:pep；仅有客户端证书会被拒绝。either：令牌或本服务验证的客户端证书；出示令牌时由令牌决定——只要仍有 PEP 使用证书进行身份验证，请在升级前设置此值。certificate：仅证书，并且不读取 Authorization 标头。无论哪种情况，PEP 的条目都必须持有 REMOTE_PEPS（roles.remotePepGroup），并由访问控制策略作出决定。同一答案也适用于远程 PEP 在 /access/v1 的令牌，即边缘 PDP 对细粒度评估的转发，无论 authzen.callerAuthentication 如何设置。"
+  },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "远程 PEP 可以定义普通 HTTP 的反向代理监听器"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "默认关闭，且只在产品模式下读取：在该模式下，远程 PEP 页面上定义的（#1760）以普通 HTTP 提供其反向代理的监听器会被拒绝（STS-XACML-0249）：代理是浏览器登录并携带会话 Cookie 的地方，因此只有在其前面有组件终止 TLS 时以明文提供才是正确的——这是关于部署的事实，只有管理员能够声明，而开启此设置就是这种声明。开发模式无论此设置如何都允许这样的监听器。它只约束在页面上定义的监听器；PEP 环境绑定的四个监听器（包括 PEP_PROXY_PORT）由其运维人员负责。"
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "单个调用方每个速率限制窗口可进行的 PIP 查询数"
@@ -7828,28 +7844,28 @@
     "text": "本服务会提醒的主机名。为空表示任意主机，这是默认值，与 ssf.pushAllowedHosts 完全一致——可被其不信任的任何人访问的部署应设置此列表，其他所有主机都会在该 PEP 自己的行上被按名称拒绝。使用主机而不是 URL，理由与 SSF 相同：组件正当地更改其路径是常事，但不会正当地迁移到另一台主机。"
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "允许以 http:// 发送提醒（仅限开发模式）"
+    "en": "37d9db04e27a17a9",
+    "text": "允许通知使用 http://（已停用，忽略）"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "默认关闭，与联合和 SSF 中的对应设置一样——而这里传输的内容比两者都更弱，这一点值得明说而不是留给人去假设。提醒不携带任何凭据，也不携带任何事件：其全部正文只是说策略库已变更，而 PEP 反正马上就会发现这一点。它仍默认关闭，因为该 URL 是某人配置的，而本服务以明文发出的请求是可以被别人冒名应答的请求。开启时允许在开发模式下使用 http:// 通知 URL；无论此项如何，产品模式都会拒绝明文 http（STS-XACML-0073）。"
+    "en": "f283479a0bedc4de",
+    "text": "已于 2026-11-14 停用并被忽略。在任何模式下通知都只通过 https 发送，因此 http:// 通知 URL 会在 PEP 的行上报告为不可用，PEP 通过轮询收敛。该设置仍被接受，因此提到它的配置仍能启动；开启后不会改变任何内容，并且每个进程记录一次（STS-XACML-0258）。请将其删除。"
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "发送提醒时跳过 TLS 验证（仅限开发模式）"
+    "en": "da9e36587928e192",
+    "text": "通知跳过 TLS 验证（已停用，忽略）"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "警告——仅限开发模式。开启时，向 https 通知 URL 发送提醒而不验证 PEP 的证书，因此任何能拦截该连接的人都可以冒名应答。每个此类请求都会被记录为警告。在产品模式下会被忽略（STS-XACML-0074，记录一次）且无法设置（STS-CORE-0103）：请改为在 xacml.pepNotifyCaFile 中指定私有 CA。"
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "已于 2026-11-14 停用并被忽略。通知始终验证 PEP 的证书：依据本领域的远程 PEP 监听器（pep-tls）签发 CA（它签发 PEP 的 HTTPS 监听器证书），以及 xacml.pepNotifyCaFile 和 node 自己的存储。该设置仍被接受，因此提到它的配置仍能启动；开启后不会改变任何内容，并且每个进程记录一次（STS-XACML-0258）。在产品模式下仍不能设置（STS-CORE-0103）。请将其删除。"
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "提醒所用的 CA 证书"
+    "en": "ba76eb67fd7510d1",
+    "text": "通知的更多 CA 证书"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "一个 PEM 文件，包含 PEP 通知监听器的证书可以链接到的 CA 证书，作为 node 自身 CA 存储的补充——由私有 CA 认证的 PEP 就是这样在开启验证的情况下接收提醒的。每次提醒时都会读取；无法读取或不含证书的文件会导致提醒被拒绝（STS-CORE-0104）。"
+    "en": "69d21c555590f4c8",
+    "text": "一个 PEM 文件，包含 PEP 通知监听器可以链接到的 CA 证书，此外还有本领域的远程 PEP 监听器（pep-tls）签发 CA 和 node 自己的 CA 存储。若 PEP 的 HTTPS 监听器证书由本领域签发，则不需要它：无需任何设置即可验证。它用于由自身 CA 认证的 PEP。每次通知时读取；无法读取或不含证书的文件会拒绝通知（STS-CORE-0104）。"
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

@@ -57,7 +57,8 @@ class AppPasswordsPages {
       wstrust: t.text('portalAppPasswords.door.wstrust'),
       scim: t.text('portalAppPasswords.door.scim'),
       ssf: t.text('portalAppPasswords.door.ssf'),
-      est: t.text('portalAppPasswords.door.est')
+      est: t.text('portalAppPasswords.door.est'),
+      'xacml-pep': t.text('portalAppPasswords.door.xacml-pep')
     };
     return Object.prototype.hasOwnProperty.call(known, one.id)
       ? known[one.id] : String(one.what);

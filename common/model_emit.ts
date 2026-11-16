@@ -575,6 +575,7 @@ class ModelEmit {
       serviceAccount: 'Service account',
       spiffe: 'SPIFFE',
       xacmlPep: 'XACML policy enforcement point',
+      xacmlPepCluster: 'XACML policy enforcement point cluster',
       xacmlPolicy: 'XACML policy'
     };
     const title = titles[id] || ModelEmit.className(id);

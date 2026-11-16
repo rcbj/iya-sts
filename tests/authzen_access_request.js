@@ -39,6 +39,10 @@
 //   M. EMERGENCY ACCESS: refused without a justification, granted at once
 //      (201) with one.
 //   B. A REGISTERED CALLBACK accepted, and its delivery recorded.
+//   D. A DELETED SUBJECT (2026-11-16): the person's approval is revoked
+//      and their pending request cancelled, so a person made again under
+//      the name inherits neither; a task from before the subject index is
+//      noted by the sweep job's backfill.
 //   O. OFF: authzen.accessRequests off answers 501 and no denial is
 //      requestable.
 // ---------------------------------------------------------------------------
@@ -654,6 +658,69 @@ async function childBody() {
   t.check(sent === false && callbackRows.length >= 1,
           'B2. the callback is attempted under the outbound policy and an ' +
           'undelivered one is recorded', JSON.stringify(callbackRows[0]));
+
+  // -------------------------------------------------------------------------
+  // D. A DELETED SUBJECT (2026-11-16, #1612's rule: a person deleted and
+  // made again under the same name inherits nothing)
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    submission(await fresh()));
+  const sixth = ((r.json || {}).task || {});
+  inRealm(function () {
+    return requests.decide(sixth.id, 'approve',
+                           { username: 'azbob', door: 'portal' });
+  });
+  r = await request(port, 'GET', pathOf(sixth.status_endpoint), pepCred);
+  const kept = ((r.json || {}).result || {}).approval || {};
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    submission(await fresh()));
+  const seventh = ((r.json || {}).task || {});
+  // A task written before the subject index existed: its row removed, and
+  // the sweep job's backfill notes it again.
+  const deniedDave = await request(port, 'POST', EVAL, pepCred, evaluation({
+    subject: { type: 'user', id: 'azdave' } }));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(
+    deniedDave.json, { subject: { type: 'user', id: 'azdave' } }));
+  const eighth = ((r.json || {}).task || {});
+  const subjectIndex = requests.AccessRequests.defaultDeps().index;
+  const daveKey = 'subject:' +
+    require(ROOT + '/common/crypto').credentialDigest('azdave');
+  const backfilled = inRealm(function () {
+    ldap.createUser('azdave', { invent: false });
+    const had = !!subjectIndex.get(daveKey);
+    subjectIndex.delete(daveKey);
+    requests.sweep();
+    return { had: had, now: !!subjectIndex.get(daveKey) };
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: kept } }));
+  const before = r.json || {};
+  const remade = inRealm(function () {
+    const alice = ldap.deletePerson(ldap.locateEntry('azalice').stored.dn);
+    const dave = ldap.deletePerson(ldap.locateEntry('azdave').stored.dn);
+    ldap.createUser('azalice', { invent: false });
+    ldap.createUser('azdave', { invent: false });
+    return { alice: alice.ok, dave: dave.ok,
+             seventh: requests.task(seventh.id).status,
+             eighth: requests.task(eighth.id).status,
+             revoked: !!requests.task(sixth.id).approval.revokedAt };
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: kept } }));
+  t.check(before.decision === true && remade.alice && remade.revoked &&
+          r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_expired',
+          'D1. a deleted person\'s approval is revoked with them: the ' +
+          'person made again under the name, presented it by the PEP, is ' +
+          'not approved', JSON.stringify(remade) + ' / ' + brief(r));
+  t.check(remade.seventh === 'cancelled',
+          'D2. and their pending request is cancelled',
+          JSON.stringify(remade));
+  t.check(backfilled.had && backfilled.now && remade.dave &&
+          remade.eighth === 'cancelled',
+          'D3. a task the subject index never noted (one from before it) ' +
+          'is noted by the sweep job, and ended by the delete',
+          JSON.stringify({ backfilled: backfilled, remade: remade }));
 
   // -------------------------------------------------------------------------
   // O. OFF

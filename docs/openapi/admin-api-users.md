@@ -1267,6 +1267,34 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.signing.revocationReasons` | list |  |  |
 | `(shape 2).page.mfa.signing.revocationReasons[]` | string |  |  |
 | `(shape 2).page.mfa.storable` | boolean |  |  |
+| `(shape 2).page.mfa.tls` | object |  |  |
+| `(shape 2).page.mfa.tls.active` | number |  |  |
+| `(shape 2).page.mfa.tls.caAvailable` | boolean |  |  |
+| `(shape 2).page.mfa.tls.certificates` | list |  |  |
+| `(shape 2).page.mfa.tls.certificates[].certificatePem` | string |  |  |
+| `(shape 2).page.mfa.tls.certificates[].keyAlg` | string |  |  |
+| `(shape 2).page.mfa.tls.certificates[].label` | string |  |  |
+| `(shape 2).page.mfa.tls.certificates[].notAfter` | string, or number, or null |  |  |
+| `(shape 2).page.mfa.tls.certificates[].notBefore` | string, or number, or null |  |  |
+| `(shape 2).page.mfa.tls.certificates[].reason` | string, or null |  |  |
+| `(shape 2).page.mfa.tls.certificates[].revokedAt` | string, or number, or null |  |  |
+| `(shape 2).page.mfa.tls.certificates[].serialHex` | string |  |  |
+| `(shape 2).page.mfa.tls.certificates[].state` | string |  |  |
+| `(shape 2).page.mfa.tls.certificates[].subject` | string |  |  |
+| `(shape 2).page.mfa.tls.certificates[].thumbprint` | string |  |  |
+| `(shape 2).page.mfa.tls.defaultKeyAlg` | string |  |  |
+| `(shape 2).page.mfa.tls.entryDn` | string |  |  |
+| `(shape 2).page.mfa.tls.holder` | string |  |  |
+| `(shape 2).page.mfa.tls.implicitName` | string |  |  |
+| `(shape 2).page.mfa.tls.keyAlgorithms` | list |  |  |
+| `(shape 2).page.mfa.tls.keyAlgorithms[]` | string |  |  |
+| `(shape 2).page.mfa.tls.kind` | string |  |  |
+| `(shape 2).page.mfa.tls.max` | number |  |  |
+| `(shape 2).page.mfa.tls.ok` | boolean |  |  |
+| `(shape 2).page.mfa.tls.passwordMin` | number |  |  |
+| `(shape 2).page.mfa.tls.revocationReasons` | list |  |  |
+| `(shape 2).page.mfa.tls.revocationReasons[]` | string |  |  |
+| `(shape 2).page.mfa.tls.subjectDn` | string |  |  |
 | `(shape 2).page.mfa.totp` | object |  |  |
 | `(shape 2).page.mfa.totp.algorithm` | string |  |  |
 | `(shape 2).page.mfa.totp.digits` | number |  |  |
@@ -2715,7 +2743,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `doors` | list | yes | The doors it is accepted at. At least one. |
-| `doors[]` | one of `ldap`, `wstrust`, `scim`, `ssf`, `est` |  |  |
+| `doors[]` | one of `ldap`, `wstrust`, `scim`, `ssf`, `est`, `xacml-pep` |  |  |
 | `name` | string | yes | What it is for — the client it goes in. At most 64 characters, unique among this person's. |
 | `user` | string | yes | The person, as /admin-api/users names them. |
 | `username` | string |  | Accepted for `user`. |
@@ -2825,6 +2853,58 @@ Scope: `admin:write`.
 | `problems[]` | map, or string |  |  |
 | `problems[].{key}` | string, or number, or boolean, or null |  |  |
 | `reason` | string |  |  |
+| `username` | string |  |  |
+
+## POST /admin-api/users/delete
+
+`deleteUser`
+
+**Delete somebody's entry from the directory**
+
+Deletes the person's entry, through the directory's one person delete: the function SCIM's `DELETE /scim/v2/Users/{id}` calls and an LDAP delete reaches. It cannot be undone. The entry goes with everything stored on it (its credentials and passkeys among them) and its profile photo; every group and role that named them lets them go, and every owner list (a service account's last owner is replaced by the realm's Admin Write group); RISC receivers are sent `account-purged`. Everything they held is then ended, as `POST /admin-api/users/disable` ends it: sessions (with CAEP `session-revoked` and back-channel Logout Tokens), tokens, codes and connections. Somebody made again under the same name inherits nothing.
+
+**Refused** for nobody of that name in this realm (STS-LDAP-0013), the realm's bootstrap administrator (STS-LDAP-0077), an entry with entries beneath it (STS-LDAP-0014), the caller's own entry (STS-ADMIN-0943), and the last person the realm's console roster lists for Admin Write or the Security Administrator (STS-ADMIN-0944). A person who holds the Security Administrator's role is deleted only by a Security Administrator. A person asks for a recent sign-in first, as for a password reset.
+
+**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `user` | string | yes | The person, as /admin-api/users names them. |
+| `username` | string |  | Accepted for `user`. |
+
+**200**: Who was deleted, and the entry's DN.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `changed` | boolean |  |  |
+| `dn` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `username` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `changed` | boolean |  |  |
+| `dn` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
 | `username` | string |  |  |
 
 ## GET /admin-api/users/devices
@@ -3996,7 +4076,7 @@ Scope: `admin:write`.
 
 **Issue somebody a message-signing certificate from this realm's CA**
 
-Generates a key pair and certifies it from the realm's `message-signing` Issuing CA with `digitalSignature` only and `urn:sts:person:<username>` as its subjectAltName. A WS-Trust request whose WS-Security signature over the SOAP Body and Timestamp verifies under it authenticates the person as its requester; it signs nobody in over TLS. An administrator's act: the person has no door to it on the user portal (#521).
+Generates a key pair and certifies it from the realm's `message-signing` Issuing CA with `digitalSignature` only and `urn:sts:person:<username>` as its subjectAltName (`urn:sts:sa:<username>` for a service account, #1827). A WS-Trust request whose WS-Security signature over the SOAP Body and Timestamp verifies under it authenticates the person as its requester; it signs nobody in over TLS. An administrator's act: the person has no door to it on the user portal (#521).
 
 **THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past `pki.messageSigningCertificateMax` valid certificates (`STS-PKI-0220`), for a person with no entry (`STS-ADMIN-0905`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.
 
@@ -4151,6 +4231,171 @@ Scope: `admin:write`.
 | `signing.passwordMin` | number |  |  |
 | `signing.revocationReasons` | list |  |  |
 | `signing.revocationReasons[]` | string |  |  |
+| `user` | string |  |  |
+
+## POST /admin-api/users/issue-tls-client-certificate
+
+`issueUserTlsClientCertificate`
+
+**Issue somebody a TLS client certificate from this realm's CA**
+
+Generates a key pair and certifies it from the realm's `tls-client` Issuing CA with `clientAuth`. The subject is the person's directory name — common name and UID first, then the entry's own naming attributes, then the organisation and country — and `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service account, #1827) is its subjectAltName, which is what admits a remote PEP that presents the certificate. It is not stored on the entry as `userCertificate`.
+
+**THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past the maximum of valid TLS client certificates for a person, for a person with no entry (`STS-ADMIN-0939`), for a file password that is too short or does not match (`STS-ADMIN-0940`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.
+
+**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `confirm` | string |  |  |
+| `days` | integer |  |  |
+| `keyAlg` | one of `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384` |  |  |
+| `label` | string |  |  |
+| `password` | string | yes |  |
+| `user` | string | yes | The person, as /admin-api/users names them. |
+| `username` | string |  | Accepted for `user`. |
+
+**200**: The certificate (serial, subject, thumbprint, PEM and chain, its urn:sts: name), the three files, and the person's TLS client certificates as they now stand, in `tls`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificate` | object |  |  |
+| `certificate.certificatePem` | string |  |  |
+| `certificate.chainPem` | list |  |  |
+| `certificate.chainPem[]` | string |  |  |
+| `certificate.implicitName` | string |  |  |
+| `certificate.keyAlg` | string |  |  |
+| `certificate.label` | string |  |  |
+| `certificate.notAfter` | string, or number, or null |  |  |
+| `certificate.notBefore` | string, or number, or null |  |  |
+| `certificate.serialHex` | string |  |  |
+| `certificate.subject` | string |  |  |
+| `certificate.thumbprint` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `files` | object |  |  |
+| `files.chain` | object |  |  |
+| `files.chain.base64` | string |  |  |
+| `files.chain.mime` | string |  |  |
+| `files.chain.name` | string |  |  |
+| `files.chain.text` | string |  |  |
+| `files.key` | object |  |  |
+| `files.key.base64` | string |  |  |
+| `files.key.mime` | string |  |  |
+| `files.key.name` | string |  |  |
+| `files.key.text` | string |  |  |
+| `files.pkcs12` | object |  |  |
+| `files.pkcs12.base64` | string |  |  |
+| `files.pkcs12.mime` | string |  |  |
+| `files.pkcs12.name` | string |  |  |
+| `files.pkcs12.text` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `tls` | object |  |  |
+| `tls.active` | number |  |  |
+| `tls.caAvailable` | boolean |  |  |
+| `tls.certificates` | list |  |  |
+| `tls.certificates[].certificatePem` | string |  |  |
+| `tls.certificates[].keyAlg` | string |  |  |
+| `tls.certificates[].label` | string |  |  |
+| `tls.certificates[].notAfter` | string, or number, or null |  |  |
+| `tls.certificates[].notBefore` | string, or number, or null |  |  |
+| `tls.certificates[].reason` | string, or null |  |  |
+| `tls.certificates[].revokedAt` | string, or number, or null |  |  |
+| `tls.certificates[].serialHex` | string |  |  |
+| `tls.certificates[].state` | string |  |  |
+| `tls.certificates[].subject` | string |  |  |
+| `tls.certificates[].thumbprint` | string |  |  |
+| `tls.defaultKeyAlg` | string |  |  |
+| `tls.entryDn` | string |  |  |
+| `tls.holder` | string |  |  |
+| `tls.implicitName` | string |  |  |
+| `tls.keyAlgorithms` | list |  |  |
+| `tls.keyAlgorithms[]` | string |  |  |
+| `tls.kind` | string |  |  |
+| `tls.max` | number |  |  |
+| `tls.ok` | boolean |  |  |
+| `tls.passwordMin` | number |  |  |
+| `tls.revocationReasons` | list |  |  |
+| `tls.revocationReasons[]` | string |  |  |
+| `tls.subjectDn` | string |  |  |
+| `user` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificate` | object |  |  |
+| `certificate.certificatePem` | string |  |  |
+| `certificate.chainPem` | list |  |  |
+| `certificate.chainPem[]` | string |  |  |
+| `certificate.implicitName` | string |  |  |
+| `certificate.keyAlg` | string |  |  |
+| `certificate.label` | string |  |  |
+| `certificate.notAfter` | string, or number, or null |  |  |
+| `certificate.notBefore` | string, or number, or null |  |  |
+| `certificate.serialHex` | string |  |  |
+| `certificate.subject` | string |  |  |
+| `certificate.thumbprint` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `files` | object |  |  |
+| `files.chain` | object |  |  |
+| `files.chain.base64` | string |  |  |
+| `files.chain.mime` | string |  |  |
+| `files.chain.name` | string |  |  |
+| `files.chain.text` | string |  |  |
+| `files.key` | object |  |  |
+| `files.key.base64` | string |  |  |
+| `files.key.mime` | string |  |  |
+| `files.key.name` | string |  |  |
+| `files.key.text` | string |  |  |
+| `files.pkcs12` | object |  |  |
+| `files.pkcs12.base64` | string |  |  |
+| `files.pkcs12.mime` | string |  |  |
+| `files.pkcs12.name` | string |  |  |
+| `files.pkcs12.text` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `tls` | object |  |  |
+| `tls.active` | number |  |  |
+| `tls.caAvailable` | boolean |  |  |
+| `tls.certificates` | list |  |  |
+| `tls.certificates[].certificatePem` | string |  |  |
+| `tls.certificates[].keyAlg` | string |  |  |
+| `tls.certificates[].label` | string |  |  |
+| `tls.certificates[].notAfter` | string, or number, or null |  |  |
+| `tls.certificates[].notBefore` | string, or number, or null |  |  |
+| `tls.certificates[].reason` | string, or null |  |  |
+| `tls.certificates[].revokedAt` | string, or number, or null |  |  |
+| `tls.certificates[].serialHex` | string |  |  |
+| `tls.certificates[].state` | string |  |  |
+| `tls.certificates[].subject` | string |  |  |
+| `tls.certificates[].thumbprint` | string |  |  |
+| `tls.defaultKeyAlg` | string |  |  |
+| `tls.entryDn` | string |  |  |
+| `tls.holder` | string |  |  |
+| `tls.implicitName` | string |  |  |
+| `tls.keyAlgorithms` | list |  |  |
+| `tls.keyAlgorithms[]` | string |  |  |
+| `tls.kind` | string |  |  |
+| `tls.max` | number |  |  |
+| `tls.ok` | boolean |  |  |
+| `tls.passwordMin` | number |  |  |
+| `tls.revocationReasons` | list |  |  |
+| `tls.revocationReasons[]` | string |  |  |
+| `tls.subjectDn` | string |  |  |
 | `user` | string |  |  |
 
 ## GET /admin-api/users/new
@@ -5332,6 +5577,160 @@ Scope: `admin:write`.
 | `signing.passwordMin` | number |  |  |
 | `signing.revocationReasons` | list |  |  |
 | `signing.revocationReasons[]` | string |  |  |
+| `user` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/users/revoke-tls-client-certificate
+
+`revokeUserTlsClientCertificate`
+
+**Revoke one of somebody's TLS client certificates**
+
+Revokes a certificate `issue-tls-client-certificate` issued to THIS person — a serial belonging to anybody else, or one of their message-signing certificates, matches nothing — onto the Issuing CA's CRL and OCSP responder. A handshake that presents it is refused from then on. The person's certificates are listed in `mfa.tls` of GET /admin-api/users?user=.
+
+**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `reason` | one of `cessationOfOperation`, `keyCompromise` |  |  |
+| `serialHex` | string | yes |  |
+| `user` | string | yes | The person, as /admin-api/users names them. |
+| `username` | string |  | Accepted for `user`. |
+
+**200**: The revoked certificate, the reason, and the person's TLS client certificates as they now stand.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `already` | boolean |  |  |
+| `certificate` | object |  |  |
+| `certificate.certificatePem` | string |  |  |
+| `certificate.createdAt` | string, or number, or null |  |  |
+| `certificate.keyAlg` | string |  |  |
+| `certificate.label` | string |  |  |
+| `certificate.notAfter` | string, or number, or null |  |  |
+| `certificate.notBefore` | string, or number, or null |  |  |
+| `certificate.reason` | string, or null |  |  |
+| `certificate.revokedAt` | string, or number, or null |  |  |
+| `certificate.serialHex` | string |  |  |
+| `certificate.slot` | string |  |  |
+| `certificate.state` | string |  |  |
+| `certificate.subject` | string |  |  |
+| `certificate.thumbprint` | string |  |  |
+| `entry` | object |  |  |
+| `entry.note` | string |  |  |
+| `entry.reason` | string |  |  |
+| `entry.reasonCode` | number |  |  |
+| `entry.reasonWhat` | string |  |  |
+| `entry.revokedAt` | string, or number, or null |  |  |
+| `entry.serialHex` | string |  |  |
+| `entry.subject` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `reason` | string |  |  |
+| `tls` | object |  |  |
+| `tls.active` | number |  |  |
+| `tls.caAvailable` | boolean |  |  |
+| `tls.certificates` | list |  |  |
+| `tls.certificates[].certificatePem` | string |  |  |
+| `tls.certificates[].keyAlg` | string |  |  |
+| `tls.certificates[].label` | string |  |  |
+| `tls.certificates[].notAfter` | string, or number, or null |  |  |
+| `tls.certificates[].notBefore` | string, or number, or null |  |  |
+| `tls.certificates[].reason` | string, or null |  |  |
+| `tls.certificates[].revokedAt` | string, or number, or null |  |  |
+| `tls.certificates[].serialHex` | string |  |  |
+| `tls.certificates[].state` | string |  |  |
+| `tls.certificates[].subject` | string |  |  |
+| `tls.certificates[].thumbprint` | string |  |  |
+| `tls.defaultKeyAlg` | string |  |  |
+| `tls.entryDn` | string |  |  |
+| `tls.holder` | string |  |  |
+| `tls.implicitName` | string |  |  |
+| `tls.keyAlgorithms` | list |  |  |
+| `tls.keyAlgorithms[]` | string |  |  |
+| `tls.kind` | string |  |  |
+| `tls.max` | number |  |  |
+| `tls.ok` | boolean |  |  |
+| `tls.passwordMin` | number |  |  |
+| `tls.revocationReasons` | list |  |  |
+| `tls.revocationReasons[]` | string |  |  |
+| `tls.subjectDn` | string |  |  |
+| `user` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `already` | boolean |  |  |
+| `certificate` | object |  |  |
+| `certificate.certificatePem` | string |  |  |
+| `certificate.createdAt` | string, or number, or null |  |  |
+| `certificate.keyAlg` | string |  |  |
+| `certificate.label` | string |  |  |
+| `certificate.notAfter` | string, or number, or null |  |  |
+| `certificate.notBefore` | string, or number, or null |  |  |
+| `certificate.reason` | string, or null |  |  |
+| `certificate.revokedAt` | string, or number, or null |  |  |
+| `certificate.serialHex` | string |  |  |
+| `certificate.slot` | string |  |  |
+| `certificate.state` | string |  |  |
+| `certificate.subject` | string |  |  |
+| `certificate.thumbprint` | string |  |  |
+| `entry` | object |  |  |
+| `entry.note` | string |  |  |
+| `entry.reason` | string |  |  |
+| `entry.reasonCode` | number |  |  |
+| `entry.reasonWhat` | string |  |  |
+| `entry.revokedAt` | string, or number, or null |  |  |
+| `entry.serialHex` | string |  |  |
+| `entry.subject` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `reason` | string |  |  |
+| `tls` | object |  |  |
+| `tls.active` | number |  |  |
+| `tls.caAvailable` | boolean |  |  |
+| `tls.certificates` | list |  |  |
+| `tls.certificates[].certificatePem` | string |  |  |
+| `tls.certificates[].keyAlg` | string |  |  |
+| `tls.certificates[].label` | string |  |  |
+| `tls.certificates[].notAfter` | string, or number, or null |  |  |
+| `tls.certificates[].notBefore` | string, or number, or null |  |  |
+| `tls.certificates[].reason` | string, or null |  |  |
+| `tls.certificates[].revokedAt` | string, or number, or null |  |  |
+| `tls.certificates[].serialHex` | string |  |  |
+| `tls.certificates[].state` | string |  |  |
+| `tls.certificates[].subject` | string |  |  |
+| `tls.certificates[].thumbprint` | string |  |  |
+| `tls.defaultKeyAlg` | string |  |  |
+| `tls.entryDn` | string |  |  |
+| `tls.holder` | string |  |  |
+| `tls.implicitName` | string |  |  |
+| `tls.keyAlgorithms` | list |  |  |
+| `tls.keyAlgorithms[]` | string |  |  |
+| `tls.kind` | string |  |  |
+| `tls.max` | number |  |  |
+| `tls.ok` | boolean |  |  |
+| `tls.passwordMin` | number |  |  |
+| `tls.revocationReasons` | list |  |  |
+| `tls.revocationReasons[]` | string |  |  |
+| `tls.subjectDn` | string |  |  |
 | `user` | string |  |  |
 | `why` | string |  |  |
 

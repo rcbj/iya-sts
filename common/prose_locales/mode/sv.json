@@ -1406,5 +1406,17 @@
   "mode.requirements.sso-consent.product": {
     "en": "0a4ee080bb81a76f",
     "text": "En person tillfrågas en gång per program innan SAML 2.0, SAML 1.1 eller WS-Federation loggar in dem i det, och svaret sparas. saml2.ssoConsent, saml11.ssoConsent och wsfed.ssoConsent stänger av det per protokoll, och ett programs eget värde åsidosätter dem."
+  },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "En webbläsare når en fjärr-PEP:s omvända proxy över https"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "En proxykonfiguration kan ange en publicBaseUrl med vanlig http, så en stack på en maskin behöver inget lyssnarcertifikat för proxyn."
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "En publicBaseUrl som inte är https avvisas (STS-XACML-0188): sessionsmekanismens inloggning returnerar en auktoriseringskod där och dess sessionscookie är Secure."
   }
 }

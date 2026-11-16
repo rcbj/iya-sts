@@ -31,6 +31,38 @@
     "en": "3cca9630a4d544af",
     "text": "AuthZEN-anroparna, som en fjärr-PEP SLÄPPER IN"
   },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "Konfigurationen för omvänd proxy, för en fjärr-PEP att TILLÄMPA"
+  },
+  "endpoints.route./xacml/pep/settings.name": {
+    "en": "6bae1b3fbf022a6d",
+    "text": "En fjärr-PEP:s hanterade inställningar, för att den ska TILLÄMPA dem"
+  },
+  "endpoints.route./xacml/pep/listener-certificate.name": {
+    "en": "96d34844bd14ca01",
+    "text": "En fjärr-PEP-lyssnares certifikat, över dess egen nyckel"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "Tokenintrospektion, för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic, validerat för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "En SAML 2.0-försäkran, validerad för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "Är en inloggningssession aktiv, för en fjärr-PEP:s proxy"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "Det som en fjärr-PEP:s väg vidarebefordrar till sitt program"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Vad en fjärr-PEP har tillämpat"
@@ -278,6 +310,10 @@
   "endpoints.route./admin-api/xacml/peps.name": {
     "en": "7f8ea0c37cf4776c",
     "text": "Fjärrtillämpningspunkterna som JSON"
+  },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "Fjärr-PEP-klustren som JSON"
   },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
@@ -970,6 +1006,10 @@
   "endpoints.route./admin-api/device-compliance.name": {
     "en": "1b28ca2ff0e0999f",
     "text": "Flödet för enhetsefterlevnad (MDM / säkerhetsstatus)"
+  },
+  "endpoints.route./admin-api/pep-audit.name": {
+    "en": "df3ac1026eab32fe",
+    "text": "En fjärr-PEP:s beslutsposter"
   },
   "endpoints.route./admin-api/device-registration.name": {
     "en": "f8fcb8ceb53f6ebf",

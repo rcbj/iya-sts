@@ -164,6 +164,24 @@ interface WebPage {
     sample: (listView: Json) => string | null;
     render: (view: Json, ctx?: Json) => string;
   };
+  // A DRILL-DOWN AT A PATH OF ITS OWN WHOSE LIST IS A TAB OF ANOTHER PAGE
+  // (#1760): `/admin/xacml/pep?pep=` is one row of `/admin/xacml`'s Remote
+  // PEPs tab, so its trail's section crumb, and the nav it marks, are that
+  // page's. `fragment`, when given, lands the section crumb on a tab; the
+  // XACML pages name their tab as a crumb of its own instead (`upVia`).
+  upTo?: { path: string; fragment?: string };
+  // AND THE CRUMBS BETWEEN THAT SECTION AND THE LEAF (#1760): EVERY
+  // DRILL-DOWN'S TRAIL NAMES THE TAB IT WAS OPENED FROM (rcbj, 2026-11-14).
+  // A remote PEP's page is XACML › Remote PEPs › the PEP, and a route's
+  // XACML › Remote PEPs › the PEP › Reverse proxy › the route: each tab a
+  // link to that tab, the PEP a link to its page. Each is `{ label, href }`
+  // (`WebShell.trailBar()`), labelled in the reader's language by `t`.
+  upVia?: (query: Json, t: Json) => Array<{ label: string; href: string }>;
+  // NAMES THE PAGE READS ITSELF (`ctx.query`) AND NEVER ASKS ITS
+  // OPERATION: a drill-down drawn from its parent's answer, such as a
+  // remote PEP listener's page, whose `listener` the operation does not
+  // declare and would refuse (#1476).
+  ownParams?: string[];
   render: (view: Json, ctx?: Json) => string;
   // A PICTURE'S `?format=svg` (#444 phase 2b): the drawing as a document on
   // its own, with no links, drawn from the page's answer in the browser as
@@ -1120,11 +1138,180 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ProtocolSettingsPage.render(view, ctx || WebKit.context());
     } },
+  // ONE REMOTE PEP (#1760), reached from a row of the Remote PEPs tab: the
+  // same operation asked with `pep`, as `/admin/applications` is with
+  // `application`.
+  { path: '/admin/xacml/pep', title: 'Remote PEP',
+    operation: '/admin-api/xacml/peps',
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      return [XacmlPage.pepsTabCrumb(t)];
+    },
+    drill: {
+      param: 'pep',
+      sample: function (list: Json): string | null {
+        const rows = list.peps || [];
+        return rows[0] ? rows[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.pepDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.pepsBody(ctx || WebKit.context(), view);
+    } },
+  // MONITORING → REMOTE PEPS. The same answer as the Protocols page, read
+  // for traffic: listener stats, thread pools, per-path requests and
+  // memory. `pep` drills to one PEP. Not a Protocols page, so it has no
+  // protocol-endpoints row.
+  { path: '/admin/xacml/pep/monitor', title: 'Remote PEPs',
+    operation: '/admin-api/xacml/peps',
+    drill: {
+      param: 'pep',
+      sample: function (list: Json): string | null {
+        const rows = list.peps || [];
+        return rows[0] ? rows[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.pepMonitorDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.pepMonitorIndex(ctx || WebKit.context(), view);
+    } },
+  // ONE ROUTE OF A REMOTE PEP'S REVERSE PROXY (#1760), reached from a route
+  // id on the PEP's Reverse proxy tab: the same operation asked with `pep`
+  // and `route`. Without `route` it lists every PEP's routes as links.
+  { path: '/admin/xacml/pep/route', title: 'Remote PEP route',
+    operation: '/admin-api/xacml/peps',
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      const pep = String((query && query.pep) || '');
+      return [XacmlPage.pepsTabCrumb(t)].concat(pep
+        ? [{ label: pep, href: XacmlPage.pepHref(pep) },
+           { label: t.text('consoleXacml.pepPage.tab.proxy'),
+             href: XacmlPage.proxyHref(pep) },
+           // THE SUB-TAB TOO (rcbj, 2026-11-15): the trail names every
+           // level the reader went down, Configured Routes the last link.
+           { label: t.text('consoleXacml.proxy.tab.routes'),
+             href: XacmlPage.proxyTabHref(pep) }]
+        : []);
+    },
+    drill: {
+      param: 'route',
+      sample: function (list: Json): string | null {
+        const held = (list.peps || []).filter(function (one: Json) {
+          return one.proxy && one.proxy.routes && one.proxy.routes.length;
+        })[0];
+        return held ? held.proxy.routes[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.routeDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.routeIndex(ctx || WebKit.context(), view);
+    } },
+  // ONE LISTENER OF A REMOTE PEP (rcbj, 2026-11-15), reached from a
+  // listener id on the PEP's Configured Listeners: the PEP's own answer,
+  // the listener one row of its `listenerRows`, so `listener` is the
+  // page's own name and never asked of the operation (`ownParams`, rule 7:
+  // the operation is unchanged). Without `listener` it lists every PEP's
+  // listeners as links.
+  { path: '/admin/xacml/pep/listener', title: 'Remote PEP listener',
+    operation: '/admin-api/xacml/peps',
+    ownParams: ['listener'],
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      const pep = String((query && query.pep) || '');
+      return [XacmlPage.pepsTabCrumb(t)].concat(pep
+        ? [{ label: pep, href: XacmlPage.pepHref(pep) },
+           { label: t.text('consoleXacml.pepPage.tab.listener'),
+             href: XacmlPage.listenerTabHref(pep) },
+           { label: t.text('consoleXacml.listeners.tab.configured'),
+             href: XacmlPage.listenersHref(pep) }]
+        : []);
+    },
+    drill: {
+      param: 'listener',
+      sample: function (list: Json): string | null {
+        const held = (list.peps || []).filter(function (one: Json) {
+          return (one.listenerRows || []).length;
+        })[0];
+        return held ? held.listenerRows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.listenerDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.listenerIndex(ctx || WebKit.context(), view);
+    } },
+  // ONE REMOTE PEP CLUSTER (#1760), reached from a row of the PEP clusters
+  // tab: `/admin-api/xacml/pep-clusters` asked with `cluster`.
+  { path: '/admin/xacml/pep-cluster', title: 'Remote PEP cluster',
+    operation: '/admin-api/xacml/pep-clusters',
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      return [XacmlPage.clustersTabCrumb(t)];
+    },
+    drill: {
+      param: 'cluster',
+      sample: function (list: Json): string | null {
+        const rows = list.clusters || [];
+        return rows[0] ? rows[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.clusterDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.clustersBody(ctx || WebKit.context(), view);
+    } },
+  // ONE ROUTE OF A CLUSTER'S REVERSE PROXY (#1760): the PEP route page's
+  // arrangement, its trail XACML › PEP clusters › the cluster › Reverse
+  // proxy › Configured Routes.
+  { path: '/admin/xacml/pep-cluster/route', title: 'Remote PEP cluster route',
+    operation: '/admin-api/xacml/pep-clusters',
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      const cluster = String((query && query.cluster) || '');
+      return [XacmlPage.clustersTabCrumb(t)].concat(cluster
+        ? [{ label: cluster, href: XacmlPage.clusterHref(cluster) },
+           { label: t.text('consoleXacml.pepPage.tab.proxy'),
+             href: XacmlPage.clusterHref(cluster) + '#' +
+                   XacmlPage.PROXY_TAB },
+           { label: t.text('consoleXacml.proxy.tab.routes'),
+             href: XacmlPage.clusterHref(cluster) + '#' +
+                   XacmlPage.PROXY_ROUTES_TAB }]
+        : []);
+    },
+    drill: {
+      param: 'route',
+      sample: function (list: Json): string | null {
+        const held = (list.clusters || []).filter(function (one: Json) {
+          return one.proxy && one.proxy.routes && one.proxy.routes.length;
+        })[0];
+        return held ? held.proxy.routes[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.clusterRouteDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.clusterRouteIndex(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
     compose: {
       xacmlPolicies: '/admin-api/xacml/policies',
       xacmlEditor: '/admin-api/xacml/editor',
       xacmlPeps: '/admin-api/xacml/peps',
+      xacmlPepClusters: '/admin-api/xacml/pep-clusters',
       xacmlDecide: '/admin-api/xacml/decide',
       xacmlAuthzen: '/admin-api/xacml/authzen'
     },
@@ -1135,7 +1322,7 @@ const PAGES: WebPage[] = [
     },
     composeAlways: [
       'xacmlPolicies', 'xacmlEditor', 'xacmlPeps', 'xacmlDecide',
-      'xacmlAuthzen'
+      'xacmlAuthzen', 'xacmlPepClusters'
     ],
     render: XacmlPage.render },
   { path: '/admin/xacml/monitor', title: 'XACML decisions',
@@ -1301,7 +1488,11 @@ class WebPages {
                         declared?: string[]): Json {
     const page = WebPages.pageFor(path);
     const out: Json = {};
+    const own = (page && page.ownParams) || [];
     Object.keys(query || {}).forEach(function (name) {
+      if (own.indexOf(name) >= 0) {
+        return;
+      }
       const mapped = page && page.params && page.params[name];
       const asked = mapped || name;
       if (!declared || declared.indexOf(asked) >= 0) {
@@ -1735,7 +1926,40 @@ class WebPages {
       });
   }
 
+  // EVERY PAGE'S LINKS INTO THE XACML TABS GO THROUGH ONE REWRITE (rcbj,
+  // 2026-11-15). `/admin/xacml/policies`, `editor`, `peps`, `decide` and
+  // `authzen` are TABS of `/admin/xacml`, not pages, and the renderers still
+  // write them as paths — a policy's editor link, Remote PEPs, Try a
+  // decision. Rewritten only on `/admin/xacml` itself, so the Deciding
+  // policy link on a PEP route's page answered "/admin/xacml/editor is not a
+  // page of this console", and so did the Roles, Applications and Policies
+  // pages' links. Every page drawn is passed through `xacmlTabLinks()` now,
+  // in its navigation-only form: an `href` and a GET form move onto the tab,
+  // a POST form keeps its action, because the runtime resolves a POST by its
+  // page (`/admin/xacml/peps` is what a PEP's route forms are told apart by,
+  // `WebAnswers.PEP_ROUTES_PAGE`), and a POST is never a navigation.
+  /**
+   * Draws a console page's body, its links into the XACML tabs rewritten.
+   *
+   * @param path - the console path
+   * @param view - the page's answer
+   * @param ctx - optional; the rendering context
+   * @returns the HTML, or null for a path that is not a page
+   */
   static render(path: string, view: Json, ctx?: Json): string | null {
+    const html = WebPages.renderPage(path, view, ctx);
+    return html === null ? null : WebPages.xacmlTabLinks(html, false);
+  }
+
+  /**
+   * Draws a console page's body as its renderer writes it.
+   *
+   * @param path - the console path
+   * @param view - the page's answer
+   * @param ctx - optional; the rendering context
+   * @returns the HTML, or null for a path that is not a page
+   */
+  static renderPage(path: string, view: Json, ctx?: Json): string | null {
     const page = WebPages.pageFor(path);
     const context = ctx || WebKit.context();
     if (!page) {
@@ -1987,34 +2211,24 @@ class WebPages {
           !view.xacmlDecide) {
         throw new Error('The XACML page is missing a tab view.');
       }
-      const panels = [
-        { id: 'xacml-tab-metadata',
-          label: context.t.text('consoleProtocolSettings.metadataHeading'),
-          html: WebPages.withEndpoints('', view, context.t) },
-        { id: 'xacml-tab-settings',
-          label: context.t.text('consoleProtocolSettings.globalSettings'),
-          html: XacmlPage.render(view, context) },
-        { id: 'xacml-tab-policies',
-          label: context.t.text('console.nav.xacml-policies'),
-          html: XacmlPage.policiesBody(context, view.xacmlPolicies) },
-        { id: 'xacml-tab-editor',
-          label: context.t.text('console.nav.xacml-editor'),
-          html: XacmlPage.editorBody(context, view.xacmlEditor) },
-        { id: 'xacml-tab-peps',
-          label: context.t.text('console.nav.xacml-peps'),
-          html: XacmlPage.pepsBody(context, view.xacmlPeps) },
-        { id: 'xacml-tab-decide',
-          label: context.t.text('console.nav.xacml-decide'),
-          html: XacmlPage.decideBody(context, view.xacmlDecide) },
-        // AUTHZEN (#563): the API decided by this page's engine, on a tab of
-        // its own beside the PEPs that pull the repository.
-        { id: 'xacml-tab-authzen',
-          label: context.t.text('consoleXacml.authzen.tab'),
-          html: XacmlPage.authzenBody(context, view.xacmlAuthzen) }
-      ];
-      const rendered = panels.map(function (one) {
+      // The tabs and their order are `XacmlPage.xacmlTabs()`'s, which a
+      // PEP's page and a route's draw as their first row (2026-11-15).
+      const bodies: { [id: string]: string } = {
+        'xacml-tab-metadata': WebPages.withEndpoints('', view, context.t),
+        'xacml-tab-settings': XacmlPage.render(view, context),
+        'xacml-tab-policies':
+          XacmlPage.policiesBody(context, view.xacmlPolicies),
+        'xacml-tab-editor': XacmlPage.editorBody(context, view.xacmlEditor),
+        'xacml-tab-peps': XacmlPage.pepsBody(context, view.xacmlPeps),
+        'xacml-tab-pep-clusters':
+          XacmlPage.clustersBody(context, view.xacmlPepClusters || {}),
+        'xacml-tab-decide': XacmlPage.decideBody(context, view.xacmlDecide),
+        'xacml-tab-authzen':
+          XacmlPage.authzenBody(context, view.xacmlAuthzen)
+      };
+      const rendered = XacmlPage.xacmlTabs(context.t).map(function (one) {
         return { id: one.id, label: one.label,
-          html: WebPages.xacmlTabLinks(one.html) };
+          html: WebPages.xacmlTabLinks(bodies[one.id]) };
       });
       return WebKit.tabbedPanels('xacml-pages', rendered);
     }
@@ -2065,24 +2279,35 @@ class WebPages {
   }
 
   /**
-   * Keeps links and forms between the XACML views on their tabs.
+   * Keeps links and forms between the XACML views on their tabs: the ONE
+   * mapping of the old sub-paths to the tabs of `/admin/xacml`.
    *
-   * @param html - one XACML view's rendered HTML
-   * @returns the HTML with intra-page links and forms
+   * On `/admin/xacml` itself (`whole`, the default) a bare `/admin/xacml`
+   * link opens the Settings tab and a POST form moves onto its tab too, as
+   * the tabs' forms always did. On every other page (`whole` false,
+   * `WebPages.render()`) only the five sub-paths move, and only where they
+   * navigate — a link or a GET form — so a plain link to the section and a
+   * POST form's action are left as their page wrote them.
+   *
+   * @param html - one page's rendered HTML
+   * @param whole - optional; false for the navigation-only form
+   * @returns the HTML with links and forms onto the tabs
    */
-  static xacmlTabLinks(html: string): string {
-    const paths = {
+  static xacmlTabLinks(html: string, whole?: boolean): string {
+    const every = whole !== false;
+    const paths: { [path: string]: string } = {
       '/admin/xacml/policies': 'xacml-tab-policies',
       '/admin/xacml/editor': 'xacml-tab-editor',
       '/admin/xacml/peps': 'xacml-tab-peps',
+      '/admin/xacml/pep-clusters': 'xacml-tab-pep-clusters',
       '/admin/xacml/decide': 'xacml-tab-decide',
       // The AuthZEN tab's forms (#563) name it so, and are moved onto it.
-      '/admin/xacml/authzen': 'xacml-tab-authzen',
-      '/admin/xacml': 'xacml-tab-settings'
+      '/admin/xacml/authzen': 'xacml-tab-authzen'
     };
-    const route = '/admin/xacml/policies|/admin/xacml/editor|' +
-      '/admin/xacml/peps|/admin/xacml/decide|/admin/xacml/authzen|' +
-      '/admin/xacml';
+    if (every) {
+      paths['/admin/xacml'] = 'xacml-tab-settings';
+    }
+    const route = Object.keys(paths).join('|');
     html = html.replace(new RegExp('href="(' + route +
       ')(\\?[^"#]*)?(#[^"]*)?"', 'g'),
     function (_match: string, path: string, query: string,
@@ -2095,6 +2320,9 @@ class WebPages {
       function (match: string, attrs: string): string {
         const action = /action="([^"]*)"/i.exec(attrs);
         if (!action) {
+          return match;
+        }
+        if (!every && !/\bmethod="get"/i.test(attrs)) {
           return match;
         }
         const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);

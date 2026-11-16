@@ -169,7 +169,20 @@ import xml = require('./xacml_xml');
 import validate = require('./xacml_validate');
 import mtls = require('../oauth-oidc/mtls');
 import peps = require('./xacml_pep_registry');
+// Remote PEP clusters (#1760): a member's pulls are answered from its
+// EFFECTIVE row, the cluster's documents with its own addresses.
+import pepClusters = require('./xacml_pep_clusters');
 import pepHttp = require('./xacml_pep_http');
+// The remote PEP's reverse proxy (#1760): its configuration grammar, the
+// pull's body and the four validation doors. A LIBRARY: it registers no
+// route, and what it asks of `oauth2`, `authn` and the registry it requires
+// lazily, so its position here is not a position.
+import pepProxy = require('./xacml_pep_proxy');
+// A remote PEP's managed settings (#1760): the pull's body.
+import pepSettings = require('./xacml_pep_settings');
+// A remote PEP's listener certificates (#1760): a defined HTTPS listener's,
+// issued over the key the PEP generated. A LIBRARY over `common/pki.js`.
+import pepTls = require('./xacml_pep_tls');
 // The decision counters behind /admin/xacml/monitor. A LEAF (rule 3): it
 // registers no route, so its position here is not a position, and it requires
 // nothing that requires it back.
@@ -253,6 +266,15 @@ interface CallerIdentity {
   // An outside authority's certificate stored on no entry ('NOT_STORED') or
   // on several ('STORED_TWICE'), so its `dn` is empty (#1061).
   unmapped?: string;
+  // What the caller proved itself with at the PEP door (#1827's follow-up):
+  // 'certificate', 'token' (a DPoP-bound access token from sts-remote-pep,
+  // `pep_token.ts`), or '' for nothing.
+  credential?: string;
+  // A refusal the PEP door made before any policy was asked — a token that
+  // did not hold, or a credential `xacml.pepAuthentication` does not
+  // accept. `pepAccess()` answers it with a 401 and this code.
+  refusal?: { code: string; error: string; description: string;
+              needNonce?: boolean };
 }
 
 // What `xacmlAccess()` and `pepAccess()` answer.
@@ -318,6 +340,9 @@ interface XacmlSurfaceDeps {
   mtls: typeof mtls;
   peps: typeof peps;
   pepHttp: typeof pepHttp;
+  pepProxy: typeof pepProxy;
+  pepSettings: typeof pepSettings;
+  pepTls: typeof pepTls;
   monitor: typeof monitor;
   roles: typeof roles;
   accessGate: typeof accessGate;
@@ -350,6 +375,13 @@ interface XacmlSurfaceDeps {
                               { rows: any[]; problems: string[] };
                             valueOf(row: any): string };
   sha256Base64(text: string): string;
+  // `xacml/pep_token.ts`, the one reading of a remote PEP's access token
+  // (#1827's follow-up), built when a token first arrives.
+  loadPepToken(): { verify(req: Req, want: { path: string; scope: string }):
+                      any };
+  // A fresh DPoP server nonce (`dpop.issueNonce()`), for a proof refused
+  // for want of one.
+  loadPepTokenNonce(): string;
 }
 
 // The role those four endpoints require. Named once here rather than written
@@ -361,6 +393,30 @@ const XACML_USER_ROLE = 'XACML_USER';
 // each call site, so that a rename in `roles.js`'s catalogue (where the name
 // is defined) is one line to follow here rather than several to hunt for.
 const REMOTE_PEP_ROLE = 'REMOTE_PEPS';
+
+// A REMOTE PEP'S ACCESS TOKEN (#1827's follow-up): the path its audience
+// names and the scope it carries, at every `/xacml/pep/*` call and `POST
+// /xacml/pip`. `pep_token.ts` reads it.
+const PEP_TOKEN_PATH = '/xacml/pep';
+const PEP_TOKEN_SCOPE = 'xacml:pep';
+
+// The three answers `xacml.pepAuthentication` may give.
+const PEP_CREDENTIALS = Object.freeze(['certificate', 'token', 'either']);
+
+// Where a request's PEP identity is kept once read, so the DPoP proof — good
+// for one request — is verified once whichever door reads it first.
+const PEP_IDENTITY = Symbol('sts.xacmlPepIdentity');
+
+// The code each `pep_token.ts` refusal is marked with at this door.
+const PEP_TOKEN_CODES: Record<string, string> = Object.freeze({
+  invalid: 'STS-XACML-0291',
+  'not-dpop': 'STS-XACML-0292',
+  audience: 'STS-XACML-0293',
+  client: 'STS-XACML-0294',
+  scope: 'STS-XACML-0295',
+  proof: 'STS-XACML-0296',
+  subject: 'STS-XACML-0297'
+});
 
 // ---------------------------------------------------------------------------
 // The scalar parameters the XACML readers never see.
@@ -423,6 +479,9 @@ class XacmlSurface {
    *   its HTTP client, the monitor, the role register, the access gate, and
    *   lazy loaders for the cluster barrier and persistence
    */
+  // The realms `warnCertificateRefused()` has spoken for in this process.
+  private readonly certificateRefusedIn: Set<string> = new Set();
+
   constructor(private readonly deps: XacmlSurfaceDeps) {
     deps.log.debug("Entering XacmlSurface.constructor().");
     deps.log.debug("Leaving XacmlSurface.constructor().");
@@ -459,6 +518,9 @@ class XacmlSurface {
       mtls: mtls,
       peps: peps,
       pepHttp: pepHttp,
+      pepProxy: pepProxy,
+      pepSettings: pepSettings,
+      pepTls: pepTls,
       monitor: monitor,
       roles: roles,
       accessGate: accessGate,
@@ -502,6 +564,17 @@ class XacmlSurface {
         helpers.log.debug("Entering sha256Base64().");
         helpers.log.debug("Leaving sha256Base64().");
         return require('../common/crypto').digest('sha256', text, 'base64');
+      },
+      loadPepToken: function (): any {
+        helpers.log.debug("Entering loadPepToken().");
+        const PepToken = require('./pep_token');
+        helpers.log.debug("Leaving loadPepToken().");
+        return new PepToken(PepToken.defaultDeps());
+      },
+      loadPepTokenNonce: function (): string {
+        helpers.log.debug("Entering loadPepTokenNonce().");
+        helpers.log.debug("Leaving loadPepTokenNonce().");
+        return String(require('../oauth-oidc/dpop').issueNonce());
       }
     };
   }
@@ -520,8 +593,9 @@ class XacmlSurface {
 
   // The same shape `ssf.ts`'s `offCheck()` has, and the same argument: the
   // routes stay REGISTERED and answer 501, because the feature being off and
-  // the URL being wrong are different sentences to a client.
-  private offCheck(res: Res): boolean {
+  // the URL being wrong are different sentences to a client. `xml` answers
+  // it as `POST /xacml/pip`'s `<PIPError>` (#1830), for that door alone.
+  private offCheck(res: Res, xml?: boolean): boolean {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug('Entering XacmlSurface.offCheck().');
@@ -530,16 +604,12 @@ class XacmlSurface {
       return false;
     }
     errorCodes.mark(res, 'STS-XACML-0001');
-    res.status(501).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({
-         error: 'not_implemented',
-         error_description:
-           'XACML is turned off on this service (xacml.enabled). The routes ' +
-           'stay registered and answer 501 rather than 404, because the ' +
-           'feature being off and the URL being wrong are different ' +
-           'sentences to a client. The policy repository in ou=policies is ' +
-           'untouched.'
-       }, null, 2));
+    self.refuse(res, !!xml, 501, 'not_implemented',
+      'XACML is turned off on this service (xacml.enabled). The routes ' +
+      'stay registered and answer 501 rather than 404, because the ' +
+      'feature being off and the URL being wrong are different ' +
+      'sentences to a client. The policy repository in ou=policies is ' +
+      'untouched.');
     log.debug('Leaving XacmlSurface.offCheck(). Off.');
     return true;
   }
@@ -553,6 +623,25 @@ class XacmlSurface {
        .send(JSON.stringify({ error: code, error_description: description },
                             null, 2));
     log.debug("Leaving XacmlSurface.fail().");
+  }
+
+  // `fail()`, or `pipFail()` for `POST /xacml/pip` (#1830): the off switches
+  // and the gate are shared with the JSON endpoints, and the PIP answers
+  // every refusal in its own XML whoever made it.
+  // error-code: none — the helper's definition, not a call to it.
+  private refuse(res: Res, xml: boolean, status: number, code: string,
+                 description: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering XacmlSurface.refuse().");
+    if (xml) {
+      // error-code: none — the helper's body; its callers mark the code.
+      self.pipFail(res, status, code, description);
+    } else {
+      // error-code: none — the helper's body; its callers mark the code.
+      self.fail(res, status, code, description);
+    }
+    log.debug("Leaving XacmlSurface.refuse().");
   }
 
   // ===========================================================================
@@ -1140,12 +1229,12 @@ class XacmlSurface {
   // than a parameter because the two answer different sentences: one says XACML
   // is off here, the other says XACML is on and remote enforcement points are
   // not. A caller told the first when the second was true would go looking in
-  // the wrong place.
-  private remotePepOffCheck(res: Res): boolean {
+  // the wrong place. `xml` is `offCheck()`'s.
+  private remotePepOffCheck(res: Res, xml?: boolean): boolean {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug('Entering XacmlSurface.remotePepOffCheck().');
-    if (self.offCheck(res)) {
+    if (self.offCheck(res, xml)) {
       log.debug('Leaving XacmlSurface.remotePepOffCheck(). XACML is off.');
       return true;
     }
@@ -1154,15 +1243,11 @@ class XacmlSurface {
       return false;
     }
     errorCodes.mark(res, 'STS-XACML-0002');
-    res.status(501).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({
-         error: 'not_implemented',
-         error_description:
-           'XACML is on, but remote Policy Enforcement Points are turned off ' +
-           'on this service (xacml.remotePeps). The register in ou=peps is ' +
-           'untouched, so a PEP that was registered is still listed and ' +
-           'comes back the moment this is turned on again.'
-       }, null, 2));
+    self.refuse(res, !!xml, 501, 'not_implemented',
+      'XACML is on, but remote Policy Enforcement Points are turned off ' +
+      'on this service (xacml.remotePeps). The register in ou=peps is ' +
+      'untouched, so a PEP that was registered is still listed and ' +
+      'comes back the moment this is turned on again.');
     log.debug('Leaving XacmlSurface.remotePepOffCheck(). Off.');
     return true;
   }
@@ -1250,6 +1335,183 @@ class XacmlSurface {
     }
     log.debug('Leaving XacmlSurface.callerIdentity(). dn=' + identity.dn);
     return identity;
+  }
+
+  // ===========================================================================
+  // THE PEP DOOR'S IDENTITY: A CERTIFICATE OR A TOKEN (#1827's follow-up,
+  // rcbj-approved plan, 2026-11-16, phase 1).
+  //
+  // A remote PEP proves who it is on every `/xacml/pep/*` call and `POST
+  // /xacml/pip` by its client certificate (`callerIdentity()` above) or, in
+  // its place, by a DPoP-bound access token from `sts-remote-pep`
+  // (`pep_token.ts`, links 1 and 2 for a token). `xacml.pepAuthentication`
+  // says which this realm accepts: `certificate`, `token` — the default
+  // since phase 4 of the plan — or `either`, the default through phase 3.
+  //
+  // **A TOKEN, WHERE ONE IS PRESENTED AND ACCEPTED, DECIDES.** A PEP in the
+  // middle of the move may present both — its certificate still at the
+  // handshake, its token in the header — and the token is the credential it
+  // chose to send. A token that does not hold is REFUSED rather than passed
+  // over for the certificate underneath: a credential that fails is an
+  // answer, and quietly trying the other would hide which one is wrong.
+  // Under `certificate` the header is not read at all and the certificate
+  // decides, as before this plan.
+  //
+  // **WHAT A TOKEN NAMES IS WHAT A CERTIFICATE THIS SERVICE ISSUED NAMED**:
+  // `dn` the PEP's entry, `commonName` its username, so the `ou=peps` row,
+  // the heartbeat's row and a cluster's membership are the ones the PEP had.
+  // The row's `thumbprint` is the DPoP key's JWK thumbprint (RFC 7638), the
+  // key the token is bound to, where a certificate's was its x5t#S256.
+  // Links 3 and 4 — REMOTE_PEPS and the policy — are `pepAccess()`'s,
+  // unchanged.
+  //
+  // ONLY THE PEP DOOR READS A TOKEN. `xacmlAccess()` (`XACML_USER`, a
+  // person at `GET /xacml` and the PDP) and the AuthZEN certificate door
+  // read `callerIdentity()`, which reads the handshake alone.
+  // ===========================================================================
+  /**
+   * The realm's answer to which credential a remote PEP may present
+   * (`xacml.pepAuthentication`): `certificate`, `token` or `either`.
+   *
+   * @returns the credential kind, `token` (the default) for anything else
+   */
+  pepAuthentication(): string {
+    const { log, config } = this.deps;
+    log.debug('Entering XacmlSurface.pepAuthentication().');
+    const asked = String(config.value('xacml.pepAuthentication') || '');
+    log.debug('Leaving XacmlSurface.pepAuthentication(). ' + asked);
+    // Anything else falls to the default, the strictest answer (phase 4).
+    return PEP_CREDENTIALS.indexOf(asked) >= 0 ? asked : 'token';
+  }
+
+  /**
+   * What a remote PEP proved itself with at the PEP door: its client
+   * certificate or its access token, as `xacml.pepAuthentication` allows.
+   * Read once per request.
+   *
+   * @param req - the request
+   * @returns the caller's identity, never a verdict; `refusal` set when the
+   *   credential presented is one this door refuses before any policy
+   */
+  pepIdentity(req: Req): CallerIdentity {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.pepIdentity().');
+    const held = (req as any)[PEP_IDENTITY];
+    if (held) {
+      log.debug('Leaving XacmlSurface.pepIdentity(). Read already.');
+      return held;
+    }
+    const accepts = self.pepAuthentication();
+    const header = String(req.headers.authorization || '');
+    const token = /^(Bearer|DPoP)\s+\S/i.test(header);
+    const nobody = function (code: string, description: string,
+                             extra?: any): CallerIdentity {
+      log.debug('Entering nobody().');
+      log.debug('Leaving nobody(). ' + code);
+      return { authenticated: false, verified: false, subject: '',
+               thumbprint: '', dn: '', commonName: '', why: description,
+               credential: '', refusal: Object.assign({ code: code,
+                 error: 'invalid_token', description: description },
+               extra || {}) };
+    };
+    let identity: CallerIdentity;
+    if (token && accepts !== 'certificate') {
+      identity = self.tokenIdentity(req);
+    } else if (!token && accepts === 'token') {
+      // PHASE 4 MADE `token` THE DEFAULT (rcbj, 2026-11-16), so a PEP that
+      // still authenticates by its certificate after an upgrade meets this
+      // refusal. When the certificate WOULD have been accepted under
+      // `either`, the description and a warning once per realm and process
+      // say so and name the setting, rather than leaving an operator to
+      // work out that a default moved (backwards compatibility from 1.0.0:
+      // a default does not change silently).
+      const certified = self.callerIdentity(req).verified;
+      if (certified) {
+        self.warnCertificateRefused();
+      }
+      identity = nobody('STS-XACML-0289', 'This realm accepts a remote ' +
+        'PEP only on a DPoP-bound access token from sts-remote-pep ' +
+        '(xacml.pepAuthentication is token, the default since 1.1.0), and ' +
+        'this request carried none. A client certificate alone is not ' +
+        'accepted here.' + (certified
+          ? ' This PEP presented a client certificate that verifies, which ' +
+            'the realm accepts under either: set xacml.pepAuthentication to ' +
+            'either ' +
+            'while it moves to its assertion key (PEP_ASSERTION_KEY, ' +
+            'issued by issue-pep-credential).'
+          : ''),
+        { error: 'invalid_request' });
+    } else {
+      identity = self.callerIdentity(req);
+      identity.credential = identity.authenticated ? 'certificate' : '';
+      if (token && !identity.authenticated) {
+        identity.refusal = { code: 'STS-XACML-0290', error: 'invalid_token',
+          description: 'This realm accepts a remote PEP only by its client ' +
+            'certificate (xacml.pepAuthentication is certificate), and this ' +
+            'request carried an access token and no certificate.' };
+      }
+    }
+    (req as any)[PEP_IDENTITY] = identity;
+    log.debug('Leaving XacmlSurface.pepIdentity(). ' +
+              (identity.credential || 'none') + ' ' + identity.dn);
+    return identity;
+  }
+
+  // ONCE PER REALM AND PROCESS, a remote PEP refused at the PEP door for
+  // presenting only a client certificate that verifies, while the realm
+  // asks for a token (STS-XACML-0289). Phase 4 of #1827's follow-up made
+  // `token` the default, so this is what an upgraded deployment whose PEPs
+  // have not moved to their assertion key sees first; logged once rather
+  // than per call, because a PEP retries every few seconds.
+  private warnCertificateRefused(): void {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.warnCertificateRefused().');
+    const realm = String(realms.currentId() || '');
+    if (this.certificateRefusedIn.has(realm)) {
+      log.debug('Leaving XacmlSurface.warnCertificateRefused(). Said.');
+      return;
+    }
+    this.certificateRefusedIn.add(realm);
+    log.warn(errorCodes.tag('STS-XACML-0289') + 'xacml: a remote PEP ' +
+             'presented only a client certificate in realm "' +
+             (realm || 'default') + '", and xacml.pepAuthentication is ' +
+             'token there (the default since 1.1.0), so it was refused. ' +
+             'Set xacml.pepAuthentication to either while the realm\'s ' +
+             'PEPs move to their assertion key (PEP_ASSERTION_KEY, issued ' +
+             'by issue-pep-credential); docs/remote-pep.md says how.');
+    log.debug('Leaving XacmlSurface.warnCertificateRefused().');
+  }
+
+  // The token half of `pepIdentity()`: `pep_token.ts`'s reading, as the
+  // identity a certificate this service issued would have given.
+  private tokenIdentity(req: Req): CallerIdentity {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.tokenIdentity().');
+    const read = this.deps.loadPepToken().verify(req,
+      { path: PEP_TOKEN_PATH, scope: PEP_TOKEN_SCOPE });
+    if (!read.ok) {
+      const code = PEP_TOKEN_CODES[read.reason] || 'STS-XACML-0291';
+      log.info('xacml: a remote PEP\'s access token was refused (' +
+               read.reason + (read.proofCode ? ', ' + read.proofCode : '') +
+               '): ' + read.description);
+      log.debug('Leaving XacmlSurface.tokenIdentity(). Refused.');
+      return { authenticated: false, verified: false, subject: '',
+               thumbprint: '', dn: '', commonName: '',
+               why: String(read.description || ''), credential: 'token',
+               refusal: { code: code,
+                          error: read.needNonce ? 'use_dpop_nonce'
+                            : read.reason === 'scope' ? 'insufficient_scope'
+                            : 'invalid_token',
+                          description: String(read.description || ''),
+                          needNonce: !!read.needNonce } };
+    }
+    log.debug('Leaving XacmlSurface.tokenIdentity(). ' + read.dn);
+    return { authenticated: true, verified: true, subject: '',
+             thumbprint: String(read.jkt || ''), dn: String(read.dn),
+             commonName: String(read.username || ''),
+             why: 'a DPoP-bound access token from sts-remote-pep',
+             credential: 'token' };
   }
 
   // THE NAMING HALF OF THE DOOR, shared by `callerIdentity()` (a handshake)
@@ -1406,7 +1668,7 @@ class XacmlSurface {
   // ===========================================================================
   private pepAccess(req: Req, res: Res, action: string,
                     what: string,
-                    known?: CallerIdentity): AccessResult {
+                    known?: CallerIdentity, xml?: boolean): AccessResult {
     const self = this;
     const { log, config, errorCodes, roles, accessGate } = this.deps;
     log.debug('Entering XacmlSurface.pepAccess(). action=' + action);
@@ -1417,7 +1679,18 @@ class XacmlSurface {
     // request — and, worse, two places that could come to disagree about who
     // the caller is. Omitting it is what the other three doors do and is
     // unchanged.
-    const identity = known || self.callerIdentity(req);
+    const identity = known || self.pepIdentity(req);
+    // A CREDENTIAL THE DOOR REFUSED BEFORE ANY POLICY (#1827's follow-up): a
+    // token that did not hold, or a kind `xacml.pepAuthentication` does not
+    // take. A 401 with RFC 9449's challenge, so a PEP can tell "get a new
+    // token" (invalid_token) and "prove with this nonce" (use_dpop_nonce)
+    // from a policy's 403.
+    if (identity.refusal) {
+      self.pepCredentialRefused(res, identity, !!xml);
+      log.debug('Leaving XacmlSurface.pepAccess(). The credential was ' +
+                'refused.');
+      return { allowed: false };
+    }
     // THE NAME IS THE VERIFIED DN OR NOTHING AT ALL. An unverified
     // certificate's DN must never reach `rolesOf()`: it would be an
     // unauthenticated caller naming itself into a group, which is the one thing
@@ -1454,10 +1727,14 @@ class XacmlSurface {
     } else {
       errorCodes.mark(res, 'STS-XACML-0010');
     }
-    self.fail(res, 403, 'access_denied',
+    // `xml` (#1830) is `POST /xacml/pip`'s: its refusal is a `<PIPError>`,
+    // as the door's own are.
+    self.refuse(res, !!xml, 403, 'access_denied',
       'The access policy refused this request. ' + policy.why +
       ' A remote Policy Enforcement Point reaches these endpoints by ' +
-      'presenting a client certificate this service VERIFIES — the issuing ' +
+      'presenting a DPoP-bound access token from sts-remote-pep (where ' +
+      'xacml.pepAuthentication allows one) or a client certificate this ' +
+      'service VERIFIES — the issuing ' +
       'CA goes in with ' + trustAnchorDoor() + ' — and that is STORED, ' +
       'byte for byte, in userCertificate on the PEP\'s directory entry, ' +
       'an entry that is a member of the group named by ' +
@@ -1468,6 +1745,10 @@ class XacmlSurface {
       (identity.verified && identity.unmapped
         ? 'presented a certificate that VERIFIED and resolved to no ' +
           'entry: ' + identity.why + '.'
+        : identity.verified && identity.credential === 'token'
+        ? 'presented a DPoP-bound access token that VERIFIED, naming "' +
+          name + '", which holds ' +
+          (held.length ? held.join(', ') : 'no role') + '.'
         : identity.verified
         ? 'presented a certificate that VERIFIED, resolved to "' + name +
           '", and holds ' + (held.length ? held.join(', ') : 'no role') + '.'
@@ -1477,6 +1758,209 @@ class XacmlSurface {
       ' xacml.enforceAccess turns this layer off.');
     log.debug('Leaving XacmlSurface.pepAccess(). Refused.');
     return { allowed: false };
+  }
+
+  // The 401 for a credential the PEP door refused (#1827's follow-up), with
+  // a DPoP challenge (RFC 9449 section 7.1) and, where the proof wanted one,
+  // a fresh server nonce. At `POST /xacml/pip` the body is a `<PIPError>`
+  // like every other refusal there (#1830); the challenge is the same.
+  // error-code: none — marked below with the identity's own code.
+  private pepCredentialRefused(res: Res, identity: CallerIdentity,
+                               xml: boolean): void {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.pepCredentialRefused().');
+    const refusal = identity.refusal || { code: 'STS-XACML-0291',
+      error: 'invalid_token', description: '' };
+    if (refusal.needNonce) {
+      res.set('DPoP-Nonce', self.deps.loadPepTokenNonce());
+    }
+    res.set('WWW-Authenticate', 'DPoP error="' + refusal.error + '"' +
+            (refusal.error === 'insufficient_scope'
+              ? ', scope="' + PEP_TOKEN_SCOPE + '"' : '') +
+            ', algs="ES256 RS256"');
+    errorCodes.mark(res, refusal.code);
+    // error-code: none — marked on the line above with the identity's code.
+    self.refuse(res, xml, 401, refusal.error, refusal.description);
+    log.debug('Leaving XacmlSurface.pepCredentialRefused(). ' + refusal.code);
+  }
+
+  // ===========================================================================
+  // THE REVERSE PROXY'S DOORS (#1760). The PEP is named the registration's
+  // way: by the certificate where there is one, by the caller's own `name`
+  // only where there is none (`xacml.pepRequireCertificate` off).
+  // ===========================================================================
+  /**
+   * The register name of the PEP a request comes from.
+   *
+   * @param identity - what the connection carried
+   * @param given - the name the caller sent, read only with no certificate
+   * @returns the folded name, '' when none is usable
+   */
+  pepNameOf(identity: CallerIdentity | undefined, given: string): string {
+    const { log, peps } = this.deps;
+    log.debug('Entering XacmlSurface.pepNameOf().');
+    const raw = identity && identity.authenticated
+      ? (identity.commonName || identity.dn) : given;
+    const out = peps.nameFrom(raw);
+    log.debug('Leaving XacmlSurface.pepNameOf(). ' + out);
+    return out;
+  }
+
+  // ===========================================================================
+  // WHETHER A PULL IS ANSWERED 304 (#1830): `?since=<token>`, as it always
+  // was, OR an `If-None-Match` that matches the ETag the pull would send.
+  //
+  // Every pull sent `ETag: "<token>"` and read only `?since=`, so the header
+  // the PEP sends on the settings and proxy pulls — and that any ordinary
+  // HTTP client or cache sends back on its own — was answered 200 with the
+  // whole document every time. RFC 9110 section 13.1.2 is the rule: the
+  // field is `*` or a LIST of entity tags, compared WEAKLY (section 8.8.3.2:
+  // `W/"x"` and `"x"` match), and `*` matches whenever there is a current
+  // representation, which every one of these pulls always has. A field
+  // that matches nothing is not an error; the pull answers 200 as it would
+  // without it. `?since=` stays: a deployed PEP sends it on every pull and
+  // must keep being answered 304 by it.
+  // ===========================================================================
+  /**
+   * Whether an `If-None-Match` field value matches a sync token under RFC
+   * 9110's weak comparison: `*`, or any entity tag in the list whose opaque
+   * part is the token, with or without `W/`.
+   *
+   * @param field - the field value as received ('' when absent)
+   * @param token - the token the pull's ETag carries, unquoted
+   * @returns true when it matches
+   */
+  static etagMatches(field: unknown, token: string): boolean {
+    log.debug('Entering XacmlSurface.etagMatches().');
+    const value = String(Array.isArray(field) ? field.join(',')
+                                              : (field || '')).trim();
+    if (!value || !token) {
+      log.debug('Leaving XacmlSurface.etagMatches(). Nothing to compare.');
+      return false;
+    }
+    if (value === '*') {
+      log.debug('Leaving XacmlSurface.etagMatches(). Any.');
+      return true;
+    }
+    // An entity tag is `[W/] DQUOTE *etagc DQUOTE`, and etagc holds no
+    // double quote, so a quoted run is one tag wherever the commas are.
+    const tags = /(?:W\/)?"([^"]*)"/g;
+    let found = tags.exec(value);
+    while (found) {
+      if (found[1] === token) {
+        log.debug('Leaving XacmlSurface.etagMatches(). Matched.');
+        return true;
+      }
+      found = tags.exec(value);
+    }
+    log.debug('Leaving XacmlSurface.etagMatches(). No match.');
+    return false;
+  }
+
+  /**
+   * Whether a pull is unchanged for this caller: `?since=` equal to the
+   * token, or an `If-None-Match` that matches it (`etagMatches()`).
+   *
+   * @param req - the request
+   * @param token - the pull's current sync token
+   * @returns true when the pull answers 304
+   */
+  unchanged(req: Req, token: string): boolean {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.unchanged().');
+    const since = String((req.query && req.query.since) || '');
+    const out = (!!since && since === token) ||
+      XacmlSurface.etagMatches(req.headers['if-none-match'], token);
+    log.debug('Leaving XacmlSurface.unchanged(). ' + out);
+    return out;
+  }
+
+  /**
+   * Answers one of the four validation doors: the rate limit, the gate, the
+   * question, the audit row and the closed answer.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param what - `introspect`, `basic`, `saml` or `session`
+   * @param ask - the question, answered by `xacml_pep_proxy.ts`
+   * @returns a promise settled once the answer is sent
+   */
+  async validationDoor(req: Req, res: Res, what: string,
+                       ask: (body: any, pep: string) => any): Promise<void> {
+    const self = this;
+    const { log, config, errorCodes, websecurity, audit, parseBody,
+            accessGate } = this.deps;
+    log.debug('Entering XacmlSurface.validationDoor(). ' + what);
+    try {
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving XacmlSurface.validationDoor(). Off.');
+        return;
+      }
+      const identity = self.pepIdentity(req);
+      const within = await websecurity.attemptShared('xacml-pep-validate',
+        req, identity.verified ? identity.dn : '',
+        config.value('xacml.pipMaxPerWindow'));
+      if (!within.ok) {
+        // ONE 429 SHAPE ON EVERY DOOR (#1830): the Error members and
+        // `retryAfterS`, as `basic`'s own lockout answers, so a PEP reads the
+        // wait from the body whichever refused it.
+        const retryAfterS = Number(within.retryAfterS) || 1;
+        res.set('Retry-After', String(retryAfterS));
+        errorCodes.mark(res, 'STS-XACML-0215');
+        res.status(429).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({ error: 'too_many_requests',
+             error_description: 'Too many validation calls from this ' +
+               'remote PEP. ' + within.detail + ' The limit is ' +
+               'xacml.pipMaxPerWindow per security.rateLimitWindowS, the ' +
+               'PIP\'s.',
+             retryAfterS: retryAfterS }, null, 2));
+        log.debug('Leaving XacmlSurface.validationDoor(). Rate limited.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP ' + what + ' validation',
+                                    identity);
+      if (!access.allowed) {
+        log.debug('Leaving XacmlSurface.validationDoor(). The access ' +
+                  'policy refused.');
+        return;
+      }
+      const body = parseBody(req);
+      // The PEP is named before it is asked: a Basic ticket is bound to it,
+      // and an identity request may name only its own routes (D11).
+      const pep = self.pepNameOf(identity, String((body || {}).name || ''));
+      const answer = await Promise.resolve(ask(body, pep));
+      audit.audit({
+        action: 'xacml.pep.validate',
+        actor: identity.dn || pep,
+        protocol: 'XACML',
+        errorCode: answer.code || undefined,
+        detail: 'Remote PEP "' + pep + '" asked ' + what + ' about ' +
+                (answer.actor ? '"' + answer.actor + '"' : 'a credential') +
+                ': ' + (answer.reason || ('HTTP ' + answer.status)) + '.'
+      });
+      if (answer.code) {
+        errorCodes.mark(res, answer.code);
+      }
+      if (answer.status === 429 && answer.body &&
+          answer.body.retryAfterS) {
+        res.set('Retry-After', String(answer.body.retryAfterS));
+      }
+      res.status(answer.status).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(answer.body, null, 2));
+      log.debug('Leaving XacmlSurface.validationDoor(). ' + answer.status);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-XACML-0216') + 'xacml: the remote PEP ' +
+                what + ' validation failed: ' + ((e && e.stack) || e));
+      if (!res.headersSent) {
+        errorCodes.mark(res, 'STS-XACML-0216');
+        self.fail(res, 500, 'server_error', 'The validation failed.');
+      }
+      log.debug('Leaving XacmlSurface.validationDoor(). It threw.');
+    }
   }
 
   // ===========================================================================
@@ -1975,10 +2459,38 @@ class XacmlSurface {
     log.debug('Leaving XacmlSurface.nudgeRegisteredPeps().');
   }
 
-  private dispatchNudge(what: string): void {
+  /**
+   * Tells the named remote PEPs that their configuration changed, once the
+   * change has committed (#1760, Remote PEP clusters): a cluster's write is
+   * a change to every member's pulls at once, so every member is nudged,
+   * where a PEP's own configuration is left to its poll. Filtered through
+   * `notifiable()`, so a disabled PEP or one with no notify URL is not
+   * dialled. Off with notification or remote PEPs.
+   * @param names - the PEPs' names
+   * @param what - a description of the change, for the log
+   */
+  nudgePeps(names: string[], what: string): void {
+    const self = this;
+    const { log, pepHttp } = this.deps;
+    log.debug('Entering XacmlSurface.nudgePeps(). what=' + what);
+    const wanted = (names || []).map(String);
+    if (!wanted.length || !pepHttp.notifyAllowed() ||
+        !self.remotePepsEnabled()) {
+      log.debug('Leaving XacmlSurface.nudgePeps(). Nobody, or off.');
+      return;
+    }
+    self.afterCommit(function () {
+      self.dispatchNudge(what, wanted);
+    });
+    log.debug('Leaving XacmlSurface.nudgePeps(). ' + wanted.length);
+  }
+
+  private dispatchNudge(what: string, only?: string[]): void {
     const { log, errorCodes, peps, pepHttp } = this.deps;
     log.debug('Entering XacmlSurface.dispatchNudge(). what=' + what);
-    const rows = peps.notifiable();
+    const rows = peps.notifiable().filter(function (row: any) {
+      return !only || only.indexOf(row.name) >= 0;
+    });
     if (!rows.length) {
       log.debug('Leaving XacmlSurface.dispatchNudge(). Nobody to nudge.');
       return;
@@ -2410,12 +2922,22 @@ class XacmlSurface {
         bias: String(body.bias || ''),
         resource: String(body.resource || ''),
         version: String(body.version || ''),
+        // The PEP's hostname (#1760), which the realm's default listener
+        // certificate names. Absent from an older PEP; validated by the
+        // registry (STS-XACML-0261), so it is passed as it arrived.
+        hostname: body.hostname,
         description: String(body.description || '')
       });
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/register. Refused.');
+        // THE REGISTRY'S STATUS (#1830), which names whose fault the refusal
+        // is: every one was 400 until then, so a service with no directory
+        // or a full ou=peps told the PEP its request was malformed. The
+        // statuses are argued at `PepResult` in `xacml_pep_registry.ts`.
+        const status = result.status || 400;
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0019');
-        self.fail(res, 400, 'invalid_request', result.why);
+        self.fail(res, status, status >= 500 ? 'server_error'
+                                             : 'invalid_request', result.why);
         return;
       }
       audit.audit({
@@ -2424,8 +2946,10 @@ class XacmlSurface {
         protocol: 'XACML',
         detail: 'Remote PEP "' + result.name + '" ' +
                 (result.created ? 'registered' : 're-registered') +
-                (identity.authenticated ? ' over mutual TLS.'
-                                        : ' with no client certificate.')
+                (identity.credential === 'token'
+                  ? ' on a DPoP-bound access token.'
+                  : identity.authenticated ? ' over mutual TLS.'
+                                           : ' with no client certificate.')
       });
       const notifyProblem = pepHttp.urlProblem(String(body.notifyUrl ||
                                                       body.notify_url || ''));
@@ -2484,8 +3008,9 @@ class XacmlSurface {
     //   * THE STATIC PROBLEMS ARE NOT HERE either — a document that does not
     //     typecheck cannot be written through the store in the first place, and
     //     a PEP has its own validator and will refuse it again.
-    //   * IT CARRIES A SYNC TOKEN AND HONOURS `?since=`, which is what makes
-    //     polling cheap enough to be the contract.
+    //   * IT CARRIES A SYNC TOKEN AND HONOURS `?since=` — and, since #1830,
+    //     an `If-None-Match` matching its ETag (`unchanged()`) — which is
+    //     what makes polling cheap enough to be the contract.
     //
     // **IT REQUIRES `REMOTE_PEPS`**, and the comment inside the handler carries
     // the argument: this header said "no credential is required" for one day
@@ -2516,16 +3041,27 @@ class XacmlSurface {
         return;
       }
       const token = peps.syncToken();
-      const since = String(req.query.since || '');
       // A PEP that reports the name it registered under gets its `lastSeen`
       // moved by a PULL as well as by a heartbeat, because a PEP that is
       // polling is plainly alive and a register that called it stale would be
       // reporting on its own heartbeat interval rather than on the PEP.
-      const asName = peps.nameFrom(String(req.query.pep || ''));
+      //
+      // **THE NAME IS THE CERTIFICATE'S WHEN THERE IS ONE (#1830)**, as on
+      // every other door here (`pepNameOf()`): `?pep=` is read only when no
+      // certificate was presented, which with the gate on cannot happen.
+      // Until then it was read whatever the certificate said, so any caller
+      // holding REMOTE_PEPS could keep ANOTHER PEP's row looking alive after
+      // that PEP had gone — and the row on /admin/xacml/peps is what an
+      // operator watches for a dead enforcement point. A PEP sends `?pep=`
+      // with its own name, which is its certificate's, so a deployed one is
+      // touched exactly as before; one that sends none is touched too, by
+      // the certificate that proves which it is.
+      const asName = self.pepNameOf(access.identity,
+                                    String(req.query.pep || ''));
       if (asName && peps.read(asName)) {
         peps.heartbeat(asName, {});
       }
-      if (since && since === token) {
+      if (self.unchanged(req, token)) {
         // 304 AND NOT 200 WITH A FLAG, because a PEP polling every few seconds
         // is the ordinary case and this is the answer it gets almost every
         // time. The token goes in an ETag as well so that an ordinary HTTP
@@ -2673,8 +3209,7 @@ class XacmlSurface {
                   'applications could not be read.');
         return;
       }
-      const since = String(req.query.since || '');
-      if (since && since === catalogue.token) {
+      if (self.unchanged(req, catalogue.token)) {
         res.status(304)
            .set('Cache-Control', 'no-store')
            .set('ETag', '"' + catalogue.token + '"')
@@ -2713,8 +3248,7 @@ class XacmlSurface {
         return;
       }
       const callers = self.authzenCallers();
-      const since = String(req.query.since || '');
-      if (since && since === callers.token) {
+      if (self.unchanged(req, callers.token)) {
         res.status(304)
            .set('Cache-Control', 'no-store')
            .set('ETag', '"' + callers.token + '"')
@@ -2727,6 +3261,207 @@ class XacmlSurface {
          .send(JSON.stringify(callers.body, null, 2));
       log.debug('Leaving GET /xacml/pep/authzen-callers. ' +
                 callers.body.callers.length + ' caller(s).');
+    });
+
+    // -------------------------------------------------------------------------
+    // GET /xacml/pep/proxy — THE REVERSE PROXY'S CONFIGURATION (#1760).
+    //
+    // ADDITIVE, as the two AuthZEN pulls were: the same gate (`pepAccess()`,
+    // REMOTE_PEPS on `xacml-pep-api`), its own sync token with an ETag and
+    // `?since=` 304, `no-store`, and NO NUDGE — the proxy converges on its
+    // poll. The PEP is found by the name its certificate gives it, the
+    // registration's own rule; `xacml_pep_proxy.ts` builds the body.
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/proxy', function (req, res) {
+      log.debug('Entering GET /xacml/pep/proxy.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/proxy. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP proxy configuration pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/proxy. The access policy refused.');
+        return;
+      }
+      const name = self.pepNameOf(access.identity,
+                                  String(req.query.name || ''));
+      const row = name ? pepClusters.effectiveRow(peps.read(name)) : null;
+      const pulled = self.deps.pepProxy.pull(baseUrlOf(req), row, name);
+      if (self.unchanged(req, pulled.token)) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + pulled.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/proxy. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + pulled.token + '"')
+         .send(JSON.stringify(pulled.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/proxy. configured=' +
+                pulled.body.configured);
+    });
+
+    // -------------------------------------------------------------------------
+    // GET /xacml/pep/settings — A REMOTE PEP'S MANAGED SETTINGS (#1760).
+    //
+    // What an administrator set on the PEP's console page, for the PEP to
+    // apply over its environment: the proxy pull's shape exactly — the same
+    // gate, its own sync token with an ETag and `?since=` 304, `no-store`,
+    // no nudge (the PEP converges on its poll), the PEP named by its
+    // certificate. ADDITIVE: an older PEP never asks, and a newer PEP's 404
+    // from an older service is its environment in force.
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/settings', function (req, res) {
+      log.debug('Entering GET /xacml/pep/settings.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/settings. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP settings pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/settings. The access policy ' +
+                  'refused.');
+        return;
+      }
+      const name = self.pepNameOf(access.identity,
+                                  String(req.query.name || ''));
+      const row = name ? pepClusters.effectiveRow(peps.read(name)) : null;
+      const pulled = self.deps.pepSettings.pull(row, name);
+      if (self.unchanged(req, pulled.token)) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + pulled.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/settings. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + pulled.token + '"')
+         .send(JSON.stringify(pulled.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/settings. configured=' +
+                pulled.body.configured);
+    });
+
+    // -------------------------------------------------------------------------
+    // POST /xacml/pep/listener-certificate — A DEFINED HTTPS LISTENER'S
+    // CERTIFICATE (#1760).
+    //
+    // The PEP generated the key; it sends `{ listener, csr }` and is answered
+    // the certificate and its chain, `no-store`, and NO KEY, because there is
+    // none here to send. `pepAccess()` WRITE, the heartbeat's gate, since
+    // this one makes the certificate authority sign; the PEP is named by its
+    // certificate, so it can ask only for a listener defined for ITSELF.
+    // `xacml_pep_tls.ts` decides the names and whether a held certificate
+    // still answers, and audits what it issues.
+    // -------------------------------------------------------------------------
+    app.post('/xacml/pep/listener-certificate', function (req, res) {
+      log.debug('Entering POST /xacml/pep/listener-certificate.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving POST /xacml/pep/listener-certificate. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.WRITE,
+                                    'a remote PEP listener certificate');
+      if (!access.allowed) {
+        log.debug('Leaving POST /xacml/pep/listener-certificate. The ' +
+                  'access policy refused.');
+        return;
+      }
+      const body = parseBody(req);
+      const name = self.pepNameOf(access.identity, String(body.name || ''));
+      Promise.resolve(self.deps.pepTls.issueForListener(name, body))
+        .then(function (result: any) {
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-XACML-0253');
+            self.fail(res, result.status || 400,
+                      result.status === 500 ? 'server_error'
+                                            : 'invalid_request',
+                      result.why);
+            log.debug('Leaving POST /xacml/pep/listener-certificate. ' +
+                      'Refused.');
+            return;
+          }
+          // WITHOUT `ok` (#1830): it is `issueForListener()`'s own flag,
+          // and the status already says it; it reached the PEP as an
+          // undocumented member until the model named it. The PEP reads
+          // only `fullChainPem`.
+          const answer = Object.assign({}, result);
+          delete answer.ok;
+          res.status(200).type('application/json')
+             .set('Cache-Control', 'no-store')
+             .send(JSON.stringify(answer, null, 2));
+          log.debug('Leaving POST /xacml/pep/listener-certificate. ' +
+                    result.serialHex);
+        }, function (e: any) {
+          log.error(errorCodes.tag('STS-XACML-0255') + 'xacml: a listener ' +
+                    'certificate could not be issued: ' +
+                    ((e && e.stack) || e));
+          errorCodes.mark(res, 'STS-XACML-0255');
+          self.fail(res, 500, 'server_error',
+                    'The certificate could not be issued.');
+          log.debug('Leaving POST /xacml/pep/listener-certificate. Threw.');
+        });
+    });
+
+    // -------------------------------------------------------------------------
+    // THE FOUR VALIDATION DOORS (#1760, D4): what the proxy cannot establish
+    // itself, asked back over the PEP's mutual TLS. Each is `pepAccess()`'s
+    // READ, rate limited per PEP BEFORE the access check (`/xacml/pip`'s
+    // ordering and its ceiling, `xacml.pipMaxPerWindow`, because a busy
+    // proxy asks per request), `no-store`, audited as `xacml.pep.validate`
+    // naming the PEP, the mechanism and the outcome — never the credential.
+    // -------------------------------------------------------------------------
+    app.post('/xacml/pep/introspect', function (req, res) {
+      log.debug('Entering POST /xacml/pep/introspect.');
+      self.validationDoor(req, res, 'introspect', function (body) {
+        return self.deps.pepProxy.introspect(body);
+      });
+      log.debug('Leaving POST /xacml/pep/introspect.');
+    });
+
+    app.post('/xacml/pep/basic', function (req, res) {
+      log.debug('Entering POST /xacml/pep/basic.');
+      self.validationDoor(req, res, 'basic', function (body, pep) {
+        return self.deps.pepProxy.basic(req, body, pep);
+      });
+      log.debug('Leaving POST /xacml/pep/basic.');
+    });
+
+    app.post('/xacml/pep/saml', function (req, res) {
+      log.debug('Entering POST /xacml/pep/saml.');
+      self.validationDoor(req, res, 'saml', function (body) {
+        return self.deps.pepProxy.saml(body, baseUrlOf(req));
+      });
+      log.debug('Leaving POST /xacml/pep/saml.');
+    });
+
+    app.post('/xacml/pep/session', function (req, res) {
+      log.debug('Entering POST /xacml/pep/session.');
+      self.validationDoor(req, res, 'session', function (body) {
+        return self.deps.pepProxy.session(body);
+      });
+      log.debug('Leaving POST /xacml/pep/session.');
+    });
+
+    // -------------------------------------------------------------------------
+    // POST /xacml/pep/identity (#1760, D11): what a route forwards to its
+    // application about the caller the proxy established — claims for its
+    // headers, an access token, or a signed SAML Response. The fifth door,
+    // through the same `validationDoor()`; the evidence is validated again
+    // here, and the route must be one of this PEP's own.
+    // -------------------------------------------------------------------------
+    app.post('/xacml/pep/identity', function (req, res) {
+      log.debug('Entering POST /xacml/pep/identity.');
+      self.validationDoor(req, res, 'identity', function (body, pep) {
+        return self.deps.pepProxy.identity(body, pep,
+          pep ? pepClusters.effectiveRow(peps.read(pep)) : null,
+          baseUrlOf(req));
+      });
+      log.debug('Leaving POST /xacml/pep/identity.');
     });
 
     // -------------------------------------------------------------------------
@@ -2785,13 +3520,32 @@ class XacmlSurface {
         bias: body.bias,
         resource: body.resource,
         version: body.version,
+        // The PEP's hostname (#1760): absent keeps the registered one.
+        hostname: body.hostname,
         notifyUrl: body.notifyUrl === undefined ? body.notify_url
-                                                : body.notifyUrl
+                                                : body.notifyUrl,
+        // The reverse proxy's CAEP/RISC stream health (#1760). Absent from
+        // an older PEP, which keeps the row's "not reported"; the registry
+        // keeps only its counts and ages, whatever arrives.
+        signals: body.signals,
+        // Every managed setting in force at the PEP and where it came from
+        // (#1760). Absent from an older PEP; held to its members.
+        settings: body.settings,
+        // Every listener the PEP has and what it is doing (#1760). Absent
+        // from an older PEP, whose page says it does not report them.
+        listeners: body.listeners
       });
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');
+        // THE REGISTRY'S STATUS (#1830): 404 for a PEP that never
+        // registered, 400 for a bad `hostname` (#1760), 503 with no
+        // directory and 507 when the directory refused the write — the
+        // last two were 404 until then, telling a PEP it was not registered
+        // when the fault was this service's. Argued at `PepResult`.
+        const status = result.status || 404;
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0021');
-        self.fail(res, 404, 'invalid_request', result.why);
+        self.fail(res, status, status >= 500 ? 'server_error'
+                                             : 'invalid_request', result.why);
         return;
       }
       const row = peps.read(name);
@@ -2836,7 +3590,10 @@ class XacmlSurface {
       // and both point the same way — which is why this is one decision rather
       // than two exceptions.
       // ---------------------------------------------------------------------
-      if (self.remotePepOffCheck(res)) {
+      // IN XML (#1830): the 501 is a `<PIPError>`, as the 400 and 429 below
+      // are, so a caller parses one content type whatever went wrong. It
+      // was JSON until then — the shared check's.
+      if (self.remotePepOffCheck(res, true)) {
         log.debug('Leaving POST /xacml/pip. Off.');
         return;
       }
@@ -2878,7 +3635,7 @@ class XacmlSurface {
       // about the answer. `pepAccess()` takes it as an argument for exactly
       // this door.
       // ---------------------------------------------------------------------
-      const identity = self.callerIdentity(req);
+      const identity = self.pepIdentity(req);
 
       // ---------------------------------------------------------------------
       // THE RATE LIMIT, AND IT IS BEFORE THE ACCESS CHECK ON PURPOSE.
@@ -2925,8 +3682,9 @@ class XacmlSurface {
 
       // READ AND NOT WRITE: nothing changes here, and it is the one endpoint in
       // this family whose whole answer is somebody else's stored data.
+      // The gate's 403 in XML too (#1830), the 501's reason.
       const access = self.pepAccess(req, res, accessGate.ACTION.READ,
-                                    'a PIP attribute query', identity);
+                                    'a PIP attribute query', identity, true);
       if (!access.allowed) {
         log.debug('Leaving POST /xacml/pip. The access policy refused.');
         return;
@@ -3242,5 +4000,6 @@ export = {
   // The repository change observer, for
   // `tests/cluster_observation_counters.js` (2026-09-15):
   // a clustered node nudges only after the commit.
-  nudgeRegisteredPeps: slot.forward('nudgeRegisteredPeps')
+  nudgeRegisteredPeps: slot.forward('nudgeRegisteredPeps'),
+  nudgePeps: slot.forward('nudgePeps')
 };

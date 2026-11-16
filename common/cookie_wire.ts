@@ -103,6 +103,24 @@ class CookieWire {
   }
 
   /**
+   * Every name this service's cookies can carry, inside and on the wire, as
+   * prefixes ending in `*` (2026-11-14). The remote PEP's reverse proxy is
+   * handed them on its pull and never forwards one upstream: a browser sends
+   * cookies by host, not port, so where the service and the proxy share a
+   * host the sign-on session's cookie reached the application. Derived from
+   * the two patterns above, so a cookie added tomorrow is covered.
+   *
+   * @returns the prefixes
+   */
+  static servicePrefixes(): string[] {
+    log.debug("Entering CookieWire.servicePrefixes().");
+    const inside = MANAGED.source.replace(/^\^/, '');
+    log.debug("Leaving CookieWire.servicePrefixes().");
+    return [inside + '*', '__Host-' + inside + '*',
+            '__Secure-' + inside + '*'];
+  }
+
+  /**
    * Puts one `Set-Cookie` line into its wire form.
    *
    * @param line - the line as the service wrote it

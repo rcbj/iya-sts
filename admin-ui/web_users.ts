@@ -54,6 +54,9 @@ const personKeySourceSentences = function (t: Json): Json {
     'uploaded-realm-ca': t.html('consoleUsers.keySource.uploadedRealmCa'),
     'uploaded-external-ca':
       t.html('consoleUsers.keySource.uploadedExternalCa'),
+    // A key the person generated, certified from their own request (#1827's
+    // follow-up, phase 3): a remote PEP's assertion key.
+    'issued-from-csr': t.html('consoleUsers.keySource.issuedFromCsr'),
     'unrecorded': t.html('consoleUsers.keySource.unrecorded')
   };
 };
@@ -1037,7 +1040,8 @@ class UsersPage {
     // one source for what those panels say.
     const directory = UsersPage.ldapObjectSection(t, row, json.ldap,
                                                   json.subject);
-    const mfa = UsersPage.mfaSection(t, row, key, gate, back, page.mfa);
+    const mfaParts = UsersPage.mfaSection(t, row, key, gate, back, page.mfa);
+    const mfa = mfaParts.factors;
     const sessionsNav = kit.pageNavPair('/admin/users', params,
                                          json.sessionsPaging, t);
     // A session's tokens arrive with it, paged, and the block draws that page.
@@ -1205,7 +1209,12 @@ class UsersPage {
             // What they can SIGN a grant with (2026-09-13).
             { id: 'ucred-keys', label: t.text('consoleUsers.detail.tabKeys'),
               html: UsersPage.userCredentialsSection(t, key, page.keyPairs,
-                                                gate, back) },
+                                                gate, back) +
+                    mfaParts.keyCertificates },
+            // Self-issued subjects and the DIDs this realm publishes.
+            { id: 'ucred-self-issued',
+              label: t.text('consoleUsers.detail.tabSelfIssued'),
+              html: mfaParts.selfIssued },
             // Their Kerberos account, and a keytab for it (#59).
             { id: 'ucred-kerberos', label: 'Kerberos',
               html: UsersPage.userKerberosSection(t, key, json.kerberos,
@@ -1293,7 +1302,11 @@ class UsersPage {
         '<div class="formrow"><button class="danger"' +
         kit.tip(t.text('consoleUsers.detail.revokeTip')) + '>' +
         t.html('consoleUsers.detail.revokeButton', { name: row.name }) +
-        '</button></div></form>' }
+        '</button></div></form>' },
+        // The person deleted (rcbj, 2026-11-16): the application page's
+        // Remove tab, last, on a person's page.
+        { id: 'utab-delete', label: t.text('consoleUsers.delete.tab'),
+          html: UsersPage.userDeleteSection(t, key, gate, back) }
       ]);
 
     return inner;
@@ -1780,14 +1793,25 @@ class UsersPage {
    * @param key - the person's key
    * @param state - the gate state; `write` draws the controls
    * @param back - the list to return to after an action
-   * @returns an object of html (the section) and json (its ?format=json
-   *   object, null when no credential store is installed)
+   * @param data - `page.mfa` from the person's management API answer
+   * @returns the three Credentials pieces. `factors` is this pane.
+   *   `keyCertificates` is stored certificates, message-signing and TLS
+   *   client certificates, drawn on Key pairs. `selfIssued` is self-issued
+   *   IDs and published DIDs. With no credential store the note is on
+   *   `factors` and the other two pieces are empty.
    */
   static mfaSection(t, row, key, state, back, data) {
     const heading = '<h2 id="second-factors">' +
                     t.html('consoleUsers.mfaSection.heading') + '</h2>';
     if (!data.storable) {
-      return heading + kit.note(t.html('consoleUsers.mfaSection.noStore'));
+      // The same three pieces as the stored case, so a caller never has
+      // to tell a missing store from a drawn one by the type.
+      return {
+        factors: heading +
+          kit.note(t.html('consoleUsers.mfaSection.noStore')),
+        keyCertificates: '',
+        selfIssued: ''
+      };
     }
 
     const mech = data.mech;
@@ -2508,8 +2532,15 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const certificatesBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.certificatesHeading') + '</h3>' +
+    // EACH KIND OF CERTIFICATE ON KEY PAIRS IS A FRAME (.secframe), headed
+    // inside it, and the form that adds one a frame inside that, as each
+    // RFC 7523/7522 profile above them is drawn.
+    const subFrame = function (heading, body) {
+      return '<div class="secframe"><h4>' + heading + '</h4>' + body +
+             '</div>';
+    };
+    const certificatesBlock = '<section class="secframe"><h2>' +
+      t.html('consoleUsers.mfaSection.certificatesHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.certificatesLead')) +
       (certView.certificates.length
         ? '<table><tr><th>' +
@@ -2521,7 +2552,8 @@ class UsersPage {
         : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
                    '</strong>')) +
       (state.write
-        ? '<form method="post" action="/admin/users">' +
+        ? subFrame(t.html('consoleUsers.mfaSection.certAddHeading'),
+          '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="add-certificate">' +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           '<input type="hidden" name="from" value="user">' +
@@ -2533,8 +2565,10 @@ class UsersPage {
           'spellcheck="false"></textarea></label></div>' +
           '<div class="formrow"><button type="submit" title="' +
           kit.esc(t.text('consoleUsers.mfaSection.certAddTitle')) + '">' +
-          t.html('consoleUsers.mfaSection.certAdd') + '</button></div></form>'
-        : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite')));
+          t.html('consoleUsers.mfaSection.certAdd') +
+          '</button></div></form>')
+        : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite'))) +
+      '</section>';
 
     // --- message-signing certificates (#521, 2026-10-28) ---------------------
     // WHAT THE PERSON SIGNS A WS-TRUST REQUEST WITH, issued by an
@@ -2589,7 +2623,8 @@ class UsersPage {
         : (signView.active >= signView.max
           ? kit.note(t.html('consoleUsers.mfaSection.signingAtMax',
                             { n: signView.active }))
-          : '<form method="post" action="/admin/users">' +
+          : subFrame(t.html('consoleUsers.mfaSection.signingIssueHeading'),
+            '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" ' +
             'value="issue-signing-certificate">' +
             '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
@@ -2623,9 +2658,9 @@ class UsersPage {
             t.html('consoleUsers.mfaSection.signingIssue') +
             '</button><span class="sub">' +
             t.html('consoleUsers.mfaSection.signingOnce') +
-            '</span></div></form>'));
-    const signingBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.signingHeading') + '</h3>' +
+            '</span></div></form>')));
+    const signingBlock = '<section class="secframe"><h2>' +
+      t.html('consoleUsers.mfaSection.signingHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.signingLead',
                       { name: signView.implicitName })) +
       (signView.certificates.length
@@ -2636,7 +2671,115 @@ class UsersPage {
           signView.certificates.map(signRow).join('') + '</table>'
         : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
                    '</strong>')) +
-      signIssue;
+      signIssue + '</section>';
+
+    // --- TLS client certificates, issued here from this realm's CA --------
+    // THE KEY PAIR A CLIENT PRESENTS AT A HANDSHAKE, generated on this
+    // page (or by the same action on /admin-api) and mapped to the person
+    // by the register. The subject is the directory entry's. A certificate
+    // stored from an outside authority is the section above this one, and
+    // is a different credential.
+    const tlsView = data.tls && data.tls.ok
+      ? data.tls
+      : { certificates: [], active: 0, max: 0, keyAlgorithms: [],
+          revocationReasons: [], passwordMin: 8, caAvailable: false,
+          implicitName: '', subjectDn: '', entryDn: '' };
+    const tlsRow = function (one) {
+      return '<tr><td><code>' + kit.esc(one.subject || '—') + '</code>' +
+        '<div class="sub">' +
+        (one.label ? kit.esc(one.label) + ' &middot; ' : '') +
+        t.html('consoleUsers.mfaSection.signingSerial') + ' <code>' +
+        kit.esc(one.serialHex) + '</code> &middot; ' + kit.esc(one.keyAlg) +
+        ' &middot; ' + t.html('consoleUsers.mfaSection.signingUntil') +
+        ' <code>' + kit.esc(one.notAfter) + '</code></div></td><td>' +
+        '<span class="state-' + (one.state === 'valid' ? 'valid' : 'revoked') +
+        '">' + kit.esc(one.state) + '</span>' + (one.reason
+          ? '<div class="sub">' + kit.esc(one.reason) + '</div>' : '') +
+        '</td><td>' +
+        (state.write && one.state === 'valid'
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="revoke-tls-client-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="serialHex" value="' +
+            kit.esc(one.serialHex) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '"><select name="reason" aria-label="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingReason')) + '">' +
+            tlsView.revocationReasons.map(function (reason) {
+              return '<option value="' + kit.esc(reason) + '">' +
+                     kit.esc(reason) + '</option>';
+            }).join('') + '</select> <button class="danger" type="submit">' +
+            t.html('consoleUsers.mfaSection.signingRevoke') +
+            '</button></form>'
+          : '') + '</td></tr>';
+    };
+    const tlsIssue = !state.write
+      ? kit.note(t.html('consoleUsers.mfaSection.tlsNeedsWrite'))
+      : (!tlsView.caAvailable
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsNoCa') +
+                   ' <a href="/admin/pki">/admin/pki</a>.')
+        : (tlsView.active >= tlsView.max
+          ? kit.note(t.html('consoleUsers.mfaSection.tlsAtMax',
+                            { n: tlsView.active }))
+          : subFrame(t.html('consoleUsers.mfaSection.tlsIssueHeading'),
+            '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="issue-tls-client-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '">' +
+            '<div class="formrow"><label for="tls-label">' +
+            t.html('consoleUsers.mfaSection.signingLabel') + '</label>' +
+            '<input id="tls-label" name="label" maxlength="40" ' +
+            'placeholder="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingPlaceholder')) +
+            '"><label for="tls-alg">' +
+            t.html('consoleUsers.mfaSection.signingKey') + '</label>' +
+            '<select id="tls-alg" name="keyAlg">' +
+            tlsView.keyAlgorithms.map(function (alg) {
+              return '<option value="' + kit.esc(alg) + '"' +
+                     (alg === tlsView.defaultKeyAlg ? ' selected' : '') +
+                     '>' + kit.esc(alg) + '</option>';
+            }).join('') + '</select></div>' +
+            '<div class="formrow"><label for="tls-password">' +
+            t.html('consoleUsers.mfaSection.signingPassword') +
+            '</label><input type="password" id="tls-password" ' +
+            'name="password" minlength="' + tlsView.passwordMin +
+            '" required autocomplete="new-password"><label ' +
+            'for="tls-confirm">' +
+            t.html('consoleUsers.mfaSection.signingAgain') + '</label>' +
+            '<input type="password" id="tls-confirm" name="confirm" ' +
+            'minlength="' + tlsView.passwordMin + '" required ' +
+            'autocomplete="new-password"></div>' +
+            '<div class="formrow"><button type="submit">' +
+            t.html('consoleUsers.mfaSection.tlsIssue') +
+            '</button><span class="sub">' +
+            t.html('consoleUsers.mfaSection.signingOnce') +
+            '</span></div></form>')));
+    const tlsBlock = '<section class="secframe"><h2>' +
+      t.html('consoleUsers.mfaSection.tlsHeading') + '</h2>' +
+      kit.note(t.html('consoleUsers.mfaSection.tlsLead',
+                      { name: tlsView.implicitName })) +
+      (tlsView.subjectDn
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsSubject') +
+                   ' <code>' + kit.esc(tlsView.subjectDn) + '</code>')
+        : '') +
+      (tlsView.entryDn
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsEntry') +
+                   ' <code>' + kit.esc(tlsView.entryDn) + '</code>')
+        : '') +
+      (tlsView.certificates.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.signingThCertificate') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.signingThState') +
+          '</th><th></th></tr>' +
+          tlsView.certificates.map(tlsRow).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')) +
+      tlsIssue + '</section>';
 
     // --- self-issued IDs (#129, 2026-09-23) --------------------------------
     // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
@@ -2704,8 +2847,8 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const selfIssuedBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.siopHeading') + '</h3>' +
+    const selfIssuedBlock = '<h2>' +
+      t.html('consoleUsers.mfaSection.siopHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.siopNote',
                       { on: siopView.signInEnabled ? 'yes' : 'no' })) +
       (siopView.subjects.length
@@ -2752,14 +2895,19 @@ class UsersPage {
       wayIn + totpBlock + UsersPage.emailFactorBlock(t, key, mech, state,
                                                 carryBack, data.mail) +
       keysBlock + recoveryBlock + appPasswordsBlock +
-      devicesBlock + certificatesBlock + signingBlock +
-      selfIssuedBlock + UsersPage.publishedDidsBlock(t, key, state, back,
-                                                     data.publishedDids) +
-      verificationsBlock;
+      devicesBlock + verificationsBlock;
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
     // this draws it — and since #446 draws it from the answer's `page.mfa`.
-    return html;
+    // Stored certificates, message-signing and TLS client certificates are
+    // drawn on Key pairs. Self-issued IDs and published DIDs are their own
+    // Credentials sub-tab.
+    return {
+      factors: html,
+      keyCertificates: certificatesBlock + signingBlock + tlsBlock,
+      selfIssued: selfIssuedBlock + UsersPage.publishedDidsBlock(
+        t, key, state, back, data.publishedDids)
+    };
   }
 
   // The drill-down. Returns null when the identity is not one this service
@@ -3223,16 +3371,22 @@ class UsersPage {
     const heading = '<h2 id="credentials">' +
       t.html('consoleUsers.userCredentialsSection.heading') + '</h2>' +
       kit.note(t.html('consoleUsers.userCredentialsSection.lead'));
+    // THE WHOLE SECTION IS ONE FRAME, as each certificate kind drawn below it
+    // on Key pairs is: the profiles are frames inside it, and their forms
+    // frames inside those.
+    const frame = function (body) {
+      return '<section class="secframe">' + body + '</section>';
+    };
     if (!state.storable) {
-      return heading +
+      return frame(heading +
         kit.warn(t.html('consoleUsers.userCredentialsSection.noDirectory'),
                  t.text(
-                   'consoleUsers.userCredentialsSection.noDirectoryLabel'));
+                   'consoleUsers.userCredentialsSection.noDirectoryLabel')));
     }
     if (!state.found) {
-      return heading +
+      return frame(heading +
         kit.note(t.html('consoleUsers.userCredentialsSection.noEntry',
-                        { key: key }));
+                        { key: key })));
     }
     const username = state.username;
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
@@ -3361,9 +3515,10 @@ class UsersPage {
       const managed = table + assertsAs;
 
       if (!gate.write) {
-        return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-               managed + kit.note(
-                 t.html('consoleUsers.userCredentialsSection.needsWrite'));
+        return '<section class="secframe"><h3 id="' + anchor + '">' +
+               kit.esc(p.label) + '</h3>' + managed + kit.note(
+                 t.html('consoleUsers.userCredentialsSection.needsWrite')) +
+               '</section>';
       }
       const labelField = function (suffix) {
         return '<label for="' + anchor + '-' + suffix + '-label">' +
@@ -3373,6 +3528,13 @@ class UsersPage {
           'maxlength="40" placeholder="' +
           kit.esc(t.text('consoleUsers.userCredentialsSection.labelHint')) +
           '">';
+      };
+      // Each way to add a key pair is a frame of its own, headed, so the
+      // issue form's fields and the upload form's (both carry a Name box)
+      // cannot be read as one form.
+      const subFrame = function (heading, body) {
+        return '<div class="secframe"><h4>' + heading + '</h4>' + body +
+               '</div>';
       };
       const issueForm = state.ca.available
         ? '<form method="post" action="/admin/pki/person">' +
@@ -3435,7 +3597,10 @@ class UsersPage {
           t.html('consoleUsers.userCredentialsSection.upload') +
           '</button></div></form>';
 
-      return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
+      // One frame per profile: its key pairs, what it asserts as, and the
+      // forms that add one.
+      return '<section class="secframe"><h3 id="' + anchor + '">' +
+             kit.esc(p.label) + '</h3>' +
              managed + '<h4>' +
                t.html('consoleUsers.userCredentialsSection.addHeading') +
                '</h4>' +
@@ -3445,12 +3610,18 @@ class UsersPage {
                         { max: String(state.maxPerPerson) }))
                : kit.note(t.html('consoleUsers.userCredentialsSection.addNote',
                             { max: String(state.maxPerPerson) })) +
-                 issueForm + uploadForm);
+                 subFrame(t.html(
+                   'consoleUsers.userCredentialsSection.issueHeading'),
+                          issueForm) +
+                 subFrame(t.html(
+                   'consoleUsers.userCredentialsSection.uploadHeading'),
+                          uploadForm)) +
+             '</section>';
     }).join('');
-    return heading + purposeHtml +
+    return frame(heading + purposeHtml +
       (state.selfService
         ? kit.note(t.html('consoleUsers.userCredentialsSection.selfService'))
-        : '');
+        : ''));
   }
 
   // ---------------------------------------------------------------------------
@@ -3623,6 +3794,48 @@ class UsersPage {
       '</textarea></div>' +
       '<div class="formrow"><button type="submit">' +
       t.html('consoleUsers.ldif.import') + '</button></div></form>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DELETE TAB (rcbj, 2026-11-16), the application page's Remove tab for
+  // a person: `POST /admin-api/users/delete`, the directory's one person
+  // delete. It cannot be undone, so the button is held by a REQUIRED
+  // checkbox — the service account's Make arrangement: the browser refuses
+  // the submit until it is ticked, with no script of this page's own. The
+  // box has no name, so it is the reader's confirmation and not a member of
+  // the request. A deleted person's page is gone, so the answer lands on the
+  // list (`WebAnswers.landing()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's Delete tab: what a delete ends, and the confirmed form.
+   *
+   * @param t - the page's translator
+   * @param key - the person, as the page names them
+   * @param gate - `{ write }`, whether the reader holds Admin Write
+   * @param back - the list view to come back to
+   * @returns the tab's HTML
+   */
+  static userDeleteSection(t, key, gate, back) {
+    const heading = '<h2>' + t.html('consoleUsers.delete.heading') + '</h2>';
+    if (!gate.write) {
+      return heading + kit.note(t.html('consoleUsers.delete.needsWrite'));
+    }
+    return heading +
+      '<div class="warn" id="user-delete-warning">' +
+      t.html('consoleUsers.delete.note', { key: key }) + '</div>' +
+      '<form method="post" action="/admin/users">' +
+      '<input type="hidden" name="action" value="delete">' +
+      '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+      '<div class="formrow"><label><input type="checkbox" ' +
+      'id="user-delete-confirm" required> ' +
+      t.html('consoleUsers.delete.confirm', { key: key }) +
+      '</label></div>' +
+      '<div class="formrow"><button type="submit" class="danger" title="' +
+      kit.esc(t.text('consoleUsers.delete.buttonTitle')) + '">' +
+      t.html('consoleUsers.delete.button') + '</button></div></form>' +
+      kit.note(t.html('consoleUsers.delete.refusals'));
   }
 
   /**

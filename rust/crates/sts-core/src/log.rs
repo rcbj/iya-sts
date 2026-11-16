@@ -19,7 +19,8 @@
 
 use std::fmt;
 use std::io::Write;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id};
@@ -90,7 +91,10 @@ pub struct BunyanLayer {
     name: String,
     hostname: String,
     pid: u32,
-    min_level: u8,
+    /// Shared so the installed layer's level can change while the process
+    /// runs (`set_level()`): the remote PEP takes its log level from the
+    /// service it pulls (#1760). A comparison per line, as before.
+    min_level: Arc<AtomicU8>,
     out: Mutex<Box<dyn Write + Send>>,
 }
 
@@ -112,7 +116,7 @@ impl BunyanLayer {
             name: name.to_string(),
             hostname,
             pid: std::process::id(),
-            min_level,
+            min_level: Arc::new(AtomicU8::new(min_level)),
             out: Mutex::new(out),
         }
     }
@@ -123,7 +127,7 @@ impl BunyanLayer {
         message: &str,
         extra: serde_json::Map<String, serde_json::Value>,
     ) {
-        if level < self.min_level {
+        if level < self.min_level.load(Ordering::Relaxed) {
             return;
         }
         let mut line = serde_json::Map::new();
@@ -187,11 +191,38 @@ where
     }
 }
 
+/// The installed layer's level, for `set_level()`.
+static INSTALLED_LEVEL: OnceLock<Arc<AtomicU8>> = OnceLock::new();
+
+/// Moves the lowest level the installed layer writes, from bunyan's numeric
+/// levels (`parse_level()`). Nothing is installed yet: nothing to move, and
+/// false says so.
+pub fn set_level(min_level: u8) -> bool {
+    match INSTALLED_LEVEL.get() {
+        Some(level) => {
+            level.store(min_level, Ordering::Relaxed);
+            true
+        }
+        None => false,
+    }
+}
+
+/// The installed layer's level now, or `None` before `install()`.
+pub fn level() -> Option<u8> {
+    INSTALLED_LEVEL.get().map(|l| l.load(Ordering::Relaxed))
+}
+
 /// Installs the bunyan layer as the process's subscriber. Called once, at
 /// the top of `main`.
 pub fn install(name: &str, min_level: u8) {
-    let subscriber =
-        tracing_subscriber::registry().with(BunyanLayer::new(name, min_level));
+    let layer = BunyanLayer::new(name, min_level);
+    // The first install's level is the one `set_level()` moves; a second
+    // install is refused below and has nothing to move, so a level already
+    // set is kept and the refusal is not an error.
+    if INSTALLED_LEVEL.set(layer.min_level.clone()).is_err() {
+        eprintln!("the log level was already installed; keeping the first");
+    }
+    let subscriber = tracing_subscriber::registry().with(layer);
     if let Err(error) = tracing::subscriber::set_global_default(subscriber) {
         eprintln!("the log was already installed: {}", error);
     }

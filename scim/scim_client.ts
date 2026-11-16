@@ -2563,7 +2563,8 @@ class ScimClients {
     log.debug("Leaving ScimClients.findBy(). " + (one ? 'found' : 'none'));
     return { ok: true, id: one && one.id ? String(one.id) : '',
              etag: one && one.meta && one.meta.version
-               ? String(one.meta.version) : '' };
+               ? String(one.meta.version) : '',
+             externalId: one && one.externalId ? String(one.externalId) : '' };
   }
 
   // The ETag of an answer: the header, else meta.version (RFC 7644 section
@@ -2719,6 +2720,29 @@ class ScimClients {
                                   String(body.externalId || ''));
     if (found.ok && !found.id && second[1] && !adoptOnly) {
       found = await this.findBy(c, disc, type, second[0], second[1]);
+      // NOT ANOTHER ENTRY'S (2026-11-16, #1612's rule: a person deleted and
+      // made again under the same name inherits nothing). Found by userName
+      // or displayName, a resource whose `externalId` names a DIFFERENT
+      // entry is not this one's to adopt: it is, above all, the deleted
+      // person's User that `deprovision: deactivate` left there, and
+      // adopting it handed a namesake the deleted person's account at the
+      // service provider. RFC 7643 section 3.1 makes `externalId` the
+      // client's identifier, so a value that is not this entry's is never
+      // overwritten either. Not adopted, not deleted (the operator chose to
+      // keep it), and not retried: a dead letter carrying STS-SCIMC-0035, as
+      // STS-SCIMC-0020's nothing-to-adopt is. A resource
+      // with NO externalId is adopted as before — one somebody made there,
+      // which no entry of this realm ever claimed.
+      const theirs = String(found.externalId || '').toLowerCase();
+      const ours = String(body.externalId || '').toLowerCase();
+      if (found.ok && found.id && theirs && theirs !== ours) {
+        log.debug("Leaving ScimClients.create(). Another entry's.");
+        return { ok: false, answer: answer, code: 'STS-SCIMC-0035',
+                 why: 'HTTP 409 uniqueness, and the ' + type + ' found by ' +
+                      second[0] + ' carries the externalId of another ' +
+                      'entry (a deleted one\'s, or another client\'s), so ' +
+                      'it was not adopted' };
+      }
     }
     if (!found.ok || !found.id) {
       log.debug("Leaving ScimClients.create(). Nothing to adopt.");

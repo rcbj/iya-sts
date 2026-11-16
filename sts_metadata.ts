@@ -3718,7 +3718,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'is a turnstile like every other gate here (the certificate need ' +
           'not chain to anything, RFC 8705 section 3\'s argument) and it is ' +
           'NOT what lets a PEP enforce: an unregistered one pulls and ' +
-          'decides just as well. xacml.pepRequireCertificate turns it off.' },
+          'decides just as well. xacml.pepRequireCertificate turns it off. ' +
+          'A DPoP-bound access token from sts-remote-pep, audienced to ' +
+          '/xacml/pep and carrying xacml:pep, may stand for the certificate ' +
+          'here and at every /xacml/pep endpoint and /xacml/pip, as ' +
+          'xacml.pepAuthentication allows; the PEP is then named by its ' +
+          'entry\'s username.' },
   { path: '/xacml/pep/policies', group: 'XACML',
     name: 'The repository, for a remote PEP to LOAD', specs: ['xacml30'],
     what: 'Every ENABLED policy and which one is the root, plus a sync ' +
@@ -3767,6 +3772,83 @@ const ENDPOINTS: EndpointEntry[] = [
           'role can read who may ask the PDP (rcbj on #1189). Additive: ' +
           '/xacml/pep/policies and /xacml/pep/authzen-catalogue are ' +
           'unchanged.' },
+  { path: '/xacml/pep/proxy', group: 'XACML',
+    name: 'The reverse-proxy configuration, for a remote PEP to ENFORCE',
+    specs: ['xacml30'],
+    what: 'What the xacml-pep container enforces when it stands in front ' +
+          'of an application (#1760): the upstream it forwards to, the ' +
+          'ordered routes with the mechanisms each accepts and the XACML ' +
+          'resource and action each maps to, each route\'s application ' +
+          'resolved from the registry, the realm facts it validates ' +
+          'locally with (issuer, JWKS, the sign-in endpoints, the SAML ' +
+          'signing certificates, the listener\'s chain, the session ' +
+          'routes\' clients) and the four validation URLs below, under a ' +
+          'sync token of its own; ' +
+          '?since=<token> answers 304. An unconfigured PEP is configured: ' +
+          'false and its proxy denies everything. Requires REMOTE_PEPS, as ' +
+          'the policy pull does; no nudge.' },
+  { path: '/xacml/pep/settings', group: 'XACML',
+    name: 'A remote PEP\'s managed settings, for it to APPLY',
+    specs: ['xacml30'],
+    what: 'The settings an administrator set for this PEP on its console ' +
+          'page (#1760) — its description and resource, the notify URL, ' +
+          'the bias, the PIP switch, the poll, heartbeat and back-off ' +
+          'intervals, the timeout and body bound, the log level, the ' +
+          'AuthZEN edge\'s switch, identifier and forward timeout, and the ' +
+          'reverse proxy\'s bounds — under a sync token of its own; ' +
+          '?since=<token> answers 304. Only what was set is sent: the PEP ' +
+          'uses its environment for the rest, and the minimum it needs to ' +
+          'connect is never here. Requires REMOTE_PEPS, as the policy pull ' +
+          'does; no nudge.' },
+  { path: '/xacml/pep/listener-certificate', group: 'XACML',
+    name: 'A remote PEP listener\'s certificate, over its own key',
+    specs: ['xacml30'],
+    what: 'The certificate of an HTTPS listener an administrator defined ' +
+          'for this PEP on its console page (#1760): the PEP generates the ' +
+          'key and POSTs { listener, csr }, a PKCS #10 request whose ' +
+          'signature proves possession of it, and is answered the ' +
+          'certificate from the realm\'s pep-tls Issuing CA and its chain ' +
+          'through the Root, no-store and with no key. The names are the ' +
+          'PEP\'s and the definition\'s, never the request\'s; the same key ' +
+          'asked again is answered the certificate held while it has a third ' +
+          'of its life left. Requires REMOTE_PEPS, as the heartbeat does.' },
+  { path: '/xacml/pep/introspect', group: 'XACML',
+    name: 'Token introspection, for a remote PEP\'s proxy',
+    specs: ['xacml30', 'rfc7662'],
+    what: 'The authorization server\'s own RFC 7662 reading of an OAuth ' +
+          '2.0 access token the proxy could not verify itself (an opaque ' +
+          'token, or a key not in the JWKS), over the PEP\'s mutual TLS ' +
+          'rather than a client registration of its own. Requires ' +
+          'REMOTE_PEPS.' },
+  { path: '/xacml/pep/basic', group: 'XACML',
+    name: 'HTTP Basic, validated for a remote PEP\'s proxy',
+    specs: ['xacml30', 'rfc7617'],
+    what: 'A person\'s username and password, verified here and never in ' +
+          'the PEP, behind the sign-in\'s own limits (429 with ' +
+          'retryAfterS); a refusal is { valid: false } and says nothing ' +
+          'more. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/saml', group: 'XACML',
+    name: 'A SAML 2.0 assertion, validated for a remote PEP\'s proxy',
+    specs: ['xacml30', 'saml2'],
+    what: 'An assertion this realm issued, checked here when the proxy ' +
+          'could not check it itself: the enveloped signature on the root ' +
+          'assertion against the realm\'s XML signing certificates, the ' +
+          'issuer, the conditions and the route\'s audience. An ' +
+          'EncryptedAssertion is refused. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/session', group: 'XACML',
+    name: 'Is a sign-on session live, for a remote PEP\'s proxy',
+    specs: ['xacml30', 'oidc'],
+    what: 'Whether the sign-on session an ID Token\'s sid names is still ' +
+          'live, so a sign-out here ends the proxy\'s own session at its ' +
+          'next check. Requires REMOTE_PEPS.' },
+  { path: '/xacml/pep/identity', group: 'XACML',
+    name: 'What a remote PEP\'s route forwards to its application',
+    specs: ['xacml30', 'rfc9068', 'saml2'],
+    what: 'For a route of the asking PEP, the identity its evidence (an ' +
+          'access token, a SAML assertion or a Basic ticket, validated ' +
+          'again) names, in the route\'s mode: claims for its headers, an ' +
+          'access token for the application, or a signed SAML Response to ' +
+          'its assertion consumer service. Requires REMOTE_PEPS.' },
   { path: '/xacml/pep/heartbeat', group: 'XACML',
     name: 'What a remote PEP has enforced', specs: ['xacml30'],
     what: 'Its cumulative counters and the sync token it holds — which is ' +
@@ -4403,6 +4485,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'says it is running with, and what happened to the last nudge — ' +
           'which is the only place a failed nudge is recorded, because it ' +
           'is invisible from the receiving end by definition.' },
+  { path: '/admin-api/xacml/pep-clusters', group: 'XACML',
+    name: 'The remote PEP clusters over JSON', specs: ['xacml30'],
+    what: 'Each cluster of remote PEPs that share one configuration: its ' +
+          'reverse proxy, settings and listener definitions as every member ' +
+          'pulls them, and each member with its own addresses and why a ' +
+          'save would refuse it now.' },
   { path: '/admin-api/xacml/monitor', group: 'XACML',
     name: 'What authorization is doing, over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml/monitor draws: the global decision figures ' +
@@ -6204,6 +6292,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'client that declares it, in both modes) and no admin scope; ' +
           'an admin:write token is refused. Source mdm, the client as ' +
           'actor; a change sends CAEP device-compliance-change.' },
+  { path: '/admin-api/pep-audit', group: 'Management API',
+    name: 'A remote PEP\'s decision records',
+    specs: ['xacml', 'openapi'],
+    effect: 'records a batch of decisions a remote PEP made as audit rows',
+    what: 'NON-SPEC (#1827). A remote XACML PEP pushes the records of the ' +
+          'decisions it made in its own process — /protected enforcements, ' +
+          'the AuthZEN evaluations it decided, never one it forwarded, and ' +
+          'its reverse proxy\'s requests to a route — ' +
+          'at least once and in order, up to 500 a batch, each acknowledged ' +
+          'by its seq. The token carries the PROTECTED xacml:pep-audit ' +
+          'scope and nothing else here takes it: the PEP\'s own RFC 7523 ' +
+          'self-assertion through the seeded public client sts-remote-pep, ' +
+          'bound to its certificate, issued and honoured only while its ' +
+          'entry is in the remote PEPs\' group (REMOTE_PEPS). The PEP must ' +
+          'be registered in the realm. Rows xacml.remote.enforcement, ' +
+          'authzen.remote.decision and, for the reverse proxy\'s requests, ' +
+          'xacml.remote.proxy on /admin/audit.' },
   { path: '/admin-api/device-registration', group: 'Management API',
     name: 'Device registration', specs: ['openapi'],
     what: 'NON-SPEC (#218). GET /admin/device-registration over JSON: the ' +

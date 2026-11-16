@@ -244,7 +244,7 @@ way. Its five sections:
   settings. Monitoring and Server configuration follow the same rule: the
   lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
-  the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
+  the Shared Signals monitors, consent, XACML decisions, Remote PEPs, GNAP grants, the
   enrollment monitors, Verifiable Credentials, passkeys, OAuth activity,
   SCIM metrics, sign-out, the database,
   encryption, the secret store, caches, the worker pools, node health, the
@@ -274,6 +274,11 @@ single crumb. The navigation answers *what else is there*; the trail answers
   tooltip, because a `did:jwk` is hundreds of characters with nowhere to break.
 * The trail has no crumb for a section, because a section has no page of its
   own and a crumb that could not be a link would be a dead one.
+* **On a tabbed page the trail ends at the open tab and sub-tab** —
+  *Admin console › XACML › Remote PEPs › the PEP › Listener › Create a new
+  listener*. The page's own crumb then links to the page (its first tab),
+  each tab crumb to that tab, and the trail follows every tab you press. With
+  no tab chosen in the address it names the first tab.
 
 **The trail goes back to the list *as you left it*.** A drill-down link is
 built with the filter and page you were looking at —
@@ -581,6 +586,49 @@ The API is `POST /admin-api/users/export-ldif`
 (`{"user": "…", "credentials": true}`, answering the LDIF as `ldif` and as
 a file) and `POST /admin-api/users/import-ldif` (`{"ldif": "…"}`).
 
+#### Deleting a person
+
+A person's page has a **Delete** tab (Admin Write), last, as an
+[application's page](applications.md) has its **Remove** tab. **A delete
+cannot be undone.** The button stays disabled until you tick the box
+saying so.
+
+The console, `POST /admin-api/users/delete` (`{"user": "…"}`), SCIM's
+`DELETE /scim/v2/Users/{id}` and an LDAP delete are one act:
+
+* The entry goes, with everything stored on it: credentials, passkeys,
+  certificates and the profile photo.
+* Every group and role that named the person lets them go, and so does
+  every owner list. A service account whose last owner this was is owned by
+  the realm's Admin Write group (see [Service accounts](service-accounts.md)).
+* RISC receivers are sent `account-purged`.
+* Everything the person held is ended, as a disable ends it: sign-on
+  sessions (with CAEP `session-revoked` and back-channel Logout Tokens),
+  tokens, codes and connections.
+* The person's devices are removed and their certificates revoked.
+* What was kept under the person's name goes too: post-login progress,
+  declined mail categories, federation blocks, GNAP approvals, the row on
+  the Users list, pending enrolments and allowed authorization details.
+* Somebody made again under the same name starts with nothing: a new
+  subject, no groups, no roles, and a fresh RISC register row (the deleted
+  account's is kept under its old subject).
+
+It is refused for:
+
+| Refusal | Code |
+|---|---|
+| Nobody of that name in this realm | `STS-LDAP-0013` |
+| The realm's bootstrap administrator | `STS-LDAP-0077` |
+| An entry with entries beneath it | `STS-LDAP-0014` |
+| Your own entry | `STS-ADMIN-0943` |
+| The last person the realm's roster lists for Admin Write or the Security Administrator | `STS-ADMIN-0944` |
+
+The last two are the console's and the API's only: SCIM and LDAP have no
+administrator to protect. Deleting a person who holds the Security
+Administrator's role takes that role
+([Security administrator](security-administrator.md)). The delete needs a
+recent sign-in, and its audit row is `user.delete`.
+
 #### Creating a person — `/admin/users/new`
 
 The list page has one control: a name, and a button to **`/admin/users/new`**,
@@ -725,6 +773,22 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   `/admin-api/applications/issue-signing-certificate` and
   `revoke-signing-certificate`. See
   [PKI](pki.md#a-message-signing-certificate-for-a-ws-trust-requester).
+* **TLS client certificates** lists the certificates the realm's TLS Client
+  Issuing CA issued the person, with **Revoke** per valid row, and a form (a
+  label, the key algorithm, a file password twice) that issues one. The
+  subject is the person's directory name, and the subjectAltName is
+  `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service
+  account), which is what admits a remote PEP that
+  presents the certificate. The leaf is not stored in `userCertificate`.
+  The answer is the `.p12`, the key and the chain, once.
+  `POST /admin-api/users/issue-tls-client-certificate` and
+  `revoke-tls-client-certificate` are the same acts, and `mfa.tls` of the
+  person's `GET /admin-api/users` answer is the list. An application's TLS
+  client certificate stays on its own page.
+
+Stored certificates, message-signing certificates and TLS client certificates
+are the Key pairs sub-tab. Self-issued IDs, with the published DIDs, are the
+sub-tab after it.
 
 Every one of them sends Shared Signals to the streams that asked: a CAEP
 `credential-change` for each credential created, updated or removed, a RISC
@@ -2133,7 +2197,9 @@ Protocols → XACML is one destination with tabs for Metadata (the realm's
 XACML endpoints), Settings, Policies, Policy editor, Remote PEPs and Try a
 decision. The policies, editor, PEP and decision views remain distinct tabs;
 their controls return to the tab they came from. **XACML decisions** remains a
-separate Monitoring page at `/admin/xacml/monitor`.
+separate Monitoring page at `/admin/xacml/monitor`. **Remote PEPs**
+(`/admin/xacml/pep/monitor`) is the next Monitoring page: each remote PEP's
+listener, thread-pool, per-path and memory figures, as that PEP reports them.
 
 ### Authorization servers — `/admin/authorization-servers`
 

@@ -36,6 +36,8 @@ use sts_xacml::request::Request;
 use sts_xacml::value::Value as XacmlValue;
 use sts_xacml::xml;
 
+use crate::credential::Resource;
+use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
 
 /// The namespace of the two elements XACML does not define.
@@ -372,15 +374,30 @@ pub struct Resolution {
 pub struct RemotePip {
     client: PdpClient,
     enabled: bool,
+    /// When set, `PEP_PIP` is the setting in force (#1760: the service may
+    /// set it while this PEP runs) rather than `enabled`.
+    options: Option<Options>,
 }
 
 impl RemotePip {
     pub fn new(client: PdpClient, enabled: bool) -> RemotePip {
-        RemotePip { client, enabled }
+        RemotePip {
+            client,
+            enabled,
+            options: None,
+        }
+    }
+
+    /// Follows the settings in force rather than the fixed `enabled`.
+    pub fn governed_by(mut self, options: Options) -> RemotePip {
+        self.options = Some(options);
+        self
     }
 
     pub fn enabled(&self) -> bool {
-        self.enabled
+        self.options
+            .as_ref()
+            .map_or(self.enabled, |options| options.now().pip)
     }
 
     #[tracing::instrument(level = "debug", skip_all)]
@@ -394,7 +411,7 @@ impl RemotePip {
             resolver: None,
             report,
         };
-        if !self.enabled {
+        if !self.enabled() {
             return none(json!({ "used": false,
                 "why": "PEP_PIP is off, so this PEP decides on what the \
                         request asserts and nothing else — which is what a \
@@ -436,7 +453,12 @@ impl RemotePip {
             query_document(&subject, &designators, subject_kind_of(request));
         let answered = self
             .client
-            .call(Method::POST, "/xacml/pip", Some(Body::Xml(document)))
+            .call_authorized(
+                Resource::Pep,
+                Method::POST,
+                "/xacml/pip",
+                Some(Body::Xml(document)),
+            )
             .await;
         if answered.error.is_some() || answered.status != 200 {
             let why = match &answered.error {
@@ -447,10 +469,12 @@ impl RemotePip {
                     "the PDP answered {} to the PIP query{}.",
                     answered.status,
                     if answered.status == 403 {
-                        " — POST /xacml/pip requires a client certificate \
-                         this service VERIFIES whose subject holds the \
-                         built-in REMOTE_PEPS role, so check PEP_TLS_CERT and \
-                         the group roles.remotePepGroup names"
+                        " — POST /xacml/pip requires a credential naming an \
+                         entry that holds the built-in REMOTE_PEPS role (a \
+                         DPoP-bound access token from PEP_ASSERTION_KEY, or \
+                         a client certificate the service verifies), so \
+                         check that key's registration and the group \
+                         roles.remotePepGroup names"
                     } else {
                         ""
                     }
@@ -488,10 +512,13 @@ impl RemotePip {
         let resolved = read.answers.len();
         tracing::info!(
             "pip: resolved {} of {} designator(s) about \"{}\" against the \
-             PDP's embedded directory.",
+             PDP's embedded directory, on {}.",
             resolved,
             count,
-            subject
+            subject,
+            self.client
+                .credential()
+                .used_on(answered.no_token.as_deref())
         );
         let unresolved: Vec<Value> = read
             .unresolved

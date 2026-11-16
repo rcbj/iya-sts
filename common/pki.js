@@ -109,6 +109,10 @@ const realms = require('./realms');
 // with no caller to hand it to is `tag()`ged onto its log line instead: this
 // module does not require `audit.js`, for the leaf rule above.
 const errorCodes = require('./error_codes');
+// THE NAMES A LEAF GIVES ITS HOLDER (#1827): `urn:sts:application:`,
+// `urn:sts:person:`, `urn:sts:sa:`, `urn:sts:federation:` — one table, a leaf
+// that requires only `config` and `bunyan`, so it closes no cycle here.
+const SubjectUrn = require('./subject_urn');
 // THE MODE, for SHA-1 certificate signatures, which are development's (#181).
 // A LEAF (`config` and `error_codes` only), so no cycle.
 const mode = require('./mode');
@@ -404,8 +408,9 @@ const USE_CASES = [
     cn: 'ACME Issuing CA',
     what: 'Certificates issued over ACME (RFC 8555) at /enroll/acme, to a ' +
           'person or application entry an External Account Binding key was ' +
-          'issued for. Every leaf names that entry in a urn:sts:person: or ' +
-          'urn:sts:application: subjectAltName.' },
+          'issued for. Every leaf names that entry in a urn:sts:person: ' +
+          '(urn:sts:sa: for a service account) or urn:sts:application: ' +
+          'subjectAltName.' },
   { id: 'est', scope: 'realm', label: 'EST enrollment',
     cn: 'EST Issuing CA',
     what: 'Certificates issued over EST (RFC 7030) at /.well-known/est, to ' +
@@ -433,7 +438,8 @@ const USE_CASES = [
   { id: 'tls-client', scope: 'realm', label: 'TLS client certificates',
     cn: 'TLS Client Issuing CA',
     what: 'The TLS client certificates people issue themselves on the user ' +
-          'portal: clientAuth, the person\'s urn:sts:person: name, and a ' +
+          'portal: clientAuth, the person\'s urn:sts:person: name (a ' +
+          'service account\'s urn:sts:sa:), and a ' +
           'private key handed over once as a PKCS#12. A certificate from ' +
           'this authority signs its holder in at GET /tls/sign-in on the ' +
           'main port, in this ' +
@@ -457,7 +463,8 @@ const USE_CASES = [
     what: 'The certificates a person or an application signs a WS-Trust ' +
           'request with (a WS-Security 1.1 signature over the SOAP Body ' +
           'and Timestamp): digitalSignature only, the holder\'s ' +
-          'urn:sts:person: or urn:sts:application: name, and a private key ' +
+          'urn:sts:person:, urn:sts:sa: (a service account) or ' +
+          'urn:sts:application: name, and a private key ' +
           'handed over once as a PKCS#12. Issued by an administrator from ' +
           'the console or /admin-api. A certificate from this authority ' +
           'authenticates its holder as the requester of a signed RST, in ' +
@@ -2634,6 +2641,50 @@ function primaryUseCaseFor(scopeId) {
   return scopeKindOf(scopeId) === 'process' ? 'tls' : 'assertions';
 }
 
+// ---------------------------------------------------------------------------
+// ONE USE CASE'S ISSUING CA, WITH WHAT IS ABOVE IT: the trust a client of a
+// leaf from that use case needs, and nothing from the scope's other Issuing
+// CAs. Public certificates only. First asked for by the XACML nudge
+// (`xacml/xacml_pep_http.ts`, 2026-11-14): a remote PEP's notify listener
+// serves a `pep-tls` leaf of the realm it registered to, so that realm's
+// `pep-tls` chain is what the nudge verifies it against with no CA file
+// named. `issuing` is answered apart from the rest so a caller can PIN the
+// leaf's issuer to it — the Root would also verify a leaf from any other
+// Issuing CA of any realm, which is not what "issued to a PEP of this realm"
+// means.
+// ---------------------------------------------------------------------------
+/**
+ * Answers one use case's Issuing CA in a scope, and the Intermediate and
+ * Root above it, as PEM.
+ *
+ * @param scopeId - the realm (the ambient one when empty); ignored for a
+ *   process-scoped use case
+ * @param useCaseId - the use case, such as `pep-tls`
+ * @returns `{ issuing, intermediate, root }`, each a PEM, or null where the
+ *   scope holds no such Issuing CA (nothing has been issued from it yet)
+ */
+function useCaseChainPems(scopeId, useCaseId) {
+  log.debug("Entering useCaseChainPems(). use=" + useCaseId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug("Leaving useCaseChainPems(). Unknown use case.");
+    return null;
+  }
+  const row = rawRowFor(uc.scope === 'process' ? PROCESS_SCOPE
+                                               : realmIdOf(scopeId));
+  const root = serviceRoot();
+  const issuing = row && row.issuing ? row.issuing[uc.id] : null;
+  if (!root || !row || !row.intermediate || !issuing ||
+      !issuing.certificatePem) {
+    log.debug("Leaving useCaseChainPems(). No such Issuing CA here.");
+    return null;
+  }
+  log.debug("Leaving useCaseChainPems().");
+  return { issuing: issuing.certificatePem,
+           intermediate: row.intermediate.certificatePem,
+           root: root.certificatePem };
+}
+
 /**
  * Answers whether a realm holds a whole hierarchy.
  *
@@ -3125,11 +3176,11 @@ function trustAnchorsFor(realmId) {
  */
 const SUBJECT_KINDS = [
   { id: 'application', label: 'an application',
-    urnPrefix: 'urn:sts:application:', kidPrefix: 'app-',
+    urnPrefix: SubjectUrn.APPLICATION, kidPrefix: 'app-',
     what: 'A registered OAuth client or relying party. Its key pair is ' +
           'written onto its own entry in ou=applications.' },
   { id: 'person', label: 'a person',
-    urnPrefix: 'urn:sts:person:', kidPrefix: 'person-',
+    urnPrefix: SubjectUrn.PERSON, kidPrefix: 'person-',
     what: 'Somebody in ou=users. Their key pair signs an RFC 7523 section ' +
           '2.1 assertion ABOUT THEMSELVES and about nobody else — see ' +
           'common/person_assertions.js, which is where the refusal is ' +
@@ -3154,6 +3205,69 @@ function subjectKindFor(id) {
   return SUBJECT_KINDS.filter(function (one) {
     return one.id === wanted;
   })[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// IS THIS PERSON A SERVICE ACCOUNT NOW (#1827).
+//
+// rcbj, 2026-11-16: a service account's certificates name it
+// `urn:sts:sa:<name>`, "but underneath, it's a regular user object". Which
+// spelling a person's leaf gets is decided at ISSUE from the entry, so this
+// module asks — LAZILY, at the act, in the realm the leaf is issued in —
+// `service_accounts.isServiceAccountName()`, the one predicate every door
+// asks (`common/CLAUDE.md` 3cd). This module stays a leaf at load: the
+// register is a leaf too, and is reached only when a person's key pair or an
+// upload for one is being decided. With no register or no directory in this
+// process the answer is "not one", which writes `urn:sts:person:` — the
+// spelling every reader has always accepted.
+// ---------------------------------------------------------------------------
+/**
+ * Says whether a person is a service account now, in a realm.
+ *
+ * @param realmId - the realm
+ * @param username - the person's username
+ * @returns true for a service account; false for anybody else, and where
+ *   nothing can say
+ */
+function personIsServiceAccount(realmId, username) {
+  log.debug('Entering personIsServiceAccount().');
+  let out = false;
+  try {
+    const realm = realms.get(realmIdOf(realmId));
+    const ask = function () {
+      return require('./service_accounts').isServiceAccountName(username) ===
+             true;
+    };
+    out = realm ? realms.run(realm, ask) : ask();
+  } catch (e) {
+    log.debug('Caught in personIsServiceAccount(): ' +
+              ((e && e.message) || e));
+    out = false;
+  }
+  log.debug('Leaving personIsServiceAccount(). ' + out);
+  return out;
+}
+
+/**
+ * Returns the URI subjectAltName a signing leaf names its holder by.
+ *
+ * @param realmId - the realm
+ * @param subjectKind - a `SUBJECT_KINDS` entry (or the encryption kind)
+ * @param identifier - the holder's name or identifier
+ * @param serviceAccount - for a person, the caller's answer; asked of the
+ *   directory when it is not a boolean
+ * @returns the URI
+ */
+function subjectUriFor(realmId, subjectKind, identifier, serviceAccount) {
+  log.debug('Entering subjectUriFor().');
+  if (subjectKind.id !== 'person') {
+    log.debug('Leaving subjectUriFor(). Not a person.');
+    return subjectKind.urnPrefix + identifier;
+  }
+  const flagged = typeof serviceAccount === 'boolean' ? serviceAccount
+    : personIsServiceAccount(realmId, identifier);
+  log.debug('Leaving subjectUriFor(). ' + flagged);
+  return SubjectUrn.forPerson(identifier, flagged);
 }
 
 /**
@@ -3344,7 +3458,8 @@ async function issueFederationClientKeyPair(realmId, opts) {
     extensions: {
       extKeyUsage: { present: true, critical: false, usages: ['clientAuth'] },
       subjectAltName: { present: true, critical: false,
-        names: [{ kind: 'uri', value: 'urn:sts:federation:' + identifier }] }
+        names: [{ kind: 'uri',
+                  value: SubjectUrn.make('federation', identifier) }] }
     }
   });
   if (!made.ok) {
@@ -3380,7 +3495,9 @@ async function issueFederationClientKeyPair(realmId, opts) {
  *
  * @param realmId - the realm
  * @param opts - `identifier`, `subjectKind`, `purpose`, `keyAlg`,
- *   `signatureAlg`, `commonName` and `days`
+ *   `signatureAlg`, `commonName` and `days`; and `publicKeyPem` (with the
+ *   `keyAlg` it is) for a key the holder generated, which is certified and
+ *   answered with an empty `privateKeyPem`
  * @returns a promise of `{ ok: true, issued }` or `{ ok: false, errors }`
  */
 async function issueSigningKeyPair(realmId, opts) {
@@ -3427,7 +3544,7 @@ async function issueSigningKeyPair(realmId, opts) {
   // in the subjectAltName with nothing saying so.
   const subjectKind = encryption
     ? { id: 'federation', label: 'a federation relationship',
-        urnPrefix: 'urn:sts:federation:', kidPrefix: 'fedenc-' }
+        urnPrefix: SubjectUrn.FEDERATION, kidPrefix: 'fedenc-' }
     : subjectKindFor(options.subjectKind);
   if (!subjectKind) {
     log.debug('Leaving issueSigningKeyPair(). Unknown subject kind.');
@@ -3438,6 +3555,13 @@ async function issueSigningKeyPair(realmId, opts) {
                       'to ' + SUBJECT_KIND_IDS.join(' and ') + '.'] },
                            'STS-PKI-0012');
   }
+  // THE NAME THE LEAF CARRIES (#1827): a person who is a SERVICE ACCOUNT now
+  // is `urn:sts:sa:<name>`, anybody else `urn:sts:person:<name>`. Asked here,
+  // at issue, of the directory (`subjectUriFor()`), unless the caller has
+  // said — the decision is the entry's, and a leaf issued before the entry
+  // became one keeps its `urn:sts:person:` name and keeps working.
+  const subjectUri = subjectUriFor(id, subjectKind, identifier,
+                                   options.serviceAccount);
   const issuing = chain.tiers[chain.tiers.length - 1];
   // The leaf follows the ISSUING CA's key algorithm by default, because a chain
   // whose leaf and issuer are the same family is the one a client library is
@@ -3511,7 +3635,13 @@ async function issueSigningKeyPair(realmId, opts) {
     notAfter.setTime(issuerNotAfter);
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1827's phase 3, rcbj 2026-11-16): the
+  // caller hands the PUBLIC half — read out of a PKCS #10 request whose proof
+  // of possession `certifySigningRequest()` checked — and no private half
+  // exists here to return. Everything below is the same leaf either way.
+  const pair = options.publicKeyPem
+    ? { publicPem: String(options.publicKeyPem), privatePem: '' }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const subject = [{ name: 'CN', value: commonName },
                    { name: 'O', value: chain.organisation }]
     .concat(chain.country ? [{ name: 'C', value: chain.country }] : []);
@@ -3553,7 +3683,7 @@ async function issueSigningKeyPair(realmId, opts) {
         // to decide what an assertion signed with this key may say.
         subjectAltName: { present: true, critical: false,
                           names: [{ kind: 'uri',
-                                    value: subjectKind.urnPrefix + identifier }]
+                                    value: subjectUri }]
                             .concat(purpose.profileUri
                               ? [{ kind: 'uri', value: purpose.profileUri }]
                               : []) }
@@ -3661,7 +3791,7 @@ async function issueSigningKeyPair(realmId, opts) {
     // same place.
     subjectKind: subjectKind.id,
     subjectKindLabel: subjectKind.label,
-    subjectUri: subjectKind.urnPrefix + identifier,
+    subjectUri: subjectUri,
     // WHICH AUTHORITY SIGNED IT, by the id its revocation list is kept
     // under (#1290): a person's key pairs are revoked one at a time on
     // `/portal/signing-key`, and a serial is unique only within one issuer.
@@ -3730,6 +3860,130 @@ async function issueSigningKeyPair(realmId, opts) {
            record.notAfter + '.');
   log.debug('Leaving issueSigningKeyPair(). kid=' + record.kid);
   return { ok: true, issued: record };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S RFC 7523 KEY CERTIFIED FROM THEIR OWN REQUEST (#1827's phase 3,
+// rcbj 2026-11-16: "the service never holds the PEP's private key").
+//
+// `issueSigningKeyPair()` GENERATES the key pair and hands the private half to
+// its caller, which seals a copy onto the entry (`person_assertions.write()`).
+// That is right for a person who asked this service for a key, and wrong for a
+// workload that can make its own: a remote PEP, or the tool that provisions
+// one, generates the key, sends a PKCS #10 request, and the realm's Issuing CA
+// certifies the PUBLIC key in it. The leaf is the same leaf — the same
+// profile, the same revocation pointers, the same record in `issuedKeyPairs`,
+// so its authority's CRL and OCSP responder answer for it — with nothing
+// private anywhere in this process.
+//
+// THE PROOF OF POSSESSION IS `cert_enrollment.ts`'s `parseCsr()`, the one
+// PKCS #10 reader this service has (ACME, EST, SCEP and a PEP's listener
+// certificate read through it), required LAZILY: that module requires this
+// one, and a request reaches here long after both are built. Not a second
+// parser, so a key family it verifies is verified the same way here.
+//
+// **THE REQUEST'S NAMES ARE READ FOR NOTHING.** Its subject and any
+// subjectAltName it asks for are ignored: the leaf's names are the ENTRY's —
+// its username as CN and `SubjectUrn.forPerson()` as the URI SAN, which is
+// `urn:sts:sa:<name>` for a service account. A requester cannot name somebody
+// else, which is what keeps `assertion_grant.js`'s "a person asserts only
+// about themselves" true of a key nobody here generated.
+//
+// **TWO KEY FAMILIES, BY NAME** (`CSR_SIGNING_KEY_ALGS`): EC P-256 (ES256,
+// the one a PEP is told to prefer) and RSA of 2048 bits or more (RS256 or
+// PS256, the realm's chain decides). These are the two the remote PEP signs a
+// self-assertion and a DPoP proof with (`credential.rs`), and anything else is
+// refused naming the two, rather than certified into a key the holder cannot
+// use.
+// ---------------------------------------------------------------------------
+/**
+ * The key algorithms a holder-generated RFC 7523 key is certified for:
+ * EC P-256 and RSA of at least 2048 bits.
+ */
+const CSR_SIGNING_KEY_ALGS = ['ec-p256', 'rsa-2048', 'rsa-3072', 'rsa-4096'];
+
+/**
+ * Certifies the public key in a person's own PKCS #10 request as an RFC 7523
+ * signing key, from the realm's Issuing CA. Nothing private is generated or
+ * answered.
+ *
+ * The request's signature must verify with its own key (proof of
+ * possession). Its subject and names are ignored: the leaf names the entry
+ * (`urn:sts:sa:<name>` for a service account).
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param opts - `identifier` (the username), `csr` (PEM or base64 DER),
+ *   `serviceAccount` (the entry's flag, read by the caller), `commonName`
+ *   and `days`
+ * @returns a promise of `{ ok: true, issued }` — `issueSigningKeyPair()`'s
+ *   record with `source` `issued-from-csr` and an empty `privateKeyPem` — or
+ *   `{ ok: false, errors }` marked with its code
+ */
+async function certifySigningRequest(realmId, opts) {
+  log.debug('Entering certifySigningRequest().');
+  const options = opts || {};
+  const text = typeof options.csr === 'string' ? options.csr : '';
+  const der = Buffer.from(text.replace(/-----[A-Z0-9 ]+-----/g, '')
+                            .replace(/\s+/g, ''), 'base64');
+  if (!der.length) {
+    log.debug('Leaving certifySigningRequest(). No request.');
+    return errorCodes.mark({ ok: false,
+             errors: ['No certificate request arrived: `csr` is a PKCS #10 ' +
+                      'request (PEM, or base64 DER) signed with the key to ' +
+                      'be certified. This service never generates or holds ' +
+                      'that key.'] },
+                           'STS-PKI-0278');
+  }
+  let parsed = null;
+  try {
+    parsed = await require('./cert_enrollment').parseCsr(der);
+  } catch (e) {
+    log.debug('Caught in certifySigningRequest(): ' +
+              ((e && e.message) || e));
+    parsed = null;
+  }
+  if (!parsed || !parsed.ok) {
+    log.debug('Leaving certifySigningRequest(). The request was refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The certificate request was refused: ' +
+                      ((parsed && (parsed.why ||
+                                   (parsed.errors || []).join(' '))) ||
+                       'it could not be read.')] },
+             (parsed && errorCodes.codeOf(parsed)) || 'STS-PKI-0278');
+  }
+  if (CSR_SIGNING_KEY_ALGS.indexOf(String(parsed.keyAlg)) < 0) {
+    log.debug('Leaving certifySigningRequest(). Key ' + parsed.keyAlg +
+              ' refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The request carries a ' + parsed.keyAlg + ' key. An ' +
+                      'RFC 7523 key certified from a request is EC P-256 ' +
+                      '(ES256, preferred) or RSA of 2048 bits or more — ' +
+                      CSR_SIGNING_KEY_ALGS.join(', ') + '.'] },
+                           'STS-PKI-0281');
+  }
+  const identifier = String(options.identifier || '');
+  const issued = await issueSigningKeyPair(realmId, {
+    identifier: identifier,
+    purpose: 'jwt',
+    subjectKind: 'person',
+    serviceAccount: options.serviceAccount,
+    commonName: String(options.commonName || '') || identifier,
+    keyAlg: parsed.keyAlg,
+    publicKeyPem: parsed.publicKeyPem,
+    days: options.days
+  });
+  if (!issued.ok) {
+    log.debug('Leaving certifySigningRequest(). Not issued.');
+    return issued;
+  }
+  issued.issued.source = 'issued-from-csr';
+  issued.issued.privateKeyPem = '';
+  log.info('pki: the ' + parsed.keyAlg + ' key in a certificate request ' +
+           'from "' + identifier + '" was certified for RFC 7523 as ' +
+           issued.issued.subjectUri + ', serial ' + issued.issued.serialHex +
+           '. Its private key was never here.');
+  log.debug('Leaving certifySigningRequest(). kid=' + issued.issued.kid);
+  return issued;
 }
 
 // ===========================================================================
@@ -6250,17 +6504,38 @@ async function registerCertificate(realmId, opts) {
     // making the same decision an external certificate is. A leaf naming no
     // subject of this service (one the Certificate & Key pane authored)
     // carries no such claim, and is registered on the entry's word alone.
-    const named = String(leaf.cert.subjectAltName || '').split(',')
-      .map(function (one) { return one.trim(); })
-      .map(function (one) {
-        return /^URI:(urn:sts:(?:application|person):.+)$/.exec(one);
-      })
-      .filter(Boolean)
-      .map(function (match) { return match[1]; });
+    //
+    // A SERVICE ACCOUNT IS A PERSON HERE (#1827): `urn:sts:sa:<name>` is a
+    // person's name on both sides of the rule — a person's upload may carry
+    // its own name in either spelling (one issued before the entry became a
+    // service account says `urn:sts:person:`, and still works), and an
+    // application's may carry neither. What the `sa` spelling adds is one
+    // claim the directory can check: that the entry IS a service account.
+    // A leaf saying so of somebody who is not is refused (STS-PKI-0277),
+    // since this realm's authority writes it only for one.
+    const parsedNames = SubjectUrn.namesIn(
+      String(leaf.cert.subjectAltName || ''), ['application', 'person', 'sa']);
+    const named = parsedNames.map(function (one) { return one.uri; });
     const wanted = subjectKind.urnPrefix + identifier;
     const widens = subjectKind.id === 'person'
-      ? named.length && named.indexOf(wanted) < 0
-      : named.some(function (one) { return /^urn:sts:person:/.test(one); });
+      ? named.length && !parsedNames.some(function (one) {
+        return SubjectUrn.sameHolder(one.uri, wanted);
+      })
+      : parsedNames.some(function (one) { return one.kind === 'person'; });
+    if (!widens && subjectKind.id === 'person' &&
+        parsedNames.some(SubjectUrn.isServiceAccountForm) &&
+        !personIsServiceAccount(id, identifier)) {
+      log.debug('Leaving registerCertificate(). It names a service account ' +
+                'that is not one.');
+      return uploadRefusal('STS-PKI-0277', 'The certificate was issued by ' +
+                           'this realm\'s certificate authority as a SERVICE ' +
+                           'ACCOUNT\'s (' + SubjectUrn.forPerson(identifier,
+                                                                 true) +
+                           '), and "' + identifier + '" is not a service ' +
+                           'account in this realm. This service writes that ' +
+                           'name only for a service account, so a person ' +
+                           'who is not one cannot hold such a certificate.');
+    }
     if (widens) {
       log.debug('Leaving registerCertificate(). It names another subject.');
       return uploadRefusal('STS-PKI-0155', 'The certificate was issued by ' +
@@ -7265,6 +7540,27 @@ function describeCertificate(one) {
 const CERTIFY_ISSUER_MOVED_RETRIES = 3;
 
 /**
+ * The organisation and country a leaf's subject uses: the scope's own, and
+ * `iya-sts` where the scope names no organisation — the same fallback
+ * `certify()` writes into a leaf that brings no subject of its own.
+ *
+ * `describeScope()` answers an empty organisation for a row that has none,
+ * which is what the console draws. A leaf is not that reading.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @returns `{ organisation, country }`
+ */
+function leafNameFacts(scopeId) {
+  log.debug('Entering leafNameFacts().');
+  const row = rawRowFor(String(scopeId));
+  const out = {
+    organisation: (row && row.organisation) || DEFAULT_ORGANISATION,
+    country: (row && row.country) || ''
+  };
+  log.debug('Leaving leafNameFacts().');
+  return out;
+}
+
+/**
  * Certifies one key pair from a use case's Issuing CA and records the
  * certificate in the slot the spec names.
  *
@@ -7274,8 +7570,9 @@ const CERTIFY_ISSUER_MOVED_RETRIES = 3;
  * @param scopeId - a realm id or `PROCESS_SCOPE`
  * @param useCaseId - the use case
  * @param spec - the slot, `publicKeyPem`, and optionally `alg`, `kid`,
- *   `label`, `commonName`, `keyUsage`, `extensions`, `days` and the pinned
- *   material
+ *   `label`, `commonName`, `subject` (an RDN sequence of `{ name, value }`,
+ *   used instead of CN, O and C), `keyUsage`, `extensions`, `days` and the
+ *   pinned material
  * @returns a promise of `{ ok: true, certificate, record }` or
  *   `{ ok: false, errors }`
  */
@@ -7402,10 +7699,23 @@ async function certify(scopeId, useCaseId, spec) {
   if (notAfter.getTime() > caEnds) {
     notAfter.setTime(caEnds);
   }
-  const organisation = (row && row.organisation) || DEFAULT_ORGANISATION;
-  const subject = [{ name: 'CN', value: String(spec.commonName || spec.slot) },
-                   { name: 'O', value: organisation }]
-    .concat(row && row.country ? [{ name: 'C', value: row.country }] : []);
+  // A caller that already built the subject — a person's directory name,
+  // with the common name first and the organisation and country last —
+  // passes it. Anything else keeps the CN, O and optional C every leaf
+  // has had. `leafNameFacts()` is that fallback, including `iya-sts` where
+  // the scope names no organisation.
+  const facts = leafNameFacts(id);
+  const given = spec && Array.isArray(spec.subject) ? spec.subject : [];
+  const usable = given.filter(function (one) {
+    return one && String(one.value || '') !== '';
+  });
+  const subject = usable.length
+    ? usable.map(function (one) {
+        return { name: String(one.name), value: String(one.value) };
+      })
+    : [{ name: 'CN', value: String(spec.commonName || spec.slot) },
+       { name: 'O', value: facts.organisation }]
+      .concat(facts.country ? [{ name: 'C', value: facts.country }] : []);
   let issued;
   try {
     issued = await x509.issueCertificate(Object.assign({
@@ -7490,12 +7800,22 @@ async function certify(scopeId, useCaseId, spec) {
   // and a renewal that did not carry these re-minted a TLS listener's or the
   // OpenID4VP Verifier's certificate WITHOUT its names: a certificate over
   // the same key that no client could match to a host any more.
-  if (spec.profile || spec.keyUsage || spec.extensions) {
+  if (spec.profile || spec.keyUsage || spec.extensions ||
+      (Array.isArray(spec.subject) && spec.subject.length)) {
     record.issuedAs = {
       profile: spec.profile ? String(spec.profile) : '',
       keyUsage: spec.keyUsage ? spec.keyUsage.slice() : null,
       extensions: spec.extensions ? JSON.parse(JSON.stringify(
-        spec.extensions)) : null
+        spec.extensions)) : null,
+      // The RDN sequence, when the caller built one. A renewal hands it
+      // back, so a person's directory subject survives a rebuilt branch.
+      // Absent, the renewal keeps CN, O and C.
+      subject: Array.isArray(spec.subject) && spec.subject.length
+        ? spec.subject.map(function (one) {
+            return { name: String(one && one.name || ''),
+                     value: String(one && one.value || '') };
+          })
+        : null
     };
   }
   // A PINNED SIGNER'S LIFECYCLE (#263) rides on its record through every
@@ -7676,6 +7996,86 @@ function forgetCertificate(scopeId, useCaseId, slot) {
   return { ok: true, pinned: !!was.pinned };
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE WHOSE HOLDER WAS DELETED LEAVES ITS SLOT AND KEEPS ITS SERIAL
+// (2026-11-16, rcbj's rule of 2026-11-10 on #1612/#1613: a deleted person or
+// application made again under the same name inherits NOTHING).
+//
+// A person's or an application's TLS client and message-signing certificates
+// are recorded under a slot that carries the holder's NAME
+// (`tls_client_certificates.js`, `person:<name>:<random>`), so a namesake made
+// after a delete was listed every certificate the deleted holder had — a
+// revoked one included, on `/admin/users` and on the portal. Forgetting the
+// record (`forgetCertificate()`) would cost the serial: an OCSP responder with
+// no record of a serial answers `unknown` about a certificate that sends a
+// relying party here to ask (`pki_revocation.js`'s `issuedList()`).
+//
+// So the record MOVES: out of `certs`, where every reader finds a holder by
+// slot and where `recertifyUseCase()` would re-mint it under a rebuilt
+// authority, into `issuedKeyPairs`, the register of serials this authority
+// issued that no slot holds — as a cluster merge's displaced serial already
+// is (`pki_merge.js`'s `displacedRecord()`). It names no name: `identifier` is
+// the deleted holder's `urn:uuid:` subject where it had one, and
+// `subjectKind` is `deleted-person` or `deleted-application`, which no
+// reader of a holder's certificates asks for. The revocation, where the
+// caller made one, is on the authority's own list and stays there
+// (`revoked` is a union that loses nothing).
+//
+// Both halves survive another node's save: the slot's removal is a plain
+// three-way change of `certs`, and `issuedKeyPairs` is a union by serial.
+// ---------------------------------------------------------------------------
+/**
+ * Moves a certificate whose holder was deleted out of its slot and into the
+ * issued register, so no reader finds it under the holder's name while OCSP
+ * and the revocation pane still know its serial.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot the certificate is recorded under
+ * @param holder - `kind` ('person' or 'application') and `subject`, the
+ *   deleted holder's `urn:uuid:` subject where it had one
+ * @returns `{ ok: true, serialHex }`, or `{ ok: false, errors }` marked with
+ *   its code where the slot holds nothing
+ */
+function detachCertificate(scopeId, useCaseId, slot, holder) {
+  log.debug('Entering detachCertificate().');
+  const id = String(scopeId);
+  const row = rawRowFor(id);
+  const key = slotKey(useCaseId, slot);
+  if (!row || !row.certs || !row.certs[key]) {
+    log.debug('Leaving detachCertificate(). Nothing there.');
+    return errorCodes.mark({ ok: false,
+             errors: ['There is no ' + useCaseId + ' certificate for "' +
+                      slot + '" in that scope.'] }, 'STS-PKI-0025');
+  }
+  const was = row.certs[key];
+  const h = holder || {};
+  const kind = String(h.kind || '') === 'application' ? 'application'
+                                                      : 'person';
+  const subject = String(h.subject || '');
+  const serial = pkiMerge.normalSerial(was.serialHex);
+  row.certs = Object.assign({}, row.certs);
+  delete row.certs[key];
+  row.issuedKeyPairs = (row.issuedKeyPairs || []).filter(function (one) {
+    return !(one && pkiMerge.normalSerial(one.serialHex) === serial &&
+             String(one.useCase || '') === String(useCaseId));
+  }).concat([{
+    serialHex: was.serialHex,
+    subject: was.subject || '',
+    notAfter: was.notAfter || '',
+    identifier: subject,
+    subjectKind: 'deleted-' + kind,
+    holderSubject: kind === 'person' ? subject : '',
+    purpose: 'detached:' + String(useCaseId),
+    useCase: String(useCaseId),
+    issuedAt: new Date(Number(was.createdAt) || Date.now()).toISOString(),
+    detachedAt: new Date().toISOString()
+  }]);
+  saveRow(id, row);
+  log.debug('Leaving detachCertificate(). serial=' + was.serialHex);
+  return { ok: true, serialHex: was.serialHex };
+}
+
 // ===========================================================================
 // A TLS SERVER KEY PAIR FOR SOMETHING THIS SERVICE DOES NOT RUN (2026-09-13):
 // `issueTlsServerKeyPair()`.
@@ -7750,7 +8150,8 @@ function tlsDnsNameProblem(name) {
  * @param scopeId - a realm id (a process use case uses the process branch)
  * @param useCaseId - the use case
  * @param spec - `slot`, `dnsNames`, `ipAddresses`, `keyAlg`, `commonName`,
- *   `label` and `days`
+ *   `label`, `days`, and `publicKeyPem` for a key the holder generated
+ *   (then no key is generated and `privateKeyPem` is null)
  * @returns a promise of `{ ok: true, issued }`, `issued` carrying the
  *   certificate, the private key and the anchor, or `{ ok: false, errors }`
  */
@@ -7832,7 +8233,14 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
     return branch;
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1760): a remote PEP's defined HTTPS
+  // listener sends the public half in a PKCS #10 request whose proof of
+  // possession its caller verified, so the private half never reaches this
+  // process and nothing is handed back. The algorithm named must be the
+  // key's; the caller read it off the request.
+  const pair = s.publicKeyPem
+    ? { publicPem: String(s.publicKeyPem), privatePem: null }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const was = certificateFor(id, uc.id, slot);
   const names = dnsNames.map(function (one) {
     return { kind: 'dns', value: one };
@@ -7872,8 +8280,11 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
   log.info('pki: a ' + keyDesc.label + ' ' + uc.label + ' certificate was ' +
            'issued for "' + slot + '" in "' + (id || 'default') + '", naming ' +
            names.map(function (one) { return one.value; }).join(', ') +
-           '; expires ' + made.record.notAfter + '. The private key was ' +
-           'handed to the caller and is not kept here.');
+           '; expires ' + made.record.notAfter + '. ' + (pair.privatePem
+             ? 'The private key was handed to the caller and is not kept ' +
+               'here.'
+             : 'The holder generated the key; this service never saw the ' +
+               'private half.'));
   log.debug('Leaving issueTlsServerKeyPair().');
   return { ok: true,
            issued: Object.assign(describeCertificate(made.record), {
@@ -10220,18 +10631,82 @@ function tidyPem(text) {
 //                      one this service would have made.
 // ===========================================================================
 
-// Re-mint everything one Issuing CA has certified, from whatever authority it
-// now is. Shared by the reissue and the renewal, which differ only in whether
-// the authority changed first.
+// ---------------------------------------------------------------------------
+// WHAT A REBUILD MAY RE-MINT: ONLY A CERTIFICATE THAT IS STILL GOOD
+// (2026-11-16).
+//
+// **THIS RE-MINTED EVERY SLOT, REVOKED ONES INCLUDED, AND THAT UNDID
+// REVOCATION.** A slot is a person's or an application's TLS client or
+// message-signing certificate, a pinned pair, a remote PEP's listener, the
+// realm's own signing-key certificates. A renewal, a reissue and an import
+// each issued a NEW certificate over the key of every one of them — and a new
+// serial is on no list. So a person who revoked their laptop's certificate
+// for `keyCompromise` had it back, valid, signed by the renewed authority,
+// the next time an operator pressed *Renew certificates*; a hold became a
+// certificate nobody had put on hold.
+//
+// **A REVOKED RECORD (ANY REASON, A HOLD INCLUDED) AND AN EXPIRED ONE ARE LEFT
+// EXACTLY AS THEY ARE**: in their slot, under the authority that signed them,
+// with their serial on that use case's list and its entry — reason and date —
+// untouched. That is what keeps the revocation true wherever it can still be
+// asked:
+//
+//   * a RENEWAL keeps the authority and its key, so its CRL and its OCSP
+//     responder go on answering `revoked` for the serial, which is still in
+//     the register (`issuedHere()`), for as long as the leaf could be valid;
+//   * a REISSUE and an IMPORT replace the authority, and the replaced one is
+//     SUPERSEDED on its Intermediate's list (`reissueUseCase()` always did;
+//     `importCa()` does since this date), so a leaf it signed chains to a
+//     revoked authority — refused by every validator that checks, whatever
+//     the leaf's own status. The leaf's serial stays on the use case's list,
+//     which the new authority's CRL carries.
+//
+// The predicate is `pki_merge.js`'s `notReMintable()`, the one the merge's
+// orphan report asks too. The answer names what was left and why, so a
+// console or a test can see it; the holder of a revoked certificate who still
+// needs one issues a new one, which is what the portal and the console say.
+// ---------------------------------------------------------------------------
 /**
- * Re-mints everything one Issuing CA has certified, from whatever authority
- * it now is.
+ * Splits one use case's recorded certificates into those a rebuild may
+ * re-mint and those it must leave: revoked (any reason) or expired.
  *
  * @param scopeId - a realm id or `PROCESS_SCOPE`
  * @param useCaseId - the use case
- * @returns a promise of `{ ok, recertified, failed }`
+ * @returns `{ held, skipped }`; `skipped` is `{ slot, serialHex, why }`
  */
-async function recertifyUseCase(scopeId, useCaseId) {
+function reMintable(scopeId, useCaseId) {
+  log.debug('Entering reMintable(). scope=' + scopeId + ' use=' + useCaseId);
+  const row = rawRowFor(String(scopeId)) || {};
+  const now = Date.now();
+  const held = [];
+  const skipped = [];
+  certificatesFor(scopeId, useCaseId).forEach(function (one) {
+    const why = pkiMerge.notReMintable(row, one, now);
+    if (why) {
+      skipped.push({ slot: one.slot, serialHex: one.serialHex, why: why });
+    } else {
+      held.push(one);
+    }
+  });
+  log.debug('Leaving reMintable(). ' + held.length + ' to re-mint, ' +
+            skipped.length + ' left.');
+  return { held: held, skipped: skipped };
+}
+
+// Re-mint everything one Issuing CA has certified that is still good, from
+// whatever authority it now is. Shared by the reissue, the renewal and the
+// import, which differ only in whether the authority changed first.
+/**
+ * Re-mints everything one Issuing CA has certified that is still good —
+ * neither revoked nor expired — from whatever authority it now is.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param options - optional; `chosen`, a `reMintable()` answer taken before
+ *   the caller changed anything (a reissue supersedes every leaf first)
+ * @returns a promise of `{ ok, recertified, failed, skipped }`
+ */
+async function recertifyUseCase(scopeId, useCaseId, options) {
   log.debug('Entering recertifyUseCase(). scope=' + scopeId + ' use=' +
             useCaseId);
   const id = String(scopeId);
@@ -10242,7 +10717,20 @@ async function recertifyUseCase(scopeId, useCaseId) {
              errors: ['"' + useCaseId + '" is not a use case. They are ' +
                       USE_CASE_IDS.join(', ') + '.'] }, 'STS-PKI-0022');
   }
-  const held = certificatesFor(id, uc.id);
+  const chosen = (options && options.chosen) || reMintable(id, uc.id);
+  const held = chosen.held;
+  const skipped = chosen.skipped.slice();
+  if (skipped.length) {
+    log.info('pki: ' + skipped.length + ' certificate(s) under the ' +
+             uc.label + ' Issuing CA of "' + (id || 'default') + '" were ' +
+             'NOT re-minted, because each is revoked or expired and a new ' +
+             'serial would undo that: ' + skipped.slice(0, 10)
+               .map(function (one) {
+                 return one.slot + ' (' + one.why + ')';
+               }).join('; ') +
+             (skipped.length > 10 ? '; and ' + (skipped.length - 10) +
+                                    ' more' : '') + '.');
+  }
   let done = 0;
   const failed = [];
   for (let i = 0; i < held.length; i++) {
@@ -10251,6 +10739,17 @@ async function recertifyUseCase(scopeId, useCaseId) {
     // RENEW (#263): its x5c is their chain, and a certificate of ours over
     // their key would change what relying parties pin behind their back.
     if (was.pinnedSigner && was.pinnedSigner.operatorCertificate) {
+      continue;
+    }
+    // ASKED AGAIN BEFORE EACH SIGNATURE, for a renewal: every one is an
+    // await, and a holder may revoke their certificate while the ones
+    // before it are signed. Not for a caller that chose first — a reissue
+    // has superseded every leaf by now, on purpose.
+    const lateWhy = (options && options.chosen) ? ''
+      : pkiMerge.notReMintable(rawRowFor(id), was);
+    if (lateWhy) {
+      skipped.push({ slot: was.slot, serialHex: was.serialHex,
+                     why: lateWhy });
       continue;
     }
     // **THE PUBLIC KEY COMES FROM THE CERTIFICATE THAT IS BEING REPLACED**,
@@ -10288,9 +10787,14 @@ async function recertifyUseCase(scopeId, useCaseId) {
       kid: was.pinnedSigner ? was.kid : undefined,
       generationSlot: !!was.pinnedSigner,
       // And a named leaf keeps its names (#230): see `issuedAs` in certify().
+      // The subject and the holder's `urn:uuid:` ride with them, so a
+      // person's directory-modeled TLS client certificate is still that
+      // person after the branch is rebuilt.
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
       keyUsage: (was.issuedAs && was.issuedAs.keyUsage) || undefined,
-      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined,
+      subject: (was.issuedAs && was.issuedAs.subject) || undefined,
+      holderSubject: was.holderSubject || undefined
     });
     if (made.ok) {
       done += 1;
@@ -10312,7 +10816,7 @@ async function recertifyUseCase(scopeId, useCaseId) {
              ' Issuing CA could not be re-minted: ' + failed.join('; '));
   }
   log.debug('Leaving recertifyUseCase(). ' + done + ' re-minted.');
-  return { ok: true, recertified: done, failed: failed };
+  return { ok: true, recertified: done, failed: failed, skipped: skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -10334,7 +10838,8 @@ async function recertifyUseCase(scopeId, useCaseId) {
 //
 // Asked again per slot before signing, because the slot may have been
 // certified from the live CA since the merge — by the rebuild's own re-mint,
-// or by a second report of the same merge.
+// or by a second report of the same merge. **A REVOKED OR EXPIRED SLOT IS
+// NEVER CERTIFIED AGAIN (2026-11-16)**, for `reMintable()`'s reason.
 // ---------------------------------------------------------------------------
 /**
  * Certifies again, from the Issuing CA the row now holds, the slots a merge
@@ -10356,6 +10861,12 @@ async function recertifyOrphanedSlots(scopeId, slots) {
     const was = (row.certs || {})[name];
     const ca = was ? (row.issuing || {})[was.useCase] : null;
     if (!was || !ca || (was.chainPem || [])[0] === ca.certificatePem) {
+      continue;
+    }
+    // NOT A REVOKED OR EXPIRED ONE (2026-11-16): `orphanedSlots()` no longer
+    // reports one, and a caller handing one in anyway gets the same answer —
+    // a new serial would undo the revocation (`reMintable()`'s header).
+    if (pkiMerge.notReMintable(row, was)) {
       continue;
     }
     let publicPem = was.subjectPublicKeyPem || '';
@@ -10388,8 +10899,11 @@ async function recertifyOrphanedSlots(scopeId, slots) {
       publicKeyPemStored: was.publicKeyPem,
       pinnedSigner: was.pinnedSigner || undefined,
       // A named leaf keeps its names (#230): see `issuedAs` in certify().
+      // The subject and the holder's `urn:uuid:` ride with them.
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
-      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined,
+      subject: (was.issuedAs && was.issuedAs.subject) || undefined,
+      holderSubject: was.holderSubject || undefined
     });
     if (made.ok) {
       done += 1;
@@ -10534,10 +11048,16 @@ async function reissueUseCase(scopeId, useCaseId) {
              errors: ['That Issuing CA could not be re-issued: ' + e.message] },
                            'STS-PKI-0036');
   }
+  // WHAT MAY BE RE-MINTED IS DECIDED FIRST (2026-11-16), before the line
+  // below puts every leaf on the list as `superseded`: after it, a
+  // certificate a person revoked and one that was merely replaced look alike.
+  // `reMintable()`'s header argues why a revoked or expired one is left.
+  const chosen = reMintable(id, uc.id);
   // THE OLD AUTHORITY IS SUPERSEDED, at the Intermediate that signed it — and
   // so is everything it had issued, at the old authority itself. Both are
   // done BEFORE the new one is stored, because `supersede()` reads the row and
-  // the old certificates are what is being listed.
+  // the old certificates are what is being listed. A leaf already revoked
+  // keeps its entry: `revoke()` is idempotent and the earlier entry wins.
   supersede(id, 'intermediate', row.issuing[uc.id],
             'replaced by a reissue of the ' + uc.label + ' Issuing CA');
   certificatesFor(id, uc.id).forEach(function (one) {
@@ -10549,7 +11069,7 @@ async function reissueUseCase(scopeId, useCaseId) {
   fresh.issuing = Object.assign({}, fresh.issuing || {});
   fresh.issuing[uc.id] = made;
   saveRow(id, fresh);
-  const again = await recertifyUseCase(id, uc.id);
+  const again = await recertifyUseCase(id, uc.id, { chosen: chosen });
   log.info('pki: the ' + uc.label + ' Issuing CA in "' + (id || 'default') +
            '" was re-issued with a new key pair, and ' + again.recertified +
            ' certificate(s) under it were re-minted from it.');
@@ -10706,9 +11226,31 @@ async function importCa(scopeId, useCaseId, material) {
                       'Issuing CA is imported INTO a branch.'] },
                            'STS-PKI-0034');
   }
-  row.issuing = Object.assign({}, row.issuing || {});
-  row.issuing[uc.id] = record;
-  saveRow(scopeId, row);
+  // -------------------------------------------------------------------------
+  // **THE AUTHORITY BEING REPLACED IS SUPERSEDED (2026-11-16)**, at its
+  // Intermediate, as a reissue's is. It was left VALID: still chaining to the
+  // Intermediate and the Root, still vouching for every leaf it had signed —
+  // a revoked one included — while its CRL address and its OCSP responder
+  // came to answer for the imported authority instead (`unauthorized` about
+  // anything the old one signed). A certificate somebody revoked under it was
+  // then good to every relying party that could not ask any more. With the
+  // old authority on its Intermediate's list, every leaf it signed chains to
+  // a revoked authority, which is the one claim still published about it.
+  //
+  // Only the AUTHORITY goes on a list, so the leaves' own entries still tell
+  // a revoked one from a good one, and `recertifyUseCase()` asks them itself.
+  // Re-importing the authority already held is the same certificate and
+  // supersedes nothing.
+  // -------------------------------------------------------------------------
+  const replaced = (row.issuing || {})[uc.id] || null;
+  if (replaced && normalSerialsDiffer(replaced.serialHex, record.serialHex)) {
+    supersede(scopeId, 'intermediate', replaced,
+              'replaced by an imported ' + uc.label + ' Issuing CA');
+  }
+  const fresh = rawRowFor(scopeId) || row;
+  fresh.issuing = Object.assign({}, fresh.issuing || {});
+  fresh.issuing[uc.id] = record;
+  saveRow(scopeId, fresh);
   const again = await recertifyUseCase(scopeId, uc.id);
   log.warn('pki: the ' + uc.label + ' Issuing CA in "' +
            (String(scopeId) || 'default') + '" was REPLACED BY AN IMPORTED ' +
@@ -15014,6 +15556,9 @@ module.exports = {
   describeTier: describeTier,
   // The certificate register.
   certify: certify,
+  // The organisation and country a leaf is named with, including the
+  // `iya-sts` fallback `describeScope()` does not apply.
+  leafNameFacts: leafNameFacts,
   // Issue WITHOUT recording, for a caller that owns what comes out — see
   // `issueUnder()`'s header. `spiffe/spiffe_ca.ts` is the caller.
   issueUnder: issueUnder,
@@ -15064,6 +15609,7 @@ module.exports = {
   pinnedKeyFor: pinnedKeyFor,
   publishedCertificateFor: publishedCertificateFor,
   forgetCertificate: forgetCertificate,
+  detachCertificate: detachCertificate,
   issueTlsServerKeyPair: issueTlsServerKeyPair,
   // The realm's KDC certificate and a client certificate's PKINIT facts
   // (#179).
@@ -15111,7 +15657,10 @@ module.exports = {
   chainPemFor: chainPemFor,
   chainThroughRoot: chainThroughRoot,
   trustAnchorsFor: trustAnchorsFor,
+  useCaseChainPems: useCaseChainPems,
   issueSigningKeyPair: issueSigningKeyPair,
+  certifySigningRequest: certifySigningRequest,
+  CSR_SIGNING_KEY_ALGS: CSR_SIGNING_KEY_ALGS,
   issueEncryptionKeyPair: issueEncryptionKeyPair,
   FEDERATION_CLIENT_KEY_ALGS: FEDERATION_CLIENT_KEY_ALGS,
   issueFederationClientKeyPair: issueFederationClientKeyPair,

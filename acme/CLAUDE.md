@@ -240,6 +240,17 @@ verifying. It takes `emptyPayload: true` now, which answers `claims: null` for a
 empty payload and changes nothing for any caller that does not pass it. ACME
 still never hand-rolls a signature check.
 
+**An account is bound to an ENTRY, not to a name (2026-11-16, #1612's rule:
+a holder deleted and made again under the same name inherits nothing).** The
+account recorded its entry by kind and name, so the deleted holder's ACME
+client, still holding its account key, ordered certificates for a namesake
+and could revoke theirs. The account now also records the entry's
+`entryUUID` (`entryUuid`, from `cert_enrollment.resolveEntry()`'s `uuid`),
+and `sameHolder()` refuses a new-order (`STS-ACME-0048`, the entry is gone)
+and a revoke-cert by account when the entry under the name has another one.
+An account made before carries none and is answered by the name, as before
+(no migration: it cannot be told after the fact which entry it meant).
+
 ## The documented exceptions
 
 **Parts of the specifications not implemented, and why:**
@@ -310,7 +321,10 @@ EAB key are spent where they are checked. Single-cell mode does none of it.
   (`common/cert_enrollment.ts`'s `credentialId()`) — a person's request goes
   to their HOME, an application's to the cell that minted the key, whose
   binding claim is held there; a revokeCert signed by the certificate's own
-  key goes to the home of the person its `urn:sts:person:` names.
+  key goes to the home of the person its `urn:sts:person:` (or a service
+  account's `urn:sts:sa:`, #1827) names. A `permanent-identifier` or CSR URI
+  `urn:sts:sa:` naming somebody who is not a service account is refused,
+  STS-ENROLL-0097 (`common/CLAUDE.md` 3df).
 * **Two requests carry nothing that says where**: a newAccount naming only
   its key (RFC 8555 section 7.3.1, `onlyReturnExisting`) and RFC 9773's
   renewal-info (its certID is AKI and serial). Both are asked of every other

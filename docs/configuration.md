@@ -18,34 +18,17 @@ which is the state this arrangement exists to end.
 
 ## How a value is resolved
 
-Five levels, first match wins:
+Six levels, first match wins:
 
 1. **A runtime override** — set on the console page for that setting's protocol, or through `POST /admin-api/config/set`
 2. **The environment variable**
 3. **A legacy environment variable** — there is none since #523, when `STS_ISSUER` was retired
 4. **The appconfig file** named by `CONFIG_FILE`
 5. **`env/defaults.js`** — the default appconfig file that 4 is unioned on top of
+6. **The setting's own default**, built into the image — the floor beneath every file
 
 Environment beating the file is deliberate: it is what keeps existing containers
 and test harnesses working when the shipped `env/*.js` files carry every key.
-
-**There is no sixth level.** A setting with no value in 4 or 5 and no variable in
-2 or 3 **stops this service from starting**, naming every such setting and both
-places its value could go. A value that arrives from a constant buried in a
-module is a value nobody can find, change or see on a page, which is the state
-this arrangement exists to end — so there is no silent fallback underneath the
-table to lead back into it. The refusal looks like this:
-
-```
-config: FATAL — 2 setting(s) have no value in the appconfig layer and no environment variable:
-
-  global.domain       STS_DOMAIN
-  spiffe.trustDomain  STS_SPIFFE_TRUST_DOMAIN
-
-Each must be set in ./env/local.js, in ./env/defaults.js (the default appconfig
-file every other one is unioned on top of), or as the environment variable
-beside it.
-```
 
 **Levels 4 and 5 are one layer, unioned.** `env/defaults.js` carries a default
 for every setting; the file `CONFIG_FILE` names is merged over it key by key and
@@ -53,11 +36,54 @@ for every setting; the file `CONFIG_FILE` names is merged over it key by key and
 carry as few keys as its author likes and still be complete — a file carrying
 only `logLevel` resolves everything else through the defaults, which is what lets
 the parent project's in-process Kerberos jobs point `CONFIG_FILE` at their own
-test config and still load these modules — and a setting added to the table
-tomorrow does not break every config file in the world on the day it is added.
-What the refusal above actually catches is the one case left: a setting added to
-`common/config.js`'s table with no row in `env/defaults.js`, which is a setting
-somebody added and did not finish adding.
+test config and still load these modules.
+
+**Level 6 is what makes an upgrade safe with an older `env/`** (since
+2026-11-16). `env/defaults.js` lives in the directory an operator customises,
+and a directory mounted over the image's `/usr/src/sts/env` — or a copy of
+`defaults.js` kept beside a deployment — carries the file from the release it
+was copied from. When a newer image adds a setting, that older file has no row
+for it; the setting then takes the image's own default (the `dflt` the console,
+`GET /admin-api/config` and [Every setting](#every-setting) already show as
+*Default*), its source is reported as `default`, and the start logs a
+**warning**, `STS-CORE-0177`, naming each such setting and the defaults file
+that lacked it. A defaults file holding a value that is not this image's
+default is used as written — it is what the service ran on before the upgrade
+— and logged as `STS-CORE-0178`, because a stale copy also pins every default a
+later release changed. A missing `env/defaults.js` is the first case for every
+setting. See [Upgrading with a mounted `env/`](#upgrading-with-a-mounted-env).
+
+**What still stops the start**:
+
+* **A value you set that the console would refuse** — an enum value it does
+  not list, an integer out of bounds, a boolean spelt some other way — in the
+  environment, the `CONFIG_FILE` file or `env/defaults.js` (`STS-CORE-0108`),
+  naming each value and where it was found. A floor beneath the files does not
+  make a wrong value right.
+* **A setting with no default and no value anywhere** (`STS-CORE-0002`) — a
+  value that must be supplied, such as a required secret. The refusal names
+  each one and every place its value could go:
+
+```
+config: FATAL — 1 setting(s) have no default and no value in the appconfig layer or the environment:
+
+  example.secret  STS_EXAMPLE_SECRET
+
+Each must be set in ./env/local.js, in ./env/defaults.js (the default appconfig
+file every other one is unioned on top of), or as the environment variable
+beside it.
+```
+
+* **An `env/defaults.js` that is there and will not load** (`STS-CORE-0179`) —
+  whatever it was meant to say is unknown. Remove it to run on the image's own
+  defaults, or replace it with the image's.
+
+Until 2026-11-16 there was no sixth level, and any setting missing from both
+files stopped the start (`STS-CORE-0002`). That caught a maintainer adding a
+setting without regenerating `env/defaults.js` — which
+`tests/config_defaults_layer.js` now catches before an image is built — and it
+also stopped an upgraded image whose `env/` had been mounted from an older
+release, which is why it went.
 
 `env/defaults.js` is GENERATED from the table — `node env/generate_defaults.js`
 writes it from the `dflt` column, where each default is written down next to the
@@ -75,8 +101,8 @@ nothing: unset, every value comes from `env/defaults.js` or from the
 environment. A file that cannot be loaded is fatal and says so, because
 continuing would mean starting a service configured as nobody asked for.
 
-**Every setting has an environment variable**, and four settings are exempt from
-the refusal above and from both files, marked *(derived)* in
+**Every setting has an environment variable**, and four settings are absent
+from both files, marked *(derived)* in
 [Every setting](#every-setting), because their default is DERIVED from a
 neighbour rather than written in a file: `global.https` from `oauth2.rfc9700`,
 `oid4vp.walletUrl` from `oid4vci.walletUrl`, `krb5.serviceDomains` from
@@ -111,6 +137,44 @@ party configured from one name refuses tokens issued under another.
 `wsfed.entityId` were retired with it. A start that still names one of them,
 in the appconfig file or the environment, is refused and says so
 (`STS-CORE-0105`).
+
+### Upgrading with a mounted `env/`
+
+A deployment customises the service by mounting a directory over the image's
+`/usr/src/sts/env` (the compose file mounts the checkout's `./env` there), or by
+keeping its own copy of `env/defaults.js`. **That directory is not upgraded
+with the image**: after `docker pull` it still holds the files of the release it
+was copied from. What happens on the first start of the newer image:
+
+* **A setting the newer release added** has no row in the older
+  `defaults.js`. It takes the image's own default, and the start logs one
+  warning naming every such setting and the file:
+
+  ```
+  [STS-CORE-0177] config: 1 setting(s) have no row in the defaults file /usr/src/sts/env/defaults.js and no value in any layer above it, so each takes this image's own default: <each setting>. ...
+  ```
+
+  The service runs. `/admin/config` shows the setting with source *default*.
+* **A setting whose default the newer release changed** keeps the OLD value,
+  because the older `defaults.js` still says it, and the start logs
+  `STS-CORE-0178` naming each one. That is the value the service ran on before
+  the upgrade, so nothing changes under you — but it is no longer what the
+  release ships.
+* **No `defaults.js` in the mounted directory at all** is the first case for
+  every setting: every value the selected file does not carry is the image's
+  default, and `STS-CORE-0177` says the file is not there.
+* **A value you set that the newer release refuses** — a value an enum no
+  longer lists (`STS-CORE-0108`), a setting the release replaced with others
+  (`STS-CORE-0105`) — still stops
+  the start, naming the line. That is the one kind of change an upgrade may ask
+  you to make, and the release notes say which.
+
+**The cure for both warnings is the same: stop carrying `defaults.js`.** Keep
+only the file `CONFIG_FILE` names (`local.js`, or your own) in the mounted
+directory, holding only the settings you mean, and let the image supply the
+rest. If you mount the whole checkout's `env/`, update the checkout to the
+release you run. `env/defaults.js` is generated from the image's own table and
+is never the place to configure a deployment.
 
 ### An environment variable is a string, and the table knows what to do with it
 
@@ -1618,7 +1682,7 @@ Enrollment over Secure Transport (RFC 7030), drawn on `/admin/est`. Every row is
 | `est.attemptsPerIdentity` | `STS_EST_ATTEMPTS_PER_IDENTITY` | `10` | yes | Refused authentications or enrollments one username, client_id or certificate may make in one web-security window before EST answers 429. |
 | `est.attemptsPerAddress` | `STS_EST_ATTEMPTS_PER_ADDRESS` | `60` | yes | Refused requests one client address may make in one web-security window before EST answers 429. |
 | `est.basicAuthentication` | `STS_EST_BASIC_AUTHENTICATION` | `true` | yes | A person's directory password or an application's client_id and client_secret (RFC 7030 section 3.2.3). |
-| `est.certificateAuthentication` | `STS_EST_CERTIFICATE_AUTHENTICATION` | `true` | yes | A client certificate THIS REALM issued, verified to its Intermediate and mapped to its entry by the urn:sts:person: or urn:sts:application: name in it (RFC 7030 section 3.3.2). |
+| `est.certificateAuthentication` | `STS_EST_CERTIFICATE_AUTHENTICATION` | `true` | yes | A client certificate THIS REALM issued, verified to its Intermediate and mapped to its entry by the urn:sts:person:, urn:sts:sa: (a service account) or urn:sts:application: name in it (RFC 7030 section 3.3.2). |
 | `est.serverKeyGeneration` | `STS_EST_SERVER_KEY_GENERATION` | `true` | yes | Whether this service generates the key pair (RFC 7030 section 4.4) — the one enrollment path in which it holds a private key, which it then keeps, sealed, on the entry the certificate names. |
 
 ### SCEP
@@ -1692,7 +1756,7 @@ passwords.
 | `authn.rememberedAccountDays` | `STS_AUTHN_REMEMBERED_ACCOUNT_DAYS` | `30` | yes | With several accounts on, how long the picker keeps offering an account that signed out in a browser — its username, display name and subject, never a credential, kept on the server (1–365). The scheduler job `authn.account-set-expiry` drops it after that. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long a sign-in waits at the screen — and the console's and portal's own authorization code flows, and an arrival session's inactivity window, which are the same clock on purpose. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long somebody past the password step has to present a security key, a one-time code or a recovery code. |
-| `authn.passwordAloneDoors` | `STS_AUTHN_PASSWORD_ALONE_DOORS` | *(empty)* | yes | Product mode only. The password-only doors — any of `ldap`, `wstrust`, `scim`, `ssf`, `est` — at which a person who holds or must hold a second factor is STILL accepted with their own password. Empty refuses it at all five and accepts only an app password there. **Warning: every door listed lowers every such person to ONE factor at that door** (NIST SP 800-63B section 4.2), so a stolen password opens it without the second factor. |
+| `authn.passwordAloneDoors` | `STS_AUTHN_PASSWORD_ALONE_DOORS` | *(empty)* | yes | Product mode only. The password-only doors — any of `ldap`, `wstrust`, `scim`, `ssf`, `est`, `xacml-pep` — at which a person who holds or must hold a second factor is STILL accepted with their own password. Empty refuses it at all six and accepts only an app password there. **Warning: every door listed lowers every such person to ONE factor at that door** (NIST SP 800-63B section 4.2), so a stolen password opens it without the second factor. |
 | `appPasswords.enabled` | `STS_APP_PASSWORDS_ENABLED` | `true` | yes | Whether a person may make an app password on `/portal/app-passwords`, and an administrator one for them on their `/admin/users` page or `POST /admin-api/users/create-app-password`. Generated, shown once, stored as a scrypt hash, named and scoped to password-only doors; never accepted at the sign-in screen. Turning it off does not invalidate one already made. |
 | `appPasswords.maxPerPerson` | `STS_APP_PASSWORDS_MAX` | `10` | yes | How many app passwords one person may hold at once (1–50). |
 | `oidcRp.maxFlows` | `STS_OIDC_RP_MAX_FLOWS` | `200` | yes | Console and portal sign-ins in flight at once, per trust realm; past it the oldest is dropped. |
@@ -2807,6 +2871,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risk.mdsMaxBytes` | `STS_RISK_MDS_MAX_BYTES` | `33554432` | yes | The most the job reads of a BLOB. |
 | `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | yes | How often the `risk.rescore` job re-checks every live sign-on session against the datasets and the failure history, raising (never lowering) one that became riskier (#62 P4). |
 | `xacml.maxApplicationPolicies` | `STS_XACML_MAX_APPLICATION_POLICIES` | `500` | yes | How many applications' own fine-grained authorization policies (entries under `ou=policies` carrying `xacmlApplication`, orphaned ones included) the repository may hold. They do not count against `xacml.maxPolicies`, which bounds the policies administrators write. The default is `applications.max`'s default; raise the two together. Past it a policy is not created (`STS-FGA-0024`); see [Application-scoped fine-grained authorization](fga.md#configuration). |
+| `xacml.pepAuthentication` | `STS_XACML_PEP_AUTHENTICATION` | `token` | yes | Which credential a remote PEP may present at `/xacml/pep/*`, `POST /xacml/pip` and, for its AuthZEN forward, `/access/v1`: `token` (the default since 1.1.0: a DPoP-bound access token from `sts-remote-pep` only; a client certificate alone is refused, `STS-XACML-0289`), `either` (the token or a client certificate this service verifies; a token, where one is sent, decides), or `certificate` (the certificate only; the `Authorization` header is not read). The PEP's entry must hold `REMOTE_PEPS` either way; see [Instead of a certificate](remote-pep.md#instead-of-a-certificate-a-dpop-bound-access-token) and [Upgrading a deployment whose PEPs use a certificate](remote-pep.md#upgrading-a-deployment-whose-peps-use-a-certificate). **Upgrading from 1.0.0: the upgrade script (`postgres/upgrade-1.0.0.sql`, `mariadb/upgrade-1.0.0.sql`) stores `either` in every realm that has a registered remote PEP and no value of its own; move each to `token` once its PEPs run on their keys. Without the script (the LDIF store), set `either` yourself.** An appconfig file of your own layered over a new image must carry it. |
 | `xacml.signalResponsePolicy` | `STS_XACML_SIGNAL_RESPONSE_POLICY` | `signal-response` | yes | The policy asked, when this service's own console or portal receives a verified CAEP or RISC event, whether it ends that surface's own sessions for the person named. Built in; a realm's entry of this name overrides it. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked, once per reaction, what happens when a person's risk level changes: a CAEP risk-level-change, everything they hold ended, a RISC credential-compromise, the account disabled. Built in; a realm's entry of this name overrides it. |
 | `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` | **restart** — the store is opened and READ before the HTTP listener binds, so a mode changed at runtime would leave a service whose directory came from one place and whose writes went to another | Where the embedded directory, the trust realm registry and the runtime setting changes are written down. `memory` writes nothing. `ldif` writes an RFC 2849 file per realm plus two JSON files into `dataDir` and needs no database. `postgres` writes six tables. What this service MINTS — sessions, tokens, codes, artifacts, Kerberos principals, the replay caches, the counters and the audit log — is persisted in PRODUCT mode on a database store (`postgres` or `mariadb`) and in no other configuration, each row encrypted under the same key-encryption key as the signing keys; development mode persists none of it, because the signing key is regenerated on every start there. See [Persistence](#persistence) above. `mariadb` (#677) is the same store on MariaDB (`mariadb/schema.sql`): `persistence.databaseUrl` is a `mariadb://` address, the `mysql2` package must be in the image (`STS_CLOUD_SDKS`), and what needs PostgreSQL itself — cells, the bulk import, the directory window, the risk dataset installer — is refused. |

@@ -565,6 +565,9 @@ function declaredRefusal(opts) {
                'certificate is its credential, and it did not authenticate: ' +
                (observation.why || 'nothing was verified.') };
   }
+  // (#1827's follow-up let a DPoP proof stand for this declaration for
+  // `sts-remote-pep` through phase 3 of the PEP's token plan; phase 4
+  // removed the client's flag and that exception with it.)
   if (registered.tls_client_certificate_bound_access_tokens === true &&
       !presentedThumbprint(o.request)) {
     log.debug("Leaving declaredRefusal(). Bound tokens declared, no " +

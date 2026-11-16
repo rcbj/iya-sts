@@ -887,6 +887,19 @@ somebody had merely left.
 create's `before` and a delete's `after`, so creating a person is not an
 `account-enabled` and deleting a disabled one is not either.
 
+**A NAME TAKEN AGAIN STARTS FRESH (2026-11-16, #1612's rule).** The register
+is keyed by the name and keeps a `purged` row on purpose, so a person made
+again under a deleted person's name found it — the holder's opt-out (which
+`gate()` honours by suppressing every event), the credential standing, the
+counts. `retireNamesake()` runs on every person's write (from
+`riscAutoEmit()` before SSF's switch is read, and from `observe()`): when the
+write's entry has a `urn:uuid:` other than the one the row recorded, the row
+is MOVED to that recorded subject — still on `/admin/risc-accounts`, still
+matched by `matchAccount()` — and the name starts with no row. A row with no
+recorded subject is moved when it is `purged`, under `<name>#<updatedAt>`. A
+rename keeps the subject, and its row. `ldap/CLAUDE.md` has the rest of what
+a delete forgets.
+
 **`identifier-recycled` IS READ FROM THE REGISTER'S OWN HISTORY.**
 - Each row keeps `releasedIdentifiers`: an address it moved off, or everything
   it held when purged, each with its time.
@@ -1357,6 +1370,20 @@ stream IDs and aud values"; nothing here did.
   alone would not do: they are created as `internal`, and in development any
   Basic username authenticates, including that one. They are managed on
   `/admin/ssf` and through `/admin-api` only.
+* **A cluster member is a stream of its own** (#1760 phase 3). Members of
+  one application client authenticate as that one principal, so
+  `streamsOwnedBy` cannot tell them apart. A caller may send
+  `X-Iya-Pep-Name`, its registered PEP name. `GET /ssf/stream` with no
+  `stream_id` then returns only the streams whose `pepMember` is that
+  name, and an empty list when there are none, so the caller creates one.
+  `POST /ssf/stream` records `pepMember` from the header, through
+  `contextOf()`, and never from the body. A header that is present and
+  not a PEP name is 400 (`STS-SSF-0163`) on that GET and that POST; it is
+  not read as no header. Absent, the list is every stream of the
+  principal, which is what a receiver that is not a cluster member has
+  always seen. `pepMember` is bookkeeping, like `subjects` and the queue:
+  `streamConfiguration()` does not put it on the wire. Poll, PUT, PATCH
+  and DELETE stay by `stream_id`.
 * **`ssf.maxStreams` is per owner**, and a create past it is a 403 (section
   8.1.1.1's "not allowed to create a stream"). It was per realm, so one
   receiver could use up everyone's allowance.

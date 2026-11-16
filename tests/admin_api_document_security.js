@@ -170,7 +170,11 @@ async function run(t) {
     // AND A DIRECTORY → POLICIES WRITE (#645), which takes admin:security.
     const policyWrite = row.method.toUpperCase() !== 'GET' &&
                         row.path === '/admin-api/policies/{action}';
+    // AND A REMOTE PEP'S DECISION RECORDS (#1827), xacml:pep-audit.
+    const pepFeed = row.method.toUpperCase() === 'POST' &&
+                    row.path === '/admin-api/pep-audit';
     const wanted = feed ? 'device:compliance'
+      : pepFeed ? 'xacml:pep-audit'
       : (consoleOp ? 'admin:console'
         : (policyWrite ? 'admin:security'
           : (row.method.toUpperCase() === 'GET' ? 'admin:read'
@@ -267,6 +271,14 @@ async function run(t) {
           }),
           'and makes its one exception, the MDM feed at ' +
           '/admin-api/device-compliance, which the document describes');
+  // #1827: a remote PEP's decision records take xacml:pep-audit.
+  t.check(/pepFeed \? 'xacml:pep-audit'/.test(apiSource) &&
+          /PEP_AUDIT_PATH = '\/pep-audit'/.test(apiSource) &&
+          guardedOps.some(function (row) {
+            return row.path === '/admin-api/pep-audit';
+          }),
+          'and its second, a remote PEP\'s decision records at ' +
+          '/admin-api/pep-audit, which the document describes');
   // #645: a security change takes admin:security in the gate.
   t.check(/securityChange \? 'admin:security'/.test(apiSource),
           'and a security change, which the gate asks admin:security for ' +

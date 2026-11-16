@@ -32,13 +32,14 @@ below, and the console's settings forms.
 | `/admin/xacml` | **Protocols → XACML** | Six tabs: **Metadata**, **Global settings** (every `xacml.*` setting, saved with **Save XACML**), **Policies**, **Policy editor**, **Remote PEPs** and **Try a decision**. |
 | `/admin/xacml#xacml-tab-policies` | the **Policies** tab | Create a policy from a template, import ALFA, **Enable** / **Disable** / **Make root** / **Delete**, and **Create an override** of this service's own policies. |
 | `/admin/xacml#xacml-tab-editor` | the **Policy editor** tab | Change an existing policy element by element, and read it as ALFA and as stored XML. |
-| `/admin/xacml#xacml-tab-peps` | the **Remote PEPs** tab | **Issue certificate**, **Stop nudging** / **Nudge**, **Forget**. |
+| `/admin/xacml#xacml-tab-peps` | the **Remote PEPs** tab | A **Clustered** column, **Issue certificate**, **Stop nudging** / **Nudge**, **Sync**, **Forget**. |
 | `/admin/xacml#xacml-tab-decide` | the **Try a decision** tab | **Ask the PDP** about a subject, an action and a resource. |
 | `/admin/roles` | **Directory → Roles** | Make roles, give them to people, groups and applications, and preview **Would this be issued?** |
 | `/admin/groups` | **Directory → Groups** | Put an entry in `remote-peps` or `xacml-users`, under **Add a member**. |
 | `/admin/tls/trust` | **Protocols → Client-certificate truststore** | **Add anchors**, then **Trust these**: the CA a PEP's or a caller's certificate chains to. |
 | `/admin/delegation-settings` | **Protocols → Delegation** | The four `delegation.*` settings, saved with **Save Delegation**. |
 | `/admin/xacml/monitor` | **Monitoring → XACML decisions** | Decisions and enforcements per PEP. |
+| `/admin/xacml/pep/monitor` | **Monitoring → Remote PEPs** | Each remote PEP's listener, thread-pool, per-path and memory figures. |
 
 The API equivalents are `GET /admin-api/xacml`, `/xacml/policies`,
 `/xacml/editor?policy=<name>`, `/xacml/peps`, `/xacml/decide` and
@@ -61,9 +62,10 @@ empty repository answers NotApplicable to everything.
 * **A risk Deny and a delegation refusal are enforced only in product mode.**
   Development mode records them ("WOULD HAVE BEEN REFUSED in product") and
   issues anyway.
-* **The nudge to a remote PEP must be `https` in product mode.**
-  `xacml.pepNotifyAllowHttp` and `xacml.pepNotifySkipTlsVerification` work
-  only in development mode.
+* **The nudge to a remote PEP is `https` in both modes** (since 2026-11-14),
+  verified against the realm's `pep-tls` Issuing CA with nothing set.
+  `xacml.pepNotifyAllowHttp` and `xacml.pepNotifySkipTlsVerification` are
+  retired and ignored in both.
 * **Revocation of a presented certificate** (`pki.revocationCheck=auto`)
   soft-fails in development mode and hard-fails in product mode.
 
@@ -186,8 +188,15 @@ decides; it is validated the same way.
 * **Policy editor** tab: pick the policy and click **Open**. Each element has
   **Add** and **Remove** controls offering only what XACML allows there; an
   edit that would not type-check is refused and the stored document is left
-  as it was. **Editing is live**: there is no draft, so the next decision
-  uses the change.
+  as it was. **Editing is live**: there is no draft and no overall Save, so
+  each **Update** writes its own row's fields to the stored policy at once,
+  the next decision uses the change, and registered remote PEPs are nudged
+  to pull it (or pick it up on their poll). The tab says so above the
+  chooser. A policy generated for a remote PEP's route (`pep-<pep>-<route>`)
+  carries a warning: it is written again from the route by **Generate the
+  policy again** and by every save of that PEP's routes, so a hand-written
+  policy belongs to the route's **An existing policy** choice
+  ([Remote PEPs](remote-pep.md)).
 * **Policies** tab: **Disable** takes a policy out of the decision without
   deleting it, **Make root** makes it the one the PDP starts from (the old
   root stops being root), and **Delete** removes it. Deleting the root leaves
@@ -393,18 +402,20 @@ attributes; the limits are:
 
 ## Run the container against a realm
 
-[Remote PEP](remote-pep.md) covers the container in full. What the service
-needs is the same admission as above, with the `remote-peps` group. The
-values are `sts_xacml_remote_pep.js`'s.
+[Remote PEP](remote-pep.md) covers the container in full. Since 1.1.0 the
+PEP authenticates with its own key — an RFC 7523 assertion and a DPoP-bound
+access token — not a client certificate, and the realm's
+`xacml.pepAuthentication` is `token` by default. The values are
+`sts_xacml_remote_pep.js`'s.
 
 **Console:**
-1. Trust the PEP certificate's CA on the **Client-certificate truststore**
-   page, as above.
-2. **Directory → Users**: create an entry for the PEP (`remote-pep-1` is
-   seeded in development mode), and under **Stored certificates** on its page
-   store the PEP's leaf certificate. Until it is stored the PEP is refused
-   (`STS-XACML-0179`; `0180` when it is stored on two entries).
-3. **Directory → Groups → remote-peps**: **Add a member** with that entry.
+1. **Directory → Users**: create an entry for the PEP (`remote-pep-1` is
+   seeded in development mode).
+2. **Directory → Groups → remote-peps**: **Add a member** with that entry.
+   That makes it a service account.
+3. Generate the PEP's key where it runs, with a certificate request, and
+   paste the request into **Certify the key** on the Remote PEPs tab (or the
+   PEP's Overview). Only the request reaches the service.
 4. Create the policy the PEP will enforce and make it root, as in
    [Create a policy from a template](#create-a-policy-from-a-template).
 
@@ -413,20 +424,20 @@ values are `sts_xacml_remote_pep.js`'s.
 api users/create '{"username":"my-pep","invent":false,
   "attributes":{"cn":"my-pep","givenName":"Remote","sn":"Remote PEP",
                 "mail":"my-pep@xacml-remote-pep.test","displayName":"my-pep"}}'
-api users/add-certificate "$(jq -n --rawfile pem pep-leaf.crt \
-  '{user:"my-pep", certificate:$pem}')"
 api groups/add-member '{"group":"remote-peps","member":"my-pep"}'
+# The key pair and its request, generated where the PEP runs:
+node tests/tools/pep-credential.js --assertion --csr-only --out=/certs \
+  --name=my-pep
+api xacml/issue-pep-credential "$(jq -n --rawfile csr /certs/pep-assertion.csr \
+  '{name:"my-pep", csr:$csr}')"
 ```
 
-`pep-leaf.crt` is the leaf alone: `pep.crt` from `pep-credential.js` is the
-leaf followed by its Issuing CA, and only the leaf is stored.
-
 `my-pep` stands for the job's per-run name. Then start the container with
-the certificate mounted:
+the key mounted:
 
 ```bash
 PEP_PDP_URL=https://localhost:8081/realm/<id>   # omit /realm/<id> for the default realm
-PEP_TLS_CERT=/certs/pep.crt PEP_TLS_KEY=/certs/pep.key
+PEP_NAME=my-pep PEP_ASSERTION_KEY=/certs/pep-assertion.key
 PEP_RESOURCE=https://example.test/records PEP_BIAS=deny-biased
 PEP_TLS_INSECURE=true                            # development: the service's Root changes every start
 PEP_NOTIFY_URL=https://my-pep.example.test:9443/notify   # optional: where the nudge goes
@@ -434,9 +445,18 @@ PEP_NOTIFY_URL=https://my-pep.example.test:9443/notify   # optional: where the n
 
 The PEP registers itself (`POST /xacml/pep/register`), and its row appears on
 the **Remote PEPs** tab with whether it holds the current policy. **The row
-is named from the entry the certificate is stored on**, not from
-`PEP_NAME`, when a certificate is presented. A PEP enforces whether or not it is registered;
-the registration buys the row and the nudge.
+is named from the token's subject, the entry `PEP_NAME` names.** A PEP
+enforces whether or not it is registered; the registration buys the row and
+the nudge.
+
+**A PEP that still presents a client certificate** (an older image, or
+another implementation) is admitted only in a realm that opted in to
+`xacml.pepAuthentication` `either` or `certificate`: trust its CA on the
+**Client-certificate truststore** page, store its leaf under **Stored
+certificates** on its entry (`api users/add-certificate`; until it is stored
+the PEP is refused, `STS-XACML-0179`, and `0180` when it is stored on two
+entries), and put the entry in `remote-peps`
+([Remote PEP](remote-pep.md#upgrading-a-deployment-whose-peps-use-a-certificate)).
 
 ## Issue the PEP an HTTPS listener certificate
 
@@ -453,6 +473,34 @@ registration. **The private key is in this reply and nowhere else.** Write
 `fullChainPem` and `privateKeyPem` to the paths in `PEP_HTTPS_CERT` and
 `PEP_HTTPS_KEY`; [Remote PEP → An HTTPS listener](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to)
 has the steps.
+
+## Which PEPs are in a cluster
+
+The **Clustered** column says **Yes**, with the cluster's name as a link to
+its page, for a PEP that is a member of a remote PEP cluster (the **PEP
+clusters** tab), and **No** otherwise. A member pulls its cluster's reverse
+proxy, settings and listeners. `GET /admin-api/xacml/peps` answers the same
+fact as `cluster` on a member's row.
+
+## Sync a PEP
+
+**Console:** **Sync** on the PEP's row tells that PEP to pull everything again
+now: its XACML policies, its own settings, listeners and reverse proxy, and,
+for a cluster member, its cluster's.
+
+**API:**
+```bash
+api xacml/sync-pep '{"name":"remote-pep-1"}'
+```
+
+Sync sends the PEP one nudge at the notify URL the change nudge uses, and
+waits to see whether it was delivered. The nudge asks for a full pull: the PEP
+fetches every document whole and loads it again, even ones it already holds. A
+PEP takes at most one full pull per poll interval; a second Sync inside that
+time gets an ordinary pull. Sync also works on a PEP you stopped nudging.
+Sync is refused when remote PEPs or nudging are off, or when the PEP has no
+usable notify URL; the reply says which. In each case the PEP still converges
+on its own poll.
 
 ## Stop nudging, or forget a PEP
 
@@ -472,11 +520,12 @@ api xacml/forget-pep  '{"name":"remote-pep-1"}'
 |---|---|---|
 | `xacml.pepRequireCertificate` | `true` | Off lets a PEP register without a certificate; its row is marked unauthenticated. The pull still needs the role. |
 | `xacml.maxPeps` | `50` | How many PEPs `ou=peps` may hold. |
+| `xacml.pepPlainHttpProxyListeners` | `false` | On lets a product realm define a plain-HTTP reverse-proxy listener on a PEP's page, for a PEP behind something that terminates TLS. |
 | `xacml.pepStaleAfterS` | `300` | When the console calls a PEP stale. |
 | `xacml.pepNotify` | `true` | Off stops nudging; PEPs converge on their poll. |
 | `xacml.pepNotifyAllowedHosts` | *(empty: any)* | Hosts a nudge may go to. |
-| `xacml.pepNotifyCaFile` | *(empty)* | CA certificates a PEP's notify listener may chain to. |
-| `xacml.pepNotifyAllowHttp` | `false` | **Development only.** Allows an `http://` notify URL, which the compose demonstration uses. |
+| `xacml.pepNotifyCaFile` | *(empty)* | More CA certificates a PEP's notify listener may chain to. A PEP whose listener certificate this realm issued needs none. |
+| `xacml.pepNotifyAllowHttp` | `false` | **Retired, ignored.** A nudge is https only, in every mode. |
 | `xacml.pepNotifyTimeoutMs` | `2000` | How long a nudge waits. |
 
 ---
