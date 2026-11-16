@@ -20,7 +20,7 @@
 // AS THE CODE DOES IT:
 //
 // * The callback and sign-out take GET and HEAD (#1830); any other method
-//   is 405 with `Allow: GET, HEAD` (STS-XPEP-0126, 0123), the callback's
+//   is 405 with `Allow: GET, HEAD` (STS-XPEP-0126, 0127), the callback's
 //   state not looked up and so not spent.
 // * Every refusal is the error page when Accept names text/html and the JSON
 //   `Refusal` otherwise, except the callback's 403 STS-XPEP-0108, always the

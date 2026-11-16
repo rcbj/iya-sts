@@ -3715,10 +3715,10 @@ async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
     use sts_model_pep::pep_proxy::components;
     let h = harness().await;
     for (method, path, code) in [
-        (reqwest::Method::POST, "/.iya-pep/callback?state=s", "0122"),
-        (reqwest::Method::PUT, "/.iya-pep/callback", "0122"),
-        (reqwest::Method::POST, "/.iya-pep/logout", "0123"),
-        (reqwest::Method::DELETE, "/.iya-pep/logout", "0123"),
+        (reqwest::Method::POST, "/.iya-pep/callback?state=s", "0126"),
+        (reqwest::Method::PUT, "/.iya-pep/callback", "0126"),
+        (reqwest::Method::POST, "/.iya-pep/logout", "0127"),
+        (reqwest::Method::DELETE, "/.iya-pep/logout", "0127"),
     ] {
         let r = h
             .http

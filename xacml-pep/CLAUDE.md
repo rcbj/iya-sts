@@ -1250,7 +1250,7 @@ whole. The pair is upgraded together.
    serves are one string.
 2. `/.iya-pep/callback` and `/.iya-pep/logout` are the session mechanism's,
    ahead of the route table, and take GET and HEAD: any other method is 405
-   with `Allow: GET, HEAD` (`STS-XPEP-0126`, `-0123`; #1830), the callback's
+   with `Allow: GET, HEAD` (`STS-XPEP-0126`, `-0127`; #1830), the callback's
    state not looked up and so not spent. **`/.iya-pep/` is the proxy's
    WHOLE** (#1830): after the accounts pages, any other path under it is 404
    (`STS-XPEP-0128`) and never reaches the route table, so a prefix route at
@@ -1909,8 +1909,8 @@ without one; `0118` every path before the first configuration since the
 start (503, *Not configured YET*); `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
-says is not usable (D10); `0095`–`0098` the identity (D11); `0122` and `0123`
-a method other than GET or HEAD on the callback and the sign-out, `0124` a
+says is not usable (D10); `0095`–`0098` the identity (D11); `0126` and `0127`
+a method other than GET or HEAD on the callback and the sign-out, `0128` a
 path under `/.iya-pep/` that is none of the proxy's (#1830). **No log line carries
 a token, an assertion, a password, a session id or a query string**: the
 method, the normalised path (at most 200 characters, quoted), the route and
