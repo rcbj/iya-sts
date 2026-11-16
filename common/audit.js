@@ -1701,6 +1701,25 @@ const ACTIONS = [
     label: 'A remote PEP\'s reverse-proxy configuration was removed' },
   { action: 'xacml.pep.validate', category: 'authorization',
     label: 'A remote PEP\'s proxy asked for a credential to be validated' },
+  // The Sync button (`xacml/xacml_admin.ts`'s `syncPep()`): a full pull
+  // asked of one PEP, whether or not its nudges are stopped.
+  { action: 'xacml.pep.sync', category: 'authorization',
+    label: 'A remote PEP was asked to pull its whole configuration now' },
+  // A defined HTTPS listener's certificate, issued over the key the PEP
+  // generated (`xacml/xacml_pep_tls.ts`'s `issueForListener()`, #1760).
+  { action: 'xacml.pep.listener.certificate', category: 'authorization',
+    label: 'A remote PEP\'s HTTPS listener was issued a certificate' },
+  // Remote PEP clusters: one configuration shared by several PEPs.
+  { action: 'xacml.pep.cluster.create', category: 'authorization',
+    label: 'A remote PEP cluster was created' },
+  { action: 'xacml.pep.cluster.delete', category: 'authorization',
+    label: 'A remote PEP cluster was deleted' },
+  { action: 'xacml.pep.cluster.member.add', category: 'authorization',
+    label: 'A remote PEP was added to a cluster' },
+  { action: 'xacml.pep.cluster.member.set', category: 'authorization',
+    label: 'The addresses of a remote PEP cluster\'s member were set' },
+  { action: 'xacml.pep.cluster.member.remove', category: 'authorization',
+    label: 'A remote PEP was removed from a cluster' },
   { action: 'xacml.policy.write', category: 'authorization',
     label: 'An XACML policy was written' },
   { action: 'xacml.policy.delete', category: 'authorization',

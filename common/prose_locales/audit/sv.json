@@ -1843,6 +1843,46 @@
     "en": "82df232dbe72d709",
     "text": "En fjärransluten PEP glömdes"
   },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "En fjärr-PEP:s konfiguration för omvänd proxy angavs"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "En fjärr-PEP:s konfiguration för omvänd proxy togs bort"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "En fjärr-PEP:s proxy bad att en autentiseringsuppgift skulle valideras"
+  },
+  "audit.actions.xacml.pep.sync.label": {
+    "en": "a1e3feab83951fcf",
+    "text": "En fjärransluten PEP ombads hämta hela sin konfiguration nu"
+  },
+  "audit.actions.xacml.pep.listener.certificate.label": {
+    "en": "be45d48c8c187916",
+    "text": "En fjärransluten PEP:s HTTPS-lyssnare fick ett certifikat"
+  },
+  "audit.actions.xacml.pep.cluster.create.label": {
+    "en": "6f6a985e3173c03a",
+    "text": "Ett kluster av fjärranslutna PEP:er skapades"
+  },
+  "audit.actions.xacml.pep.cluster.delete.label": {
+    "en": "65ee97f601bfa789",
+    "text": "Ett kluster av fjärranslutna PEP:er togs bort"
+  },
+  "audit.actions.xacml.pep.cluster.member.add.label": {
+    "en": "dc0f84c7fa737cee",
+    "text": "En fjärransluten PEP lades till i ett kluster"
+  },
+  "audit.actions.xacml.pep.cluster.member.set.label": {
+    "en": "f40e76a089d7b7e1",
+    "text": "Adresserna för en medlem i ett kluster av fjärranslutna PEP:er angavs"
+  },
+  "audit.actions.xacml.pep.cluster.member.remove.label": {
+    "en": "a59512e4ad700e39",
+    "text": "En fjärransluten PEP togs bort från ett kluster"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "En XACML-policy skrevs"
@@ -1926,17 +1966,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "En testhändelse som skickats till ett granskningsexportmål"
-  },
-  "audit.actions.xacml.pep.proxy.set.label": {
-    "en": "b27a6eab052ea9fa",
-    "text": "En fjärr-PEP:s konfiguration för omvänd proxy angavs"
-  },
-  "audit.actions.xacml.pep.proxy.clear.label": {
-    "en": "faee586bfee3cbf0",
-    "text": "En fjärr-PEP:s konfiguration för omvänd proxy togs bort"
-  },
-  "audit.actions.xacml.pep.validate.label": {
-    "en": "c3a780c6921b5dd8",
-    "text": "En fjärr-PEP:s proxy bad att en autentiseringsuppgift skulle valideras"
   }
 }

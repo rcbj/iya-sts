@@ -1843,6 +1843,46 @@
     "en": "82df232dbe72d709",
     "text": "Un PEP distant a été oublié"
   },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "La configuration de proxy inverse d’un PEP distant a été définie"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "La configuration de proxy inverse d’un PEP distant a été retirée"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "Le proxy d’un PEP distant a demandé la validation d’un identifiant"
+  },
+  "audit.actions.xacml.pep.sync.label": {
+    "en": "a1e3feab83951fcf",
+    "text": "Un PEP distant a été invité à récupérer maintenant toute sa configuration"
+  },
+  "audit.actions.xacml.pep.listener.certificate.label": {
+    "en": "be45d48c8c187916",
+    "text": "Un certificat a été émis pour l’écouteur HTTPS d’un PEP distant"
+  },
+  "audit.actions.xacml.pep.cluster.create.label": {
+    "en": "6f6a985e3173c03a",
+    "text": "Un cluster de PEP distants a été créé"
+  },
+  "audit.actions.xacml.pep.cluster.delete.label": {
+    "en": "65ee97f601bfa789",
+    "text": "Un cluster de PEP distants a été supprimé"
+  },
+  "audit.actions.xacml.pep.cluster.member.add.label": {
+    "en": "dc0f84c7fa737cee",
+    "text": "Un PEP distant a été ajouté à un cluster"
+  },
+  "audit.actions.xacml.pep.cluster.member.set.label": {
+    "en": "f40e76a089d7b7e1",
+    "text": "Les adresses d’un membre d’un cluster de PEP distants ont été définies"
+  },
+  "audit.actions.xacml.pep.cluster.member.remove.label": {
+    "en": "a59512e4ad700e39",
+    "text": "Un PEP distant a été retiré d’un cluster"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "Une politique XACML a été écrite"
@@ -1926,17 +1966,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Un événement de test envoyé à une destination d’export d’audit"
-  },
-  "audit.actions.xacml.pep.proxy.set.label": {
-    "en": "b27a6eab052ea9fa",
-    "text": "La configuration de proxy inverse d’un PEP distant a été définie"
-  },
-  "audit.actions.xacml.pep.proxy.clear.label": {
-    "en": "faee586bfee3cbf0",
-    "text": "La configuration de proxy inverse d’un PEP distant a été retirée"
-  },
-  "audit.actions.xacml.pep.validate.label": {
-    "en": "c3a780c6921b5dd8",
-    "text": "Le proxy d’un PEP distant a demandé la validation d’un identifiant"
   }
 }
