@@ -26,8 +26,8 @@
 //!   start, so a restart that counts from 1 again is not mistaken for old
 //!   records by the service's deduplication mark.
 //! * **The queue is bounded and never blocks a decision.** Full, the OLDEST
-//!   record is dropped and counted (`STS-XPEP-0120`); a batch the service
-//!   refuses as malformed (400) is dropped too (`STS-XPEP-0123`), rather
+//!   record is dropped and counted (`STS-XPEP-0122`); a batch the service
+//!   refuses as malformed (400) is dropped too (`STS-XPEP-0125`), rather
 //!   than sent forever.
 //! * **THE REVERSE PROXY'S REQUESTS ARE QUEUED TOO** (#1760): one record,
 //!   `kind: "proxy"` with `route` and `status`, per request that reached its
@@ -336,7 +336,7 @@ impl Audit {
                      the service is full (PEP_AUDIT_BUFFER, {}), so the \
                      oldest was dropped; {} dropped so far. Enforcement goes \
                      on, and each dropped decision is still on this log.",
-                    tag("STS-XPEP-0120"),
+                    tag("STS-XPEP-0122"),
                     buffer,
                     state.dropped
                 );
@@ -450,14 +450,14 @@ impl Audit {
             tracing::warn!(
                 "{}xacml-pep: decision records not delivered to POST {}: {}. \
                  They stay queued and are sent again.",
-                tag("STS-XPEP-0122"),
+                tag("STS-XPEP-0124"),
                 AUDIT_PATH,
                 why
             );
         } else {
             tracing::debug!(
                 "{}xacml-pep: decision records still not delivered: {}",
-                tag("STS-XPEP-0122"),
+                tag("STS-XPEP-0124"),
                 why
             );
         }
@@ -472,13 +472,13 @@ impl Audit {
                  This PEP's entry must hold its client certificate as an \
                  assertion key and be in the remote PEPs group. The decision \
                  records stay queued.",
-                tag("STS-XPEP-0121"),
+                tag("STS-XPEP-0123"),
                 why
             );
         } else {
             tracing::debug!(
                 "{}xacml-pep: still no access token: {}",
-                tag("STS-XPEP-0121"),
+                tag("STS-XPEP-0123"),
                 why
             );
         }
@@ -603,7 +603,7 @@ impl Audit {
                 return true;
             }
             let Some(token) = self.token(client).await else {
-                self.note(false, "no access token (STS-XPEP-0121)");
+                self.note(false, "no access token (STS-XPEP-0123)");
                 return false;
             };
             let answer = client
@@ -647,7 +647,7 @@ impl Audit {
                         "{}xacml-pep: the service refused a batch of {} \
                          decision record(s) as malformed, so they were \
                          dropped; each is still on this log. It said: {}",
-                        tag("STS-XPEP-0123"),
+                        tag("STS-XPEP-0125"),
                         batch.len(),
                         said
                     );

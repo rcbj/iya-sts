@@ -1049,20 +1049,20 @@ name. The key must be RSA or EC P-256; any other is refused by name in the
 PEP's log.
 
 Without step 2 the PEP keeps deciding, and keeps its records queued:
-`audit.tokenHeld` stays `false` and its log says `STS-XPEP-0121`.
+`audit.tokenHeld` stays `false` and its log says `STS-XPEP-0123`.
 
 ### What can be lost
 
 - **A restart** loses every record not yet acknowledged. Each decision is
   still on the container's own log.
 - **A full queue** (`auditBuffer`) drops its oldest record, counted in
-  `audit.dropped` and logged as `STS-XPEP-0120`. A decision never waits for the
+  `audit.dropped` and logged as `STS-XPEP-0122`. A decision never waits for the
   queue.
 - **A batch the service refuses as malformed** (`400`) is dropped rather than
-  sent forever (`STS-XPEP-0123`).
+  sent forever (`STS-XPEP-0125`).
 
 Anything else — the service down, a `403`, a `5xx` — keeps the records and
-tries again on the next interval (`STS-XPEP-0122`).
+tries again on the next interval (`STS-XPEP-0124`).
 
 ### Its settings
 

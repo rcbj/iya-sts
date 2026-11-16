@@ -24333,27 +24333,27 @@ const CODES = [
       'not start leaves the workers already running (#1760).',
     spec: 'none — an error in the PEP\'s log' },
   // #1827: the decision records shipped to the service.
-  { code: 'STS-XPEP-0120',
+  { code: 'STS-XPEP-0122',
     summary: 'The remote PEP\'s queue of decision records waiting for ' +
       'the service was full, so the oldest record was dropped to make ' +
       'room (#1827). Enforcement goes on; the dropped decision is still on ' +
       'the PEP\'s own log. Logged at the first drop and then sparingly, ' +
       'with the count.',
     spec: 'none; the PEP keeps enforcing' },
-  { code: 'STS-XPEP-0121',
+  { code: 'STS-XPEP-0123',
     summary: 'The remote PEP could not obtain an access token for the ' +
       'management API: the RFC 7523 self-assertion grant at the token ' +
       'endpoint failed or was refused (#1827). Its entry must hold its ' +
       'client certificate as an assertion key and be in the group ' +
       'roles.remotePepGroup names. The records stay queued.',
     spec: 'none; the records are kept and sent later' },
-  { code: 'STS-XPEP-0122',
+  { code: 'STS-XPEP-0124',
     summary: 'The remote PEP could not deliver a batch of decision records ' +
       'to POST /admin-api/pep-audit: no answer, a refusal of its token, or ' +
       'a status other than 200 and 400 (#1827). The records stay queued ' +
       'and are sent again.',
     spec: 'none; the records are kept and sent later' },
-  { code: 'STS-XPEP-0123',
+  { code: 'STS-XPEP-0125',
     summary: 'The service refused a batch of decision records as malformed ' +
       '(HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped ' +
       'that batch rather than send it forever (#1827). Each decision is ' +

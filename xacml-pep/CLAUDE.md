@@ -683,7 +683,7 @@ keys, variables and bounds); the table below marks them.
 | `PEP_AUDIT` | `true` | Send each decision made here to the service's audit log (#1827). `false` queues nothing new; what is queued is still sent, and the log line is unchanged either way. *Managed* (`auditEnabled`). |
 | `PEP_AUDIT_INTERVAL_MS` | `5000` | How often the queue is sent. A fixed interval, not backed off: the queue is what holds the records while the service refuses. *Managed* (`auditIntervalMs`, 1000 to a day, from the next round). |
 | `PEP_AUDIT_BATCH` | `200` | The most records in one `POST`, held to 1–500 (the service's bound). A tick sends batches while the queue holds more and the last was taken. *Managed* (`auditBatch`). |
-| `PEP_AUDIT_BUFFER` | `10000` | The most records waiting. Full, the OLDEST is dropped and counted (`STS-XPEP-0120`); a decision never waits for the queue. *Managed* (`auditBuffer`, 1 to 1,000,000); a lowered bound applies to NEW records — nothing queued is dropped for it, and each new record displaces the oldest until the queue drains below it. |
+| `PEP_AUDIT_BUFFER` | `10000` | The most records waiting. Full, the OLDEST is dropped and counted (`STS-XPEP-0122`); a decision never waits for the queue. *Managed* (`auditBuffer`, 1 to 1,000,000); a lowered bound applies to NEW records — nothing queued is dropped for it, and each new record displaces the oldest until the queue drains below it. |
 | `PEP_AUDIT_CLIENT_ID` | `sts-remote-pep` | The public client the self-assertion grant goes through, the one the service seeds for it. **Bootstrap**, not managed: it is how the PEP authenticates to send. |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). *Managed* (`resource`, `description`, `timeoutMs`, `maxBodyBytes`, `logLevel`; `PEP_BACKOFF_MAX_MS` too, `backoffMaxMs`). |
 | `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 503 with `Retry-After` to everything until its first pull since the start succeeds (`STS-XPEP-0118`), and 404 to everything while the configuration it received is empty or switched off. |
@@ -1916,7 +1916,7 @@ as an audit row in the PEP's realm (`audit.rs`).
   verification of the PDP — and mutual TLS is what binds the token
   (RFC 8705). It is cached until 30 s before it expires and fetched again on
   a 401, and that batch is sent once more. A token that cannot be had is
-  `STS-XPEP-0121`, logged at warn the first time and when the reason
+  `STS-XPEP-0123`, logged at warn the first time and when the reason
   changes. **The operator's one extra step** is registering that
   certificate on the PEP's entry as its JWT assertion certificate (`POST
   /admin-api/pki/upload-certificate` with `target: "person"` and `purpose:
@@ -1928,14 +1928,14 @@ as an audit row in the PEP's realm (`audit.rs`).
   service. A record leaves the queue
   only when the answer's `acknowledged` covers its `seq`. A 400 is the
   service calling the batch malformed: that batch is DROPPED
-  (`STS-XPEP-0123`) rather than sent forever. Anything else — no answer,
-  403, 404, 5xx — keeps it for the next tick (`STS-XPEP-0122`, warn the
+  (`STS-XPEP-0125`) rather than sent forever. Anything else — no answer,
+  403, 404, 5xx — keeps it for the next tick (`STS-XPEP-0124`, warn the
   first time and on a change of reason). The loop runs on a FIXED interval,
   not the backoff the poll uses: the queue, not the timer, is what holds the
   records while the service refuses.
 * **THE QUEUE NEVER HOLDS UP A DECISION.** It is in memory and bounded
   (`auditBuffer`); full, the oldest record is dropped and counted
-  (`STS-XPEP-0120` at drops 1, 2, 3 and each power of ten). A PEP that cannot
+  (`STS-XPEP-0122` at drops 1, 2, 3 and each power of ten). A PEP that cannot
   reach its PDP must keep enforcing.
 * **WHAT A RESTART LOSES**: every record not yet acknowledged. The log line
   is still on stdout. A disk spool would be a separate decision.
