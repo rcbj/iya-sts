@@ -15,16 +15,20 @@
 // WHAT THE CODE DOES, DESCRIBED AS IT IS, NOT AS IT MIGHT BE TIDIED:
 //
 // * There is no route table. Method and raw path are compared exactly, and
-//   anything that matches nothing — a wrong method on a known path, HEAD,
-//   OPTIONS, a trailing slash — is the generic 404 (`NotFound`). Nothing
-//   answers 405. So each operation's `404` is part of its contract.
+//   anything that matches nothing — a wrong method on a known path, OPTIONS,
+//   a trailing slash — is the generic 404 (`NotFound`). Nothing answers 405.
+//   So each operation's `404` is part of its contract.
+// * HEAD is answered as GET without the body for every GET here but
+//   `/protected`, whose GET is a decision (#1830): the same status and
+//   headers, Content-Length the GET's. HEAD /protected is the generic 404.
 // * Every JSON answer is `application/json` with `Cache-Control: no-store`,
 //   pretty-printed. A CRL is the one answer without that header.
 // * No STS-XPEP code is ever in a body: each refusal's code is in its
 //   description, for an operator reading the PEP's log.
-// * `/protected` and `/notify` read no credential. The HTTPS listener ASKS
-//   for a client certificate when PEP_AUTHZEN_CLIENT_CA is set, for AuthZEN,
-//   and these two ignore it, so no security scheme is declared.
+// * `/protected` and `/notify` read no credential. An HTTPS listener ASKS
+//   for a client certificate when PEP_AUTHZEN_CLIENT_CA is set and its
+//   tuning asks, for AuthZEN, and these two ignore it, so no security scheme
+//   is declared.
 //
 // The `GET /` overview is closed at every depth the code fixes, and open
 // only where it passes something through: `registration.notify` is the
@@ -40,7 +44,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP",
     `version`:"1",
-    `description`:"The remote XACML policy enforcement point's own API: its status overview, its liveness, the demonstration decision at /protected, the PDP's policy nudge and its own credential's CRLs. Served on the plain listener (PEP_PORT, 9090, only with PEP_HTTP=true), the HTTPS listener (PEP_HTTPS_PORT, 9443) and any listener of purpose api the service defines. With PEP_HTTP off and a CRL directory present, 9090 is a CRL-only listener that answers GET /crl/{name} and nothing else (404 STS-XPEP-0114). A method or path not listed here is 404 with the NotFound body (STS-XPEP-0009); nothing answers 405. Error codes are recorded in the PEP's log and never sent."
+    `description`:"The remote XACML policy enforcement point's own API: its status overview, its liveness, the demonstration decision at /protected, the PDP's policy nudge and its own credential's CRLs. Served on the plain listener (PEP_PORT, 9090, only with PEP_HTTP=true), the HTTPS listener (PEP_HTTPS_PORT, 9443) and any listener of purpose api the service defines. With PEP_HTTP off and a CRL directory present, 9090 is a CRL-only listener that answers GET /crl/{name} and nothing else (404 STS-XPEP-0114). A method or path not listed here is 404 with the NotFound body (STS-XPEP-0009); nothing answers 405. HEAD is answered as GET without the body for every GET listed here but /protected, whose GET is a decision; HEAD /protected is that 404. Error codes are recorded in the PEP's log and never sent."
   },
   `servers`:#[
     #{`url`:"https://localhost:9443",`description`:"The HTTPS listener, PEP_HTTPS_PORT."},
@@ -112,6 +116,7 @@ namespace IyaSts.Pep.Service {
   `certificate`: `ServedCertificate` | null;
   `loadedAt`: string | null;
   `lastCheckedAt`: string | null;
+  @js(#{`description`:"What the listener does: the acceptor it serves asks callers for a certificate (PEP_AUTHZEN_CLIENT_CA or trust anchors set, and its tuning's askClientCertificate or requireClientCertificate on); before it serves one, what its tuning will build."})
   `asksForClientCertificates`: boolean;
   `problem`: string | null;
   `what`: string;
@@ -172,12 +177,13 @@ namespace IyaSts.Pep.Service {
   `pulledCallers`: `PulledCallers`;
   `catalogue`: `Catalogue`;
   `answered`: `AuthzenAnswered`;
-  @js(#{`description`:"PEP_AUTHZEN as the environment set it; the value in force is settings.values.authzen."})
+  @js(#{`description`:"Whether the edge PDP answers: the value in force, the service's managed authzen when it set one, else PEP_AUTHZEN (settings.values.authzen says which)."})
   `enabled`: boolean;
   `endpoints`: string[];
   `localCallers`: `LocalCallers`;
+  @js(#{`description`:"https.asksForClientCertificates: whether the environment's HTTPS listener asks. Admission asks the listener each request arrived on."})
   `clientCertificatesAsked`: boolean;
-  @js(#{`description`:"PEP_AUTHZEN_PDP_IDENTIFIER as the environment set it; the value in force is settings.values.authzenPdpIdentifier."})
+  @js(#{`description`:"The identifier in force: the service's managed authzenPdpIdentifier when it set one, else PEP_AUTHZEN_PDP_IDENTIFIER; null when neither is, and the metadata names the origin each request arrived at."})
   `pdpIdentifier`: string | null;
   `what`: string;
 }
@@ -399,7 +405,7 @@ namespace IyaSts.Pep.Service {
 @endpoint("/", "get", #{
   `operationId`:"getOverview",
   `summary`:"What this PEP holds and how it is doing",
-  `description`:"The whole state of the PEP: the policy it holds and whether it is stale, its registration, the PIP, the HTTPS listener, the AuthZEN edge PDP, the reverse proxy, and every managed setting in force with its source. Reads nothing in the request.",
+  `description`:"The whole state of the PEP: the policy it holds and whether it is stale, its registration, the PIP, the HTTPS listener, the AuthZEN edge PDP, the reverse proxy, and every managed setting in force with its source. Reads nothing in the request. HEAD is answered as GET without the body.",
   `responses`:#{
     `200`:#{`description`:"The overview. Cache-Control: no-store.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114).",`content`:#{`application/json`:#{`schema`:null}}}
@@ -411,7 +417,7 @@ op `getOverview`(`responses/200/content/application~1json/schema`: `Overview`,
 @endpoint("/healthcheck", "get", #{
   `operationId`:"getHealthcheck",
   `summary`:"Liveness",
-  `description`:"Always 200 while the process answers; it says nothing about whether the policy is current (GET / says that). The image's HEALTHCHECK, xacml-pep --healthcheck, asks this over the plain listener with PEP_HTTP=true and over HTTPS, unverified, otherwise. HEAD is 404.",
+  `description`:"Always 200 while the process answers; it says nothing about whether the policy is current (GET / says that). The image's HEALTHCHECK, xacml-pep --healthcheck, asks this over the plain listener with PEP_HTTP=true and over HTTPS, unverified, otherwise. HEAD is answered as GET without the body.",
   `responses`:#{
     `200`:#{`description`:"Alive.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114).",`content`:#{`application/json`:#{`schema`:null}}}
@@ -423,7 +429,7 @@ op `getHealthcheck`(`responses/200/content/application~1json/schema`: `Health`,
 @endpoint("/protected", "get", #{
   `operationId`:"getProtected",
   `summary`:"The demonstration decision",
-  `description`:"Builds an XACML request from the query with the service's request builder, decides it against the held policy (fetching the attributes the policy designates from the PDP's PIP first), applies the bias and the obligation rule of XACML 3.0 section 7.2, and answers 200 when allowed and 403 when not, with the same body. A repeated parameter keeps its last value. Every parameter not named here is a subject attribute, asserted under its own name and as urn:sts:xacml:attribute:<name>. No credential is read: the subject is what the query says.",
+  `description`:"Builds an XACML request from the query with the service's request builder, decides it against the held policy (fetching the attributes the policy designates from the PDP's PIP first), applies the bias and the obligation rule of XACML 3.0 section 7.2, and answers 200 when allowed and 403 when not, with the same body. A repeated parameter keeps its last value. Every parameter not named here is a subject attribute, asserted under its own name and as urn:sts:xacml:attribute:<name>. No credential is read: the subject is what the query says. HEAD is the generic 404 (STS-XPEP-0009): a decision is evaluated, counted and reported, which a HEAD from a monitor or a link checker does not mean to ask for.",
   `parameters`:#[
     #{`name`:"subject",`in`:"query",`required`:false,`description`:"The access-subject's subject-id. Absent or empty: no subject attribute.",`schema`:#{`type`:"string"}},
     #{`name`:"resource",`in`:"query",`required`:false,`description`:"The resource-id (anyURI). Absent or empty: the resource setting (PEP_RESOURCE), else urn:xacml-pep:protected.",`schema`:#{`type`:"string"}},
@@ -457,7 +463,7 @@ op `postNotify`(`requestBody/content/application~1json/schema`: `Nudge`,
 @endpoint("/crl/{name}", "get", #{
   `operationId`:"getCrl",
   `summary`:"A CRL of this PEP's own credential",
-  `description`:"The file {name} in PEP_CRL_DIR (default: the crl directory beside PEP_TLS_CERT), as stored, so that a client verifying this PEP's certificate can check it. Served on every API listener, the CRL-only one included.",
+  `description`:"The file {name} in PEP_CRL_DIR (default: the crl directory beside PEP_TLS_CERT), as stored, so that a client verifying this PEP's certificate can check it. Served on every API listener, the CRL-only one included. HEAD is answered as GET without the body.",
   `parameters`:#[
     #{`name`:"name",`in`:"path",`required`:true,`description`:"A file name; anything else is 404.",`schema`:#{`type`:"string",`pattern`:"^[A-Za-z0-9-]+\\.[cC][rR][lL]$"}}
   ],

@@ -172,19 +172,20 @@ pub fn endpoint_name(path: &str) -> &'static str {
 /// HTTP scheme to name).
 pub fn admit(
     options: &Options,
-    asks_for_certificates: bool,
+    verifies_certificates: bool,
     transport: &Transport,
     callers: &Callers,
     endpoint: &str,
 ) -> Result<Caller, Reply> {
-    if !asks_for_certificates {
+    if !verifies_certificates {
         return Err(Reply::error(
             401,
             "STS-XPEP-0039",
             "This edge PDP authenticates its caller by a client certificate \
-             (mutual TLS) on its HTTPS listener, and it is configured with \
-             no authority to verify one against (PEP_AUTHZEN_CLIENT_CA), so \
-             it admits nobody.",
+             (mutual TLS), and the listener this request arrived on asks \
+             for none it can verify (no PEP_AUTHZEN_CLIENT_CA or trust \
+             anchors, or its tuning asks for no certificate), so it admits \
+             nobody here.",
         ));
     }
     let peer = match (&transport.peer, transport.https) {
@@ -666,9 +667,21 @@ impl Pep {
             );
         }
         let callers = self.sync.callers();
+        // THE LISTENER THE REQUEST ARRIVED ON (#1830): an HTTPS listener
+        // admits by a certificate only if ITS acceptor asked for one and
+        // verifies it — the environment's listener's client CA says
+        // nothing about a listener the service defined, or one whose tuning
+        // asks for none. A plain-HTTP request has no certificate to ask
+        // about, and is answered as it always was: by whether the
+        // environment's HTTPS listener could admit it (0035), or not (0039).
+        let verifies = if transport.https {
+            transport.verifies_client_certificates
+        } else {
+            self.listener.verifies_client_certificates()
+        };
         let caller = match admit(
             &self.options,
-            self.listener.asks_for_client_certificates(),
+            verifies,
             transport,
             &callers,
             endpoint_name(if batch {
@@ -1099,6 +1112,7 @@ mod tests {
             https: true,
             remote: None,
             crl_only: false,
+            verifies_client_certificates: true,
             peer: Some(Peer {
                 sha256: sha256.to_string(),
                 subject: "CN=pep".into(),

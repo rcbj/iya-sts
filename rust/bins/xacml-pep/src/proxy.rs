@@ -73,7 +73,7 @@ use sts_core::log::tag;
 use tokio::net::TcpListener;
 
 use crate::identity::{self, Jar, Jars, Tokens};
-use crate::listener::{peer_of, HttpsListener, Transport};
+use crate::listener::{peer_of, ClientAuth, HttpsListener, Transport};
 use crate::listener_pool::{drive, ListenerRuntime};
 use crate::pdp_client::PdpClient;
 use crate::proxy_auth::{self, Authenticator, Identity, Refusal};
@@ -2743,6 +2743,7 @@ pub async fn serve_on(
                 peer: None,
                 remote: Some(remote),
                 crl_only: false,
+                verifies_client_certificates: false,
             };
             let cfg = job.http();
             drive(stream, tower_service(proxy, transport), cfg, false, job)
@@ -2771,7 +2772,7 @@ pub async fn serve_https(
         let Ok((stream, remote)) = listener.accept().await else {
             continue;
         };
-        let Some(acceptor) = https.current() else {
+        let Some((acceptor, client_auth)) = https.current_served() else {
             continue;
         };
         let proxy = proxy.clone();
@@ -2792,6 +2793,8 @@ pub async fn serve_https(
                 peer: peer_of(tls.ssl()),
                 remote: Some(remote),
                 crl_only: false,
+                verifies_client_certificates: client_auth
+                    == ClientAuth::Verifying,
             };
             drive(tls, tower_service(proxy, transport), cfg, offer_h2, job)
                 .await;

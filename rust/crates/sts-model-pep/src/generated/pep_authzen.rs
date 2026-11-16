@@ -189,7 +189,9 @@ pub mod components {
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Metadata {
-        /// PEP_AUTHZEN_PDP_IDENTIFIER, else https://<Host> of an HTTPS request.
+        /// The identifier in force (the managed authzenPdpIdentifier, else
+        /// PEP_AUTHZEN_PDP_IDENTIFIER), else https://<authority> of an HTTPS
+        /// request: its Host header, or over HTTP/2 the :authority it sent.
         pub policy_decision_point: String,
         pub access_evaluation_endpoint: String,
         /// Only while the realm's authzen.batchEnabled is on.

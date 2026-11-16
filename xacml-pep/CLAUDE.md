@@ -992,6 +992,21 @@ because the AuthZEN handler can say why it refused where a handshake alert
 cannot. `listener.rs`'s `peer_of()` reads what was presented and whether it
 verified; `main.rs` puts it on every request of the connection.
 
+**The first question is asked of the listener the request ARRIVED ON**
+(#1830). Each acceptor records what it was built to do about a client
+certificate (`ClientAuth`: nothing, ask and verify against an authority, or
+ask anybody), and the connection's `Transport` carries
+`verifies_client_certificates` read together with the acceptor that took it.
+A listener the service defined, or one whose tuning asks for none, is
+therefore answered for itself: until #1830 the door asked whether the
+ENVIRONMENT's listener had a client CA, so a request on a defined listener
+that verified nothing went on to `-0035` and one on a defined listener
+that did was refused `-0039` when the environment had none. Plain HTTP
+still asks the environment's HTTPS listener, so its answer (`-0035` when
+that one could admit, `-0039` when not) is what it always was. The same
+record is `https.asksForClientCertificates` on `GET /`: what the served
+acceptor does, and before one is served what its tuning will build.
+
 Then **the service's own answer decides** (#1189, rcbj's decision): `sync.rs`
 pulls `GET /xacml/pep/authzen-callers` after the catalogue, with its own token
 and `?since=`, keeps the last good list on a failure (`STS-XPEP-0047`,
@@ -1020,7 +1035,8 @@ is unreachable or older than #1189 (whose `404` keeps no list loaded). Unset,
 the pulled list alone decides, and nothing is answered before it loads.
 
 Each refusal is the service's status for the same situation and an `XPEP`
-code of its own: no certificate or plain HTTP 401 (`-0035`), one that did not
+code of its own: a listener that asks for no certificate it can verify 401
+(`-0039`), no certificate or plain HTTP 401 (`-0035`), one that did not
 verify 401 (`-0036`), nothing pulled and no local list 503 (`-0050`), a
 realm whose door is a token 401 (`-0052` — `bearer` and `mtls+bearer` admit
 no certificate alone, so the service sends no caller), a certificate the
@@ -1072,12 +1088,27 @@ before the first pull, one not on the local list 403 (`-0037`). No
 
 ### The metadata
 
-`policy_decision_point` is `PEP_AUTHZEN_PDP_IDENTIFIER` or, unset, the
+`policy_decision_point` is the identifier in force (the managed
+`authzenPdpIdentifier`, else `PEP_AUTHZEN_PDP_IDENTIFIER`) or, unset, the
 origin the HTTPS request arrived at — section 9.2.3 has a PEP refuse a
 document whose identifier is not the base it built the URL from, and the
 endpoints are served at this container's root, so an identifier with a path
 is refused at start (`STS-XPEP-0045`). It names the batch endpoint only
 while the realm has it on, and nothing unimplemented, as the service's does.
+
+**The origin is the `Host` header, else the request's authority** (#1830):
+an HTTP/2 client sends `:authority` and no `Host`, and hyper puts it in the
+URI, so reading `Host` alone answered every h2 request without an identifier
+set 404 (`-0045`). `Host` wins when both are there. `GET /`'s
+`authzen.enabled` and `authzen.pdpIdentifier` are the values in force too,
+since #1830 — they reported the environment's while the managed ones decided.
+
+**HEAD on the API listeners** (#1830) is answered as GET without the body
+for `/`, `/healthcheck`, `/crl/<name>` and this metadata: same status and
+headers, `Content-Length` the GET's. **Not for `/protected`**, whose GET is a
+decision — the PIP asked at the PDP, the enforcement counted and reported on
+the heartbeat — which a monitor's or a link checker's HEAD does not mean to
+ask for; it stays the generic 404 (`STS-XPEP-0009`), as before.
 
 ## THE REVERSE PROXY (#1760)
 
@@ -1933,14 +1964,9 @@ unchanged (none is a fix for this ticket):
 * `basic` has two 429 bodies, its lockout's and the limiter's; the listener
   certificate's 200 carries a stray `ok: true`; the nudge's `pdp` is always
   empty.
-* On `GET /`, `authzen.enabled` and `authzen.pdpIdentifier` report the
-  environment, not the managed values in force (which `settings.values` has).
 * The proxy's
   callback and sign-out are dispatched for any method; `/.iya-pep/` is not
-  reserved as a whole, only its eight paths; HEAD on this handler is 404.
-* The AuthZEN metadata reads only the `Host` header, which an HTTP/2 client
-  does not send, so without `PEP_AUTHZEN_PDP_IDENTIFIER` it may be 404 over h2
-  (inferred, not observed).
+  reserved as a whole, only its eight paths.
 
 ## Error codes
 

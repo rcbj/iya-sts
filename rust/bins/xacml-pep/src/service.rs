@@ -143,10 +143,42 @@ impl Pep {
 
     /// ONE HANDLER FOR BOTH LISTENERS. No `instrument` on it: it is the hot
     /// path of the container and would drown its log.
+    ///
+    /// **HEAD IS GET WITHOUT THE BODY (#1830)** for `/`, `/healthcheck`,
+    /// `/crl/<name>` and the AuthZEN metadata: the same status and headers,
+    /// `Content-Length` the GET's, no body. **Not for `/protected`**, whose
+    /// GET is a DECISION — the PIP asked at the PDP, the enforcement counted
+    /// and reported on the heartbeat — and a HEAD is what a monitor or a
+    /// link checker sends without meaning one; it stays the generic 404, as
+    /// every other method this handler does not answer.
     pub async fn handle(
         self: Arc<Self>,
-        request: Request<Body>,
+        mut request: Request<Body>,
     ) -> Response<Body> {
+        if request.method() != Method::HEAD {
+            return self.answer(request).await;
+        }
+        if request.uri().path() != "/protected" {
+            *request.method_mut() = Method::GET;
+        }
+        let response = self.answer(request).await;
+        let (mut parts, body) = response.into_parts();
+        // Every answer here is a small document already in memory (a CRL
+        // file read whole), so it is measured rather than streamed.
+        let length = axum::body::to_bytes(body, usize::MAX)
+            .await
+            .map(|b| b.len())
+            .unwrap_or(0);
+        if parts.status != StatusCode::NO_CONTENT {
+            parts
+                .headers
+                .insert(header::CONTENT_LENGTH, HeaderValue::from(length));
+        }
+        Response::from_parts(parts, Body::empty())
+    }
+
+    /// Every method but HEAD, which [`Self::handle`] answers through this.
+    async fn answer(self: Arc<Self>, request: Request<Body>) -> Response<Body> {
         let method = request.method().clone();
         let uri = request.uri().clone();
         let path = uri.path().to_string();
@@ -219,11 +251,14 @@ impl Pep {
             return response;
         }
         if method == Method::GET && path == authzen::METADATA_PATH {
+            // `Host`, else the URI's authority (#1830): an HTTP/2 client
+            // sends `:authority` and no `Host`, and hyper puts it in the URI.
             let host = request
                 .headers()
                 .get(header::HOST)
                 .and_then(|v| v.to_str().ok())
-                .map(str::to_string);
+                .map(str::to_string)
+                .or_else(|| uri.authority().map(|a| a.as_str().to_string()));
             let reply = self.authzen_metadata(&transport, host.as_deref());
             return reply_response(&reply);
         }
@@ -367,7 +402,8 @@ impl Pep {
                     POST /notify, GET /healthcheck, GET /crl/<name> for its \
                     own credential's lists, and the AuthZEN edge PDP: POST \
                     /access/v1/evaluation, POST /access/v1/evaluations and \
-                    GET /.well-known/authzen-configuration."
+                    GET /.well-known/authzen-configuration. HEAD is answered \
+                    for each GET but /protected."
             }),
         )
     }
@@ -636,7 +672,12 @@ impl Pep {
         let o = &self.options;
         let mut out = self.sync.authzen_json();
         if let Some(map) = out.as_object_mut() {
-            map.insert("enabled".into(), json!(o.authzen_enabled));
+            // THE VALUES IN FORCE (#1830), the service's managed ones when
+            // it set them — what the edge PDP actually does — and never the
+            // environment's alone; `settings.values` says where each came
+            // from.
+            let now = o.now();
+            map.insert("enabled".into(), json!(now.authzen));
             map.insert(
                 "endpoints".into(),
                 json!([
@@ -667,10 +708,10 @@ impl Pep {
             );
             map.insert(
                 "pdpIdentifier".into(),
-                if o.authzen_pdp_identifier.is_empty() {
+                if now.authzen_pdp_identifier.is_empty() {
                     Value::Null
                 } else {
-                    json!(o.authzen_pdp_identifier)
+                    json!(now.authzen_pdp_identifier)
                 },
             );
             map.insert(
@@ -983,6 +1024,208 @@ mod tests {
             headers.get(header::CACHE_CONTROL).map(|v| v.as_bytes()),
             Some(&b"no-store"[..])
         );
+    }
+
+    /// A PEP that has pulled (no policies) and holds an AuthZEN catalogue,
+    /// its env listener asking for no client certificate and no identifier
+    /// set: the edge PDP reaches its admission and its metadata.
+    fn a_ready_pep() -> Arc<Pep> {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.pip_enabled = false;
+        options.authzen_enabled = true;
+        options.authzen_pdp_identifier = String::new();
+        options.authzen_callers_configured = false;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = Arc::new(Sync::new(client.clone(), options.clone()));
+        sync.load_for_test(&json!({ "syncToken": "p1", "policies": [] }));
+        sync.load_catalogue_for_test(&json!({
+            "syncToken": "c1", "realm": "", "apiObject": "sts-authzen-api",
+            "rows": [], "settings": { "enabled": true, "batchEnabled": true }
+        }));
+        Arc::new(Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            RemotePip::new(client, false).governed_by(options.clone()),
+            Arc::new(HttpsListener::new("", "", 0, 1000, None)),
+        ))
+    }
+
+    /// GET / REPORTS THE VALUES IN FORCE (#1830): the managed `authzen` and
+    /// `authzenPdpIdentifier` once the service sets them, and the
+    /// environment's again when it clears them.
+    #[test]
+    fn the_overview_reports_the_authzen_values_in_force() {
+        let pep = a_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let env = pep.options.authzen_enabled;
+        let overview = |pep: &Arc<Pep>| -> Value {
+            let (_, body) = ask(pep, Method::GET, "/", https.clone());
+            serde_json::from_str(&body).unwrap()
+        };
+        let before = overview(&pep);
+        assert_eq!(before["authzen"]["enabled"], json!(env));
+        pep.options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &json!({ "authzen": !env,
+                     "authzenPdpIdentifier": "https://pdp.example" }),
+        ));
+        let after = overview(&pep);
+        assert_eq!(after["authzen"]["enabled"], json!(!env));
+        assert_eq!(after["authzen"]["pdpIdentifier"], "https://pdp.example");
+        assert_eq!(
+            after["settings"]["values"]["authzen"]["value"],
+            json!(!env),
+            "the same value settings.values reports"
+        );
+        pep.options.managed.apply(Managed::default());
+        assert_eq!(overview(&pep)["authzen"]["enabled"], json!(env));
+    }
+
+    /// HEAD IS GET WITHOUT THE BODY (#1830) for every GET but /protected,
+    /// whose GET is a decision; HEAD /protected is the generic 404.
+    #[test]
+    fn head_is_get_without_the_body() {
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        for path in [
+            "/",
+            "/healthcheck",
+            "/crl/root.crl",
+            "/.well-known/authzen-configuration",
+        ] {
+            let (get, get_headers, body) = answer(
+                &pep,
+                Method::GET,
+                path,
+                https.clone(),
+                &[("host", "pep.example:9443")],
+                "",
+            );
+            let (head, headers, empty) = answer(
+                &pep,
+                Method::HEAD,
+                path,
+                https.clone(),
+                &[("host", "pep.example:9443")],
+                "",
+            );
+            assert_eq!(head, get, "{}", path);
+            assert!(empty.is_empty(), "{}: {}", path, empty);
+            assert_eq!(
+                headers.get(header::CONTENT_TYPE),
+                get_headers.get(header::CONTENT_TYPE),
+                "{}",
+                path
+            );
+            if path != "/" {
+                // The overview's clock moves between the two requests.
+                assert_eq!(
+                    headers
+                        .get(header::CONTENT_LENGTH)
+                        .and_then(|v| v.to_str().ok()),
+                    Some(body.len().to_string().as_str()),
+                    "{}",
+                    path
+                );
+            }
+        }
+        let (status, _, body) =
+            answer(&pep, Method::HEAD, "/protected", https.clone(), &[], "");
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.is_empty());
+        let (status, _) = ask(&pep, Method::HEAD, "/notify", https);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        // The CRL-only listener answers a HEAD of a CRL path as its GET.
+        let crl = Transport {
+            crl_only: true,
+            ..Transport::default()
+        };
+        let (status, body) = ask(&pep, Method::HEAD, "/healthcheck", crl);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.is_empty());
+    }
+
+    /// THE METADATA OVER HTTP/2 (#1830): no `Host`, the authority in the
+    /// URI, as hyper hands an h2 request's `:authority` over; `Host` wins
+    /// when both are there; neither is still STS-XPEP-0045's 404.
+    #[test]
+    fn the_metadata_names_the_authority_an_h2_client_sends() {
+        use sts_model_pep::pep_authzen::read_answer;
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let url = "https://pep.example:9443/.well-known/authzen-configuration";
+        let (status, _, body) =
+            answer(&pep, Method::GET, url, https.clone(), &[], "");
+        assert_eq!(status, StatusCode::OK, "{}", body);
+        let said: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(said["policy_decision_point"], "https://pep.example:9443");
+        let read = read_answer("getAuthzenConfiguration", 200, &said);
+        assert!(matches!(read, Some(Ok(()))), "{:?}", read);
+        let (_, _, body) = answer(
+            &pep,
+            Method::GET,
+            url,
+            https.clone(),
+            &[("host", "front.example")],
+            "",
+        );
+        let said: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(said["policy_decision_point"], "https://front.example");
+        let (status, _) = ask(
+            &pep,
+            Method::GET,
+            "/.well-known/authzen-configuration",
+            https,
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// ADMISSION ASKS THE LISTENER THE REQUEST ARRIVED ON (#1830): the
+    /// environment's listener here verifies nothing, and a request that
+    /// came in on a listener that does is admitted past STS-XPEP-0039 (to
+    /// 0050, no caller list pulled yet); one on a listener that does not is
+    /// 0039, and plain HTTP is answered by the environment's as before.
+    #[test]
+    fn admission_asks_the_listener_the_request_arrived_on() {
+        let pep = a_ready_pep();
+        let body = r#"{"subject":{"type":"user","id":"a"},"action":{"name":"r"},"resource":{"type":"t","id":"1"}}"#;
+        let peer = Some(crate::listener::Peer {
+            sha256: "ab".repeat(32),
+            subject: "CN=caller".into(),
+            verified: true,
+            why: String::new(),
+        });
+        let on = |verifies: bool| Transport {
+            https: true,
+            peer: peer.clone(),
+            verifies_client_certificates: verifies,
+            ..Transport::default()
+        };
+        let path = "/access/v1/evaluation";
+        let (status, _, said) =
+            answer(&pep, Method::POST, path, on(true), &[], body);
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{}", said);
+        assert!(said.contains("not yet pulled"), "{}", said);
+        let (status, _, said) =
+            answer(&pep, Method::POST, path, on(false), &[], body);
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(said.contains("arrived on asks"), "{}", said);
+        let (status, _, said) =
+            answer(&pep, Method::POST, path, Transport::default(), &[], body);
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(said.contains("arrived on asks"), "{}", said);
     }
 
     /// THE CRL-ONLY LISTENER answers GET /crl/<name> and nothing else.
