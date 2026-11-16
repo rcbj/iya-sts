@@ -29155,6 +29155,10 @@ function removePersonEntry(stored, door, options) {
     forgetHolderCertificates('person', goneName,
                              goneUuid ? 'urn:uuid:' + goneUuid : '',
                              goneAttributes, stored.dn, door);
+    // AND EVERYTHING ELSE KEPT UNDER THEIR NAME OR DN (2026-11-16, rcbj:
+    // "address all those things a recreated user inherits")
+    // — forgetPersonHoldings().
+    forgetPersonHoldings(goneName, stored.dn, door);
   }
   log.debug('Leaving removePersonEntry().');
 }
@@ -29175,6 +29179,96 @@ function forgetHolderCertificates(kind, id, subject, attributes, dn, door) {
               'detached from its name: ' + ((e && e.message) || e));
   }
   log.debug('Leaving forgetHolderCertificates().');
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A DELETED PERSON HELD OUTSIDE THEIR ENTRY, UNDER THEIR NAME OR DN
+// (2026-11-16, rcbj: "address all those things a recreated user inherits";
+// the rule is #1612's, a deleted object made again under the same name
+// inherits nothing). A person made again under the username has the same name
+// and the same DN and a NEW `entryUUID`, so every store keyed by either found
+// the deleted person's rows and handed them over. Each store's own door
+// forgets them, in the entry's realm, synchronously — before this delete is
+// answered, so nothing made under the name afterwards can be what is
+// forgotten (the deferred step `account_state.ts` takes for sessions has to
+// read its ids first for the same reason):
+//
+//   * the devices they owned, removed and their certificates revoked
+//     (`devices.forgetOwner()`, found by the owner index);
+//   * their post-login progress (`post_login.forgetPerson()`, a key per
+//     activity);
+//   * the mail they declined (`mail.forgetPerson()`, one key);
+//   * a partner's stop on them through each federation relationship
+//     (`federation_blocks.forgetPerson()`, a key per relationship);
+//   * their name on every GNAP application's approvers
+//     (`gnap_signals.forgetApprover()`, a list per application);
+//   * their `/admin/users` row and token-holder row
+//     (`admin_stats.forgetIdentity()`, a key each);
+//   * the enrolments pending for them — the authenticator app, a security
+//     key, an administrator's ceremony (`credentials.forgetPending()`) —
+//     and the rich authorization Allows they gave
+//     (`authorization_details.forgetPerson()`), both minutes-long;
+//   * the risk standing this process holds for them
+//     (`risk_engine.forgetStanding()`, one key).
+//
+// The RISC register's `purged` row is not forgotten here: it is the evidence
+// that the purge went out, and `ssf/risc.ts` moves it out of the name when
+// the name is given to a new entry (`retireNamesake()`). Group and role
+// memberships, owner lists, certificates, the photo and what the person held
+// live are each forgotten above, by their own doors. Nothing here may stop
+// the delete, which has happened: a step that throws is logged under
+// STS-LDAP-0222 and the rest go on. A re-homing (`moved`) never comes here.
+// ---------------------------------------------------------------------------
+function forgetPersonHoldings(name, dn, door) {
+  log.debug('Entering forgetPersonHoldings(). ' + dn);
+  const via = String(door || 'a directory delete');
+  const steps = [
+    { what: 'devices', act: function () {
+      require('../common/devices').forgetOwner(dn, via);
+    } },
+    { what: 'post-login progress', act: function () {
+      require('../common/post_login').forgetPerson(name);
+    } },
+    { what: 'mail preferences', act: function () {
+      require('../common/mail').forgetPerson(name);
+    } },
+    { what: 'federation blocks', act: function () {
+      const federations = require('../federation/federation').list()
+        .map(function (one) {
+          return String(one.fedId || '');
+        });
+      require('../federation/federation_blocks').forgetPerson(name,
+                                                              federations);
+    } },
+    { what: 'GNAP approvals', act: function () {
+      require('../gnap/gnap_signals').forgetApprover(name);
+    } },
+    { what: 'identity register', act: function () {
+      require('../common/admin_stats').forgetIdentity(name);
+    } },
+    { what: 'pending enrolments', act: function () {
+      require('../common/credentials').forgetPending(name);
+    } },
+    { what: 'authorization details allowed', act: function () {
+      require('../oauth-oidc/authorization_details').forgetPerson(name);
+    } },
+    { what: 'risk standing', act: function () {
+      require('../risk/risk_engine').forgetStanding(realmFor(dn).id, name);
+    } }
+  ];
+  realms.run(realmFor(dn), function () {
+    steps.forEach(function (step) {
+      try {
+        step.act();
+      } catch (e) {
+        log.error(errorCodes.tag('STS-LDAP-0222') + 'ldap: the ' + step.what +
+                  ' of the deleted person ' + dn + ' could not be forgotten ' +
+                  '(' + via + '), so a person made again under the name may ' +
+                  'inherit them: ' + ((e && e.message) || e));
+      }
+    });
+  });
+  log.debug('Leaving forgetPersonHoldings().');
 }
 
 // Delete a person's entry. Since 2026-11-10 (#1612, rcbj) it takes that DN out

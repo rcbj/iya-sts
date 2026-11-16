@@ -2574,7 +2574,8 @@ mode.
   owner attributes by its DN (#1306) — that is how a service account under
   `ou=users` is found without paging the people. Past 1,000 answers it says so
   (`STS-ADMIN-0923`). A device's `owner` is its holder, not an authority, and
-  is left to the device register. `tests/deleted_references.js` holds both.
+  is left to the device register (whose `forgetOwner()` removes a deleted
+  person's devices, below). `tests/deleted_references.js` holds both.
 
   **AND AN APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of 2026-11-13
   on #1612).** A role made for one application (#310: `<role>@<app>`,
@@ -2605,6 +2606,39 @@ mode.
   `common/tls_client_certificates.js`'s `forgetDeletedHolder()`
   (`common/CLAUDE.md` 3ag argues it). `deletePerson()`'s `moved` — a
   re-homing to another cell — skips it.
+
+  **AND EVERYTHING ELSE KEPT UNDER THE NAME OR THE DN (2026-11-16, rcbj:
+  "address all those things a recreated user inherits").** A person made
+  again under the username has the same name and DN and a new `entryUUID`,
+  so every store keyed by either handed the deleted person's rows over.
+  `removePersonEntry()` (not on `moved`) calls `forgetPersonHoldings()`,
+  which runs each store's own door in the entry's realm, SYNCHRONOUSLY —
+  before the delete is answered, so nothing made under the name afterwards
+  is what gets forgotten: `devices.forgetOwner()` (the devices the person
+  owned are REMOVED and their certificates revoked, found by the owner index;
+  `common/CLAUDE.md`, the device register), `post_login.forgetPerson()`,
+  `mail.forgetPerson()`, `federation_blocks.forgetPerson()` (a key per
+  relationship), `gnap_signals.forgetApprover()` (a list per application),
+  `admin_stats.forgetIdentity()`, `credentials.forgetPending()`,
+  `authorization_details.forgetPerson()` and `risk_engine.forgetStanding()`
+  (this process's copy). An ACME account is bound to the entry's `entryUUID`
+  as well as its name, so a deleted holder's account orders nothing for a
+  namesake (`acme/CLAUDE.md`). Each one's cost is the person's
+  rows, or configuration (relationships, applications), or a store of
+  minutes-long rows its own writes already walk — never the directory. A
+  step that throws is logged `STS-LDAP-0222` and the rest go on. **The RISC
+  register is the exception, on purpose**: its `purged` row is the evidence
+  `account-purged` went out, so it is not forgotten here; `ssf/risc.ts`'s
+  `retireNamesake()` moves it out of the name when a write names a new entry
+  under it (`ssf/CLAUDE.md`). **What is left**, each needing a decision of
+  its own: another process's own row of `admin_stats.users` (`merge: 'own'`,
+  display only) and its risk standing (ages out); the Kerberos principal
+  record and its PAC RID, derived from the name alone (`autoRidFor()`), so a
+  namesake gets the same SID — the record must keep its sign-out stamp, and
+  changing the derivation changes existing SIDs; the outbound SCIM client's
+  adoption of a deactivated remote User found by `userName`; and AuthZEN
+  approvals naming a username as the PEP sent it.
+  `tests/deleted_person_inherits_nothing.js` holds it.
 
 ---
 

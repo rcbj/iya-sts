@@ -16540,6 +16540,16 @@ const CODES = [
     summary: 'A person import created the entry but could not write the ' +
       'credentials the file carried. The person is there without them.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-LDAP-0222',
+    summary: 'Something a deleted person held outside their entry, under ' +
+      'their name or DN (devices, post-login progress, mail preferences, ' +
+      'federation blocks, GNAP approvals, the identity register, pending ' +
+      'enrolments, rich authorization Allows, the risk standing; the RISC ' +
+      'register row, moved ' +
+      'out of the name when it is taken again), could not be forgotten, so ' +
+      'a person made again under the name may inherit it. The delete ' +
+      'itself stands.',
+    spec: '' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -22434,6 +22444,11 @@ const CODES = [
       'a device whose stsDeviceAndroidKey marker is missing or wrong; that ' +
       'device\'s keys are rechecked only once a later write of it derives ' +
       'the marker (#615).',
+    spec: '' },
+  { code: 'STS-DEVICE-0053',
+    summary: 'A device of a deleted person could not be removed from the ' +
+      'register, so a person made again under the name owns it. Remove it ' +
+      'on the Devices page.',
     spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',

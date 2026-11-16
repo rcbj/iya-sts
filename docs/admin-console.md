@@ -605,8 +605,13 @@ The console, `POST /admin-api/users/delete` (`{"user": "…"}`), SCIM's
 * Everything the person held is ended, as a disable ends it: sign-on
   sessions (with CAEP `session-revoked` and back-channel Logout Tokens),
   tokens, codes and connections.
+* The person's devices are removed and their certificates revoked.
+* What was kept under the person's name goes too: post-login progress,
+  declined mail categories, federation blocks, GNAP approvals, the row on
+  the Users list, pending enrolments and allowed authorization details.
 * Somebody made again under the same name starts with nothing: a new
-  subject, no groups, no roles.
+  subject, no groups, no roles, and a fresh RISC register row (the deleted
+  account's is kept under its old subject).
 
 It is refused for:
 

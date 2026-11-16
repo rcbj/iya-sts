@@ -527,6 +527,41 @@ function childMain() {
          'a refused action answers 400 with its reasons',
          deleted.status + ' ' + JSON.stringify(deleted.json).slice(0, 200));
 
+    // --- a holder deleted and made again (2026-11-16, #1612's rule) --------
+    // The deleted person's account, its key still held, orders nothing for
+    // somebody made again under the name: the account is bound to the
+    // entry's entryUUID as well as its name.
+    const CARL = 'carl' + RUN;
+    const makeCarl = function () {
+      return api(A, '/users/create', { username: CARL, invent: false,
+        credential: 'none', attributes: { cn: CARL, sn: CARL,
+                                          mail: CARL + '@example.test' } });
+    };
+    await makeCarl();
+    const carlEab = await api(A, '/acme/create-eab', { kind: 'person',
+                                                       identifier: CARL });
+    const carlKey = C.generateAccountKey('ES256');
+    const carlAccount = await client.newAccount(carlKey,
+      { kid: carlEab.body.kid, hmacKey: carlEab.body.hmacKey });
+    const carlFirst = await client.newOrder(carlKey, carlAccount.location,
+      [{ type: 'permanent-identifier', value: CARL }]);
+    const ldapA = require(ROOT_DIR + '/ldap/ldap_server');
+    const carlGone = inA(function () {
+      const found = ldapA.objectFor(CARL);
+      return ldapA.deletePerson(found && found.entry ? found.entry.dn : CARL);
+    });
+    await makeCarl();
+    const carlAfter = await client.newOrder(carlKey, carlAccount.location,
+      [{ type: 'permanent-identifier', value: CARL }]);
+    note(carlAccount.status === 201 && carlFirst.status === 201 &&
+         carlGone && carlGone.ok &&
+         carlAfter.body && carlAfter.body.type === P + 'unauthorized',
+         'a deleted holder\'s account orders nothing for a person made ' +
+         'again under the name (unauthorized)',
+         JSON.stringify({ account: carlAccount.status,
+                          first: carlFirst.status, gone: carlGone,
+                          after: carlAfter.text.slice(0, 200) }));
+
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

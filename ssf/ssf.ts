@@ -5173,6 +5173,15 @@ class SharedSignals {
   riscAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, risc, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.riscAutoEmit().');
+    // A NAME TAKEN AGAIN STARTS FRESH IN THE REGISTER whether or not
+    // anything is sent (`risc.retireNamesake()`, 2026-11-16).
+    try {
+      risc.retireNamesake(notice || {});
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0222') + 'ssf: the RISC register ' +
+                'row of an account whose name was taken again could not be ' +
+                'moved out of it: ' + ((e && e.message) || e));
+    }
     if (!this.enabled()) {
       log.debug('Leaving SharedSignals.riscAutoEmit(). SSF is off.');
       return Promise.resolve({ sent: 0, streams: 0 });

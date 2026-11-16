@@ -12278,6 +12278,14 @@ each argued there:
   both (phase 4). Built and tested now; the doors are phase 3.
 * **The device outlives its secret**; a new owner takes the device WITHOUT
   its Native SSO secret and WITH its keys.
+* **A deleted owner's devices are REMOVED, not detached** (2026-11-16,
+  #1612's rule): a person made again under the username has the same DN, so
+  the new entry owned them — the `device_id` claim, recognition, the risk
+  level. `forgetOwner()`, from the directory's person delete
+  (`ldap/CLAUDE.md`), removes each and revokes its certificates, finds them
+  by the owner index, and looks for no session (the delete ends them all)
+  and sends no signal about a holder already gone (`STS-DEVICE-0053`). A
+  re-homing moves them instead.
 * **Bounds**: `devices.maxPerPerson` (it was `oauth2.maxDevicesPerPerson`) —
   a Native SSO sign-in evicts at it, an administrator is refused;
   `devices.maxPerApplication`; `devices.maxKeysPerDevice`.
