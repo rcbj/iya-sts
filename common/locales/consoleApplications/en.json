@@ -949,5 +949,11 @@
   "fga.pepsNone": "No person, service account or application in this realm holds REMOTE_PEPS.",
   "fga.pepsUnlocated": "Members of the group that name no entry, and so cannot be granted: {n}.",
   "fga.pepsRegrant": "Grant the remote PEPs again",
-  "fga.pepsRegrantTip": "Enforce again: every holder of REMOTE_PEPS without the AuthZEN group or this application in its scope is granted both. Nothing else changes."
+  "fga.pepsRegrantTip": "Enforce again: every holder of REMOTE_PEPS without the AuthZEN group or this application in its scope is granted both. Nothing else changes.",
+  "pepRoutes.tab": "Reverse proxy",
+  "pepRoutes.lead": "These routes of this realm’s remote PEPs stand in front of this application. Each reads what its mechanism needs from this entry when the PEP pulls its configuration, so a change here reaches the proxy on its next pull.",
+  "pepRoutes.thPep": "Remote PEP",
+  "pepRoutes.thRoute": "Route",
+  "pepRoutes.thPath": "Path",
+  "pepRoutes.thMechanisms": "Mechanisms"
 }

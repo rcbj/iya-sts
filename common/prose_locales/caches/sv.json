@@ -1694,5 +1694,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "inaktuell: credentialet har frånsagts"
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "Basic-biljetter för fjärr-PEP"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "Biljetterna som ett giltigt POST /xacml/pep/basic gav en fjärr-PEP, lagrade under SHA-256 för var och en; själva biljetten lagras inte."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "Tillämpas: 10000 per realm, den äldsta tas bort; PEP:en validerar Basic-uppgifterna igen."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "en biljett hittades via sitt kontrollvärde"
   }
 }

@@ -265,6 +265,8 @@ const spiffeRegistry = require('../spiffe/spiffe_registry');
 // whatever point those files were first loaded.
 const xacmlStore = require('../xacml/xacml_store');
 const xacmlPepRegistry = require('../xacml/xacml_pep_registry');
+// Remote PEP clusters (#1760): `ou=pepClusters`, filled below.
+const xacmlPepClusters = require('../xacml/xacml_pep_clusters');
 const xacmlPip = require('../xacml/xacml_pip');
 // The audit log. A plain require and it cannot become anything else: audit.js
 // requires helpers.js and config.js only, so it can be reached from the deepest
@@ -935,6 +937,17 @@ function pepsDn() {
   log.debug("Entering pepsDn().");
   log.debug("Leaving pepsDn().");
   return 'ou=peps,' + baseDn();
+}
+
+// ou=pepClusters (#1760, Remote PEP clusters): one entry per logical
+// cluster of remote PEPs sharing one configuration. A container of its own
+// rather than entries in ou=peps, because a cluster is not a party that
+// registers: ou=peps is named from certificates, and a cluster is named by
+// an administrator. `xacml/xacml_pep_clusters.ts` owns the schema.
+function pepClustersDn() {
+  log.debug("Entering pepClustersDn().");
+  log.debug("Leaving pepClustersDn().");
+  return 'ou=pepClusters,' + baseDn();
 }
 
 // ou=trustAnchors is the DURABLE half of the client-certificate truststore
@@ -3693,6 +3706,9 @@ xacmlStore.SCHEMA.attributes.forEach(function (row) {
 xacmlPepRegistry.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML PEP registry schema');
 });
+xacmlPepClusters.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the XACML PEP cluster schema');
+});
 
 // The SCIM mapping's invention, `scimExternalId`, was a FIFTH list learnt
 // here until #1579; it is in the model's own names (`models/directory/
@@ -4977,8 +4993,8 @@ function toSearchEntry(stored, requested, messageId, rule) {
 // demonstrable — two containers, three people, two groups, and one account that
 // looks like the one a client would bind as.
 // ---------------------------------------------------------------------------
-function seed() {
-  log.debug('Entering seed().');
+function seedTree() {
+  log.debug('Entering seedTree().');
   const dcValue = baseDn().split(',')[0].split('=')[1] || 'example';
   putEntry(baseDn(), {
     objectClass: ['top', 'domain', 'dcObject'],
@@ -5227,6 +5243,7 @@ function seed() {
       'place on /admin/xacml/peps and an address for the change nudge. ' +
       'xacml/xacml_pep_registry.ts holds the schema.'
   }, { origin: 'seed' });
+  putPepClustersContainer();
   // STRUCTURAL, so not behind `mode.seedsDemoData()` below — and in the DEFAULT
   // realm only, because the truststore is the process's. See trustAnchorsDn().
   if (realms.currentId() === realms.DEFAULT_ID) {
@@ -5541,6 +5558,24 @@ function seed() {
   let seeded = 0;
   eachEntryInRealm(function () { seeded++; });
   log.info('ldap: seeded ' + seeded + ' entries under ' + baseDn() + '.');
+  log.debug('Leaving seedTree().');
+}
+
+// THE SEED, MARKED WHILE IT RUNS (#1760): a membership write made by the seed
+// is not handed to the remote-PEP designation (designateJoinedRemotePeps()),
+// because the realm's administrators who are to own the identity are seeded
+// after it; the designation runs for the seed once they exist. A counter, not
+// a flag, so a nested call cannot clear it early.
+let seeding = 0;
+
+function seed() {
+  log.debug('Entering seed().');
+  seeding += 1;
+  try {
+    seedTree();
+  } finally {
+    seeding -= 1;
+  }
   log.debug('Leaving seed().');
 }
 
@@ -11289,7 +11324,9 @@ if (typeof serviceAccounts.setDirectory === 'function') {
     writeServiceAccount: writeServiceAccount,
     serviceAccountNames: serviceAccountNames,
     serviceAccountNamesAsync: serviceAccountNamesAsync,
-    resolveOwner: resolveServiceAccountOwner
+    resolveOwner: resolveServiceAccountOwner,
+    // A remote PEP's identity is a service account (#1760).
+    remotePepMembers: remotePepMemberDns
   });
 } else {
   log.warn('ldap: common/service_accounts.ts offers no setDirectory(), so no ' +
@@ -11397,6 +11434,16 @@ if (typeof xacmlPepRegistry.setDirectory === 'function') {
            '/admin/xacml/peps is empty. Policy DISTRIBUTION is unaffected — ' +
            'a PEP pulls GET /xacml/pep/policies without registering — so ' +
            'what is lost is the register and the nudge, not the mechanism.');
+}
+
+// ou=pepClusters (#1760): the container and nothing else. A cluster is named
+// by an administrator, so no certificate naming crosses here.
+if (typeof xacmlPepClusters.setDirectory === 'function') {
+  xacmlPepClusters.setDirectory({
+    allPepClusters: allPepClusters,
+    writePepCluster: writePepCluster,
+    deletePepCluster: deletePepCluster
+  });
 }
 
 // `locateEntry` and nothing else. It is the function that already resolves all
@@ -25290,6 +25337,97 @@ function writePep(name, attributes) {
 }
 
 // ---------------------------------------------------------------------------
+// ou=pepClusters AS A STORE (#1760, Remote PEP clusters).
+//
+// ou=peps' three functions again, for entries an administrator names. The
+// container is seeded with a realm's tree, and a realm built before it has
+// none, so a first write makes it too (the signer truststore's rule).
+// ---------------------------------------------------------------------------
+function putPepClustersContainer() {
+  log.debug("Entering putPepClustersContainer().");
+  putEntry(pepClustersDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'pepClusters',
+    description: 'Logical clusters of remote XACML Policy Enforcement ' +
+      'Points that share one configuration: the reverse proxy, the managed ' +
+      'settings and the listener definitions are held on the cluster once, ' +
+      'and every member pulls them as its own, differing only in its name ' +
+      'and its addresses. xacml/xacml_pep_clusters.ts holds the schema.'
+  }, { origin: 'seed' });
+  log.debug("Leaving putPepClustersContainer().");
+}
+
+function pepClusterDn(name) {
+  log.debug("Entering pepClusterDn().");
+  log.debug("Leaving pepClusterDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + pepClustersDn();
+}
+
+function allPepClusters() {
+  log.debug('Entering allPepClusters().');
+  const rows = [];
+  const base = normalizeDn(pepClustersDn());
+  eachResidentEntry(function (stored) {
+    if (isUnder(stored.dn, pepClustersDn()) &&
+        normalizeDn(stored.dn) !== base) {
+      const object = entryObject(stored);
+      object.name = (stored.attributes.cn || [])[0] ||
+                    stored.dn.split(',')[0].replace(/^cn=/i, '');
+      rows.push(object);
+    }
+  });
+  log.debug('Leaving allPepClusters(). ' + rows.length + ' cluster(s).');
+  return rows;
+}
+
+// Create or REPLACE, writePep()'s rule: the attributes were read from this
+// entry a moment ago and changed, and a document cleared must go.
+function writePepCluster(name, attributes) {
+  log.debug('Entering writePepCluster(). name=' + name);
+  const dn = pepClusterDn(name);
+  const existing = entries.get(normalizeDn(dn));
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writePepCluster(). The directory is full.');
+    return false;
+  }
+  if (!entries.get(normalizeDn(pepClustersDn()))) {
+    putPepClustersContainer();
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin : 'xacml' });
+  if (!stored || stored.ok === false) {
+    log.debug('Leaving writePepCluster(). Refused.');
+    return false;
+  }
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writePepCluster(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deletePepCluster(name) {
+  log.debug('Entering deletePepCluster(). name=' + name);
+  const dn = pepClusterDn(name);
+  const existing = entries.get(normalizeDn(dn));
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+    auditPolicyDirectory('entry.delete', dn,
+                         existing ? existing.attributes : {}, false);
+  }
+  log.debug('Leaving deletePepCluster(). ' + gone);
+  return gone;
+}
+
+// ---------------------------------------------------------------------------
 // THE TRUSTSTORE'S DURABLE HALF: read, write and delete one anchor.
 //
 // All three are handed to `tls/tls_server.js` pinned to the DEFAULT realm (see
@@ -27668,8 +27806,90 @@ function memberDnsOf(attributes) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760). THE CHOKEPOINT: every
+// write of a group's members comes through noteMembershipChange() below — a
+// putEntry() (the console's and the API's add-member, roles, a bulk import),
+// an LDAP add, modify, delete or modifyDN — so a PERSON who JOINS the group
+// that grants REMOTE_PEPS (`roles.remotePepGroup`, the name it has AFTER the
+// write, so a group renamed to it counts every member) is handed to
+// `service_accounts.designateRemotePep()` here, in the group's realm.
+// Asked before the observer check, because it is no observer's business.
+//
+// A SEED IS NOT TOLD (`seeding`, set by seed()): the seed runs before the
+// realm's bootstrap administrator exists, so the owner would be missing and the
+// identity deferred; `designateRemotePeps()` runs for the seed right after
+// that administrator is (server.js, admin_actions.ts's realm create).
+// ---------------------------------------------------------------------------
+function remotePepGroupKey() {
+  log.debug('Entering remotePepGroupKey().');
+  log.debug('Leaving remotePepGroupKey().');
+  return String(config.value('roles.remotePepGroup') || '').trim()
+    .toLowerCase();
+}
+
+function designateJoinedRemotePeps(groupDn, before, after, options) {
+  log.debug('Entering designateJoinedRemotePeps(). ' + groupDn);
+  const wanted = remotePepGroupKey();
+  const named = function (attributes) {
+    return ((attributes && attributes.cn) || []).some(function (one) {
+      return String(one).trim().toLowerCase() === wanted;
+    });
+  };
+  if (!wanted || seeding > 0 || !named(after)) {
+    log.debug('Leaving designateJoinedRemotePeps(). Not the PEP group.');
+    return;
+  }
+  const was = new Set(named(before) ? memberDnsOf(before) : []);
+  const joined = memberDnsOf(after).filter(function (dn) {
+    return !was.has(dn);
+  });
+  if (!joined.length) {
+    log.debug('Leaving designateJoinedRemotePeps(). Nobody joined.');
+    return;
+  }
+  // A failure here never undoes the membership write it follows.
+  try {
+    realms.run(realmFor(groupDn), function () {
+      joined.forEach(function (dn) {
+        const stored = getEntry(dn);
+        if (stored && isPersonEntry(stored)) {
+          serviceAccounts.designateRemotePep(stored.dn,
+            'joined ' + String(groupDn));
+        }
+      });
+    });
+  } catch (e) {
+    log.warn(errorCodes.tag('STS-SVCACCT-0052') + 'ldap: a member who ' +
+             'joined ' + groupDn + ' could not be made a service account: ' +
+             ((e && e.message) || e));
+  }
+  log.debug('Leaving designateJoinedRemotePeps(). ' + joined.length +
+            ' joined.');
+}
+
+// The persons in the ambient realm's REMOTE_PEPS group, by DN: the hook
+// `service_accounts.designateRemotePeps()` walks (#1760). Direct members
+// only, as REMOTE_PEPS itself reads the group.
+function remotePepMemberDns() {
+  log.debug('Entering remotePepMemberDns().');
+  const name = String(config.value('roles.remotePepGroup') || '').trim();
+  const group = name && nameUsableInDn(name)
+    ? readGroupEntry(groupDnFor(name)) : null;
+  const out = group ? group.members.map(function (one) {
+    return getEntry(String(one.dn || one.value || ''));
+  }).filter(function (stored) {
+    return !!stored && isPersonEntry(stored);
+  }).map(function (stored) {
+    return String(stored.dn);
+  }) : [];
+  log.debug('Leaving remotePepMemberDns(). ' + out.length);
+  return out;
+}
+
 function noteMembershipChange(groupDn, before, after, options) {
   log.debug('Entering noteMembershipChange(). ' + groupDn);
+  designateJoinedRemotePeps(groupDn, before, after, options);
   if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteMembershipChange(). Nobody is observing.');
     return;

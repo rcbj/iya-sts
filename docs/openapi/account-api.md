@@ -910,6 +910,7 @@ Scope: `account:manage`.
 | `door_scim` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the scim door. |
 | `door_ssf` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the ssf door. |
 | `door_wstrust` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the wstrust door. |
+| `door_xacml-pep` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the xacml-pep door. |
 | `id` | string |  | The id of the app password to revoke. |
 | `name` | string |  | What the new password is for, in your words. |
 

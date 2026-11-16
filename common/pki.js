@@ -2634,6 +2634,50 @@ function primaryUseCaseFor(scopeId) {
   return scopeKindOf(scopeId) === 'process' ? 'tls' : 'assertions';
 }
 
+// ---------------------------------------------------------------------------
+// ONE USE CASE'S ISSUING CA, WITH WHAT IS ABOVE IT: the trust a client of a
+// leaf from that use case needs, and nothing from the scope's other Issuing
+// CAs. Public certificates only. First asked for by the XACML nudge
+// (`xacml/xacml_pep_http.ts`, 2026-11-14): a remote PEP's notify listener
+// serves a `pep-tls` leaf of the realm it registered to, so that realm's
+// `pep-tls` chain is what the nudge verifies it against with no CA file
+// named. `issuing` is answered apart from the rest so a caller can PIN the
+// leaf's issuer to it — the Root would also verify a leaf from any other
+// Issuing CA of any realm, which is not what "issued to a PEP of this realm"
+// means.
+// ---------------------------------------------------------------------------
+/**
+ * Answers one use case's Issuing CA in a scope, and the Intermediate and
+ * Root above it, as PEM.
+ *
+ * @param scopeId - the realm (the ambient one when empty); ignored for a
+ *   process-scoped use case
+ * @param useCaseId - the use case, such as `pep-tls`
+ * @returns `{ issuing, intermediate, root }`, each a PEM, or null where the
+ *   scope holds no such Issuing CA (nothing has been issued from it yet)
+ */
+function useCaseChainPems(scopeId, useCaseId) {
+  log.debug("Entering useCaseChainPems(). use=" + useCaseId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug("Leaving useCaseChainPems(). Unknown use case.");
+    return null;
+  }
+  const row = rawRowFor(uc.scope === 'process' ? PROCESS_SCOPE
+                                               : realmIdOf(scopeId));
+  const root = serviceRoot();
+  const issuing = row && row.issuing ? row.issuing[uc.id] : null;
+  if (!root || !row || !row.intermediate || !issuing ||
+      !issuing.certificatePem) {
+    log.debug("Leaving useCaseChainPems(). No such Issuing CA here.");
+    return null;
+  }
+  log.debug("Leaving useCaseChainPems().");
+  return { issuing: issuing.certificatePem,
+           intermediate: row.intermediate.certificatePem,
+           root: root.certificatePem };
+}
+
 /**
  * Answers whether a realm holds a whole hierarchy.
  *
@@ -7265,6 +7309,27 @@ function describeCertificate(one) {
 const CERTIFY_ISSUER_MOVED_RETRIES = 3;
 
 /**
+ * The organisation and country a leaf's subject uses: the scope's own, and
+ * `iya-sts` where the scope names no organisation — the same fallback
+ * `certify()` writes into a leaf that brings no subject of its own.
+ *
+ * `describeScope()` answers an empty organisation for a row that has none,
+ * which is what the console draws. A leaf is not that reading.
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @returns `{ organisation, country }`
+ */
+function leafNameFacts(scopeId) {
+  log.debug('Entering leafNameFacts().');
+  const row = rawRowFor(String(scopeId));
+  const out = {
+    organisation: (row && row.organisation) || DEFAULT_ORGANISATION,
+    country: (row && row.country) || ''
+  };
+  log.debug('Leaving leafNameFacts().');
+  return out;
+}
+
+/**
  * Certifies one key pair from a use case's Issuing CA and records the
  * certificate in the slot the spec names.
  *
@@ -7274,8 +7339,9 @@ const CERTIFY_ISSUER_MOVED_RETRIES = 3;
  * @param scopeId - a realm id or `PROCESS_SCOPE`
  * @param useCaseId - the use case
  * @param spec - the slot, `publicKeyPem`, and optionally `alg`, `kid`,
- *   `label`, `commonName`, `keyUsage`, `extensions`, `days` and the pinned
- *   material
+ *   `label`, `commonName`, `subject` (an RDN sequence of `{ name, value }`,
+ *   used instead of CN, O and C), `keyUsage`, `extensions`, `days` and the
+ *   pinned material
  * @returns a promise of `{ ok: true, certificate, record }` or
  *   `{ ok: false, errors }`
  */
@@ -7402,10 +7468,23 @@ async function certify(scopeId, useCaseId, spec) {
   if (notAfter.getTime() > caEnds) {
     notAfter.setTime(caEnds);
   }
-  const organisation = (row && row.organisation) || DEFAULT_ORGANISATION;
-  const subject = [{ name: 'CN', value: String(spec.commonName || spec.slot) },
-                   { name: 'O', value: organisation }]
-    .concat(row && row.country ? [{ name: 'C', value: row.country }] : []);
+  // A caller that already built the subject — a person's directory name,
+  // with the common name first and the organisation and country last —
+  // passes it. Anything else keeps the CN, O and optional C every leaf
+  // has had. `leafNameFacts()` is that fallback, including `iya-sts` where
+  // the scope names no organisation.
+  const facts = leafNameFacts(id);
+  const given = spec && Array.isArray(spec.subject) ? spec.subject : [];
+  const usable = given.filter(function (one) {
+    return one && String(one.value || '') !== '';
+  });
+  const subject = usable.length
+    ? usable.map(function (one) {
+        return { name: String(one.name), value: String(one.value) };
+      })
+    : [{ name: 'CN', value: String(spec.commonName || spec.slot) },
+       { name: 'O', value: facts.organisation }]
+      .concat(facts.country ? [{ name: 'C', value: facts.country }] : []);
   let issued;
   try {
     issued = await x509.issueCertificate(Object.assign({
@@ -7490,12 +7569,22 @@ async function certify(scopeId, useCaseId, spec) {
   // and a renewal that did not carry these re-minted a TLS listener's or the
   // OpenID4VP Verifier's certificate WITHOUT its names: a certificate over
   // the same key that no client could match to a host any more.
-  if (spec.profile || spec.keyUsage || spec.extensions) {
+  if (spec.profile || spec.keyUsage || spec.extensions ||
+      (Array.isArray(spec.subject) && spec.subject.length)) {
     record.issuedAs = {
       profile: spec.profile ? String(spec.profile) : '',
       keyUsage: spec.keyUsage ? spec.keyUsage.slice() : null,
       extensions: spec.extensions ? JSON.parse(JSON.stringify(
-        spec.extensions)) : null
+        spec.extensions)) : null,
+      // The RDN sequence, when the caller built one. A renewal hands it
+      // back, so a person's directory subject survives a rebuilt branch.
+      // Absent, the renewal keeps CN, O and C.
+      subject: Array.isArray(spec.subject) && spec.subject.length
+        ? spec.subject.map(function (one) {
+            return { name: String(one && one.name || ''),
+                     value: String(one && one.value || '') };
+          })
+        : null
     };
   }
   // A PINNED SIGNER'S LIFECYCLE (#263) rides on its record through every
@@ -7750,7 +7839,8 @@ function tlsDnsNameProblem(name) {
  * @param scopeId - a realm id (a process use case uses the process branch)
  * @param useCaseId - the use case
  * @param spec - `slot`, `dnsNames`, `ipAddresses`, `keyAlg`, `commonName`,
- *   `label` and `days`
+ *   `label`, `days`, and `publicKeyPem` for a key the holder generated
+ *   (then no key is generated and `privateKeyPem` is null)
  * @returns a promise of `{ ok: true, issued }`, `issued` carrying the
  *   certificate, the private key and the anchor, or `{ ok: false, errors }`
  */
@@ -7832,7 +7922,14 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
     return branch;
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1760): a remote PEP's defined HTTPS
+  // listener sends the public half in a PKCS #10 request whose proof of
+  // possession its caller verified, so the private half never reaches this
+  // process and nothing is handed back. The algorithm named must be the
+  // key's; the caller read it off the request.
+  const pair = s.publicKeyPem
+    ? { publicPem: String(s.publicKeyPem), privatePem: null }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const was = certificateFor(id, uc.id, slot);
   const names = dnsNames.map(function (one) {
     return { kind: 'dns', value: one };
@@ -7872,8 +7969,11 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
   log.info('pki: a ' + keyDesc.label + ' ' + uc.label + ' certificate was ' +
            'issued for "' + slot + '" in "' + (id || 'default') + '", naming ' +
            names.map(function (one) { return one.value; }).join(', ') +
-           '; expires ' + made.record.notAfter + '. The private key was ' +
-           'handed to the caller and is not kept here.');
+           '; expires ' + made.record.notAfter + '. ' + (pair.privatePem
+             ? 'The private key was handed to the caller and is not kept ' +
+               'here.'
+             : 'The holder generated the key; this service never saw the ' +
+               'private half.'));
   log.debug('Leaving issueTlsServerKeyPair().');
   return { ok: true,
            issued: Object.assign(describeCertificate(made.record), {
@@ -10288,9 +10388,14 @@ async function recertifyUseCase(scopeId, useCaseId) {
       kid: was.pinnedSigner ? was.kid : undefined,
       generationSlot: !!was.pinnedSigner,
       // And a named leaf keeps its names (#230): see `issuedAs` in certify().
+      // The subject and the holder's `urn:uuid:` ride with them, so a
+      // person's directory-modeled TLS client certificate is still that
+      // person after the branch is rebuilt.
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
       keyUsage: (was.issuedAs && was.issuedAs.keyUsage) || undefined,
-      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined,
+      subject: (was.issuedAs && was.issuedAs.subject) || undefined,
+      holderSubject: was.holderSubject || undefined
     });
     if (made.ok) {
       done += 1;
@@ -10388,8 +10493,11 @@ async function recertifyOrphanedSlots(scopeId, slots) {
       publicKeyPemStored: was.publicKeyPem,
       pinnedSigner: was.pinnedSigner || undefined,
       // A named leaf keeps its names (#230): see `issuedAs` in certify().
+      // The subject and the holder's `urn:uuid:` ride with them.
       profile: (was.issuedAs && was.issuedAs.profile) || undefined,
-      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined
+      extensions: (was.issuedAs && was.issuedAs.extensions) || undefined,
+      subject: (was.issuedAs && was.issuedAs.subject) || undefined,
+      holderSubject: was.holderSubject || undefined
     });
     if (made.ok) {
       done += 1;
@@ -15014,6 +15122,9 @@ module.exports = {
   describeTier: describeTier,
   // The certificate register.
   certify: certify,
+  // The organisation and country a leaf is named with, including the
+  // `iya-sts` fallback `describeScope()` does not apply.
+  leafNameFacts: leafNameFacts,
   // Issue WITHOUT recording, for a caller that owns what comes out — see
   // `issueUnder()`'s header. `spiffe/spiffe_ca.ts` is the caller.
   issueUnder: issueUnder,
@@ -15111,6 +15222,7 @@ module.exports = {
   chainPemFor: chainPemFor,
   chainThroughRoot: chainThroughRoot,
   trustAnchorsFor: trustAnchorsFor,
+  useCaseChainPems: useCaseChainPems,
   issueSigningKeyPair: issueSigningKeyPair,
   issueEncryptionKeyPair: issueEncryptionKeyPair,
   FEDERATION_CLIENT_KEY_ALGS: FEDERATION_CLIENT_KEY_ALGS,

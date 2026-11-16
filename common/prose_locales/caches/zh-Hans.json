@@ -1694,5 +1694,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已过时：该凭据已被否认"
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "远程 PEP 的 Basic 票据"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "有效的 POST /xacml/pep/basic 交给远程 PEP 的票据，按各自的 SHA-256 保存；票据本身不存储。"
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "强制执行：每个领域 10000 个，丢弃最旧的；PEP 会再次验证 Basic 凭据。"
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "按摘要找到了一个票据"
   }
 }

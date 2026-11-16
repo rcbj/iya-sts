@@ -489,6 +489,9 @@ const CELL_MINTED = [
   'vc_offers.issuerStates', 'vc_offers.preAuthorizedCodes',
   'vc_offers.signingAlgTokens', 'vc_trusted_list.state',
   'vc_verifier.vpRequests', 'vc_verifier.vpTransactions',
+  // A remote PEP's Basic tickets (#1760): a person's sign-in, handed to the
+  // PEP that asked this cell, and looked up by it alone.
+  'xacml.pepTickets',
   'xacml_monitor.counters'
 ];
 

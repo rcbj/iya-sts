@@ -26,7 +26,16 @@
 //   C. THE REFUSALS: no slot, no name, a name that is not one, a key algorithm
 //      a TLS stack does not serve.
 //   D. A REISSUE SUPERSEDES, and the register keeps no private key.
-//   E. THE NAMES A REGISTRATION IMPLIES (`xacml/xacml_pep_tls.ts`).
+//   E. THE NAMES A REGISTRATION IMPLIES (`xacml/xacml_pep_tls.ts`), and
+//      (E2, #1760) the hostname a PEP reports, named in a fresh PEP's
+//      default certificate.
+//   F. THE NUDGE TRUSTS THIS CA WITH NOTHING SET (2026-11-14): an https
+//      nudge to a listener serving this realm's `pep-tls` leaf verifies with
+//      no `xacml.pepNotifyCaFile`; a foreign CA's leaf is refused (and
+//      accepted once that CA is the file); a leaf of this service's Root
+//      from ANOTHER Issuing CA — the realm's custom listeners', another
+//      realm's PEPs' — is refused by the pin; plain http is refused with
+//      the retired `xacml.pepNotifyAllowHttp` on.
 //
 // THE CONTAINER'S RELOAD RULES were section F, in a child requiring the
 // Node PEP. The PEP is a Rust binary since #444, and the same rules — a
@@ -40,6 +49,11 @@ delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
 const tls = require('tls');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+// The run-time CA the HTTP jobs use, for a FOREIGN listener (section F).
+const testCa = require('./protocol/outbound_test_ca');
 
 const REALM = 'peptls-a';
 
@@ -298,8 +312,229 @@ async function inProcess(t) {
   t.equal(pepTls.listFrom('a.test, b.test\nc.test').join('|'),
           'a.test|b.test|c.test', 'a typed list splits on commas and lines');
 
+  // -------------------------------------------------------------------------
+  t.log.info('=== E2. the hostname a PEP reports is named by default ===');
+  // -------------------------------------------------------------------------
+  // THE FRESH INSTALL (#1760): a PEP that derives its notify URL registers
+  // with none until it holds a certificate, so the defaults were the
+  // registered name alone and the derivation picked it. The reported
+  // hostname is the name the derivation looks for.
+  t.equal(pepTls.derivedNames({ name: 'remote-pep-1',
+                                hostname: 'xacml-pep' }).dnsNames.join(','),
+          'remote-pep-1,xacml-pep',
+          'a fresh row (no notify URL) names the reported hostname');
+  t.equal(pepTls.derivedNames({ name: 'remote-pep-1', hostname: 'xacml-pep',
+    notifyUrl: 'https://XACML-PEP:9443/notify' }).dnsNames.join(','),
+          'remote-pep-1,xacml-pep',
+          'a notify host that is the hostname is named once');
+  t.equal(pepTls.derivedNames({ name: 'remote-pep-1' }).dnsNames.join(','),
+          'remote-pep-1',
+          'an older PEP, reporting none, keeps the defaults it had');
+  t.equal(pepTls.derivedNames({ name: 'p', hostname: '10.0.0.1' })
+            .dnsNames.join(',') + '|' +
+          pepTls.derivedNames({ name: 'p', hostname: '10.0.0.1' })
+            .ipAddresses.join(','), 'p|',
+          'an IP literal is never turned into a name, of either kind');
+  const fresh = new pepTls.PepTls(Object.assign(pepTls.PepTls.defaultDeps(),
+    { peps: { read: function (name) {
+      log.debug("Entering read().");
+      log.debug("Leaving read().");
+      return name === 'remote-pep-1'
+        ? { name: 'remote-pep-1', hostname: 'xacml-pep', notifyUrl: '' }
+        : null;
+    } } }));
+  const freshIssued = await realms.run(realms.get(REALM), function () {
+    log.debug("Entering the fresh issue.");
+    log.debug("Leaving the fresh issue.");
+    return fresh.issue({ name: 'remote-pep-1' });
+  });
+  t.check(freshIssued.ok, 'a fresh PEP is issued its default certificate',
+          freshIssued.why || '');
+  const freshSan = freshIssued.ok
+    ? new nodeCrypto.X509Certificate(freshIssued.certificatePem)
+      .subjectAltName : '';
+  t.check(/DNS:xacml-pep(,|$)/.test(freshSan) &&
+          /DNS:remote-pep-1/.test(freshSan),
+          'and the certificate names the hostname it reported beside its ' +
+          'registered name, so the PEP derives https://xacml-pep:9443/' +
+          'notify (rust options.rs ' +
+          'a_reported_hostname_makes_the_default_certificate_derive_it)',
+          freshSan);
+
+  await theNudgeTrustsThisCa(t);
+
   log.debug("Leaving inProcess().");
   return { first: first.issued, second: second.issued };
+}
+
+// An https listener on 127.0.0.1 serving `cert` (a PEM chain) and `key`,
+// answering every request 204, as a PEP's POST /notify does.
+function notifyListener(cert, key) {
+  log.debug("Entering notifyListener().");
+  const server = require('https').createServer({ cert: cert, key: key },
+                                               function (req, res) {
+    req.resume();
+    req.on('end', function () {
+      res.writeHead(204);
+      res.end();
+    });
+  });
+  log.debug("Leaving notifyListener().");
+  return new Promise(function (resolve) {
+    server.listen(0, '127.0.0.1', function () {
+      resolve(server);
+    });
+  });
+}
+
+// -------------------------------------------------------------------------
+// F. THE NUDGE TRUSTS THE REALM'S pep-tls CA, AND ONLY IT, WITH NOTHING SET.
+// -------------------------------------------------------------------------
+async function theNudgeTrustsThisCa(t) {
+  log.debug("Entering theNudgeTrustsThisCa().");
+  t.log.info('=== F. the nudge verifies the realm\'s pep-tls chain ===');
+  const pki = require('../common/pki');
+  const realms = require('../common/realms');
+  const config = require('../common/config');
+  const pepHttp = require('../xacml/xacml_pep_http');
+  const inRealm = function (fn) {
+    log.debug("Entering inRealm().");
+    log.debug("Leaving inRealm().");
+    return realms.run(realms.get(REALM), fn);
+  };
+  const set = function (key, value) {
+    log.debug("Entering set(). " + key);
+    const result = inRealm(function () {
+      return config.setOverride(key, value);
+    });
+    if (!result.ok) {
+      throw new Error('setting ' + key + ' was refused: ' +
+                      JSON.stringify(result.errors));
+    }
+    log.debug("Leaving set().");
+  };
+  const nudge = function (url) {
+    log.debug("Entering nudge().");
+    log.debug("Leaving nudge().");
+    return inRealm(function () {
+      return pepHttp.nudge(url, 'pdp');
+    });
+  };
+  const servers = [];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pep-notify-trust-'));
+  try {
+    set('xacml.pepNotify', true);
+    set('xacml.pepNotifyCaFile', '');
+    const made = await inRealm(function () {
+      return pki.issueTlsServerKeyPair('', 'pep-tls', {
+        slot: 'pep-notify', dnsNames: ['pep-notify.test'],
+        ipAddresses: ['127.0.0.1'] });
+    });
+    t.check(made.ok, 'a pep-tls listener certificate for the nudge is issued',
+            JSON.stringify(made.errors || ''));
+    const issued = made.issued;
+    // F1. THIS REALM'S pep-tls leaf, with NO CA file.
+    const own = await notifyListener(
+      [issued.certificatePem].concat(issued.chainPem).join('\n'),
+      issued.privateKeyPem);
+    servers.push(own);
+    const ownUrl = 'https://127.0.0.1:' + own.address().port + '/notify';
+    const delivered = await nudge(ownUrl);
+    t.check(delivered.ok && delivered.status === 204,
+            'F1. an https nudge to a listener this realm\'s pep-tls CA ' +
+            'certified verifies with no xacml.pepNotifyCaFile',
+            JSON.stringify(delivered));
+
+    // F2. A FOREIGN CA: refused; accepted once that CA is the CA file.
+    const ca = await testCa.makeCa();
+    const foreignPair = await testCa.listenerCertificate(ca, '127.0.0.1');
+    const foreign = await notifyListener(foreignPair.cert, foreignPair.key);
+    servers.push(foreign);
+    const foreignUrl = 'https://127.0.0.1:' + foreign.address().port +
+      '/notify';
+    const refused = await nudge(foreignUrl);
+    t.check(!refused.ok && refused.status === 0,
+            'F2. a listener certified by a foreign CA is refused',
+            JSON.stringify(refused));
+    const caFile = path.join(dir, 'ca.crt');
+    fs.writeFileSync(caFile, ca.certPem);
+    set('xacml.pepNotifyCaFile', caFile);
+    const viaFile = await nudge(foreignUrl);
+    t.check(viaFile.ok && viaFile.status === 204,
+            'F3. and accepted once xacml.pepNotifyCaFile names that CA — an ' +
+            'ADDITIONAL anchor', JSON.stringify(viaFile));
+    const stillOwn = await nudge(ownUrl);
+    t.check(stillOwn.ok,
+            'F4. with the CA file set, the realm\'s own pep-tls leaf still ' +
+            'verifies', JSON.stringify(stillOwn));
+    set('xacml.pepNotifyCaFile', '');
+
+    // F5. THE PIN: this service's Root, but another Issuing CA.
+    const custom = await inRealm(function () {
+      return pki.issueTlsServerKeyPair('', 'realm-tls', {
+        slot: 'pin-check', dnsNames: ['pin.test'],
+        ipAddresses: ['127.0.0.1'] });
+    });
+    t.check(custom.ok, 'a custom-listener (realm-tls) certificate is issued ' +
+            'under the same Root', JSON.stringify(custom.errors || ''));
+    const other = await notifyListener(
+      [custom.issued.certificatePem].concat(custom.issued.chainPem)
+        .join('\n'), custom.issued.privateKeyPem);
+    servers.push(other);
+    const pinned = await nudge('https://127.0.0.1:' + other.address().port +
+                               '/notify');
+    t.check(!pinned.ok && /pep-tls/.test(pinned.why),
+            'F5. a leaf of this service\'s Root from another Issuing CA is ' +
+            'refused by the pin, naming pep-tls', JSON.stringify(pinned));
+    const elsewhere = await pki.issueTlsServerKeyPair('', 'pep-tls', {
+      slot: 'default-realm-pep', dnsNames: ['pep.default.test'],
+      ipAddresses: ['127.0.0.1'] });
+    t.check(elsewhere.ok, 'the default realm issues a pep-tls leaf of its own',
+            JSON.stringify(elsewhere.errors || ''));
+    const another = await notifyListener(
+      [elsewhere.issued.certificatePem].concat(elsewhere.issued.chainPem)
+        .join('\n'), elsewhere.issued.privateKeyPem);
+    servers.push(another);
+    const otherRealm = await nudge('https://127.0.0.1:' +
+                                   another.address().port + '/notify');
+    t.check(!otherRealm.ok && /pep-tls/.test(otherRealm.why),
+            'F6. another realm\'s PEP certificate is refused here',
+            JSON.stringify(otherRealm));
+    t.equal(pepHttp.pinProblem({ fingerprint256: 'x' }, null), '',
+            'F7. pinProblem() with no realm chain pins nothing');
+
+    // F8. PLAIN HTTP, WITH THE RETIRED SETTING ON.
+    set('xacml.pepNotifyAllowHttp', true);
+    const plain = await nudge('http://127.0.0.1:' + own.address().port +
+                              '/notify');
+    const verdict = inRealm(function () {
+      return pepHttp.urlVerdict('http://pep.test/notify');
+    });
+    t.check(!plain.ok && /plain http/.test(plain.why) &&
+            verdict.errorCode === 'STS-XACML-0259',
+            'F8. an http:// notify URL is refused with the retired ' +
+            'xacml.pepNotifyAllowHttp on (STS-XACML-0259)',
+            JSON.stringify({ plain: plain, verdict: verdict }));
+    const transport = inRealm(function () {
+      return pepHttp.transportSettings();
+    });
+    t.check(transport.allowHttp === false &&
+            transport.skipTlsVerification === false,
+            'F9. notify.transport reports plain http and skipped ' +
+            'verification as never in force', JSON.stringify(transport));
+  } finally {
+    ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifyCaFile',
+     'xacml.pepNotify'].forEach(function (key) {
+      inRealm(function () {
+        config.clearOverride(key);
+      });
+    });
+    servers.forEach(function (one) {
+      one.close();
+    });
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  log.debug("Leaving theNudgeTrustsThisCa().");
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +592,7 @@ module.exports = {
   describe: 'A remote PEP\'s HTTPS listener certificate: a branch topped up ' +
             'rather than rebuilt, a serverAuth leaf a Root-only client ' +
             'verifies through its realm\'s Intermediate, the refusals, a ' +
-            'reissue superseding',
+            'reissue superseding, and the nudge verifying the realm\'s ' +
+            'pep-tls chain with nothing set',
   run: run
 };

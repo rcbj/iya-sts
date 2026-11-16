@@ -514,6 +514,31 @@ the vectors are checked in.
 | QR codes | `qrcode` | Server-drawn SVG, as today |
 | Zip (risk datasets) | `zip` | |
 | User-agent, bot detection | `woothee`; the bot list decided in the risk phase | Today's `bowser` and `isbot` |
+| OpenID Connect relying party, CAEP/RISC receiver | `oidc-caep-risc` 0.3.0 (MIT, rcbj's; crates.io) | The remote PEP's reverse proxy (#1760): below |
+
+**`oidc-caep-risc` IS THE ONE CRATE ADDED FOR A PROTOCOL RATHER THAN A
+PRIMITIVE, AND IT WAS rcbj'S DECISION (#1760, D5 revised).** The reverse
+proxy's `session` mechanism is the OpenID Connect relying party of the
+application behind it, a confidential client, and a sign-out at the service
+has to end access through CAEP/RISC on a Shared Signals poll stream. The
+crate is rcbj's own confidential relying party and receiver
+(github.com/rcbj/oidc-caep-risc-rust), held to iya-sts by a nightly live
+run, and it does all of that: discovery, PKCE S256, `client_secret_basic`,
+`client_secret_post` or `private_key_jwt`, the ID Token's signature, `iss`,
+`aud`, nonce, `iat`, `typ` and `at_hash`, DPoP when the provider offers it,
+a session cache, RP-initiated logout, and a `SignalsReceiver` that removes
+the session a `session-revoked` names. Writing the same here would be a
+second relying party for one service to keep in step with the first.
+**Its costs, accepted:** it is BLOCKING (ureq), so `xacml-pep` calls it from
+`spawn_blocking` and its receiver polls on a thread it spawns; it brings
+RustCrypto's `rsa`, `p256`/`p384`/`p521`, `ed25519-dalek`, `ureq` and
+`tiny_http` (which only its demo binary uses, and which Cargo compiles
+all the same, being an ordinary dependency) into
+`Cargo.lock`; its TLS is `native-tls`, which Cargo unifies with the
+workspace's vendored OpenSSL (`openssl-sys` built from `openssl-src`), so
+the image still needs no system library; and it writes a failed poll to
+stderr, not through `sts-core::log`. It is not edited, forked or patched
+here; what the proxy needs from it and it lacks is in `xacml-pep/CLAUDE.md`.
 
 ## 8. What does not change
 

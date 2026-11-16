@@ -98,6 +98,7 @@
   "tls.key": "金鑰",
   "tls.goodUntil": "有效期限至",
   "tls.how": "<strong>應用程式如何使用它。</strong>在連線至權杖端點的 TLS 連線上出示它，並使用 <code>client_id={client}</code>，且項目上的 <code>token_endpoint_auth_method</code> 為 <code>tls_client_auth</code>：RFC 8705 第 2.1 節會驗證它，因為此領域將它簽發給此應用程式，無須註冊其他任何東西。在該連線上簽發的每個存取權杖都帶有此憑證的 <code>cnf[\"x5t#S256\"]</code>（第 3 節），因此應用程式要向資源伺服器出示同一張憑證。<code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "領域",
   "pep.names": "名稱",
   "validUntil": "有效期限至",
@@ -111,5 +112,9 @@
   "person.certificate": "憑證是公開的，也在項目上：",
   "once.signingCertificate": "訊息簽章憑證",
   "signing.warn": "<strong>這是唯一一次可以下載這些檔案。</strong>本服務不保留私密金鑰——既不在持有者的條目中，也不在憑證登記冊中——此主控台和 <code>/admin-api</code> 上也沒有任何地方會再次提供它。如果遺失，請撤銷該憑證並簽發新的。",
-  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的金鑰簽署每個 WS-Trust 請求：對 SOAP Body 和 Timestamp 的 WS-Security 1.1 簽章，此憑證放在 BinarySecurityToken 中，<code>{chain}</code> 為其憑證鏈。請求隨後以 <code>{name}</code> 的身分驗證，因為此領域將憑證簽發給了該名稱，無需註冊其他任何內容。"
+  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的金鑰簽署每個 WS-Trust 請求：對 SOAP Body 和 Timestamp 的 WS-Security 1.1 簽章，此憑證放在 BinarySecurityToken 中，<code>{chain}</code> 為其憑證鏈。請求隨後以 <code>{name}</code> 的身分驗證，因為此領域將憑證簽發給了該名稱，無需註冊其他任何內容。",
+  "cluster.back": "返回叢集",
+  "cluster.discardedDownload": "下載被丟棄的內容",
+  "cluster.discardedLead": "該 PEP 不再擁有自己的反向代理、設定或接聽程式：它拉取叢集的組態。以下是它原有的內容，僅顯示一次。",
+  "cluster.discardedTitle": "一個 PEP 加入了叢集"
 }

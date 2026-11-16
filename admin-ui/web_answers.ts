@@ -85,6 +85,11 @@ const NODE_HEALTH_PAGE = '/admin/node-health';
 // itself, and a press is told apart from their Save by `fgsearch` and
 // `fgadd` alone — neither is a field any policy form carries.
 const POLICIES_PAGE = '/admin/policies';
+// A REMOTE PEP'S ROUTE FORMS (#1760): Create a New Route and the route's own
+// page both post to `/admin/xacml/peps`, and their Application chooser's
+// Find, Previous, Next, Use and Clear are told apart from the save by
+// `fgsearch` and `fgadd` alone, which no other form posting there carries.
+const PEP_ROUTES_PAGE = '/admin/xacml/peps';
 // The reason `common/ownership.ts` gives for an administrator's mark (#607),
 // to the letter: the in-place redraw after the Owners tab's checkbox adds or
 // takes it off the reasons the page holds.
@@ -130,6 +135,7 @@ class WebAnswers {
   static readonly ROLE_OWNERS_PAGE = ROLE_OWNERS_PAGE;
   static readonly APPLICATION_OWNERS_PAGE = APPLICATION_OWNERS_PAGE;
   static readonly POLICIES_PAGE = POLICIES_PAGE;
+  static readonly PEP_ROUTES_PAGE = PEP_ROUTES_PAGE;
 
   /**
    * Every non-empty value of a form field, in the order posted.
@@ -400,7 +406,8 @@ class WebAnswers {
   static isFieldSearch(page: string, fields: Json): boolean {
     return (page === '/admin/applications/edit' ||
             page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE ||
-            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE) &&
+            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE ||
+            page === PEP_ROUTES_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -436,6 +443,126 @@ class WebAnswers {
       page: adding ? shown : Math.max(1, Math.floor(Number(rest)) || 1),
       add: adding ? rest : ''
     };
+  }
+
+  // A REMOTE PEP'S ROUTE FORM'S APPLICATION CHOOSER (#1760): which form was
+  // pressed — the route page's carries `from`, the route it edits — and
+  // what the press leaves in the page's state (`state.pepRoute`), which
+  // `XacmlPage.applicationChooser()` and `routeOfDraft()` draw from. A Use
+  // or a Clear (`fgadd`, `application|<identifier>`, empty for Clear) puts
+  // its value in the draft's `application` and closes the results; a Find,
+  // Previous or Next keeps the draft and carries the page found.
+  /**
+   * The key of the route form a press came from.
+   *
+   * @param fields - the form's fields
+   * @returns `new`, or `page-<route id>`
+   */
+  static pepRouteKeyOf(fields: Json): string {
+    const from = WebAnswers.one(fields, 'from');
+    return from ? 'page-' + from : 'new';
+  }
+
+  /**
+   * What a route form's Application chooser press leaves in the page's
+   * state.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @param prior - the page's `state.pepRoute` before the press, or null
+   * @param found - a Find's, Previous's or Next's results
+   *   (`fieldSearchFound()`), or null for a Use or a Clear
+   * @returns `{ key, draft, find, chosen, label }`
+   */
+  //
+  // THE AUTHORIZATION'S CHOOSERS (#1760) are the same presses on three
+  // more attributes: `authzPolicy` (one existing policy; a Use also makes
+  // the choice "an existing policy"), `authzRole.<action>` (a simple
+  // route's roles for one action, several: a Use adds the role and ticks
+  // the action, a press whose value starts `!` takes that role off), and
+  // `authzResource` (the application's home page offered as the resource:
+  // a Use puts it in the box). `find.attribute` says which chooser a Find
+  // answered, so only that one draws results.
+  //
+  // THE ROUTE PAGE'S TABS ARE FORMS OF THEIR OWN (rcbj, 2026-11-15), each
+  // posting `part`: the state keeps the last draft of EACH tab in
+  // `drafts`, by part, so a press on one tab's chooser does not lose what
+  // was typed on another (`XacmlPage.routeOfDraft()`). A form with no
+  // part (Create a New Route) keeps `draft` alone, as before.
+  static pepRouteState(fields: Json, prior: Json, found: Json): Json {
+    const state = WebAnswers.pepRouteStateOf(fields, prior, found);
+    const part = WebAnswers.one(fields, 'part');
+    if (!part) {
+      return state;
+    }
+    const before = prior && prior.key === state.key ? prior : null;
+    const drafts = Object.assign({}, (before && before.drafts) || {});
+    drafts[part] = state.draft;
+    return Object.assign(state, { drafts: drafts });
+  }
+
+  // One press's state, `draft` the pressed form's fields.
+  static pepRouteStateOf(fields: Json, prior: Json, found: Json): Json {
+    const key = WebAnswers.pepRouteKeyOf(fields);
+    const before = prior && prior.key === key ? prior : null;
+    if (!WebAnswers.has(fields, 'fgadd')) {
+      return { key: key, draft: fields,
+               find: found ? Object.assign({}, found, {
+                 attribute: WebAnswers.fieldSearchOf(fields).attribute })
+                 : found,
+               chosen: before ? before.chosen : '',
+               label: before ? before.label : '' };
+    }
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const attribute = String(asked.attribute || '');
+    const row = before && before.find && (before.find.rows || [])
+      .filter(function (one: Json) {
+        return one.value === asked.add;
+      })[0];
+    if (attribute === 'authzPolicy' || attribute === 'authzResource') {
+      const draft = Object.assign({}, fields);
+      draft[attribute] = asked.add;
+      if (attribute === 'authzPolicy') {
+        draft.authzKind = 'policy';
+      }
+      return { key: key, draft: draft, find: null,
+               chosen: before ? before.chosen : '',
+               label: before ? before.label : '' };
+    }
+    if (attribute.indexOf('authzRole.') === 0) {
+      const action = attribute.slice('authzRole.'.length);
+      const off = asked.add.charAt(0) === '!';
+      const role = off ? asked.add.slice(1) : asked.add;
+      const held = WebAnswers.all(fields, attribute).filter(function (one) {
+        return one !== role;
+      });
+      const draft = Object.assign({}, fields);
+      draft[attribute] = off || !role ? held : held.concat([role]);
+      if (!off && role) {
+        const ticked = WebAnswers.all(fields, 'authzActions');
+        draft.authzActions = ticked.indexOf(action) >= 0 ? ticked
+          : ticked.concat([action]);
+      }
+      return { key: key, draft: draft, find: null,
+               chosen: before ? before.chosen : '',
+               label: before ? before.label : '' };
+    }
+    const picked = attribute === 'application' ? asked.add : '';
+    return { key: key,
+             draft: Object.assign({}, fields, { application: picked }),
+             find: null, chosen: picked,
+             label: row ? String(row.label || '') : '' };
+  }
+
+  /**
+   * Which list a route form's chooser asks (#1760).
+   *
+   * @param attribute - the chooser's attribute
+   * @returns `applications`, `policies` or `roles`
+   */
+  static pepRouteKindOf(attribute: string): string {
+    return attribute === 'authzPolicy' ? 'policies'
+      : (String(attribute).indexOf('authzRole.') === 0 ? 'roles'
+        : 'applications');
   }
 
   // A SINGLE-VALUED FIELD (#461) is one box, `field.<attribute>` with no
@@ -524,6 +651,24 @@ class WebAnswers {
   static fieldSearchPath(kind: string, asked: Json, exclude: string[]): string {
     // A SERVICE ACCOUNT'S PUSH DESTINATION (#602) is found among the realm's
     // secret destinations and nothing else, paged on `destinationsPage`.
+    // A ROUTE'S POLICY (#1760): the repository's search, only what a
+    // route may choose. A ROUTE'S ROLES: the Roles page's own list, its
+    // configured roles paged on `rolesPage` (rule 7: no new operation).
+    if (kind === 'policies' || kind === 'roles') {
+      const wanted = new URLSearchParams();
+      if (asked.query) {
+        wanted.append('q', asked.query);
+      }
+      wanted.append('per', String(kit.FIND_PER_PAGE));
+      wanted.append(kind === 'roles' ? 'rolesPage' : 'page',
+                    String(asked.page || 1));
+      if (kind === 'policies') {
+        wanted.append('routable', 'true');
+      }
+      return (kind === 'roles' ? '/admin-api/roles?'
+                               : '/admin-api/xacml/policies?') +
+        wanted.toString();
+    }
     if (kind === 'destinations') {
       const found = new URLSearchParams();
       if (asked.query) {
@@ -573,6 +718,24 @@ class WebAnswers {
     }
     if (kind === 'destinations') {
       return WebAnswers.destinationSearchFound(asked, answer);
+    }
+    if (kind === 'policies' || kind === 'roles') {
+      const list = kind === 'roles' ? 'shownRoles' : 'policies';
+      const good = !!answer && Array.isArray(answer[list]);
+      const paging = kind === 'roles' ? (good && answer.paging) || {}
+                                      : answer || {};
+      return { kind: kind, which: '', query: asked.query,
+               page: good ? Number(paging.page) || 1 : 1,
+               pages: good ? Number(paging.pages) || 1 : 1,
+               matched: good ? Number(answer.matched) || 0 : 0,
+               rows: !good ? [] : answer[list].map(function (one: Json) {
+                 return { value: String(one.name || ''),
+                          label: String(one.description ||
+                            (kind === 'policies' ? one.policyId || '' : '')),
+                          generated: kind === 'policies'
+                            ? String(one.pepRoute || '') : '' };
+               }),
+               failed: !good };
     }
     const parties = kind === 'parties';
     const people = parties && asked.which !== 'applications';
@@ -1067,6 +1230,13 @@ class WebAnswers {
   // it and the Add member control is on the drill-down. A refusal stays put,
   // beside the form that produced it. Every other act goes back to its
   // page (`ConsoleRuntime.submit()`).
+  //
+  // A REMOTE PEP ROUTE'S OWN PAGE (#1760) is the third: a save lands on the
+  // route as it is now called, because a rename changes the id its address
+  // names, and a removal on the PEP's Configured Routes, the route being
+  // gone. The fragment is kept, and the notice goes before it. A ROUTE
+  // CREATED on the PEP's Create a New Route tab lands on its own page, as a
+  // new application does (rcbj, 2026-11-14).
   // ---------------------------------------------------------------------------
   /**
    * The console path an act's answer is drawn on, where it is not `back`.
@@ -1075,10 +1245,12 @@ class WebAnswers {
    * @param action - the form's action
    * @param answer - the operation's answer
    * @param back - the page and list view the form was on
-   * @returns the path and query, without the notice, or null for `back`
+   * @param fields - optional; the form's fields
+   * @returns the path, query and fragment, without the notice, or null
+   *   for `back`
    */
   static landing(page: string, action: string, answer: Json,
-                 back: string): string | null {
+                 back: string, fields?: Json): string | null {
     if (!answer || !answer.ok) {
       return null;
     }
@@ -1092,6 +1264,107 @@ class WebAnswers {
         (action === 'create' || action === 'add-member')) {
       at.searchParams.set('group', String(answer.dn));
       return '/admin/groups?' + at.searchParams.toString();
+    }
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep/route') {
+      const pep = String(at.searchParams.get('pep') || '');
+      // The save lands back on the tab its form is on (rcbj, 2026-11-15: a
+      // form stays in its tab): each of the route page's editing tabs posts
+      // `part`, and the tab is `xacml-route-tab-<part>`
+      // (`XacmlPage.ROUTE_*_TAB`). A form with no part (an older page)
+      // lands on Settings, the tab Edit the route became.
+      if (action === 'set-pep-route' && fields && fields.id) {
+        const part = WebAnswers.one(fields, 'part');
+        const tab = ['settings', 'authentication', 'authorization',
+                     'identity'].indexOf(part) >= 0 ? part : 'settings';
+        return '/admin/xacml/pep/route?' + new URLSearchParams({
+          pep: pep, route: String(fields.id) }).toString() +
+          '#xacml-route-tab-' + tab;
+      }
+      if (action === 'remove-pep-route') {
+        return '/admin/xacml/pep?' + new URLSearchParams({
+          pep: pep }).toString() + '#xacml-pep-proxy-routes';
+      }
+    }
+    // A REMOTE PEP LISTENER'S OWN PAGE (rcbj, 2026-11-15), the route
+    // page's arrangement: a save stays on the listener (its id is fixed),
+    // a removal lands on the PEP's Configured Listeners.
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep/listener') {
+      const pep = String(at.searchParams.get('pep') || '');
+      if (action === 'set-pep-listener' && fields && fields.id) {
+        return '/admin/xacml/pep/listener?' + new URLSearchParams({
+          pep: pep, listener: String(fields.id) }).toString();
+      }
+      // The environment listener's tuning posts `listener`, not `id`.
+      if (action === 'set-pep-environment-tuning' && fields &&
+          fields.listener) {
+        return '/admin/xacml/pep/listener?' + new URLSearchParams({
+          pep: pep, listener: String(fields.listener) }).toString();
+      }
+      if (action === 'remove-pep-listener') {
+        return '/admin/xacml/pep?' + new URLSearchParams({
+          pep: pep }).toString() + '#xacml-pep-listeners-configured';
+      }
+    }
+    // REMOTE PEP CLUSTERS (#1760): a cluster created lands on its page, a
+    // cluster deleted on the PEP clusters tab, and a cluster route's page
+    // the PEP route page's way.
+    if (page === '/admin/xacml/peps' && action === 'create-pep-cluster' &&
+        answer.cluster) {
+      return '/admin/xacml/pep-cluster?' + new URLSearchParams({
+        cluster: String(answer.cluster) }).toString();
+    }
+    if (page === '/admin/xacml/peps' && action === 'delete-pep-cluster') {
+      return '/admin/xacml#xacml-tab-pep-clusters';
+    }
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep-cluster/route') {
+      const cluster = String(at.searchParams.get('cluster') || '');
+      if (action === 'set-pep-cluster-route' && fields && fields.id) {
+        const part = WebAnswers.one(fields, 'part');
+        const tab = ['settings', 'authentication', 'authorization',
+                     'identity'].indexOf(part) >= 0 ? part : 'settings';
+        return '/admin/xacml/pep-cluster/route?' + new URLSearchParams({
+          cluster: cluster, route: String(fields.id) }).toString() +
+          '#xacml-route-tab-' + tab;
+      }
+      if (action === 'remove-pep-cluster-route') {
+        return '/admin/xacml/pep-cluster?' + new URLSearchParams({
+          cluster: cluster }).toString() + '#xacml-pep-proxy-routes';
+      }
+    }
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep-cluster') {
+      const cluster = String(at.searchParams.get('cluster') ||
+                             (fields && fields.cluster) || '');
+      if (action === 'set-pep-cluster-route' && fields && fields.id &&
+          !fields.from) {
+        return '/admin/xacml/pep-cluster/route?' + new URLSearchParams({
+          cluster: cluster, route: String(fields.id) }).toString();
+      }
+      if (action === 'remove-pep-cluster-route') {
+        return '/admin/xacml/pep-cluster?' + new URLSearchParams({
+          cluster: cluster }).toString() + '#xacml-pep-proxy-routes';
+      }
+    }
+    if (page === '/admin/xacml/peps' && at.pathname === '/admin/xacml/pep') {
+      const pep = String(at.searchParams.get('pep') ||
+                         (fields && fields.name) || '');
+      if (action === 'set-pep-route' && fields && fields.id && !fields.from) {
+        return '/admin/xacml/pep/route?' + new URLSearchParams({
+          pep: pep, route: String(fields.id) }).toString();
+      }
+      // A route removed from the Configured Routes table stays there.
+      if (action === 'remove-pep-route') {
+        return '/admin/xacml/pep?' + new URLSearchParams({
+          pep: pep }).toString() + '#xacml-pep-proxy-routes';
+      }
+      // A LISTENER DEFINED on Create a new listener lands on its own page.
+      if (action === 'set-pep-listener' && fields && fields.id) {
+        return '/admin/xacml/pep/listener?' + new URLSearchParams({
+          pep: pep, listener: String(fields.id) }).toString();
+      }
     }
     return null;
   }
@@ -1194,18 +1467,52 @@ class WebAnswers {
                active: '/admin/applications',
                html: WebAnswers.didKey(answer, fields, back, t) };
     }
-    if (page === '/admin/applications' &&
+    // A TLS CLIENT CERTIFICATE'S FILES, issued to a person from their Key
+    // pairs section or to an application from its Credentials section. The
+    // only copy of the key, drawn once.
+    if ((page === '/admin/users' || page === '/admin/applications') &&
         action === 'issue-tls-client-certificate' && answer.files) {
-      return { title: t.text('consoleAnswers.once.tlsClientCertificate'),
-               active: '/admin/applications',
+      const title = t.text('consoleAnswers.once.tlsClientCertificate');
+      return { title: title, active: page,
+               up: page === '/admin/users'
+                 ? WebAnswers.personTrail(answer.user ||
+                                          WebAnswers.one(fields, 'user'),
+                                          title)
+                 : undefined,
                html: WebAnswers.tlsClientCertificate(answer, fields, back,
                                                      t) };
     }
+    // A PEP's listener certificate, issued from the PEP's own page. Remote
+    // PEPs is a TAB of `/admin/xacml`, never a page: the section, the trail
+    // and the way back name the tab and the PEP's page (2026-11-15), where
+    // `/admin/xacml/peps` answered "is not a page of this console". Its
+    // Back to Remote PEPs is the tab; the PEP's own page is a crumb.
     if (page === '/admin/xacml/peps' &&
         action === 'issue-pep-certificate' && answer.privateKeyPem) {
-      return { title: t.text('consoleAnswers.once.pepCertificate'),
-               active: '/admin/xacml/peps',
+      const title = t.text('consoleAnswers.once.pepCertificate');
+      const pep = String(answer.pep || WebAnswers.one(fields, 'name') || '');
+      const via = [{ label: t.text('console.nav.xacml-peps'),
+                     href: '/admin/xacml#xacml-tab-peps' }];
+      return { title: title,
+               active: '/admin/xacml',
+               up: { href: '/admin/xacml', leaf: title,
+                     via: pep
+                       ? via.concat([{ label: pep, href: back }])
+                       : via },
                html: WebAnswers.pepCertificate(answer, t) };
+    }
+    // A JOIN THAT DISCARDED A PEP'S OWN CONFIGURATION (#1760): the
+    // documents it held, offered once as a download, since the PEP no
+    // longer holds them.
+    if (page === '/admin/xacml/peps' &&
+        action === 'add-pep-cluster-member' && answer.discarded) {
+      const title = t.text('consoleAnswers.cluster.discardedTitle');
+      return { title: title,
+               active: '/admin/xacml',
+               up: { href: '/admin/xacml', leaf: title,
+                     via: [{ label: t.text('console.nav.xacml-pep-clusters'),
+                             href: '/admin/xacml#xacml-tab-pep-clusters' }] },
+               html: WebAnswers.clusterDiscarded(answer, back, t) };
     }
     if ((page === '/admin/pki/person' ||
          WebAnswers.one(fields, 'target') === 'person') &&
@@ -1629,9 +1936,12 @@ class WebAnswers {
     t = t || kit.context().t;
     const files = answer.files;
     const cert = answer.certificate || {};
-    const identifier = String((answer.application &&
-                               answer.application.identifier) ||
-                              WebAnswers.one(fields, 'application'));
+    // A person's certificate names them on the answer; an application's
+    // names the entry. The how-note is the one that matches.
+    const person = String(answer.user || '');
+    const identifier = person ||
+      String((answer.application && answer.application.identifier) ||
+             WebAnswers.one(fields, 'application'));
     const link = function (file, href) {
       return '<a class="btn" download="' + kit.esc(file.name) + '" href="' +
         kit.esc(href) + '">' +
@@ -1658,9 +1968,10 @@ class WebAnswers {
       kit.esc(cert.keyAlg) + '</td></tr><tr><th>' +
       t.html('consoleAnswers.tls.goodUntil') + '</th><td><code>' +
       kit.esc(cert.notAfter) + '</code></td></tr></table>' +
-      kit.note(t.html('consoleAnswers.tls.how', {
-        client: identifier, chain: files.chain.name,
-        key: files.key.name })) +
+      kit.note(t.html(person ? 'consoleAnswers.tls.howPerson'
+                            : 'consoleAnswers.tls.how', {
+        client: identifier, name: String(cert.implicitName || person),
+        chain: files.chain.name, key: files.key.name })) +
       WebAnswers.backButton(back, t.text('consoleAnswers.backTo',
                                          { label: identifier }));
   }
@@ -1748,8 +2059,30 @@ class WebAnswers {
       kit.esc(result.fullChainPem) + '</pre>' +
       '<p>' + t.html('consoleAnswers.pep.anchor') + '</p><pre>' +
       kit.esc(result.anchorPem) + '</pre>' +
-      WebAnswers.backButton('/admin/xacml/peps',
+      WebAnswers.backButton('/admin/xacml#xacml-tab-peps',
                             t.text('consoleAnswers.pep.back'));
+  }
+
+  /**
+   * What a join discarded (#1760): the PEP's own proxy, settings and
+   * listeners as one JSON file to save, with the answer's sentence.
+   *
+   * @param result - the add-pep-cluster-member answer
+   * @param back - the page the form was on
+   * @param t - the translator
+   * @returns the page body
+   */
+  static clusterDiscarded(result: Json, back: string, t?: Json): string {
+    t = t || kit.context().t;
+    const file = String(result.pep || 'pep') + '-discarded.json';
+    const text = JSON.stringify(result.discarded, null, 2) + '\n';
+    return kit.note('<p>' + kit.esc(result.what) + '</p><p>' +
+        t.html('consoleAnswers.cluster.discardedLead') + '</p>') +
+      '<p><a class="btn" download="' + kit.esc(file) + '" href="' +
+      kit.esc('data:application/json;base64,' + kit.base64Utf8(text)) +
+      '">' + t.html('consoleAnswers.cluster.discardedDownload') + '</a></p>' +
+      '<pre>' + kit.esc(text) + '</pre>' +
+      WebAnswers.backButton(back, t.text('consoleAnswers.cluster.back'));
   }
 
   /**

@@ -1154,7 +1154,26 @@ declare namespace IyaDomain {
     refused?: number;
     undischargeable?: number;
     version?: string;
+    hostname?: string;
     lastNotify?: string;
+    proxy?: string;
+    signals?: string;
+    settings?: string;
+    settingsInUse?: string;
+    listeners?: string;
+    listenersInUse?: string;
+    description?: string[];
+  }
+
+  /**
+   * A logical cluster of remote policy enforcement points sharing one
+   * configuration.
+   */
+  interface XacmlPepCluster {
+    proxy?: string;
+    settings?: string;
+    listeners?: string;
+    members?: string;
     description?: string[];
   }
 
@@ -1173,6 +1192,7 @@ declare namespace IyaDomain {
     description?: string[];
     application?: string;
     orphanedAt?: string;
+    pepRoute?: string;
   }
 
   interface Concepts {
@@ -1216,6 +1236,7 @@ declare namespace IyaDomain {
     WsFederationRelyingParty: WsFederationRelyingParty;
     WsTrustRelyingParty: WsTrustRelyingParty;
     XacmlPep: XacmlPep;
+    XacmlPepCluster: XacmlPepCluster;
     XacmlPolicy: XacmlPolicy;
   }
 }

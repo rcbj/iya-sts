@@ -35,6 +35,13 @@ You can set the flag in three ways:
   rules apply, and the directory adds or removes the auxiliary class with the
   flag.
 
+**A remote XACML PEP's identity is one automatically.** An entry that joins
+the `remote-peps` group (`roles.remotePepGroup`) becomes a service account
+owned by the realm's Admin Write group, or by its bootstrap administrator in
+a realm without that group. The seeded `remote-pep-1` and any entry already
+in the group become one when the service starts. See
+[The PEP's entry is a service account](remote-pep.md#the-peps-entry-is-a-service-account).
+
 The person can never set the flag on their own entry, whatever
 `ldap.selfWritableAttributes` says. SCIM does not carry the flag.
 

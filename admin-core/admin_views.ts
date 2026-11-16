@@ -99,6 +99,7 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
+import nodeCrypto = require('crypto');
 import configDump = require('./config_dump');
 // The policy references a group may make (#1235, rule 3cx): a leaf.
 import PolicySelection = require('../common/policy_selection');
@@ -2037,6 +2038,21 @@ class AdminViews {
     log.debug('Entering AdminViews.xacmlPepsView().');
     const json = xacmlPages ? xacmlPages.peps(req) : noXacml();
     log.debug('Leaving AdminViews.xacmlPepsView().');
+    return json;
+  }
+
+  /**
+   * Returns the remote PEP clusters from the XACML pages (#1760).
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
+  xacmlPepClustersView(req): IyaApi.AdminAnswer<'getXacmlPepClusters'> {
+    const { log, noXacml } = this.deps;
+    log.debug('Entering AdminViews.xacmlPepClustersView().');
+    const json = xacmlPages && typeof xacmlPages.clusters === 'function'
+      ? xacmlPages.clusters(req) : noXacml();
+    log.debug('Leaving AdminViews.xacmlPepClustersView().');
     return json;
   }
 
@@ -11414,6 +11430,31 @@ class AdminViews {
    */
   // #488: an application's wstrustJwtScope warnings, or none when the policy
   // cannot be asked (a view must still draw).
+  /**
+   * The routes of this realm's remote PEPs that front an application (#1760).
+   *
+   * @param identifier - the application
+   * @returns `{ pep, route, path, mechanisms }` rows; none where the XACML
+   *   family is not loaded
+   */
+  pepRoutesFronting(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.pepRoutesFronting().");
+    let out = [];
+    try {
+      // Lazily: the XACML family is 23c, after this module.
+      out = require('../xacml/xacml_pep_proxy').routesFronting(
+        String(identifier || ''));
+    } catch (e) {
+      log.debug("Caught in AdminViews.pepRoutesFronting(): " +
+                ((e && e.message) || e));
+      // No XACML family in this process: no PEP fronts anything.
+      out = [];
+    }
+    log.debug("Leaving AdminViews.pepRoutesFronting(). " + out.length);
+    return out;
+  }
+
   applicationScopeWarnings(identifier) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationScopeWarnings().");
@@ -11670,6 +11711,10 @@ class AdminViews {
     // ITS OWNERS (#604), resolved, for the Owners tab.
     (out as any).owners = applications.ownersOf(row);
     (out as any).maxOwners = applications.MAX_OWNERS;
+    // THE REMOTE PEP ROUTES THAT FRONT IT (#1760, D10): the reference only —
+    // which PEP, which route, its path and mechanisms — never what the pull
+    // reads off this entry for them.
+    (out as any).pepRoutes = self.pepRoutesFronting(row.identifier);
     // Closed to its owners, and why (#607).
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
@@ -11761,15 +11806,104 @@ class AdminViews {
     };
   }
 
+  // RFC 4514 subjects of the certificates this person holds, so a handshake
+  // row filed under that DN still appears on their Authentication attempts
+  // tab. `helpers.dnRfc4514` is the spelling the handshake wrote. The
+  // comma-joined subject the certificate lists draw, and the forward
+  // subject the next issued certificate would carry, are different
+  // spellings and are not added. A PEM that will not parse is skipped:
+  // one unreadable certificate must not drop the rest of the tab.
+  private certificateAuthenticationNames(key: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.certificateAuthenticationNames().");
+    const names: string[] = [];
+    const seen: Record<string, boolean> = {};
+    const add = function (value: string): void {
+      log.debug("Entering add().");
+      const text = String(value || '').trim();
+      if (text && seen[text] !== true) {
+        seen[text] = true;
+        names.push(text);
+      }
+      log.debug("Leaving add().");
+    };
+    const addPem = function (pem: string): void {
+      log.debug("Entering addPem().");
+      const text = String(pem || '').trim();
+      if (text.indexOf('-----BEGIN CERTIFICATE-----') < 0) {
+        log.debug("Leaving addPem(). Not a certificate.");
+        return;
+      }
+      try {
+        const cert = new nodeCrypto.X509Certificate(text);
+        add(helpers.dnRfc4514(cert.subject));
+      } catch (e) {
+        // A list row whose PEM is not a certificate. The tab still lists
+        // the other certificates and the username.
+        log.debug("Caught in addPem(): " + ((e && e.message) || e));
+      }
+      log.debug("Leaving addPem().");
+    };
+    try {
+      const issued = require('./admin_actions').tlsClientCertificatesOf(key);
+      ((issued && issued.certificates) || []).forEach(function (cert) {
+        addPem(cert && cert.certificatePem);
+      });
+    } catch (e) {
+      // No certificate authority in this process: nothing issued.
+      log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                ((e && e.message) || e));
+    }
+    try {
+      const signing = require('./admin_actions').signingCertificatesOf(
+        'person', key);
+      ((signing && signing.certificates) || []).forEach(function (cert) {
+        addPem(cert && cert.certificatePem);
+      });
+    } catch (e) {
+      // The signing register is not built. The issued and stored
+      // certificates still match.
+      log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                ((e && e.message) || e));
+    }
+    try {
+      const stored = require('../ldap/ldap_server')
+        .storedCertificatesOf('person', key);
+      ((stored && stored.certificates) || []).forEach(function (one) {
+        if (!one || !one.der) {
+          return;
+        }
+        try {
+          const cert = new nodeCrypto.X509Certificate(one.der);
+          add(helpers.dnRfc4514(cert.subject));
+        } catch (e) {
+          // DER that is not a certificate. The username's rows still list.
+          log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                    ((e && e.message) || e));
+        }
+      });
+    } catch (e) {
+      // The directory is not loaded, or the person has no entry. The
+      // username, the subject and the seen forms still match.
+      log.debug("Caught in AdminViews.certificateAuthenticationNames(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AdminViews.certificateAuthenticationNames(). " +
+              names.length + ".");
+    return names;
+  }
+
   // THE AUTHENTICATION ATTEMPTS FOR ONE PERSON (#955).
   //
   // The same list an application's tab reads, selected by who tried rather
   // than by which application. The names are the page's key, the record's
-  // name, the subject's urn, and every form the register has seen them
-  // under: an acceptance stores the key as the actor and the subject in
-  // detail.sub, and a session refused before a subject was known stores
-  // the username as the actor. The whole capped ring is listed. The
-  // portal's window is a different question and is not applied here.
+  // name, the subject's urn, every form the register has seen them under,
+  // and the RFC 4514 subject of each certificate the entry holds: an
+  // acceptance stores the key as the actor and the subject in detail.sub,
+  // a session refused before a subject was known stores the username as
+  // the actor, and a handshake recorded before the actor became the
+  // username stored the certificate's DN. The whole capped ring is listed.
+  // The portal's window is a different question and is not applied here.
   //
   // The member the caller publishes is `authenticationEvents` and not
   // `authentications`. The view already publishes `authentications` as the
@@ -11795,6 +11929,10 @@ class AdminViews {
     ((row && row.forms) || []).forEach(function (form) {
       names.push(String((form && form.form) || ''));
     });
+    this.certificateAuthenticationNames(String(key || '')).forEach(
+      function (dn) {
+        names.push(dn);
+      });
     const events = auditLog.authenticationEventsForPerson(names);
     const paged = this.pagedRows((req && req.query) || {}, events, {
       name: 'authentications', noun: 'attempts'
@@ -15422,6 +15560,9 @@ class AdminViews {
         signing: Object.assign(
           require('./admin_actions').signingCertificatesOf('person', key),
           { caAvailable: !!this.deps.pki.hasChain() }),
+        // The TLS client certificates issued to them from this realm's
+        // CA, with the subject the next one would carry.
+        tls: require('./admin_actions').tlsClientCertificatesOf(key),
         // The address and the emailed second factor (#64), and the account
         // ids clients know them by (#148).
         mail: {
@@ -16488,6 +16629,7 @@ export = {
   installInstance: (instance: AdminViews): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   logoutInventoryFor: slot.forward('logoutInventoryFor'),
+  pepRoutesFronting: slot.forward('pepRoutesFronting'),
   logoutFamilies: slot.forward('logoutFamilies'),
   logoutJson: slot.forward('logoutJson'),
   mfaRosterJson: slot.forward('mfaRosterJson'),
@@ -16685,6 +16827,7 @@ export = {
   xacmlPoliciesView: slot.forward('xacmlPoliciesView'),
   xacmlEditorView: slot.forward('xacmlEditorView'),
   xacmlPepsView: slot.forward('xacmlPepsView'),
+  xacmlPepClustersView: slot.forward('xacmlPepClustersView'),
   xacmlDecideView: slot.forward('xacmlDecideView'),
   xacmlMonitorView: slot.forward('xacmlMonitorView'),
   directoryPageJson: slot.forward('directoryPageJson'),

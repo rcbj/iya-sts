@@ -46,7 +46,8 @@ const POLICY_KINDS = ['password', 'authn', 'passkey', 'locale', 'attributes',
   return 'policy.' + kind;
 });
 const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
-  'xacmlPolicy', 'xacmlPep', 'federationRelationship'].concat(POLICY_KINDS)
+  'xacmlPolicy', 'xacmlPep', 'xacmlPepCluster', 'federationRelationship']
+  .concat(POLICY_KINDS)
   .map(function (id) {
     return 'models/generated/' + id + '.schema.json';
   }).concat(POLICY_KINDS.map(function (id) {

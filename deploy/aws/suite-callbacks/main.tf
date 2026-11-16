@@ -352,7 +352,7 @@ resource "aws_ecs_task_definition" "callbacks" {
       # has it: the nodes reach the task directly.
       entryPoint = ["sh", "-c"]
       command = [
-        "export PEP_PDP_URL=\"${local.env.service_url}/realm/$${XACML_PEP_REALM}\"; ip=\"$(cat /shared/pep/task-ip 2>/dev/null)\"; [ -n \"$ip\" ] || ip=\"$(hostname -I | cut -d' ' -f1)\"; export PEP_NOTIFY_URL=\"http://$ip:9090/notify\"; exec xacml-pep",
+        "export PEP_PDP_URL=\"${local.env.service_url}/realm/$${XACML_PEP_REALM}\"; ip=\"$(cat /shared/pep/task-ip 2>/dev/null)\"; [ -n \"$ip\" ] || ip=\"$(hostname -I | cut -d' ' -f1)\"; export PEP_NOTIFY_URL=\"https://$ip:9443/notify\"; exec xacml-pep",
       ]
       environment = [
         { name = "XACML_PEP_REALM", value = local.pep_realm },
@@ -364,7 +364,8 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "PEP_HTTPS_PORT", value = "9443" },
         # Plain HTTP is off by default since #1760, and on here for the
         # stack's reasons (docker-compose-run-tests.yml): the job reaches
-        # 9090 before it issues the HTTPS pair, the CRLs and the nudge.
+        # 9090 before it issues the HTTPS pair. The nudge is https only
+        # (9443); an http notify URL is rejected.
         { name = "PEP_HTTP", value = "true" },
         { name = "PEP_PROXY_HTTP", value = "true" },
         { name = "PEP_HTTPS_RELOAD_INTERVAL_MS", value = "1000" },

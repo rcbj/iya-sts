@@ -783,6 +783,38 @@
     "en": "59db273e0a0989c3",
     "text": "此領域現在准許誰存取其 AuthZEN API，供 xacml-pep 容器的邊緣 PDP 據此准入：存取控制原則准許存取 /access/v1/* 的每個呼叫方（AUTHZEN_PEPS，由原則決定），以原則在 urn:sts:xacml:authzen:caller 中看到的名稱命名，附上本服務會解析到該名稱的每個憑證的 DER 的 SHA-256、其應用程式範圍以及其被准許存取的端點，另有自己的同步權杖；?since=<token> 回應 304。成員、憑證、範圍或原則的答覆有所變更時權杖隨之改變，邊緣在下一次輪詢時趨於一致。需要 REMOTE_PEPS，與原則拉取相同，因此持有該角色的任何人都能讀到誰可以詢問 PDP（rcbj 於 #1189）。為新增內容：/xacml/pep/policies 與 /xacml/pep/authzen-catalogue 維持不變。"
   },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "xacml-pep 容器位於應用程式之前時執行的內容（#1760）：它轉送到的上游、有序的路由及每條路由接受的機制和對應的 XACML 資源與動作、從登錄解析的每條路由的應用程式、它在本機驗證所用的領域資訊（簽發者、JWKS、登入端點、SAML 簽署憑證、監聽器的憑證鏈、工作階段路由的用戶端）以及下面四個驗證 URL，帶有自己的同步權杖；?since=<token> 回答 304。未設定的 PEP 為 configured: false，其代理拒絕一切。與原則拉取一樣需要 REMOTE_PEPS；不傳送提示。"
+  },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "管理員在此 PEP 的主控台頁面上為其設定的設定（#1760）——其描述和資源、推送通知 URL、偏向、PIP 開關、輪詢、活動訊號和退避間隔、逾時和要求本文上限、記錄層級、AuthZEN 邊緣 PDP 的開關、識別碼和轉送逾時，以及反向代理的上限——帶有自己的同步權杖；?since=<token> 回應 304。只傳送已設定的內容：其餘由 PEP 使用其環境，而其首次連線所需的最低設定從不在此。與原則拉取一樣需要 REMOTE_PEPS；沒有推送通知。"
+  },
+  "stsmetadata.endpoints./xacml/pep/listener-certificate.what": {
+    "en": "2e12c8c3ee45d622",
+    "text": "管理員在本 PEP 的控制台頁面上為其定義的 HTTPS 監聽器的證書（#1760）：PEP 生成密鑰並 POST { listener, csr }，即一個以簽名證明其持有該密鑰的 PKCS #10 請求，並收到由領域的 pep-tls 簽發 CA 簽發的證書及直到根證書的證書鏈，no-store 且不含任何密鑰。名稱來自 PEP 和定義，從不來自請求；同一密鑰再次請求時，只要證書還剩三分之一的有效期，就返回已持有的證書。需要 REMOTE_PEPS，與心跳相同。"
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "授權伺服器本身依 RFC 7662 對代理無法自行驗證的 OAuth 2.0 存取權杖（不透明權杖，或金鑰不在 JWKS 中）的讀取，透過 PEP 的雙向 TLS，而不是其自己的用戶端註冊。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "一個人的使用者名稱和密碼，在此處驗證，從不在 PEP 中驗證，受登入本身限制保護（429，附 retryAfterS）；拒絕為 { valid: false }，不再說明其他。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "此領域簽發的判斷提示，在代理無法自行檢查時於此處檢查：根判斷提示上的封裝簽章對照領域的 XML 簽署憑證、簽發者、條件以及路由的對象。EncryptedAssertion 會被拒絕。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "ID Token 的 sid 指明的登入工作階段是否仍然有效，因此在此處登出會在代理下次檢查時結束代理自己的工作階段。需要 REMOTE_PEPS。"
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "對於發出請求的 PEP 的一條路由，其憑證（存取權杖、SAML 判斷提示或 Basic 票證，均再次驗證）所指明的身分，依路由的模式給出：其請求標頭的宣告、用於該應用程式的存取權杖，或送往其判斷提示取用者服務的已簽署 SAML 回應。需要 REMOTE_PEPS。"
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "它的累計計數器以及它持有的同步權杖——正是這一點讓「最新」成為本服務執行的比較，而不是 PEP 對自己的宣稱。那些決策發生在另一個程序中，本服務一個也沒看到，這正是遠端 PEP 的全部意義。它「不會」建立資料列：來自從未註冊者的心跳會被拒絕並指出註冊端點，因為在此建立的資料列不會有憑證、通知 URL 與註冊日期。"
@@ -1030,6 +1062,10 @@
   "stsmetadata.endpoints./admin-api/xacml/peps.what": {
     "en": "102e5302d8a29ce7",
     "text": "登錄，以及每個 PEP 最後回報的內容：是否持有目前的存放庫、最後一次收到其訊息的時間、它所稱正在使用的偏向，以及最後一次推送通知的結果——這是唯一記錄失敗推送通知的地方，因為依定義，從接收端是看不到它的。"
+  },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "每個共用同一組態的遠端 PEP 叢集：每個成員拉取的反向代理、設定和接聽程式定義，以及每個成員自己的位址和儲存現在會拒絕它的原因。"
   },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",

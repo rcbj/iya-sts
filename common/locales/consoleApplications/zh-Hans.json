@@ -949,5 +949,11 @@
   "fga.pepsNone": "此领域中没有任何人员、服务账户或应用持有 REMOTE_PEPS。",
   "fga.pepsUnlocated": "组中未指向任何条目、因而无法授予的成员：{n}。",
   "fga.pepsRegrant": "再次授予远程 PEP",
-  "fga.pepsRegrantTip": "再次实施：每个缺少 AuthZEN 组或范围中缺少此应用的 REMOTE_PEPS 持有者都会被授予两者。其他一切不变。"
+  "fga.pepsRegrantTip": "再次实施：每个缺少 AuthZEN 组或范围中缺少此应用的 REMOTE_PEPS 持有者都会被授予两者。其他一切不变。",
+  "pepRoutes.tab": "反向代理",
+  "pepRoutes.lead": "此领域远程 PEP 的这些路由位于此应用程序之前。PEP 拉取其配置时，每条路由都从此条目读取其机制所需的内容，因此这里的更改会在代理下次拉取时到达代理。",
+  "pepRoutes.thPep": "远程 PEP",
+  "pepRoutes.thRoute": "路由",
+  "pepRoutes.thPath": "路径",
+  "pepRoutes.thMechanisms": "机制"
 }

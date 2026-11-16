@@ -93,4 +93,7 @@ model XacmlPolicy {
 
   @fromAttr(#{attr: "xacmlOrphanedAt"})
   `orphanedAt`?: string;
+
+  @fromAttr(#{attr: "xacmlPepRoute"})
+  `pepRoute`?: string;
 }

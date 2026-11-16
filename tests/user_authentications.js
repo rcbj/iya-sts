@@ -38,6 +38,10 @@
 //   6. THE PORTAL column is the assessment's `clientId`. The window the
 //      engine is asked for is the setting, and thirty when no settings
 //      module was handed in.
+//   7. A CERTIFICATE SUBJECT. A handshake row whose actor is
+//      `helpers.dnRfc4514` of a certificate stored on the entry is on this
+//      person's tab. The comma-joined subject the certificate list draws
+//      is a different spelling and is not.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -45,8 +49,11 @@ delete process.env.CONFIG_FILE;
 const fs = require('fs');
 const path = require('path');
 
+const nodeCrypto = require('crypto');
+const forge = require('node-forge');
 const audit = require('../common/audit');
 const stats = require('../common/admin_stats');
+const helpers = require('../common/helpers');
 const adminViews = require('../admin-core/admin_views');
 const dir = require('../ldap/ldap_server');
 const config = require('../common/config');
@@ -80,6 +87,9 @@ const SID_DECOY = TAG + '-sid-decoy';
 const SID_SUB = TAG + '-sid-sub';
 const SID_PRES = TAG + '-sid-pres';
 const SID_FORM = TAG + '-sid-form';
+const CERTUSER = TAG + '-cert';
+const SID_CERT = TAG + '-sid-cert';
+const SID_CERT_JOINED = TAG + '-sid-cert-joined';
 
 /**
  * A request for one users read.
@@ -439,6 +449,50 @@ async function run(t) {
           handler.slice(handler.indexOf('handler:'),
                         handler.indexOf('handler:') + 900));
 
+  const certPerson = dir.createUser(CERTUSER, { origin: 'test' });
+  const pair = forge.pki.rsa.generateKeyPair(2048);
+  const minted = forge.pki.createCertificate();
+  const rdns = [
+    { name: 'commonName', value: CERTUSER },
+    { name: 'organizationalUnitName', value: 'users' },
+    { name: 'organizationName', value: 'iya-sts' }
+  ];
+  minted.publicKey = pair.publicKey;
+  minted.serialNumber = '01' + nodeCrypto.randomBytes(4).toString('hex');
+  minted.validity.notBefore = new Date(Date.now() - 60000);
+  minted.validity.notAfter = new Date(Date.now() + 3600 * 1000);
+  minted.setSubject(rdns);
+  minted.setIssuer(rdns);
+  minted.sign(pair.privateKey, forge.md.sha256.create());
+  const x509 = new nodeCrypto.X509Certificate(
+    forge.pki.certificateToPem(minted));
+  const rendered = helpers.dnRfc4514(x509.subject);
+  const joined = String(x509.subject).split('\n').filter(function (line) {
+    return line;
+  }).join(', ');
+  const stored = dir.changeStoredCertificate('person', CERTUSER,
+                                             { add: x509.raw });
+  audit.audit({
+    action: 'authentication', actor: rendered,
+    summary: 'client certificate',
+    detail: { sessionId: SID_CERT, method: 'client certificate' }
+  });
+  audit.audit({
+    action: 'authentication', actor: joined,
+    summary: 'joined subject',
+    detail: { sessionId: SID_CERT_JOINED, method: 'client certificate' }
+  });
+  const certJson = readOf(CERTUSER);
+  const certIds = sessionIds(certJson.authenticationEvents);
+  t.check(!!certPerson && stored.ok === true && rendered !== joined &&
+          certIds.indexOf(SID_CERT) >= 0 &&
+          certIds.indexOf(SID_CERT_JOINED) < 0 &&
+          certIds.indexOf(SID_A) < 0,
+          '14. a handshake filed under the certificate\'s RFC 4514 ' +
+          'subject is this person\'s, and the comma-joined spelling is not',
+          JSON.stringify({ rendered: rendered, joined: joined,
+                           stored: !!(stored && stored.ok), ids: certIds }));
+
   const asked = [];
   const engine = {
     view: function (realm, opts) {
@@ -485,7 +539,7 @@ async function run(t) {
             widened.days === 7 &&
             portalHtml.indexOf('>Application<') >= 0 &&
             appAt >= 0 && dashAt > appAt,
-            '14. Recent sign-ins names the application, and the window ' +
+            '15. Recent sign-ins names the application, and the window ' +
             'is the realm setting',
             JSON.stringify({ asked: asked, set: set,
                              days: widened.days,

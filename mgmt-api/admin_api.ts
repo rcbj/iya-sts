@@ -5102,6 +5102,15 @@ class AdminApi {
           { action: 'revoke-signing-certificate',
             operationId: 'revokeUserSigningCertificate' },
 
+          // A TLS CLIENT CERTIFICATE FOR THE PERSON, issued from this
+          // realm's CA with the directory entry's subject. The same two
+          // names on an application are that application's door.
+          { action: 'issue-tls-client-certificate',
+            operationId: 'issueUserTlsClientCertificate' },
+
+          { action: 'revoke-tls-client-certificate',
+            operationId: 'revokeUserTlsClientCertificate' },
+
           { action: 'enrol-self-issued-subject',
             operationId: 'enrolUserSelfIssuedSubject' },
 
@@ -7586,6 +7595,25 @@ class AdminApi {
       { method: 'GET', path: BASE + '/xacml/policies', tag: 'XACML',
         operationId: 'getXacmlPolicies',
         mirrors: 'GET /admin/xacml',
+        // THE REPOSITORY'S SEARCH (#1760): the reverse-proxy route forms'
+        // policy chooser asks it, five to a page, `routable` keeping what a
+        // route may choose. With none of these the answer is unchanged.
+        parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'A substring of a policy\'s name, PolicyId or ' +
+                         'description, without case.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 300 },
+            description: 'Policies per page of a search.' },
+          { name: 'page', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of a search, clamped.' },
+          { name: 'routable', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description: 'true keeps only what a reverse-proxy route may ' +
+                         'choose.' }
+        ],
         handler: function (req, res) {
           log.debug("Entering the management API XACML policies endpoint.");
           self.sendJson(res, 200, adminViews.xacmlPoliciesView(req));
@@ -7711,11 +7739,57 @@ class AdminApi {
 
       { method: 'GET', path: BASE + '/xacml/peps', tag: 'XACML',
         operationId: 'getXacmlPeps',
-        mirrors: 'GET /admin/xacml',
+        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep, GET ' +
+                 '/admin/xacml/pep/route and GET /admin/xacml/pep/monitor',
+        // ONE PEP's PAGE (#1760): `/admin/xacml/pep?pep=<name>` is this
+        // answer narrowed to that row, `/admin-api/applications`'
+        // `?application=` arrangement.
+        parameters: [
+          { name: 'pep', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 128 },
+            description: 'One registered PEP, by its name exactly. The ' +
+                         'answer then lists that row alone and says ' +
+                         '`found`; a name with no row answers 200 with ' +
+                         '`found: false`.' },
+          // ONE ROUTE's PAGE (#1760): `/admin/xacml/pep/route?pep=&route=`.
+          { name: 'route', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'With `pep`: one route of that PEP\'s reverse ' +
+                         'proxy, by its id. The answer then carries ' +
+                         '`routeDetail`: the route, where it stands, ' +
+                         'whether its application resolves and which ' +
+                         'proxy listeners serve it; `found: false` there ' +
+                         'when the PEP has no such route.' }
+        ],
         handler: function (req, res) {
           log.debug("Entering the management API XACML remote PEPs endpoint.");
           self.sendJson(res, 200, adminViews.xacmlPepsView(req));
           log.debug("Leaving the management API XACML remote PEPs endpoint.");
+        } },
+
+      // REMOTE PEP CLUSTERS (#1760, phase 1): the XACML page's PEP clusters
+      // tab, and with `cluster` (and `route`) the cluster's own pages.
+      { method: 'GET', path: BASE + '/xacml/pep-clusters', tag: 'XACML',
+        operationId: 'getXacmlPepClusters',
+        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep-cluster and GET ' +
+                 '/admin/xacml/pep-cluster/route',
+        parameters: [
+          { name: 'cluster', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'One cluster, by its name exactly. The answer ' +
+                         'then lists that cluster alone and says `found`.' },
+          { name: 'route', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'With `cluster`: one route of the cluster\'s ' +
+                         'reverse proxy, by its id. The answer then ' +
+                         'carries `routeDetail`.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API XACML PEP clusters " +
+                    "endpoint.");
+          self.sendJson(res, 200, adminViews.xacmlPepClustersView(req));
+          log.debug("Leaving the management API XACML PEP clusters " +
+                    "endpoint.");
         } },
 
       ApiRows.actions({ method: 'POST',
@@ -7845,8 +7919,59 @@ class AdminApi {
           { action: 'disable-pep', operationId: 'disableXacmlPep' },
           { action: 'enable-pep', operationId: 'enableXacmlPep' },
           { action: 'forget-pep', operationId: 'forgetXacmlPep' },
+          // Sync (2026-11-16): one PEP nudged to pull everything now.
+          { action: 'sync-pep', operationId: 'syncXacmlPep' },
           { action: 'issue-pep-certificate',
-            operationId: 'issueXacmlPepCertificate' }
+            operationId: 'issueXacmlPepCertificate' },
+          // The remote PEP's reverse proxy (#1760).
+          { action: 'set-pep-proxy', operationId: 'setXacmlPepProxy' },
+          { action: 'clear-pep-proxy', operationId: 'clearXacmlPepProxy' },
+          { action: 'set-pep-route-identity',
+            operationId: 'setXacmlPepRouteIdentity' },
+          // The remote PEP's managed settings (#1760).
+          { action: 'set-pep-settings', operationId: 'setXacmlPepSettings' },
+          { action: 'clear-pep-settings',
+            operationId: 'clearXacmlPepSettings' },
+          // The remote PEP's listeners and its routes one at a time (#1760).
+          { action: 'set-pep-listener', operationId: 'setXacmlPepListener' },
+          { action: 'set-pep-environment-tuning',
+            operationId: 'setXacmlPepEnvironmentTuning' },
+          { action: 'remove-pep-listener',
+            operationId: 'removeXacmlPepListener' },
+          { action: 'renew-pep-listener-certificate',
+            operationId: 'renewXacmlPepListenerCertificate' },
+          { action: 'set-pep-route', operationId: 'setXacmlPepRoute' },
+          { action: 'remove-pep-route', operationId: 'removeXacmlPepRoute' },
+          { action: 'set-pep-route-application',
+            operationId: 'setXacmlPepRouteApplication' },
+          // A route's authorization, and its generated policy (#1760).
+          { action: 'set-pep-route-authorization',
+            operationId: 'setXacmlPepRouteAuthorization' },
+          { action: 'generate-pep-route-policy',
+            operationId: 'generateXacmlPepRoutePolicy' },
+          // Remote PEP clusters (#1760, phase 1).
+          { action: 'create-pep-cluster', operationId: 'createXacmlPepCluster' },
+          { action: 'delete-pep-cluster', operationId: 'deleteXacmlPepCluster' },
+          { action: 'add-pep-cluster-member',
+            operationId: 'addXacmlPepClusterMember' },
+          { action: 'remove-pep-cluster-member',
+            operationId: 'removeXacmlPepClusterMember' },
+          { action: 'set-pep-cluster-member',
+            operationId: 'setXacmlPepClusterMember' },
+          { action: 'set-pep-cluster-proxy',
+            operationId: 'setXacmlPepClusterProxy' },
+          { action: 'set-pep-cluster-settings',
+            operationId: 'setXacmlPepClusterSettings' },
+          { action: 'set-pep-cluster-route',
+            operationId: 'setXacmlPepClusterRoute' },
+          { action: 'remove-pep-cluster-route',
+            operationId: 'removeXacmlPepClusterRoute' },
+          { action: 'generate-pep-cluster-route-policy',
+            operationId: 'generateXacmlPepClusterRoutePolicy' },
+          { action: 'set-pep-cluster-listener',
+            operationId: 'setXacmlPepClusterListener' },
+          { action: 'remove-pep-cluster-listener',
+            operationId: 'removeXacmlPepClusterListener' }
         ] }),
 
       { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',

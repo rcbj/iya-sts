@@ -1453,6 +1453,13 @@ class ApplicationsPage {
               back: kit.queryWith(kit.listViewOf('/admin/applications',
                                                  ctx.query), {}),
               write: !!ctx.write, state: json.state }) },
+        // THE REMOTE PEP ROUTES THAT FRONT IT (#1760): read only, each linked
+        // to the Remote PEPs tab where it is configured. A panel with nothing
+        // in it gets no tab.
+        { id: 'tab-pep-routes',
+          label: t.text('consoleApplications.pepRoutes.tab'),
+          html: ApplicationsPage.applicationPepRoutesSection(t,
+            json.page.pepRoutes || []) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.
@@ -5244,6 +5251,31 @@ class ApplicationsPage {
    * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
+  /**
+   * The routes of this realm's remote PEPs that front the application
+   * (#1760), read only.
+   *
+   * @param t - the translator
+   * @param rows - `{ pep, route, path, mechanisms }`
+   * @returns the section, or '' when none does
+   */
+  static applicationPepRoutesSection(t, rows) {
+    if (!rows.length) {
+      return '';
+    }
+    return '<p>' + t.html('consoleApplications.pepRoutes.lead') + '</p>' +
+      '<table><tr><th>' + t.html('consoleApplications.pepRoutes.thPep') +
+      '</th><th>' + t.html('consoleApplications.pepRoutes.thRoute') +
+      '</th><th>' + t.html('consoleApplications.pepRoutes.thPath') +
+      '</th><th>' + t.html('consoleApplications.pepRoutes.thMechanisms') +
+      '</th></tr>' + rows.map(function (one) {
+        return '<tr><td><a href="/admin/xacml#xacml-tab-peps"><code>' +
+          kit.esc(one.pep) + '</code></a></td><td><code>' + kit.esc(one.route) +
+          '</code></td><td><code>' + kit.esc(one.path) + '</code></td><td>' +
+          kit.esc((one.mechanisms || []).join(', ')) + '</td></tr>';
+      }).join('') + '</table>';
+  }
+
   static applicationRolesSection(row, state, carryBack, t) {
     const identifier = row.identifier;
     const hidden = function (action, role) {

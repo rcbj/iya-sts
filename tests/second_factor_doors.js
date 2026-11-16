@@ -68,7 +68,7 @@ const log = require('bunyan').createLogger({ name: 'second_factor_doors',
 const STAMP = Date.now().toString(36);
 const PASSWORD = 'Sfd-' + STAMP + '-Correct.Horse.Battery.Staple.42';
 const WRONG = PASSWORD + '-wrong';
-const DOORS = ['ldap', 'wstrust', 'scim', 'ssf', 'est'];
+const DOORS = ['ldap', 'wstrust', 'scim', 'ssf', 'est', 'xacml-pep'];
 
 const KEYED = 'sfd-keyed-' + STAMP;       // holds an mfa security key
 const FLAGGED = 'sfd-flagged-' + STAMP;   // stsMfaRequired on the entry
@@ -270,14 +270,14 @@ async function run(t) {
               JSON.stringify(listed));
       sameAsWrong(t, KEYED, 'scim', 'A7. and only that door —');
       const doors = credentials.passwordOnlyDoors(KEYED);
-      t.check(doors.refused.join(',') === 'wstrust,scim,ssf,est' &&
+      t.check(doors.refused.join(',') === 'wstrust,scim,ssf,est,xacml-pep' &&
               doors.alone.join(',') === 'ldap',
               'A7. passwordOnlyDoors() reports it, and drops a name that is ' +
               'not a door', JSON.stringify(doors));
     });
     const doors = credentials.passwordOnlyDoors(KEYED);
     t.equal(doors.refused.join(','), DOORS.join(','),
-            'A8. passwordOnlyDoors() names all five for a second-factor ' +
+            'A8. passwordOnlyDoors() names all six for a second-factor ' +
             'person');
     t.equal(credentials.passwordOnlyDoors(PLAIN).refused.length, 0,
             'A8. and none for a person with no second factor');
@@ -545,7 +545,7 @@ async function run(t) {
     });
   });
   t.check(appPasswords.DOOR_IDS.join(',') === DOORS.join(','),
-          'G3. the five doors are the five this file drives');
+          'G3. the six doors are the six this file drives');
   log.debug("Leaving run().");
 }
 

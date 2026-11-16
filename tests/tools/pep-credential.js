@@ -112,6 +112,14 @@
 //               <out>/crl/ for that server. Without it no certificate names
 //               a list, and a product-mode service refuses the chain
 //               (STS-PKI-0190) — which is what the launchers pass it for.
+//               Name the PEP's PLAIN port, http://<pep>:<PEP_PORT>/crl
+//               (9090): the PEP serves <out>/crl there on its CRL-only
+//               listener even with PEP_HTTP off (2026-11-14, PEP_CRL_HTTP),
+//               because a CRL is fetched in the clear (RFC 5280 section
+//               4.2.1.13). Until then 9090 was dark with HTTP off, the list
+//               could not be fetched, and every pull was refused as
+//               unauthenticated. An https base is refused here: the list
+//               would have to be validated with the certificate it revokes.
 //
 //   --store-on  a username (#1061): after the anchor, the leaf is STORED on
 //               that person's entry (created first if absent), through
@@ -701,6 +709,13 @@ async function main() {
                          '. --help says what there is.\n');
     process.exit(2);
   }
+  if (opts.crlBase && !/^http:\/\//i.test(opts.crlBase)) {
+    process.stderr.write('--crl-base must be an http:// URL, the PEP\'s ' +
+                         'plain port (http://<pep>:9090/crl): a CRL behind ' +
+                         'TLS would have to be validated with the ' +
+                         'certificate it revokes.\n');
+    process.exit(2);
+  }
   if (!opts.url || !opts.out) {
     process.stderr.write('Both --url and --out are required. --help says ' +
                          'what they are.\n');
@@ -732,7 +747,8 @@ async function main() {
   if (minted.crls) {
     // PUBLIC, SIGNED DOCUMENTS — no key material — for whoever serves
     // --crl-base: the PEP container answers GET /crl/<name> from this
-    // directory (`xacml-pep/pep.js`).
+    // directory on its plain port — the CRL-only listener when PEP_HTTP is
+    // off (`rust/bins/xacml-pep/src/options.rs`, `crl_listener()`).
     fs.mkdirSync(path.join(opts.out, 'crl'), { recursive: true });
     Object.keys(minted.crls).forEach(function (name) {
       fs.writeFileSync(path.join(opts.out, 'crl', name), minted.crls[name]);

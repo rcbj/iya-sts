@@ -183,6 +183,15 @@ const CONSOLE: Record<string, string> = {
   '/admin/kerberos': 'kerberos.html',
   '/admin/xacml': 'xacml.html',
   '/admin/xacml/monitor': 'xacml.html',
+  // One remote PEP's page (#1760); its tabs follow the page's slug.
+  '/admin/xacml/pep': 'remote-pep.html#its-page-on-the-console',
+  '/admin/xacml/pep/route': 'remote-pep.html#a-routes-own-page',
+  '/admin/xacml/pep-cluster': 'remote-pep.html#remote-pep-clusters',
+  '/admin/xacml/pep-cluster/route': 'remote-pep.html#remote-pep-clusters',
+  '/admin/xacml/pep/listener': 'remote-pep.html#a-listeners-own-page',
+  // Monitoring → Remote PEPs: the figures a PEP reports, not its settings.
+  '/admin/xacml/pep/monitor':
+    'remote-pep.html#what-a-remote-pep-is-serving',
   '/admin/backup-codes': 'authentication.html#recovery-codes',
   '/admin/persistence': 'persistence.html',
   '/admin/totp': 'authentication.html#totp-mfa',
@@ -223,6 +232,14 @@ const EXACT: Record<string, string> = {
     'admin-console.html#verifier-request-tab--adminvcvc-tab-verifier-request',
   'xacml-tab-settings': 'configure-xacml.html',
   'xacml-tab-peps': 'remote-pep.html',
+  'xacml-tab-pep-clusters': 'remote-pep.html#remote-pep-clusters',
+  // An application's page: the remote PEP routes in front of it (#1760).
+  'tab-pep-routes': 'remote-pep.html',
+  // A remote PEP's page (#1760): its settings and its reverse proxy.
+  'xacml-pep-tab-settings':
+    'remote-pep.html#the-settings-this-service-sets-for-it',
+  'xacml-pep-tab-proxy':
+    'remote-pep.html#in-front-of-an-application-the-reverse-proxy-1760',
   'xacml-tab-authzen': 'authzen.html',
   'ssf-tab-caep': 'caep-events.html',
   'ssf-tab-risc': 'signals-received.html',

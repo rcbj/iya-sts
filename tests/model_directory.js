@@ -31,7 +31,7 @@ const EXPECTED_IDS = [
   'group', 'operational', 'person', 'policy.attributes', 'policy.authn',
   'policy.locale', 'policy.passkey', 'policy.password', 'policy.postLogin',
   'policy.serviceAccount', 'role', 'serviceAccount', 'spiffe',
-  'xacmlPep', 'xacmlPolicy'
+  'xacmlPep', 'xacmlPepCluster', 'xacmlPolicy'
 ];
 
 // RFC 5612's enterprise number, reserved for documentation. This service's

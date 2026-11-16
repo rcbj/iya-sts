@@ -1406,5 +1406,17 @@
   "mode.requirements.sso-consent.product": {
     "en": "0a4ee080bb81a76f",
     "text": "在 SAML 2.0、SAML 1.1 或 WS-Federation 讓使用者登入某個應用程式前，每個應用程式詢問一次，並保存回答。saml2.ssoConsent、saml11.ssoConsent 和 wsfed.ssoConsent 可按協定關閉此功能，應用程式自身的值優先於它們。"
+  },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "瀏覽器透過 https 存取遠端 PEP 的反向代理"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "代理設定可以使用純 http 的 publicBaseUrl，因此單台機器上的堆疊無需為代理準備監聽憑證。"
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "不是 https 的 publicBaseUrl 會被拒絕（STS-XACML-0188）：工作階段機制的登入在那裡傳回授權碼，且其工作階段 Cookie 帶有 Secure。"
   }
 }

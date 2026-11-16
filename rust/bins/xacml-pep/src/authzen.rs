@@ -553,7 +553,7 @@ impl Pep {
     /// container's switch, a catalogue and a policy pull held, and the
     /// realm's own `authzen.enabled` (with the API's object).
     pub(crate) fn authzen_off(&self, catalogue: &Catalogue) -> Option<Reply> {
-        if !self.options.authzen_enabled {
+        if !self.options.now().authzen {
             return Some(Reply::error(
                 501,
                 "STS-XPEP-0044",
@@ -603,7 +603,7 @@ impl Pep {
         if let Some(off) = self.authzen_off(&catalogue) {
             return off;
         }
-        let configured = &self.options.authzen_pdp_identifier;
+        let configured = &self.options.now().authzen_pdp_identifier;
         let host_ok =
             Regex::new(r"^([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:\d+)?$")
                 .ok()
@@ -690,7 +690,7 @@ impl Pep {
                 &format!(
                     "The request is larger than this edge PDP reads \
                      (PEP_MAX_BODY_BYTES, {} bytes).",
-                    self.options.max_body_bytes
+                    self.options.now().max_body_bytes
                 ),
             );
         };
@@ -894,7 +894,7 @@ impl Pep {
         // THE SERVICE'S TO DECIDE (#564, P7): forwarded, never answered
         // from the root, and counted and logged here like any other.
         if forwards(catalogue, &application) {
-            let timeout = self.options.authzen_forward_timeout_ms;
+            let timeout = self.options.now().authzen_forward_timeout_ms;
             let one = forward_to(
                 self.sync.client(),
                 body,
@@ -1097,6 +1097,8 @@ mod tests {
     fn peer(sha256: &str, verified: bool) -> Transport {
         Transport {
             https: true,
+            remote: None,
+            crl_only: false,
             peer: Some(Peer {
                 sha256: sha256.to_string(),
                 subject: "CN=pep".into(),
@@ -1350,6 +1352,7 @@ mod tests {
             json: Some(body),
             error: None,
             timed_out: false,
+            ..Answer::default()
         }
     }
 

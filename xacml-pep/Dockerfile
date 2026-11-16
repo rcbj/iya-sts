@@ -73,6 +73,9 @@ LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
 
 EXPOSE 9090
 EXPOSE 9443
+# The reverse proxy (#1760), plain and HTTPS: xacml-pep/CLAUDE.md.
+EXPOSE 9180
+EXPOSE 9543
 
 # LIVENESS ONLY, never whether the policy is current: a PEP holding a stale
 # copy is working, and failing on staleness would turn a PDP outage into a

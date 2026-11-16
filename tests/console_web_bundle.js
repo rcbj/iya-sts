@@ -574,6 +574,36 @@ function childMain() {
         }
       }
     }
+    // NO PAGE LINKS TO AN XACML TAB AS IF IT WERE A PAGE (rcbj,
+    // 2026-11-15). `/admin/xacml/policies`, `editor`, `peps`, `decide` and
+    // `authzen` are tabs of /admin/xacml; a link or a GET form to one
+    // answered "is not a page of this console" everywhere but the XACML
+    // page itself, until `WebPages.render()` moved them for every page. A
+    // POST form keeps its action, which F0 below resolves.
+    const deadXacml = {};
+    drawnPages.forEach(function (one) {
+      const html = String(one.html || '');
+      const links = /\bhref="(\/admin\/xacml\/(?:policies|editor|peps|decide|authzen))(?=[?#"])/g;
+      let m = links.exec(html);
+      while (m) {
+        deadXacml[m[1] + ' (on ' + one.path + ')'] = true;
+        m = links.exec(html);
+      }
+      const gets = /<form\b[^>]*>/gi;
+      let g = gets.exec(html);
+      while (g) {
+        const action = /action="(\/admin\/xacml\/(?:policies|editor|peps|decide|authzen))(?=[?#"])/i
+          .exec(g[0]);
+        if (action && !/\bmethod="post"/i.test(g[0])) {
+          deadXacml[action[1] + ' GET form (on ' + one.path + ')'] = true;
+        }
+        g = gets.exec(html);
+      }
+    });
+    note(Object.keys(deadXacml).length === 0,
+         'F0x. no page draws a link or a GET form to an XACML tab\'s old ' +
+         'path (/admin/xacml/<tab>), which is not a console page',
+         Object.keys(deadXacml).join('; '));
     // EVERY POST FORM A CONVERTED PAGE DRAWS IS ONE /admin-api OPERATION
     // (#446). The static console sends a submitted form to the operation
     // that mirrors it (`web_forms.ts`), read off `GET

@@ -823,6 +823,27 @@ class XacmlPep {
 }
 
 /**
+ * A logical cluster of remote policy enforcement points sharing one
+ * configuration.
+ */
+class XacmlPepCluster {
+  /**
+   * Makes one from what holds it.
+   *
+   * @param held - the attributes or the record
+   * @param options - what it alone cannot say
+   * @returns the concept
+   */
+  static fromEntry(held: any, options?: any):
+      IyaDomain.XacmlPepCluster {
+    log.debug("Entering XacmlPepCluster.fromEntry().");
+    const made = DomainMap.fromEntry('XacmlPepCluster', held, options);
+    log.debug("Leaving XacmlPepCluster.fromEntry().");
+    return made;
+  }
+}
+
+/**
  * An XACML 3.0 policy or policy set this realm evaluates.
  */
 class XacmlPolicy {
@@ -883,5 +904,6 @@ export = {
   WsFederationRelyingParty: WsFederationRelyingParty,
   WsTrustRelyingParty: WsTrustRelyingParty,
   XacmlPep: XacmlPep,
+  XacmlPepCluster: XacmlPepCluster,
   XacmlPolicy: XacmlPolicy
 };

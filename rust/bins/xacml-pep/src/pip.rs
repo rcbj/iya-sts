@@ -36,6 +36,7 @@ use sts_xacml::request::Request;
 use sts_xacml::value::Value as XacmlValue;
 use sts_xacml::xml;
 
+use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
 
 /// The namespace of the two elements XACML does not define.
@@ -372,15 +373,30 @@ pub struct Resolution {
 pub struct RemotePip {
     client: PdpClient,
     enabled: bool,
+    /// When set, `PEP_PIP` is the setting in force (#1760: the service may
+    /// set it while this PEP runs) rather than `enabled`.
+    options: Option<Options>,
 }
 
 impl RemotePip {
     pub fn new(client: PdpClient, enabled: bool) -> RemotePip {
-        RemotePip { client, enabled }
+        RemotePip {
+            client,
+            enabled,
+            options: None,
+        }
+    }
+
+    /// Follows the settings in force rather than the fixed `enabled`.
+    pub fn governed_by(mut self, options: Options) -> RemotePip {
+        self.options = Some(options);
+        self
     }
 
     pub fn enabled(&self) -> bool {
-        self.enabled
+        self.options
+            .as_ref()
+            .map_or(self.enabled, |options| options.now().pip)
     }
 
     #[tracing::instrument(level = "debug", skip_all)]
@@ -394,7 +410,7 @@ impl RemotePip {
             resolver: None,
             report,
         };
-        if !self.enabled {
+        if !self.enabled() {
             return none(json!({ "used": false,
                 "why": "PEP_PIP is off, so this PEP decides on what the \
                         request asserts and nothing else — which is what a \
