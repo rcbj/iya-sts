@@ -271,23 +271,28 @@ class PepAudit {
       summary: 'Remote PEP "' + pep + '" ' + verdict + ' ' + what +
                (undischargeable.length ? '; refused for the obligation ' +
                  undischargeable.join(', ') : '') + '.',
+      // THE CAP: `audit.js` keeps twelve detail fields and drops empty
+      // ones, so they are ordered by what a reader needs most — who and
+      // which decision, then what it was about — and the summary already
+      // says the decision in a sentence.
       detail: {
         pep: pep,
         instance: instance,
         seq: event.seq,
         decidedAt: PepAudit.text(event.at),
         decision: decision,
-        allowed: allowed,
-        bias: PepAudit.text(event.bias),
-        why: PepAudit.text(event.why),
-        policies: policies.join(', '),
-        discharged: discharged.join(', '),
-        undischargeable: undischargeable.join(', '),
-        endpoint: PepAudit.text(event.endpoint),
         application: PepAudit.text(event.application),
-        requestId: PepAudit.text(event.requestId),
         route: PepAudit.text(event.route),
         status: Number.isSafeInteger(event.status) ? event.status : '',
+        policies: policies.join(', '),
+        undischargeable: undischargeable.join(', '),
+        why: PepAudit.text(event.why),
+        requestId: PepAudit.text(event.requestId),
+        // Past the cap where everything above is filled; the summary carries
+        // the endpoint and the decision already.
+        discharged: discharged.join(', '),
+        endpoint: PepAudit.text(event.endpoint),
+        bias: PepAudit.text(event.bias),
         // A code the table does not know is kept as the PEP said it.
         pepCode: said && !code ? said : ''
       }

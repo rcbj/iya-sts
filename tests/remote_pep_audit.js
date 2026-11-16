@@ -111,17 +111,22 @@ function childMain() {
     // 1. THE SEEDED CLIENT AND RESOURCE.
     // ---------------------------------------------------------------------
     const seeded = applications.clientConfigOf('sts-remote-pep') || {};
+    const remotePep = applications.get('sts-remote-pep') || { fields: {} };
+    const grants = [].concat(remotePep.fields.oauthGrantType || []);
     note(seeded.known && seeded.token_endpoint_auth_method === 'none' &&
-         (seeded.grant_types || []).join(' ') ===
+         grants.join(' ') ===
            'urn:ietf:params:oauth:grant-type:jwt-bearer' &&
          seeded.tls_client_certificate_bound_access_tokens === true,
          '1. sts-remote-pep is seeded: public, jwt-bearer only, bound tokens',
          JSON.stringify({ known: seeded.known,
                           method: seeded.token_endpoint_auth_method,
-                          grants: seeded.grant_types,
+                          grants: grants,
                           bound: seeded.tls_client_certificate_bound_access_tokens }));
-    const api = applications.load('sts-management-api');
-    const defined = ((api.record && api.record.fields.oauthPermission) || [])
+    const permissionsOf = function (identifier) {
+      const viewed = applications.get(identifier) || { fields: {} };
+      return [].concat(viewed.fields.oauthPermission || []);
+    };
+    const defined = permissionsOf('sts-management-api')
       .map(function (one) { return String(one).split('|')[0]; });
     note(defined.indexOf('xacml:pep-audit') >= 0,
          '1. sts-management-api defines xacml:pep-audit', defined.join(' '));
@@ -129,15 +134,20 @@ function childMain() {
     // ---------------------------------------------------------------------
     // 2. THE UPGRADE: an entry without the permission is given it.
     // ---------------------------------------------------------------------
-    const rec = api.record;
-    rec.fields.oauthPermission = (rec.fields.oauthPermission || [])
-      .filter(function (one) {
-        return String(one).split('|')[0] !== 'xacml:pep-audit';
-      });
-    applications.save(rec, { quiet: true });
+    const held = permissionsOf('sts-management-api').filter(function (one) {
+      return String(one).split('|')[0] === 'xacml:pep-audit';
+    });
+    held.forEach(function (one) {
+      applications.updateApplication('sts-management-api',
+        { attribute: 'oauthPermission', mode: 'remove', value: one });
+    });
+    const gone = permissionsOf('sts-management-api').every(function (one) {
+      return String(one).split('|')[0] !== 'xacml:pep-audit';
+    });
+    note(gone, '2. (the permission is taken off, as on a 1.1.0 entry)',
+         permissionsOf('sts-management-api').join(' '));
     applications.seedInternalApplications({ scope: 'default' });
-    const after = (applications.load('sts-management-api').record.fields
-      .oauthPermission || []).map(function (one) {
+    const after = permissionsOf('sts-management-api').map(function (one) {
       return String(one).split('|')[0];
     });
     note(after.indexOf('xacml:pep-audit') >= 0 &&
@@ -323,7 +333,9 @@ function childMain() {
     // ---------------------------------------------------------------------
     // 7. OUT OF THE GROUP, OUT OF THE API.
     // ---------------------------------------------------------------------
-    ldap.removeGroupMember(GROUP, PEP);
+    // An ldapmodify's work: the console has no remove-member for a group
+    // that is not the console roster's. The PEP is in no other group.
+    ldap.dropMemberships(ldap.locateEntry(PEP).dn);
     const removed = await push(token,
       { instance: instance, events: [{ seq: 11, kind: 'enforcement' }] });
     note(removed.status === 403,

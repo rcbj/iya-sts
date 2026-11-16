@@ -1895,6 +1895,14 @@
     "en": "3ca2a7e72576096b",
     "text": "设置一个设备或一批设备的合规状态"
   },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827)。远程 XACML PEP 推送它在自身进程中所作决定的记录——/protected 的执行、它自己决定的 AuthZEN 评估（从不包括它转发的）以及其反向代理对某条路由的请求——至少一次且按顺序，每批最多 500 条，每条按其 seq 确认。令牌携带受保护的 xacml:pep-audit 范围，此处没有其他操作接受它：PEP 自己的 RFC 7523 自我断言，经由预置的公共客户端 sts-remote-pep，绑定到其证书，仅在其条目属于远程 PEP 组（REMOTE_PEPS）时签发和接受。PEP 必须已在该领域注册。/admin/audit 上的行为 xacml.remote.enforcement、authzen.remote.decision，以及反向代理请求的 xacml.remote.proxy。"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "将远程 PEP 作出的一批决定记录为审计行"
+  },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
     "text": "非规范（#218）。以 JSON 形式提供的 GET /admin/device-registration：注册方式及其中哪些已实现、识别种类、词汇表以及设备设置。"

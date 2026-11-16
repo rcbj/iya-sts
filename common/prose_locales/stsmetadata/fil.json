@@ -1895,6 +1895,14 @@
     "en": "3ca2a7e72576096b",
     "text": "itinatakda ang compliance ng isang device o ng isang batch"
   },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). Ipinapadala ng isang remote na XACML PEP ang mga talaan ng mga desisyong ginawa nito sa sarili nitong proseso — ang mga pagpapatupad sa /protected, ang mga AuthZEN evaluation na ito mismo ang nagpasya, hindi kailanman ang ipinasa nito, at ang mga kahilingan ng reverse proxy nito sa isang route — kahit isang beses at nang sunud-sunod, hanggang 500 bawat batch, bawat isa ay kinikilala sa pamamagitan ng seq nito. Dala ng token ang PROTEKTADONG scope na xacml:pep-audit at walang iba rito ang tumatanggap nito: ang sariling RFC 7523 self-assertion ng PEP sa pamamagitan ng naka-seed na pampublikong client na sts-remote-pep, nakatali sa sertipiko nito, ibinibigay at tinatanggap lamang habang ang entry nito ay nasa grupo ng mga remote na PEP (REMOTE_PEPS). Dapat nakarehistro ang PEP sa realm. Mga row na xacml.remote.enforcement, authzen.remote.decision at, para sa mga kahilingan ng reverse proxy, xacml.remote.proxy sa /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "itinatala bilang mga audit row ang isang batch ng mga desisyong ginawa ng isang remote na PEP"
+  },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
     "text": "NON-SPEC (#218). GET /admin/device-registration sa JSON: ang mga enrolment method at kung alin ang nabuo na, ang mga recognition kind, ang mga bokabularyo at ang mga Devices setting."

@@ -240,7 +240,7 @@ const BUILT_IN = [
   // stopping at the handshake.
   // -------------------------------------------------------------------------
   // **AND IT AUTHORIZES ONE PERMISSION SINCE #1827 (rcbj, 2026-11-16)**:
-  // `xacml:pep-audit`, the scope `POST /admin-api/xacml/pep-audit` takes, by
+  // `xacml:pep-audit`, the scope `POST /admin-api/pep-audit` takes, by
   // which a remote PEP pushes the records of the decisions it made to this
   // service's audit log. rcbj: "Every log event pushed to iya-sts must be
   // through an authenticated request on the mgmt API. Tie access to the
@@ -259,7 +259,7 @@ const BUILT_IN = [
           'than a person — the certificate says WHO, and this group says ' +
           'whether they may. It authorizes the xacml:pep-audit permission: ' +
           'pushing the records of the decisions the PEP made to this ' +
-          'service\'s audit log, through POST /admin-api/xacml/pep-audit, ' +
+          'service\'s audit log, through POST /admin-api/pep-audit, ' +
           'and nothing else on /admin-api.',
     holds: function (who) {
       log.debug("Entering holds().");

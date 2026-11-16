@@ -76,8 +76,8 @@
     "text": "未证明任何内容的公共客户端。"
   },
   "roles.builtIn.REMOTE_PEPS.what": {
-    "en": "a542d84d6db4c5b5",
-    "text": "远程 XACML 策略执行点：由 `roles.remotePepGroup`（默认 \"remote-peps\"）指明的组的任何成员。`/xacml/pep/register`、`/xacml/pep/policies` 和 `/xacml/pep/heartbeat` 要求的就是它，持有它的一方通常是客户端证书 DN 而不是人员——证书说明是谁，该组说明他们是否可以。"
+    "en": "c88edce6cfb601d9",
+    "text": "远程 XACML 策略执行点：由 `roles.remotePepGroup`（默认 \"remote-peps\"）指明的组的任何成员。`/xacml/pep/register`、`/xacml/pep/policies` 和 `/xacml/pep/heartbeat` 要求的就是它，持有它的一方通常是客户端证书 DN 而不是人员——证书说明是谁，该组说明他们是否可以。 它授权 xacml:pep-audit 权限：通过 POST /admin-api/pep-audit 将 PEP 所作决定的记录推送到本服务的审计日志，此外不能访问 /admin-api 上的任何内容。"
   },
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",

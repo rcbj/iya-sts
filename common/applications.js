@@ -17409,7 +17409,7 @@ const API_PERMISSIONS = Object.freeze({
       // #1827: a remote PEP pushing the records of what it decided.
       ['xacml:pep-audit', 'A remote PEP pushing the records of the ' +
                           'decisions it made to the audit log, at ' +
-                          '/admin-api/xacml/pep-audit (REMOTE_PEPS)']]) }),
+                          '/admin-api/pep-audit (REMOTE_PEPS)']]) }),
   'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
     permissions: Object.freeze([
       ['account:manage', 'The person\'s own account, through /account-api']

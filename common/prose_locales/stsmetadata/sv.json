@@ -1895,6 +1895,14 @@
     "en": "3ca2a7e72576096b",
     "text": "sätter efterlevnaden för en enhet eller en grupp"
   },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). En fjärr-XACML-PEP skickar posterna om de beslut den fattat i sin egen process — verkställanden på /protected, de AuthZEN-bedömningar den själv avgjort, aldrig en den vidarebefordrat, och dess omvända proxys begäranden till en route — minst en gång och i ordning, upp till 500 per sats, var och en kvitterad med sitt seq. Token bär den SKYDDADE omfattningen xacml:pep-audit och inget annat här tar emot den: PEP:ens egen RFC 7523-självförsäkran via den förinstallerade publika klienten sts-remote-pep, bunden till dess certifikat, utfärdad och godtagen bara så länge dess post finns i fjärr-PEP-gruppen (REMOTE_PEPS). PEP:en måste vara registrerad i domänen. Raderna xacml.remote.enforcement, authzen.remote.decision och, för den omvända proxyns begäranden, xacml.remote.proxy på /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "registrerar en sats beslut som en fjärr-PEP fattat som granskningsrader"
+  },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
     "text": "ICKE-SPEC (#218). GET /admin/device-registration som JSON: registreringsmetoderna och vilka som är byggda, igenkänningsslagen, vokabulärerna och inställningarna för enheter."

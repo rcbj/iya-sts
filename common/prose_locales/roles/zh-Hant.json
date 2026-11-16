@@ -76,8 +76,8 @@
     "text": "未證明任何東西的公開用戶端。"
   },
   "roles.builtIn.REMOTE_PEPS.what": {
-    "en": "a542d84d6db4c5b5",
-    "text": "遠端 XACML 原則執行點：`roles.remotePepGroup`（預設為 \"remote-peps\"）所指名之群組的任何成員。這是 `/xacml/pep/register`、`/xacml/pep/policies` 與 `/xacml/pep/heartbeat` 所要求的，而持有它的一方通常是用戶端憑證 DN 而不是人——憑證說明「是誰」，而此群組說明他們是否可以。"
+    "en": "c88edce6cfb601d9",
+    "text": "遠端 XACML 原則執行點：`roles.remotePepGroup`（預設為 \"remote-peps\"）所指名之群組的任何成員。這是 `/xacml/pep/register`、`/xacml/pep/policies` 與 `/xacml/pep/heartbeat` 所要求的，而持有它的一方通常是用戶端憑證 DN 而不是人——憑證說明「是誰」，而此群組說明他們是否可以。 它授權 xacml:pep-audit 權限：透過 POST /admin-api/pep-audit 將 PEP 所作決定的紀錄推送到本服務的稽核日誌，此外不能存取 /admin-api 上的任何內容。"
   },
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",

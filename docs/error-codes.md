@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5649** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5657** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,13 +86,13 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 35
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 207
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 119
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 210
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 123
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 291
-* [Management API (`STS-API`)](#sts-api) — 96
+* [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
@@ -5137,6 +5137,9 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0283` | A remote PEP's Sync was refused because nudging is stopped for that PEP (disable-pep): an administrator said this service does not dial it. | HTTP 400 on /admin-api |
 | `STS-XACML-0284` | A remote PEP's Sync was refused because the PEP has no notify URL, or its notify URL cannot be dialled (not https, or outside xacml.pepNotifyAllowedHosts). | HTTP 400 on /admin-api |
 | `STS-XACML-0285` | A remote PEP's Sync dialled the PEP and the nudge was not delivered: the connection failed, the certificate did not verify, or the PEP refused it. The result is recorded on the PEP's row. | HTTP 400 on /admin-api |
+| `STS-XACML-0286` | A remote PEP pushed decision records to POST /admin-api/pep-audit in a body that is not { instance, events } with events a non-empty array of objects, or with more events than one batch may carry (#1827). Nothing in the batch is recorded. | HTTP 400, an error message |
+| `STS-XACML-0287` | A remote PEP pushed decision records to POST /admin-api/pep-audit and is not registered in this realm's ou=peps under the name its token's subject carries (#1827). It must register (POST /xacml/pep/register) before its records are taken. | HTTP 404, an error message |
+| `STS-XACML-0288` | A decision record a remote PEP pushed to POST /admin-api/pep-audit was not recorded: it had no positive integer seq, or a kind other than enforcement, authzen or proxy (#1827). The rest of the batch is recorded and the record is counted as ignored. | none; counted as ignored in the answer |
 
 ## STS-XPEP
 
@@ -5265,6 +5268,10 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0117` | A remote PEP proxy route names a policy (authorization.policy) this PEP does not hold — never pulled, disabled, withheld or failed to load — so its request was refused whatever the bias; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0118` | The remote PEP's reverse proxy has received no configuration since it started — its first pull has not succeeded yet — so every path, its own /.iya-pep/* included, is answered "try again later" rather than "not found". Logged when first met, then as a count at most once a minute, and once more when the first configuration arrives; a configuration received empty or switched off is STS-XPEP-0065 (#1760). | HTTP 503, temporarily_unavailable, with Retry-After (the poll interval in seconds, at least 1) |
 | `STS-XPEP-0119` | A remote PEP could not apply one part of a listener's tuning. A TLS knob the library refused keeps the acceptor already served, or serves the certificate without that knob when none is served yet. sessionTimeoutS other than 300 is left at 300 seconds and the other settings are applied. A thread-pool worker that does not start leaves the workers already running (#1760). | none — an error in the PEP's log |
+| `STS-XPEP-0120` | The remote PEP's queue of decision records waiting for the service was full, so the oldest record was dropped to make room (#1827). Enforcement goes on; the dropped decision is still on the PEP's own log. Logged at the first drop and then sparingly, with the count. | none; the PEP keeps enforcing |
+| `STS-XPEP-0121` | The remote PEP could not obtain an access token for the management API: the RFC 7523 self-assertion grant at the token endpoint failed or was refused (#1827). Its entry must hold its client certificate as an assertion key and be in the group roles.remotePepGroup names. The records stay queued. | none; the records are kept and sent later |
+| `STS-XPEP-0122` | The remote PEP could not deliver a batch of decision records to POST /admin-api/pep-audit: no answer, a refusal of its token, or a status other than 200 and 400 (#1827). The records stay queued and are sent again. | none; the records are kept and sent later |
+| `STS-XPEP-0123` | The service refused a batch of decision records as malformed (HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped that batch rather than send it forever (#1827). Each decision is still on the PEP's own log. | none; the batch is dropped |
 
 ## STS-AUTHZEN
 
@@ -5898,6 +5905,7 @@ Raised from: mgmt-api/.
 | `STS-API-0144` | A management API request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
 | `STS-API-0146` | An answer was refused by its response model (STS-API-0139) in a process where every plain object or array inherits an enumerable member: something wrote to Object.prototype or Array.prototype, so every closed model refuses every answer. The log line names the members, once per set of names; the process needs a restart and the write that polluted it a fix. | — |
+| `STS-API-0147` | A remote PEP's decision-record push (POST /admin-api/pep-audit) arrived on a token that does not carry xacml:pep-audit or whose subject is not in the remote PEPs' group (REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented at another operation (#1827). Refused at the gate itself, so that the separation does not depend on xacml.enforceAccess. | HTTP 403, an error message |
 
 ## STS-PORTAL
 
