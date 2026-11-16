@@ -9198,7 +9198,7 @@ PKCS #10 request and the realm's Issuing CA certifies the key in it.
   `cert_enrollment.ts`'s `parseCsr()` (required lazily: that module requires
   `pki.js`), the one PKCS #10 reader and its proof-of-possession check, and
   accepts `CSR_SIGNING_KEY_ALGS` — EC P-256 and RSA 2048/3072/4096, the keys
-  the remote PEP signs with (`STS-PKI-0279` otherwise; no request,
+  the remote PEP signs with (`STS-PKI-0281` otherwise; no request,
   `STS-PKI-0278`). **The request's names are ignored**: it calls
   `issueSigningKeyPair()` with `publicKeyPem` (new: a supplied key is
   certified and `privateKeyPem` answered empty), `subjectKind` person and

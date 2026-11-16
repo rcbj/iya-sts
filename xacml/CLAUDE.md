@@ -248,7 +248,7 @@ person's RFC 7523 key (`common/CLAUDE.md` 3ab).
   a broken PEP rather than a missing membership.
 * **WHAT.** The leaf names the entry (`urn:sts:sa:<name>`, CN the username);
   the request's subject and SANs are read for nothing. EC P-256 or RSA ≥ 2048
-  (`STS-PKI-0279`); a request that does not prove possession is the
+  (`STS-PKI-0281`); a request that does not prove possession is the
   enrollment reader's `STS-ENROLL-0033`.
 * **ROTATION ADDS** (#1290's rule for a person's keys): the old key keeps
   working until the PEP is moved; `revokePrevious: true` revokes the entry's

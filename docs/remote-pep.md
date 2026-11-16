@@ -397,7 +397,7 @@ key. Nothing private is stored anywhere in the service.
 - **The request proves possession.** Its signature must verify with the key
   it carries; a tampered request is refused.
 - **The key is EC P-256 (ES256, preferred) or RSA of 2048 bits or more.**
-  Anything else is refused by name (`STS-PKI-0279`).
+  Anything else is refused by name (`STS-PKI-0281`).
 - **The request's names are ignored.** The certificate names the entry:
   `urn:sts:sa:<username>`, with the username as its common name, whatever
   the request's subject or subjectAltName asked for.

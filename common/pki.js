@@ -3959,7 +3959,7 @@ async function certifySigningRequest(realmId, opts) {
                       'RFC 7523 key certified from a request is EC P-256 ' +
                       '(ES256, preferred) or RSA of 2048 bits or more — ' +
                       CSR_SIGNING_KEY_ALGS.join(', ') + '.'] },
-                           'STS-PKI-0279');
+                           'STS-PKI-0281');
   }
   const identifier = String(options.identifier || '');
   const issued = await issueSigningKeyPair(realmId, {

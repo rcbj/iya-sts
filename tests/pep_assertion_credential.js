@@ -20,7 +20,7 @@
 //      (STS-XACML-0299), a service account outside the group
 //      (STS-XACML-0301), no request (STS-PKI-0278), a tampered request —
 //      its signature does not prove possession (STS-ENROLL-0033) — and an
-//      Ed25519 key (STS-PKI-0279). None of them leaves a key on the entry.
+//      Ed25519 key (STS-PKI-0281). None of them leaves a key on the entry.
 //   C. the certificate: issued by the realm's Issuing CA, naming
 //      `urn:sts:sa:<name>` and the PEP's username, whatever the request's
 //      subject and subjectAltName asked for; the answer carries the chain,
@@ -200,8 +200,8 @@ function childMain() {
       publicKeyPem: edPair.publicPem, privateKeyPem: edPair.privatePem });
     const ed = await act({ name: PEP,
                            csr: Buffer.from(edReq.der).toString('base64') });
-    note(!ed.ok && codeOf(ed) === 'STS-PKI-0279',
-         'R7. an Ed25519 key is refused by name (STS-PKI-0279)',
+    note(!ed.ok && codeOf(ed) === 'STS-PKI-0281',
+         'R7. an Ed25519 key is refused by name (STS-PKI-0281)',
          codeOf(ed) + ' ' + ed.why);
     note(personAssertions.listFor(PEP, 'jwt').length === heldBefore,
          'R8. no refusal left a key on the entry',

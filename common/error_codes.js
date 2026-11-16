@@ -5202,7 +5202,7 @@ const CODES = [
       'read (#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
-  { code: 'STS-PKI-0279',
+  { code: 'STS-PKI-0281',
     summary: 'A certificate request for a person\'s RFC 7523 key carries a ' +
       'key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, ' +
       'phase 3).',
