@@ -173,6 +173,14 @@ authenticates with its key alone and needs no client certificate
 ([How the PEP authenticates to the service](#how-the-pep-authenticates-to-the-service)).
 Every other variable is in [Configuration](#configuration).
 
+**The published ports are only a starting point.** The command above and
+`docker-compose.pep.yml` publish the PEP's HTTPS listener on the host's 9444
+(and the compose file the reverse proxy's 9543). On a host that already runs
+a PEP, or a load balancer in front of several, those ports are taken. Pick
+free ones, or publish none and put the container on the network its callers
+and the service share, as a second member of a cluster behind one load
+balancer is run.
+
 Then issue the listener pair: run the tool again, or follow
 [An HTTPS listener](#an-https-listener-certified-by-the-realm-it-registered-to).
 
