@@ -8058,6 +8058,78 @@ stored value when the key can produce it and the right default when it cannot.
 `tests/spiffe_pki.js` guards both, and it is the only place in the service where
 either can be asked.
 
+### A REBUILD RE-MINTS ONLY WHAT IS STILL GOOD (2026-11-16)
+
+**`recertifyUseCase()` re-minted EVERY slot of a register, revoked ones
+included, and that undid revocation.** A slot is a person's or an
+application's TLS client or message-signing certificate, a pinned pair, a
+remote PEP's listener, the realm's own signing-key certificates. A renewal
+(*Renew certificates*, `POST /admin-api/pki/recertify`), a reissue and an
+import each issue a NEW certificate over the key of every slot, and a new
+serial is on no list: a person's certificate revoked for `keyCompromise` came
+back valid from the renewed authority, and a `certificateHold` became a
+certificate nobody had put on hold. `recertifyOrphanedSlots()` — what a
+cluster merge calls for a slot left under an authority the row no longer
+holds (`keystore.onOrphanedCertificates()`) — did the same.
+
+**The rule: a revoked record (any reason, a hold included) and an expired one
+are LEFT AS THEY ARE** — in their slot, under the authority that signed them,
+their serial on the use case's list with its entry (reason and date)
+untouched. One predicate decides it, `pki_merge.js`'s `notReMintable()`,
+asked by `recertifyUseCase()` (through `reMintable()`, and again before each
+signature, since a holder may revoke while the others are signed),
+`recertifyOrphanedSlots()` and the merge's `orphanedSlots()`, so the three
+cannot disagree. A reissue asks BEFORE it supersedes every leaf, because
+after that a revoked certificate and a merely replaced one look alike. The
+answer carries `skipped` (`{ slot, serialHex, why }`), and the log names
+them.
+
+**What keeps the revocation answerable afterwards:**
+
+* **A renewal** keeps the authority and its key, so its CRL and OCSP responder
+  go on answering `revoked` for the serial, which is still in the register.
+* **A reissue** supersedes the old Issuing CA on its Intermediate's list, as it
+  always did; the old authority's own CRL is no longer signed by anybody, and
+  OCSP about a leaf it signed answers `unauthorized`, but the leaf chains to a
+  revoked authority, which every validator that checks refuses.
+* **An import (`importCa()`) now does the same.** It replaced the Issuing CA
+  WITHOUT superseding it, so the old authority stayed valid under the
+  Intermediate and the Root while its CRL address and OCSP responder came to
+  answer for the imported one — a leaf revoked under it was good to every
+  relying party that could no longer ask. The replaced authority now goes on
+  its Intermediate's list as `superseded` (not when the same certificate is
+  imported again).
+* **A branch rebuild** (`build`, `build-scope`) supersedes the old Intermediate
+  at the Root, which is unchanged, so the whole old branch is revoked where it
+  can be asked. It re-certifies only the realm's own keys and re-mints no
+  person's slot (`ssf/service_signals.ts`).
+* **Replacing the Root is the one act after which nothing is answerable for
+  the old tree**: the old Root is a trust anchor nobody can revoke, the new
+  Root signs the `root` list, and no key of the old tree signs anything any
+  more. A relying party still trusting the old Root and checking revocation
+  hard-fails on every old certificate (it cannot verify any list); one that
+  soft-fails accepts them all, a revoked one included. Keeping the replaced
+  authorities' keys to go on signing their lists is the fix, and it is not
+  built: the Root is replaced so that the old one is no longer trusted, and
+  `docs/pki.md` tells the operator to remove it.
+
+**What is still re-certified whatever was revoked: the realm's own LIVE
+signing keys.** `certifyKeySet()` (a build, a rotation, a start) and
+`certifyPqKeys()` / `certifySignerGroups()` / `certifyStandbyKeys()` certify
+the keys the key set holds, not records — a key the realm still signs with is
+certified from the live authority whether or not an operator revoked an
+earlier certificate over it. Revoking that certificate does not stop the key
+signing; rotating the key (`signing.rotate-now`) does, and retires and revokes
+in the same act.
+
+**Unchanged by this, and checked:** a cluster merge never loses a revocation
+(`mergeRevokedList()`, a union, the earlier date winning; only a hold one side
+released goes); a PKI row moves between stores whole (`cell_convert.js`
+copies `sts_keys` byte for byte), so a person re-homed to another cell takes
+nothing and leaves nothing; there is no import of a PKI row from a backup —
+restoring a database from before a revocation is the one way to lose it, and
+that is the operator's restore. `tests/pki_rebuild_keeps_revocations.js`.
+
 ### THE OPENID4VP VERIFIER'S CERTIFICATE, AND A RENEWAL THAT KEEPS A NAME (2026-09-26, #230)
 
 `certifyVerifierKey()` issues the certificate the Verifier's `x509_san_dns`
