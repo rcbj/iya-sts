@@ -17443,6 +17443,17 @@ const API_PERMISSIONS = Object.freeze({
     permissions: Object.freeze([
       ['authzen:evaluate', 'AuthZEN access evaluations at /access/v1 ' +
                            '(AUTHZEN_PEPS)']]) }),
+  // THE REMOTE PEP'S OWN API (#1827's follow-up, rcbj-approved,
+  // 2026-11-16): everything under the realm's /xacml/pep and POST
+  // /xacml/pip, which a remote PEP reaches on a DPoP-bound access token
+  // from `sts-remote-pep` instead of a client certificate. The word is this
+  // service's; REMOTE_PEPS authorizes it, at issuance and on every call
+  // (`xacml/pep_token.ts`).
+  'sts-xacml-pep-api': Object.freeze({ base: 'urn:sts:xacml-pep-api:',
+    permissions: Object.freeze([
+      ['xacml:pep', 'A remote PEP registering, pulling the policies and the ' +
+                    'catalogues, reporting heartbeats and asking the PIP at ' +
+                    '/xacml/pep and /xacml/pip (REMOTE_PEPS)']]) }),
   // THE UMA 2.0 PROTECTION API (#1168, rcbj's decision 4): Federated
   // Authorization section 2's `uma_protection` scope, the one word the
   // specification itself names. A resource server's client obtains a PAT
@@ -17550,6 +17561,12 @@ function apiResourceApplications(base) {
     row('sts-authzen-api', 'AuthZEN API',
         [helpers.rebaseTo(realmBase, 'authzen') + '/access/v1'],
         'this service\'s own AuthZEN Authorization API at /access/v1'),
+    // The remote PEP's API (#1827's follow-up): its audience, the realm's
+    // `/xacml/pep`, and its one permission, `xacml:pep`.
+    row('sts-xacml-pep-api', 'Remote PEP API',
+        [helpers.rebaseTo(realmBase, 'xacml') + '/xacml/pep'],
+        'this service\'s own remote PEP API at /xacml/pep and POST ' +
+        '/xacml/pip'),
     // The UMA 2.0 protection API (#1168): its audience, the realm's `/uma`,
     // and its one permission, `uma_protection`.
     row('sts-uma-protection-api', 'UMA protection API',
@@ -17849,6 +17866,17 @@ function internalApplications() {
     //   what the token endpoint asks of a client naming `/admin-api`
     //   (#1050).
     // * EVERY REALM: a PEP registers to the realm whose policy it pulls.
+    //
+    // **AND THE TOKEN CREDENTIAL (#1827's follow-up, rcbj-approved,
+    // 2026-11-16).** Every call a PEP makes to this service is to carry a
+    // DPoP-bound (RFC 9449) access token from this client in place of its
+    // client certificate, one per audience: `xacml:pep` on
+    // `sts-xacml-pep-api` (/xacml/pep/* and POST /xacml/pip) and
+    // `authzen:evaluate` on `sts-authzen-api` (the edge PDP's forward to
+    // /access/v1) beside `xacml:pep-audit`. Every token to this client is
+    // DPoP-bound (`sender_constraints.js`), and a DPoP binding stands for
+    // the certificate binding the flag below declares, through phase 3 of
+    // that plan; phase 4 drops the flag.
     { identifier: 'sts-remote-pep',
       name: 'Remote PEP',
       kinds: ['oauth2-client'],
@@ -17859,9 +17887,10 @@ function internalApplications() {
                    'token to push its decision records to /admin-api ' +
                    '(applications.seedInternal)',
       attributes: { appAllowedProtocol: ['oauth2'],
-                    oauthDelegatedPermission: delegatedPermissionGrants({
-                      'sts-management-api': ['xacml:pep-audit'] }),
-                    oauthGlobalConsent: ['xacml:pep-audit'],
+                    oauthDelegatedPermission: delegatedPermissionGrants(
+                      REMOTE_PEP_GRANTS),
+                    oauthGlobalConsent: ['xacml:pep-audit', 'xacml:pep',
+                                         'authzen:evaluate'],
                     oauthTlsClientCertificateBoundAccessTokens: 'TRUE' },
       registration: {
         client_id: 'sts-remote-pep',
@@ -18028,6 +18057,89 @@ const PERMISSIONS_ADDED_SINCE_SEED = Object.freeze({
   'sts-management-api': Object.freeze(['xacml:pep-audit'])
 });
 
+// THE DELEGATED PERMISSION GRANTS `sts-remote-pep` IS SEEDED WITH (#1827 and
+// its follow-up), one table for the seed and the fill below.
+const REMOTE_PEP_GRANTS = Object.freeze({
+  'sts-management-api': Object.freeze(['xacml:pep-audit']),
+  'sts-xacml-pep-api': Object.freeze(['xacml:pep']),
+  'sts-authzen-api': Object.freeze(['authzen:evaluate'])
+});
+
+// THE DELEGATED PERMISSION GRANTS AND GLOBAL CONSENTS ADDED TO A SEEDED
+// CLIENT AFTER IT WAS FIRST SEEDED (#1827's follow-up), filled where ABSENT,
+// for `PERMISSIONS_ADDED_SINCE_SEED`'s reason: an `sts-remote-pep` seeded by
+// a build before the token credential holds `xacml:pep-audit` alone, so its
+// PEP could never be issued the two scopes a token-holding PEP asks for. A
+// value already held is left as it is, and only the NAMES listed here are
+// added — one an administrator took off before this release is added again,
+// which is the cost of a list that cannot tell "never had" from "removed".
+const CLIENT_GRANTS_ADDED_SINCE_SEED = Object.freeze({
+  'sts-remote-pep': Object.freeze({
+    grants: Object.freeze({
+      'sts-xacml-pep-api': Object.freeze(['xacml:pep']),
+      'sts-authzen-api': Object.freeze(['authzen:evaluate'])
+    }),
+    consents: Object.freeze(['xacml:pep', 'authzen:evaluate'])
+  })
+});
+
+function fillClientGrants() {
+  log.debug("Entering fillClientGrants().");
+  let wrote = 0;
+  Object.keys(CLIENT_GRANTS_ADDED_SINCE_SEED).forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const wanted = CLIENT_GRANTS_ADDED_SINCE_SEED[identifier];
+    const held = valuesOf(record.fields.oauthDelegatedPermission)
+      .map(String);
+    const missing = delegatedPermissionGrants(wanted.grants)
+      .filter(function (one) {
+        return held.indexOf(one) < 0;
+      });
+    const consented = valuesOf(record.fields.oauthGlobalConsent).map(String);
+    const unconsented = wanted.consents.filter(function (one) {
+      return consented.indexOf(one) < 0;
+    });
+    if (!missing.length && !unconsented.length) {
+      return;
+    }
+    // Multi-valued fields: setField() ADDS these to what is held.
+    const ok = (!missing.length ||
+                setField(record, 'oauthDelegatedPermission', missing)) &&
+      (!unconsented.length ||
+       setField(record, 'oauthGlobalConsent', unconsented)) &&
+      save(record, { quiet: true });
+    if (!ok) {
+      log.warn(errorCodes.tag('STS-REG-0020') +
+               'applications: "' + identifier + '" was not given the ' +
+               'delegated permission grant(s) ' +
+               missing.concat(unconsented).join(', ') + ' — the directory ' +
+               'would not take the write. Its PEPs are issued nothing for ' +
+               'them until it holds them.');
+      return;
+    }
+    audit.audit({
+      action: 'application.update', actor: '', protocol: 'internal',
+      channel: 'internal', target: identifier,
+      summary: 'Application "' + identifier + '" was given the delegated ' +
+               'permission grant(s) ' +
+               (missing.join(', ') || '(none)') + ' and the global ' +
+               'consent(s) ' + (unconsented.join(', ') || '(none)') +
+               ' this release seeds it with',
+      detail: { identifier: identifier,
+                attribute: 'oauthDelegatedPermission',
+                added: missing.concat(unconsented).join(', '),
+                seeded: true }
+    });
+    wrote++;
+  });
+  log.debug("Leaving fillClientGrants(). " + wrote + " written.");
+  return wrote;
+}
+
 function fillApiPermissions() {
   log.debug("Entering fillApiPermissions().");
   let wrote = 0;
@@ -18182,6 +18294,9 @@ function seedInternalApplications(options) {
   const filled = fillHostedSessionBounds();
   // #1827: a permission this release added to a seeded API, where absent.
   fillApiPermissions();
+  // #1827's follow-up: a delegated permission grant this release added to a
+  // seeded client, where absent.
+  fillClientGrants();
   log.info('applications: ' + made + ' of this service\'s own ' + rows.length +
            ' application(s) were seeded' +
            (wanted === 'default' ? '' : ' into this realm') +

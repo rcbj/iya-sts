@@ -665,9 +665,19 @@ class RolePermissions {
       out[row.name] = [row.permission];
     });
     // And the built-in roles that authorize one (#607's two owner roles,
-    // #1827's REMOTE_PEPS), each authorizing its own.
+    // #1827's REMOTE_PEPS), each authorizing its own. REMOTE_PEPS has two
+    // rows since the PEP's token credential (`xacml:pep-audit`,
+    // `xacml:pep`), so a row ADDS to what an earlier row of the same role
+    // put here rather than replacing it.
+    const seen: string[] = [];
     roles.AUTHORIZING_BUILT_INS.forEach(function (row) {
-      out[row.name] = [row.permission];
+      if (seen.indexOf(row.name) < 0) {
+        seen.push(row.name);
+        out[row.name] = [];
+      }
+      if (out[row.name].indexOf(row.permission) < 0) {
+        out[row.name].push(row.permission);
+      }
     });
     log.debug("Leaving RolePermissions.permissionsByRole().");
     return out;

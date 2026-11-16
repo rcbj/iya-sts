@@ -11783,6 +11783,12 @@ const CODES = [
       'realm that entry is not one.',
     spec: 'invalid_client or invalid_grant (HTTP 400/401), as the x5c path\'s ' +
       'other refusals' },
+  { code: 'STS-OAUTH-1012',
+    summary: 'A token request through sts-remote-pep, the public client a ' +
+      'remote PEP presents its RFC 7523 self-assertion through, carried no ' +
+      'DPoP proof: every token issued to that client is DPoP-bound (RFC ' +
+      '9449) to the PEP\'s assertion key (#1827\'s follow-up).',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
