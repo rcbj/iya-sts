@@ -1982,5 +1982,293 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Isang test event na ipinadala sa isang destinasyon ng audit export"
+  },
+  "audit.actions.certificate.stored.label": {
+    "en": "fcec1bd6f10fd5cc",
+    "text": "May certificate na inimbak sa entry ng isang tao o ng isang application"
+  },
+  "audit.actions.certificate.unstored.label": {
+    "en": "6e2d0aef72c7b82c",
+    "text": "May certificate na inalis sa entry ng isang tao o ng isang application"
+  },
+  "audit.actions.federation.link.add.label": {
+    "en": "5e6953235158adac",
+    "text": "Ini-link ng isang administrator ang isang tao sa isang subject ng partner"
+  },
+  "audit.actions.federation.link.remove.label": {
+    "en": "4a6ebcf9e0c4f69e",
+    "text": "Inalis ng isang administrator ang link ng isang tao sa isang subject ng partner"
+  },
+  "audit.actions.roles.grant.label": {
+    "en": "6e1aacb692156ad2",
+    "text": "Binigyan ng isang role ang isang tao, isang group o isang application"
+  },
+  "audit.actions.roles.revoke.label": {
+    "en": "d4772fbd49ab2048",
+    "text": "Binawi ang isang role mula sa isang tao, isang group o isang application"
+  },
+  "audit.actions.roles.authorize.label": {
+    "en": "190dc5bd1b682898",
+    "text": "Itinakda ang isang role na mag-authorize ng isang permission"
+  },
+  "audit.actions.roles.unauthorize.label": {
+    "en": "633291edd4fb6eba",
+    "text": "Hindi na nag-a-authorize ng isang permission ang isang role"
+  },
+  "audit.actions.krb5.trust.add.label": {
+    "en": "35ee62b7c98a22a0",
+    "text": "May Kerberos trust na idinagdag"
+  },
+  "audit.actions.krb5.trust.update.label": {
+    "en": "91295a7233165143",
+    "text": "May Kerberos trust na binago"
+  },
+  "audit.actions.krb5.trust.enable.label": {
+    "en": "be6b3132d857d428",
+    "text": "May Kerberos trust na pinagana"
+  },
+  "audit.actions.krb5.trust.disable.label": {
+    "en": "689c9295e8a342c1",
+    "text": "May Kerberos trust na hindi pinagana"
+  },
+  "audit.actions.krb5.trust.rotate-key.label": {
+    "en": "cea8ab994f72f176",
+    "text": "Na-rotate ang key ng isang Kerberos trust"
+  },
+  "audit.actions.krb5.trust.remove.label": {
+    "en": "c7be95e7265a0f91",
+    "text": "May Kerberos trust na inalis"
+  },
+  "audit.actions.krb5.trust.pair.label": {
+    "en": "5aaa9caed768fb99",
+    "text": "Ipinares ang isang Kerberos trust sa isa pang trust realm"
+  },
+  "audit.actions.admin.authn-policy.save-named.label": {
+    "en": "ae73731a4c9b5201",
+    "text": "May named authentication policy na ginawa o pinalitan"
+  },
+  "audit.actions.admin.authn-policy.delete-named.label": {
+    "en": "20cf17485f5112f0",
+    "text": "May named authentication policy na binura"
+  },
+  "audit.actions.admin.service-account-policy.change.label": {
+    "en": "c43377ee4ee62d65",
+    "text": "May service account policy profile na binago"
+  },
+  "audit.actions.admin.passkey-policy.change.label": {
+    "en": "d6cd0159f9f4f42f",
+    "text": "May passkey policy profile na binago"
+  },
+  "audit.actions.admin.passkey-client.clear.label": {
+    "en": "caac9fcf2aacd596",
+    "text": "Muling inalok ang ML-DSA sa isang natutunang passkey client, o sa bawat isa"
+  },
+  "audit.actions.admin.attribute-policy.change.label": {
+    "en": "def95fa5be84d974",
+    "text": "May attribute policy profile na binago"
+  },
+  "audit.actions.admin.attribute-policy.define.label": {
+    "en": "efb3c94b0f679855",
+    "text": "May custom attribute na itinakda sa isang realm"
+  },
+  "audit.actions.admin.attribute-policy.update.label": {
+    "en": "2ac2f1f56a0abb78",
+    "text": "May custom attribute ng isang realm na binago"
+  },
+  "audit.actions.admin.attribute-policy.undefine.label": {
+    "en": "f86e0a469574ebc8",
+    "text": "May custom attribute ng isang realm na inalis"
+  },
+  "audit.actions.authn.session.registration.refused.label": {
+    "en": "be4013bf84068a75",
+    "text": "Tinanggihan ang pag-bind ng isang sign-on session sa key ng browser nito"
+  },
+  "audit.actions.authn.session.refresh.refused.label": {
+    "en": "9e63e887ac8bc909",
+    "text": "Tinanggihan ang pag-renew ng cookie ng isang device-bound session"
+  },
+  "audit.actions.account.disable.label": {
+    "en": "46bd2589fcc45fc9",
+    "text": "Hindi pinagana ang account ng isang tao"
+  },
+  "audit.actions.account.enable.label": {
+    "en": "8e93f6c58f12f275",
+    "text": "Pinagana ang account ng isang tao"
+  },
+  "audit.actions.enrollment.hostname.add.label": {
+    "en": "d87645d47198c4be",
+    "text": "May host name na nairehistro sa isang entry para sa certificate enrollment"
+  },
+  "audit.actions.enrollment.hostname.remove.label": {
+    "en": "6741b0eed245a1e4",
+    "text": "May host name na inalis sa isang entry para sa certificate enrollment"
+  },
+  "audit.actions.device.risk.label": {
+    "en": "229ae42804651e11",
+    "text": "Itinakda ang risk level ng isang nakarehistrong device"
+  },
+  "audit.actions.federation.create.label": {
+    "en": "d39349db65bbbeac",
+    "text": "May federation relationship na ginawa"
+  },
+  "audit.actions.federation.update.label": {
+    "en": "e42d4ad8c054a018",
+    "text": "May federation relationship na binago"
+  },
+  "audit.actions.federation.delete.label": {
+    "en": "a2446b9385d97441",
+    "text": "May federation relationship na binura"
+  },
+  "audit.actions.federation.encryption-key.label": {
+    "en": "f1edb957b2f0924b",
+    "text": "Nagbago ang mga encryption key ng isang federation relationship"
+  },
+  "audit.actions.federation.client-certificate.label": {
+    "en": "43510962ed549172",
+    "text": "Binigyan ng client certificate ang isang federation relationship"
+  },
+  "audit.actions.federation.refused.label": {
+    "en": "ec3bda0f9fafeef9",
+    "text": "Tinanggihan ang isang federated sign-in sa pamamagitan ng isang relationship"
+  },
+  "audit.actions.krb5.krbtgt.created.label": {
+    "en": "b7cafb8b01f4edf5",
+    "text": "Ginawa ang krbtgt key ng isang realm"
+  },
+  "audit.actions.krb5.krbtgt.rotated.label": {
+    "en": "44b713e96a2117cb",
+    "text": "Na-rotate ang krbtgt key ng isang realm"
+  },
+  "audit.actions.krb5.krbtgt.invalidated.label": {
+    "en": "eb890adb9a5d4927",
+    "text": "Pinalitan ang krbtgt key ng isang realm at pinawalang-bisa ang bawat mas luma"
+  },
+  "audit.actions.admin.krb5.krbtgt.created.label": {
+    "en": "094c69cb63255f7f",
+    "text": "Ginawa ng isang operator ang krbtgt key ng isang realm"
+  },
+  "audit.actions.admin.krb5.krbtgt.rotated.label": {
+    "en": "da65e2043c944e92",
+    "text": "Ni-rotate ng isang operator ang krbtgt key ng isang realm"
+  },
+  "audit.actions.admin.krb5.krbtgt.invalidated.label": {
+    "en": "3f717cdcd547e8fa",
+    "text": "Pinalitan ng isang operator ang krbtgt key ng isang realm at pinawalang-bisa ang bawat mas luma"
+  },
+  "audit.actions.ciba.approved.label": {
+    "en": "bf1e09c296b342d8",
+    "text": "Inaprubahan ng isang tao ang isang backchannel sign-in request"
+  },
+  "audit.actions.ciba.denied.label": {
+    "en": "ef1a7cf6cc1d03c9",
+    "text": "Tinanggihan ng isang tao ang isang backchannel sign-in request"
+  },
+  "audit.actions.oidfed.subordinate-suspended.label": {
+    "en": "6675877d77c0566f",
+    "text": "Sinuspinde ang isang OpenID Federation subordinate"
+  },
+  "audit.actions.oidfed.subordinate-reinstated.label": {
+    "en": "7986bb422295e58b",
+    "text": "Ibinalik ang isang OpenID Federation subordinate"
+  },
+  "audit.actions.oidfed.collection-crawled.label": {
+    "en": "7607eb6d5f234343",
+    "text": "Na-crawl ang isang OpenID Federation Entity Collection"
+  },
+  "audit.actions.portal.device.approve.label": {
+    "en": "b3f3ad8f3bef6764",
+    "text": "Inaprubahan ng isang tao ang isang device sign-in sa portal"
+  },
+  "audit.actions.portal.device.deny.label": {
+    "en": "b6ec1ec11487f09e",
+    "text": "Tinanggihan ng isang tao ang isang device sign-in sa portal"
+  },
+  "audit.actions.portal.device.prove.label": {
+    "en": "18f9f5e553c02d46",
+    "text": "Pinatunayan ng isang tao ang key ng isang device sa portal"
+  },
+  "audit.actions.portal.device.link.label": {
+    "en": "981a3df836380a9f",
+    "text": "Ini-link ng isang tao ang isang device sa isang passkey sa portal"
+  },
+  "audit.actions.portal.vc.view.label": {
+    "en": "5bf708d5ba3e1335",
+    "text": "Tinanggihan ang pagtingin sa mga credential na maaaring ialok sa isang tao"
+  },
+  "audit.actions.risk.dataset.import.label": {
+    "en": "a6752612f66f4e39",
+    "text": "May risk dataset na na-import"
+  },
+  "audit.actions.risk.dataset.activate.label": {
+    "en": "91fef9a13928d970",
+    "text": "Ginawang aktibo ang isang bersyon ng isang risk dataset"
+  },
+  "audit.actions.risk.dataset.delete.label": {
+    "en": "160c256ebf676ac4",
+    "text": "Binura ang isang bersyon ng isang risk dataset"
+  },
+  "audit.actions.ssf.signals.replace-stream.label": {
+    "en": "34f7435fe1e7831e",
+    "text": "Pinalitan ang Shared Signals stream ng isang partner"
+  },
+  "audit.actions.ssf.signals.read-status.label": {
+    "en": "8836857266e386f3",
+    "text": "Binasa ang status ng Shared Signals stream ng isang partner"
+  },
+  "audit.actions.xacml.pep.listener.set.label": {
+    "en": "e6d3d068edd0c700",
+    "text": "Itinakda ang isang listener ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.listener.remove.label": {
+    "en": "22371f2d5a219bd9",
+    "text": "Inalis ang isang listener ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.listener.renew.label": {
+    "en": "e2fadf6c2e12e48a",
+    "text": "Hiningan ang isang remote PEP ng bagong certificate para sa isang listener"
+  },
+  "audit.actions.xacml.pep.listener.environment.label": {
+    "en": "bbc3fa7f73024a89",
+    "text": "Itinakda ang tuning ng isang environment listener ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.settings.set.label": {
+    "en": "67e23ea4e64903a9",
+    "text": "Itinakda ang mga managed setting ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.settings.clear.label": {
+    "en": "e3d844d8e92ded2e",
+    "text": "Binura ang mga managed setting ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.cluster.listener.set.label": {
+    "en": "5b7e185e98dfd54a",
+    "text": "Itinakda ang isang listener ng isang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.listener.remove.label": {
+    "en": "7b2dcfb3707fb0ab",
+    "text": "Inalis ang isang listener ng isang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.listener.renew.label": {
+    "en": "0516e0cae2b0cffd",
+    "text": "Hiningan ang isang remote PEP cluster ng bagong certificate para sa isang listener"
+  },
+  "audit.actions.xacml.pep.cluster.listener.environment.label": {
+    "en": "54c7af5c001fd2d3",
+    "text": "Itinakda ang tuning ng isang environment listener ng isang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.settings.set.label": {
+    "en": "fddab35861f79541",
+    "text": "Itinakda ang mga managed setting ng isang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.settings.clear.label": {
+    "en": "cfb6935d3e45461e",
+    "text": "Binura ang mga managed setting ng isang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.proxy.set.label": {
+    "en": "0990d52a28561ed0",
+    "text": "Itinakda ang reverse-proxy configuration ng isang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.proxy.clear.label": {
+    "en": "c2812e5d21fb6dd4",
+    "text": "Inalis ang reverse-proxy configuration ng isang remote PEP cluster"
   }
 }
