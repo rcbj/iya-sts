@@ -3790,5 +3790,5 @@ async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
         before + 1,
         "nothing under /.iya-pep/ went upstream"
     );
-    assert!(!proxy::logged::holding("STS-XPEP-0124").is_empty());
+    assert!(!proxy::logged::holding("STS-XPEP-0128").is_empty());
 }

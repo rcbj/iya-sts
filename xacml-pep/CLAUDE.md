@@ -1250,10 +1250,10 @@ whole. The pair is upgraded together.
    serves are one string.
 2. `/.iya-pep/callback` and `/.iya-pep/logout` are the session mechanism's,
    ahead of the route table, and take GET and HEAD: any other method is 405
-   with `Allow: GET, HEAD` (`STS-XPEP-0122`, `-0123`; #1830), the callback's
+   with `Allow: GET, HEAD` (`STS-XPEP-0126`, `-0123`; #1830), the callback's
    state not looked up and so not spent. **`/.iya-pep/` is the proxy's
    WHOLE** (#1830): after the accounts pages, any other path under it is 404
-   (`STS-XPEP-0124`) and never reaches the route table, so a prefix route at
+   (`STS-XPEP-0128`) and never reaches the route table, so a prefix route at
    `/` cannot forward one upstream; and a configured route there is refused
    with the configuration (`proxy_config.rs`'s `path_problem()`), as a path
    holding `//` is. Until #1830 only the eight paths were the proxy's and

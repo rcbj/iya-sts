@@ -24326,18 +24326,18 @@ const CODES = [
       'connection is lost; the worker catches the panic and takes the next ' +
       'job (2026-11-16).',
     spec: 'none — an error in the PEP\'s log' },
-  { code: 'STS-XPEP-0122',
+  { code: 'STS-XPEP-0126',
     summary: 'A request reached a remote PEP reverse proxy\'s sign-in ' +
       'callback, /.iya-pep/callback, with a method other than GET or HEAD; ' +
       'it was refused before its state was looked up, so no pending ' +
       'sign-in was spent (#1830).',
     spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
-  { code: 'STS-XPEP-0123',
+  { code: 'STS-XPEP-0127',
     summary: 'A request reached a remote PEP reverse proxy\'s sign-out, ' +
       '/.iya-pep/logout, with a method other than GET or HEAD; no session ' +
       'was ended (#1830).',
     spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
-  { code: 'STS-XPEP-0124',
+  { code: 'STS-XPEP-0128',
     summary: 'A request on a remote PEP reverse proxy named a path under ' +
       '/.iya-pep/ that is none of the proxy\'s own pages. The prefix is ' +
       'the proxy\'s whole, so the path never reaches the route table and ' +
