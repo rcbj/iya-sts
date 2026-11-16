@@ -1332,7 +1332,7 @@ function forgetDeletedHolder(spec) {
       return;
     }
     out.failed += 1;
-    log.error(errorCodes.tag('STS-PKI-0277') + 'pki: the certificate ' +
+    log.error(errorCodes.tag('STS-PKI-0279') + 'pki: the certificate ' +
               serialHex + ' of ' + label + ', issued by the "' + caId +
               '" authority in "' + (scope || 'default') + '", was not ' +
               'revoked when its holder was deleted (' + door + '): ' +
@@ -1366,7 +1366,7 @@ function forgetDeletedHolder(spec) {
         return;
       }
       out.failed += 1;
-      log.error(errorCodes.tag('STS-PKI-0278') + 'pki: the ' + useCase +
+      log.error(errorCodes.tag('STS-PKI-0280') + 'pki: the ' + useCase +
                 ' certificate ' + one.serialHex + ' of ' + label + ' is ' +
                 'still recorded under its name after the holder was ' +
                 'deleted (' + door + '), so a holder made again under the ' +

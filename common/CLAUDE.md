@@ -11646,14 +11646,14 @@ deleted with `users/delete`. Three things now:
   `message-signing`), a person's RFC 7523 and RFC 7522 key pairs and an enrolled ACME,
   EST or SCEP leaf (the last two read out of the deleted entry's attributes). An expired
   or already revoked one is left: the earlier revocation wins. A failure is logged
-  `STS-PKI-0277` and the delete stands.
+  `STS-PKI-0279` and the delete stands.
 * **`pki.detachCertificate()`** moves each register record OUT OF ITS SLOT into
   `issuedKeyPairs`, as `subjectKind` `deleted-person` / `deleted-application`, keyed by
   the deleted entry's `urn:uuid:` and naming no name. Not forgotten: `issuedList()` still
   finds the serial, so OCSP does not answer `unknown`, and `revoked` keeps it on the CRL.
   Not left in `certs` either, where `recertifyUseCase()` would re-mint it under a rebuilt
   authority. `currentHolderOf()` looks in the issued register too, so a detached record
-  is `HOLDER_GONE` rather than "no subject recorded". `STS-PKI-0278` when it fails.
+  is `HOLDER_GONE` rather than "no subject recorded". `STS-PKI-0280` when it fails.
 * **`listFor()` matches a person's record by `holderSubject`** where it carries one, so a
   record a delete before this left behind is not listed to the namesake either, and a
   renamed person is listed their certificates under the new name.

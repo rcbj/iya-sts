@@ -29170,7 +29170,7 @@ function forgetHolderCertificates(kind, id, subject, attributes, dn, door) {
       kind: kind, id: id, subject: subject, attributes: attributes,
       realm: realmFor(dn).id, door: door });
   } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0278') + 'ldap: the certificates of ' +
+    log.error(errorCodes.tag('STS-PKI-0280') + 'ldap: the certificates of ' +
               'the deleted ' + kind + ' ' + dn + ' could not be revoked and ' +
               'detached from its name: ' + ((e && e.message) || e));
   }

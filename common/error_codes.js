@@ -5188,14 +5188,14 @@ const CODES = [
       'use case needs, or the use case itself refused (a self-signed ' +
       'leaf, an anchor source out of reach).',
     spec: 'the use case\'s refusal (#1360)' },
-  { code: 'STS-PKI-0277',
+  { code: 'STS-PKI-0279',
     summary: 'A certificate a deleted person or application still held ' +
       'valid (a TLS client or message-signing certificate, an RFC 7523 or ' +
       'RFC 7522 key pair, an enrolled leaf) could not be revoked ' +
       '(cessationOfOperation) when its holder was deleted. The delete ' +
       'stands; revoke the serial on /admin/pki.',
     spec: 'none: a log line; the delete is answered as it was' },
-  { code: 'STS-PKI-0278',
+  { code: 'STS-PKI-0280',
     summary: 'A deleted person\'s or application\'s TLS client or ' +
       'message-signing certificate could not be detached from its name in ' +
       'the certificate register, so a holder made again under that name is ' +

@@ -322,9 +322,9 @@ async function childBody() {
   // -------------------------------------------------------------------------
   // F. THE CODES
   // -------------------------------------------------------------------------
-  t.check(['STS-PKI-0277', 'STS-PKI-0278'].every(function (code) {
+  t.check(['STS-PKI-0279', 'STS-PKI-0280'].every(function (code) {
     return !!errorCodes.describe(code);
-  }), 'F1. STS-PKI-0277 and STS-PKI-0278 are in the table');
+  }), 'F1. STS-PKI-0279 and STS-PKI-0280 are in the table');
   log.debug("Leaving childBody().");
   return t.rows;
 }
