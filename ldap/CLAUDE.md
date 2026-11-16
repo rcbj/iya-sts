@@ -2636,9 +2636,16 @@ mode.
   `retireNamesake()` moves it out of the name when a write names a new entry
   under it (`ssf/CLAUDE.md`). **What is left**, each needing a decision of
   its own: another process's own row of `admin_stats.users` (`merge: 'own'`,
-  display only) and its risk standing (ages out); the outbound SCIM client's
-  adoption of a deactivated remote User found by `userName`; and AuthZEN
-  approvals naming a username as the PEP sent it.
+  display only) and its risk standing (ages out). The outbound SCIM client no
+  longer adopts a deactivated remote User found by `userName` when its
+  `externalId` is another entry's (`STS-SCIMC-0035`, `scim/CLAUDE.md`), and
+  `authzen_access_request.forgetSubject()` ends the AuthZEN tasks naming the
+  person — by username, `urn:uuid:` subject or mail — through its subject
+  index (`authzen/CLAUDE.md`). SAML's NameID is left as it is (rcbj,
+  2026-11-16). The development seed's entries keep their name-derived
+  `entryUUID`, so a realm deleted and made again under its id seeds alice
+  with her old subject; every entry a door creates is random
+  (`tests/cluster_autocreate_subject.js`).
   `tests/deleted_person_inherits_nothing.js` holds it.
 
 ---

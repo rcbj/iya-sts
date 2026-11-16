@@ -29152,7 +29152,9 @@ function removePersonEntry(stored, door, options) {
     // AND EVERYTHING ELSE KEPT UNDER THEIR NAME OR DN (2026-11-16, rcbj:
     // "address all those things a recreated user inherits")
     // — forgetPersonHoldings().
-    forgetPersonHoldings(goneName, stored.dn, door);
+    forgetPersonHoldings(goneName, stored.dn, door,
+                         { uuid: goneUuid,
+                           mail: goneAttributes.mail || [] });
   }
   log.debug('Leaving removePersonEntry().');
 }
@@ -29207,7 +29209,12 @@ function forgetHolderCertificates(kind, id, subject, attributes, dn, door) {
 //   * their Kerberos principal record, RETIRED rather than removed — it
 //     keeps the sign-out stamp that refuses their tickets — so the next
 //     person under the name gets a RID, a SID, of their own
-//     (`krb5_principals.retirePerson()`, one key).
+//     (`krb5_principals.retirePerson()`, one key);
+//   * the AuthZEN access requests naming them as the subject — by the
+//     username, the `urn:uuid:` subject or a mail address, as a PEP sent
+//     it: a pending one cancelled, an approval revoked
+//     (`authzen_access_request.forgetSubject()`, through its subject
+//     index, a key per identifier).
 //
 // The RISC register's `purged` row is not forgotten here: it is the evidence
 // that the purge went out, and `ssf/risc.ts` moves it out of the name when
@@ -29217,9 +29224,15 @@ function forgetHolderCertificates(kind, id, subject, attributes, dn, door) {
 // the delete, which has happened: a step that throws is logged under
 // STS-LDAP-0222 and the rest go on. A re-homing (`moved`) never comes here.
 // ---------------------------------------------------------------------------
-function forgetPersonHoldings(name, dn, door) {
+function forgetPersonHoldings(name, dn, door, also) {
   log.debug('Entering forgetPersonHoldings(). ' + dn);
   const via = String(door || 'a directory delete');
+  const more = also || {};
+  // Every name a PEP may have given AuthZEN for this person: the username,
+  // the `urn:uuid:` subject and the mail addresses.
+  const subjectIds = [name]
+    .concat(more.uuid ? ['urn:uuid:' + more.uuid] : [])
+    .concat(more.mail || []);
   const steps = [
     { what: 'devices', act: function () {
       require('../common/devices').forgetOwner(dn, via);
@@ -29255,6 +29268,9 @@ function forgetPersonHoldings(name, dn, door) {
     } },
     { what: 'Kerberos principal', act: function () {
       require('../kerberos/krb5_principals').retirePerson(name);
+    } },
+    { what: 'AuthZEN access requests', act: function () {
+      require('../authzen/authzen_access_request').forgetSubject(subjectIds);
     } }
   ];
   realms.run(realmFor(dn), function () {

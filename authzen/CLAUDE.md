@@ -757,6 +757,22 @@ header argues each. What a maintainer needs quickly:
   expired by `task()`) and the `authzen.access-requests` cluster job, realm
   scope, every minute, which also removes rows past `keepUntil` (a day after
   finishing, or the approval's end).
+* **A DELETED SUBJECT'S TASKS END WITH THEM (2026-11-16, #1612's rule: a
+  person deleted and made again under the same name inherits nothing).** A
+  task names its subject as the PEP sent it — a username, often — and
+  `verify()` matches that exactly, so a namesake was the subject of the
+  deleted person's approvals. `ldap_server.js`'s `forgetPersonHoldings()`
+  calls `forgetSubject()` with the username, the `urn:uuid:` subject and the
+  mail addresses: a pending task is cancelled and an approval revoked, each
+  with its audit row (actor `the directory`). They are found through a
+  SUBJECT INDEX, not a walk: `subject:<SHA-256 of the lower-cased id>` in
+  `authzen.accessRequestIndex` — the module's existing per-realm,
+  cell-tier store, so no new store and no new tier — holding that subject's
+  task ids and kept as long as the latest of them. `save()` writes it (one
+  get, a set only when it changes) and the sweep takes a removed task out.
+  **A task from before the index** is noted by the sweep job, which walks
+  every task already: the backfill, within a minute of the upgrade and never
+  on the delete path; a delete inside that minute misses such a task.
 * Not built: `evaluation_id` binding by reference, `approval.state`, the
   hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
   CATALOG, a `failed` transition, and revocation from the portal (the console
