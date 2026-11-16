@@ -342,6 +342,76 @@ function sameStatements(t, actual, expected) {
   log.debug("Leaving sameStatements().");
 }
 
+// EVERY DECLARATION IN `models/api/console.tsp` IS REACHED FROM ONE OF ITS
+// OPERATIONS (2026-11-16). #1845 added two members to the console's copy of
+// `UserDetail`, one of 74 models the file declared under the Management API
+// OpenAPI document's names that no console operation used; the answer they
+// were meant for was held to management's, and every person's page answered
+// 500. The copies are deleted and a model the two documents share is a
+// `common.tsp` component (models/CLAUDE.md, *One model, one place*). This
+// holds that no declaration of the namespace, hoisted or a component, is
+// read by nothing: each is reached from an operation's parameters (where its
+// answers are), through properties, indexers, `is`, unions and scalars.
+function consoleDeclaresOnlyWhatItUses(t, program) {
+  log.debug("Entering consoleDeclaresOnlyWhatItUses().");
+  let namespace = program.getGlobalNamespaceType();
+  ['IyaSts', 'Api', 'Console'].forEach(function (name) {
+    namespace = namespace && namespace.namespaces.get(name);
+  });
+  t.check(!!namespace, 'the Admin Console API namespace is in the model');
+  if (!namespace) {
+    log.debug("Leaving consoleDeclaresOnlyWhatItUses(). No namespace.");
+    return;
+  }
+  const seen = new Set();
+  const pending = Array.from(namespace.operations.values());
+  while (pending.length > 0) {
+    const type = pending.pop();
+    if (!type || seen.has(type)) {
+      continue;
+    }
+    seen.add(type);
+    if (type.kind === 'Operation') {
+      pending.push(type.parameters, type.returnType);
+    } else if (type.kind === 'Model') {
+      type.properties.forEach(function (property) {
+        pending.push(property.type);
+      });
+      if (type.indexer) {
+        pending.push(type.indexer.value);
+      }
+      pending.push(type.baseModel, type.sourceModel);
+    } else if (type.kind === 'Union') {
+      type.variants.forEach(function (variant) {
+        pending.push(variant.type);
+      });
+    } else if (type.kind === 'Scalar') {
+      pending.push(type.baseScalar);
+    } else if (type.kind === 'Tuple') {
+      type.values.forEach(function (one) {
+        pending.push(one);
+      });
+    }
+  }
+  const declared = [];
+  [namespace.models, namespace.unions, namespace.scalars].forEach(
+    function (types) {
+      types.forEach(function (type) {
+        declared.push(type);
+      });
+    });
+  const unused = declared.filter(function (type) {
+    return !seen.has(type);
+  }).map(function (type) {
+    return type.name;
+  });
+  t.check(namespace.operations.size > 0 && unused.length === 0,
+          'every declaration in console.tsp is reached from a console ' +
+          'operation (' + declared.length + ' declared): ' +
+          unused.join(', '));
+  log.debug("Leaving consoleDeclaresOnlyWhatItUses().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const tools = await toolchain();
@@ -373,6 +443,7 @@ async function run(t) {
   ldapDefinitions(t, new directory.DirectoryModel(
     directory.DirectoryModel.defaultDeps()).collect().objects);
   namesAreTheService(t, tools, program);
+  consoleDeclaresOnlyWhatItUses(t, program);
   classesRun(t, objects, persistence);
   await editsReachTheOutput(t, tools);
   log.debug("Leaving run().");

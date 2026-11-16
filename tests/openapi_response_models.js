@@ -566,6 +566,728 @@ async function directoryPages() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A PERSON'S ANSWER, AS `GET /admin-api/users` SENDS IT (2026-11-16).
+//
+// #1845 added `authenticationHistory` and `authenticationHistoryPaging` to
+// the `?user=` answer and declared them only in `models/api/console.tsp`,
+// whose `UserDetail` no operation uses. `getUsers` is held to
+// `management.tsp`'s, closed, so every person's page answered 500
+// (STS-API-0139) on the testbed until #1846 declared them there too. No test
+// in process built a person's answer, and the stack job that walks every read
+// did not run, because the unit job failed first. So the child below signs a
+// person in over a loopback listener of the whole stack, gives them tokens on
+// and off a session and a key pair, makes a service account, and asks the
+// operation's own handler for the list, each of those, and a name never
+// seen, through the API's own response check (`common/response_models.ts`)
+// holding the document the API holds it to. The parent holds each body to
+// the Management API OpenAPI document's model besides.
+// ---------------------------------------------------------------------------
+
+// A browser's User-Agent: risk scoring takes a tool's name for a robot.
+const BROWSER = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+                '(KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+
+// One request to the child's loopback listener, the cookies kept in `jar`.
+function loopback(port, jar, method, at, options) {
+  log.debug("Entering loopback(). " + method + ' ' + at);
+  const http = require('http');
+  const o = options || {};
+  const body = o.form ? new URLSearchParams(o.form).toString() : '';
+  const headers = Object.assign({ 'user-agent': BROWSER }, o.headers || {});
+  const names = Object.keys(jar).filter(function (k) {
+    return jar[k];
+  });
+  if (names.length) {
+    headers.cookie = names.map(function (k) {
+      return k + '=' + jar[k];
+    }).join('; ');
+  }
+  if (method !== 'GET') {
+    headers['content-type'] = 'application/x-www-form-urlencoded';
+    headers['content-length'] = Buffer.byteLength(body);
+  }
+  log.debug("Leaving loopback().");
+  return new Promise(function (resolve) {
+    const req = http.request({ host: '127.0.0.1', port: port,
+      path: String(at).replace(/^https?:\/\/[^/]+/, ''), method: method,
+      headers: headers }, function (res) {
+      (res.headers['set-cookie'] || []).forEach(function (line) {
+        const pair = line.split(';')[0];
+        const eq = pair.indexOf('=');
+        jar[pair.slice(0, eq)] = /Max-Age=0/.test(line) ? ''
+          : pair.slice(eq + 1);
+      });
+      let text = '';
+      res.on('data', function (c) {
+        text += c;
+      });
+      res.on('end', function () {
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          // Not JSON: a redirect or a page. The status and text say enough.
+          log.debug("Caught in loopback(): " + ((e && e.message) || e));
+        }
+        resolve({ status: res.statusCode, headers: res.headers, text: text,
+                  json: json });
+      });
+    });
+    req.on('error', function (e) {
+      log.debug("Caught in loopback(): " + ((e && e.message) || e));
+      resolve({ status: 0, headers: {}, text: String(e.message),
+                json: null });
+    });
+    req.end(method === 'GET' ? undefined : body);
+  });
+}
+
+// An OpenID Connect code flow through the sign-in screen as `who`, the
+// offered set-up ignored, and the code redeemed: a sign-on session with
+// tokens on it. Answers the token response, or `{ error }`.
+async function codeFlow(port, client, who) {
+  log.debug("Entering codeFlow(). " + who);
+  const screen = require('./tools/authn_screen');
+  const jar = {};
+  let r = await loopback(port, jar, 'GET', '/oauth2/authorize?' +
+    new URLSearchParams({ client_id: client.id, response_type: 'code',
+      redirect_uri: client.redirect, scope: 'openid offline_access',
+      state: 's', nonce: 'n-' + Date.now() }).toString());
+  for (let hop = 0; hop < 12; hop += 1) {
+    const to = String((r.headers && r.headers.location) || '');
+    if (r.status >= 300 && r.status < 400 && /\/authn\/login/.test(to)) {
+      const posted = await screen.submit({ port: port, jar: jar,
+        userAgent: BROWSER, at: to,
+        fields: { action: 'login', username: who, password: 'x' } });
+      const next = await screen.ignoreOffer({ port: port, jar: jar,
+                                              userAgent: BROWSER }, posted);
+      r = { status: next.status, headers: next.headers || {} };
+      continue;
+    }
+    if (r.status >= 300 && r.status < 400 && to &&
+        to.indexOf(client.redirect) !== 0) {
+      r = await loopback(port, jar, 'GET', to);
+      continue;
+    }
+    break;
+  }
+  const to = String((r.headers && r.headers.location) || '');
+  const at = to.indexOf('?');
+  const code = to.indexOf(client.redirect) === 0 && at > 0
+    ? new URLSearchParams(to.slice(at + 1)).get('code') : '';
+  if (!code) {
+    log.debug("Leaving codeFlow(). No code.");
+    return { error: r.status + ' ' + to };
+  }
+  const token = await loopback(port, {}, 'POST', '/oauth2/token', {
+    headers: { authorization: client.basic },
+    form: { grant_type: 'authorization_code', code: code,
+            redirect_uri: client.redirect } });
+  log.debug("Leaving codeFlow(). " + token.status);
+  return token.status === 200 && token.json ? token.json
+    : { error: token.status + ' ' + String(token.text).slice(0, 200) };
+}
+
+// A response with the parts of express's the handler and the check use. Its
+// `send` resolves `answered` with what was finally sent.
+function doorResponse(req, answered) {
+  log.debug("Entering doorResponse().");
+  const headers = { 'content-type': 'application/json' };
+  const res = {
+    statusCode: 200, req: req, locals: {},
+    get: function (name) {
+      return headers[String(name).toLowerCase()];
+    },
+    set: function (name, value) {
+      headers[String(name).toLowerCase()] = value;
+      return res;
+    },
+    type: function (value) {
+      headers['content-type'] = value;
+      return res;
+    },
+    status: function (code) {
+      res.statusCode = code;
+      return res;
+    },
+    removeHeader: function (name) {
+      delete headers[String(name).toLowerCase()];
+    },
+    send: function (body) {
+      answered({ status: res.statusCode, sent: String(body) });
+      return res;
+    }
+  };
+  log.debug("Leaving doorResponse().");
+  return res;
+}
+
+// Asks a GET operation with `query` of its own handler (`row`, its route
+// table row), its answer through the API's own response check, which holds it
+// to the document the API holds it to: `{ status, codes, json }`, `json` being
+// the body the handler handed the check, kept before the check could replace
+// it, and `codes` what was marked on the way. A handler that throws, calls
+// `next()` or has not answered in `ASK_MS` is answered as that.
+const ASK_MS = 15000;
+async function askTheDoor(door, row, at, query) {
+  log.debug("Entering askTheDoor(). " + at + ' ' + JSON.stringify(query));
+  const req = { method: 'GET', baseUrl: '', path: at, url: at,
+    originalUrl: at, query: query, headers: {}, cookies: {}, params: {},
+    get: function () {
+      return undefined;
+    } };
+  let answered = null;
+  const done = new Promise(function (resolve) {
+    answered = resolve;
+  });
+  const res = doorResponse(req, answered);
+  // What the route's registration sets before it calls the handler
+  // (`admin_api.ts`, the GET loop): a console twin's members to drop (#454),
+  // and a mirrored Protocols page's endpoints to add.
+  if (row.consoleMembers) {
+    res.locals.consoleMembers = row.consoleMembers;
+  }
+  const protocolEndpoints = require('../admin-core/protocol_endpoints');
+  const mirrored = /^GET (\/admin\S*)$/.exec(String(row.mirrors || ''));
+  if (mirrored && protocolEndpoints.pages().indexOf(mirrored[1]) >= 0) {
+    res.locals.protocolEndpoints = protocolEndpoints.forPage(req,
+                                                             mirrored[1]);
+  }
+  door.middleware(req, res, function () {});
+  const checked = res.send;
+  let handed = null;
+  res.send = function (body) {
+    if (typeof body === 'string') {
+      handed = body;
+    }
+    return checked.call(this, body);
+  };
+  const codes = [];
+  door.marks = codes;
+  const timer = setTimeout(function () {
+    answered({ status: 'timeout', sent: '' });
+  }, ASK_MS);
+  try {
+    row.handler(req, res, function (e) {
+      answered({ status: 'next', sent: String((e && e.stack) || e) });
+    });
+  } catch (e) {
+    log.debug("Caught in askTheDoor(): " + ((e && e.message) || e));
+    answered({ status: 'threw', sent: String((e && e.stack) || e) });
+  }
+  const out = await done;
+  clearTimeout(timer);
+  door.marks = null;
+  let json = null;
+  try {
+    json = JSON.parse(handed);
+  } catch (e) {
+    log.debug("Caught in askTheDoor(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving askTheDoor(). " + out.status);
+  return { status: out.status, codes: codes, json: json,
+           sent: json ? '' : out.sent.slice(0, 600) };
+}
+
+// The API's own response check, installed as `/admin-api` installs it, over
+// the document the API holds every answer to. One for every ask, so the
+// document is built once.
+function theDoor() {
+  log.debug("Entering theDoor().");
+  const spec = require('../mgmt-api/admin_api_spec');
+  const adminApi = require('../mgmt-api/admin_api');
+  const { ResponseModels } = require('../common/response_models');
+  const door = { middleware: null, marks: null };
+  const checks = new ResponseModels({ log: log,
+    mark: function (res, code) {
+      if (door.marks) {
+        door.marks.push(code);
+      }
+    },
+    tag: function (code) {
+      return code + ' ';
+    } });
+  checks.install({ use: function (prefix, fn) {
+    door.middleware = fn;
+  } }, '/admin-api', function () {
+    return spec.buildSpec(adminApi.ROUTES, { authRequired: true });
+  }, spec.refusalSchema());
+  log.debug("Leaving theDoor().");
+  return door;
+}
+
+// The route-table row of `operationId`.
+function rowOf(operationId) {
+  log.debug("Entering rowOf(). " + operationId);
+  const adminApi = require('../mgmt-api/admin_api');
+  log.debug("Leaving rowOf().");
+  return adminApi.ROUTES.filter(function (route) {
+    return route.operationId === operationId;
+  })[0];
+}
+
+// What a person needs to have done for every part of their answer to be
+// drawn: signed in through the screen, a refresh on that session, a
+// password grant with none, and a key pair of their own (RFC 7523); and a
+// service account they own. Answers the names and how each seed went.
+async function seedPeople() {
+  log.debug("Entering seedPeople().");
+  const http = require('http');
+  const crypto = require('crypto');
+  const app = require('../common/app');
+  const config = require('../common/config');
+  const keystore = require('../common/keystore');
+  const helpers = require('../common/helpers');
+  const pki = require('../common/pki');
+  const applications = require('../common/applications');
+  const ldap = require('../ldap/ldap_server');
+  const pkiAdmin = require('../admin-ui/pki_admin');
+  const serviceAccounts = require('../common/service_accounts');
+  await keystore.start();
+  await pki.start({ realmIds: [''],
+    keySetFor: function (id) {
+      return helpers.stsKeysFor.of(id);
+    },
+    keySetHeldFor: function () {
+      return false;
+    } });
+  config.setOverride('oauth2.consentRequired', false);
+  const server = http.createServer(app);
+  await new Promise(function (ok) {
+    server.listen(0, '127.0.0.1', ok);
+  });
+  const port = server.address().port;
+  const suffix = crypto.randomBytes(3).toString('hex');
+  const client = { id: 'orm-rp-' + suffix,
+                   redirect: 'https://rp.orm.example/cb',
+                   secret: 'orm-secret-0123456789abcdef0123456789' };
+  client.basic = 'Basic ' + Buffer.from(client.id + ':' + client.secret)
+    .toString('base64');
+  applications.createApplication({ identifier: client.id,
+    protocols: ['oauth2', 'oidc'],
+    fields: { oauthClientId: client.id, oauthClientSecret: client.secret,
+              oauthRedirectUri: [client.redirect],
+              oauthGrantType: ['authorization_code', 'refresh_token',
+                'password'],
+              oauthAllowedScope: ['openid', 'offline_access', 'profile'],
+              oauthTokenEndpointAuthMethod: 'client_secret_basic' } });
+  const seeds = {};
+  const person = 'orm-person-' + suffix;
+  ldap.createUser(person, { invent: false });
+  const flow = await codeFlow(port, client, person);
+  seeds.codeFlow = flow.error || 'ok';
+  const refreshed = await loopback(port, {}, 'POST', '/oauth2/token', {
+    headers: { authorization: client.basic },
+    form: { grant_type: 'refresh_token',
+            refresh_token: String(flow.refresh_token || '') } });
+  seeds.refresh = refreshed.status;
+  const ropc = await loopback(port, {}, 'POST', '/oauth2/token', {
+    headers: { authorization: client.basic },
+    form: { grant_type: 'password', username: person, password: 'x',
+            scope: 'openid' } });
+  seeds.passwordGrant = ropc.status;
+  const keyPair = await pkiAdmin.pkiAction({ action: 'issue',
+    target: 'person', purpose: 'jwt', identifier: person,
+    leafKeyAlg: 'rsa-2048' });
+  seeds.keyPair = keyPair && keyPair.ok ? 'ok'
+    : JSON.stringify(keyPair && (keyPair.why || keyPair.errors));
+  const service = 'orm-service-' + suffix;
+  ldap.createUser(service, { invent: false });
+  const made = serviceAccounts.set(service, { serviceAccount: true,
+                                              owners: [person] });
+  seeds.serviceAccount = made && made.ok ? 'ok' : JSON.stringify(made);
+  // Not waited for: what it still holds is the child's, which exits.
+  server.close();
+  log.debug("Leaving seedPeople().");
+  return { seeds: seeds, person: person, service: service,
+           application: client.id, unknown: 'orm-never-seen-' + suffix };
+}
+
+// IN THE CHILD, with the whole stack loaded: the seeds, then each answer.
+async function usersAnswers() {
+  log.debug("Entering usersAnswers().");
+  const seeded = await seedPeople();
+  const door = theDoor();
+  const row = rowOf('getUsers');
+  const asks = {
+    list: {},
+    services: { kind: 'service' },
+    person: { user: seeded.person },
+    personSecondPage: { user: seeded.person,
+                        authenticationHistoryPage: '2', per: '1' },
+    serviceAccount: { user: seeded.service },
+    unknown: { user: seeded.unknown }
+  };
+  const answers = {};
+  for (const name of Object.keys(asks)) {
+    answers[name] = await askTheDoor(door, row, '/admin-api/users',
+                                     asks[name]);
+  }
+  log.debug("Leaving usersAnswers().");
+  return Object.assign(seeded, { answers: answers });
+}
+
+// A reported listener set, as a remote PEP's heartbeat carries it.
+function pepReport(port) {
+  log.debug("Entering pepReport().");
+  log.debug("Leaving pepReport().");
+  return { listeners: [
+    { id: 'api-https', source: 'environment', protocol: 'https',
+      purpose: 'api', address: '0.0.0.0', port: 9443, state: 'listening',
+      reason: 'none' },
+    { id: 'proxy-https', source: 'environment', protocol: 'https',
+      purpose: 'proxy', address: '0.0.0.0', port: port, state: 'listening',
+      reason: 'none' }] };
+}
+
+// The three kinds of route a remote PEP's reverse proxy has (#1760): one
+// anybody may use, one decided by its roles, and one by a policy chosen.
+function pepRoutes(policy, application, base) {
+  log.debug("Entering pepRoutes().");
+  log.debug("Leaving pepRoutes().");
+  return [
+    { id: 'orm-public', path: '/health', match: 'exact',
+      methods: ['GET', 'HEAD'],
+      authorization: { kind: 'public', resource: base + '/health' } },
+    { id: 'orm-simple', path: '/orders', match: 'prefix',
+      methods: ['GET', 'POST'], mechanisms: ['oauth2'],
+      application: application,
+      authorization: { kind: 'simple', actionModel: 'read-write',
+                       resource: base + '/orders',
+                       roles: { read: ['orm-readers'] } } },
+    { id: 'orm-policy', path: '/api', match: 'prefix',
+      methods: ['GET', 'POST'], mechanisms: ['oauth2'],
+      application: application,
+      authorization: { kind: 'policy', policy: policy } }
+  ];
+}
+
+// A REMOTE PEP AND A CLUSTER (2026-11-16), made through the code the PEP's
+// own register and the console's actions run, as `xacml_pep_clusters.js`
+// makes them: no credential is involved, because `register()` is what
+// `POST /xacml/pep/register` calls once the PEP has authenticated. A
+// standalone PEP holds its own proxy (a route of each kind) and a listener
+// of its own; a second PEP is the member of a cluster that holds the same
+// three routes. Two PEPs rather than one, because a PEP that joins a
+// cluster gives its own configuration up to it: one PEP could not show
+// both pages with routes on them. Answers the names and how each went.
+function seedPeps(seeded, suffix) {
+  log.debug("Entering seedPeps().");
+  const peps = require('../xacml/xacml_pep_registry');
+  const store = require('../xacml/xacml_store');
+  const xml = require('../xacml/xacml_xml');
+  const alfa = require('../xacml/xacml_alfa');
+  const roles = require('../common/roles');
+  const applications = require('../common/applications');
+  const adminActions = require('../admin-core/admin_actions');
+  const surface = require('../xacml/xacml');
+  // Nothing is dialled: the nudge a change sends is recorded nowhere.
+  surface.nudgePeps = function () {
+    log.debug("Entering nudgePeps(). Not sent from the child.");
+    log.debug("Leaving nudgePeps().");
+  };
+  const out = { pep: 'orm-pep-' + suffix, member: 'orm-pepm-' + suffix,
+                cluster: 'orm-cl-' + suffix, listener: 'orm-proxy-alt',
+                seeds: {} };
+  const base = 'https://' + out.pep + '.example.test:9543';
+  const logical = 'https://' + out.cluster + '.example.test';
+  const policy = 'orm-route-' + suffix;
+  const application = 'orm-api-' + suffix;
+  const act = function (body) {
+    log.debug("Entering act(). " + body.action);
+    const result = adminActions.xacmlAction(body);
+    log.debug("Leaving act().");
+    return result && result.ok ? 'ok'
+      : JSON.stringify(result && (result.why || result.errors || result));
+  };
+  const written = store.write(policy, xml.writePolicy(alfa.parse(
+    'namespace orm { policy ormRoute { apply denyUnlessPermit ' +
+    'rule anyone { permit } } }')), { enabled: true });
+  out.seeds.policy = written && written.ok ? 'ok' : JSON.stringify(written);
+  roles.write('orm-readers', { users: [seeded.person] });
+  applications.createApplication({ identifier: application,
+    protocols: ['oauth2'],
+    fields: { oauthClientId: application,
+              oauthAudience: ['https://api.orm.example/'] } });
+  [out.pep, out.member].forEach(function (name) {
+    peps.register({ name: name,
+      identity: 'cn=' + name + ',ou=users,dc=example,dc=com',
+      certificateSubject: 'CN=' + name, thumbprint: 'test-' + name,
+      authenticated: true, bias: 'deny', resource: base,
+      hostname: name + '.example.test' });
+    peps.heartbeat(name, { listeners: pepReport(9543) });
+  });
+  out.seeds.proxy = act({ action: 'set-pep-proxy', name: out.pep,
+    proxy: { upstream: 'http://orders.internal:8080', publicBaseUrl: base,
+             routes: pepRoutes(policy, application, base) } });
+  out.seeds.listener = act({ action: 'set-pep-listener', name: out.pep,
+    listener: { id: out.listener, protocol: 'https', purpose: 'proxy',
+                port: 9600, dnsNames: [out.pep + '.example.test'] } });
+  out.seeds.cluster = act({ action: 'create-pep-cluster',
+                            cluster: out.cluster,
+                            description: 'Made by ' + __filename });
+  out.seeds.clusterMember = act({ action: 'add-pep-cluster-member',
+    cluster: out.cluster, pep: out.member,
+    publicBaseUrl: 'https://' + out.member + '.example.test:9543' });
+  out.seeds.clusterProxy = act({ action: 'set-pep-cluster-proxy',
+    cluster: out.cluster,
+    proxy: { upstream: 'http://orders.internal:8080',
+             publicBaseUrl: logical,
+             routes: pepRoutes(policy, application, logical) } });
+  log.debug("Leaving seedPeps().");
+  return out;
+}
+
+// THE OTHER OBJECTS A DRILL-DOWN OPENS, where one is cheap to make through
+// the module that owns it (`console_web_bundle.js`'s recipes): a SAML 2.0
+// service provider, a SAML 1.1 relying party, a federation relationship, a
+// SPIFFE registration entry and an attested agent, a registered device, a
+// CAEP session, a RISC account and a message in the outbox. Answers their
+// keys and how each went.
+function seedObjects(seeded, suffix) {
+  log.debug("Entering seedObjects().");
+  const applications = require('../common/applications');
+  const federation = require('../federation/federation');
+  const spiffeCa = require('../spiffe/spiffe_ca');
+  const spiffeRegistry = require('../spiffe/spiffe_registry');
+  const devices = require('../common/devices');
+  const out = { sp: 'https://sp.orm.example/' + suffix,
+                rp: 'https://rp11.orm.example/' + suffix,
+                relationship: 'orm-fed-' + suffix, seeds: {} };
+  const outcome = function (result) {
+    return result && result.ok !== false ? 'ok'
+      : JSON.stringify((result && (result.errors || result.why)) || result);
+  };
+  out.seeds.sp = outcome(applications.createApplication({
+    identifier: out.sp, protocols: ['saml2'],
+    fields: { samlEntityId: out.sp,
+              samlAssertionConsumerService: [out.sp + '/acs'] } }));
+  out.seeds.rp = outcome(applications.createApplication({
+    identifier: out.rp, protocols: ['saml11'],
+    fields: { samlEntityId: out.rp,
+              samlAssertionConsumerService: [out.rp + '/acs'] } }));
+  out.seeds.relationship = outcome(federation.create({
+    id: out.relationship, role: 'service-provider', protocol: 'saml2',
+    peer: 'https://idp.orm.example/' + suffix }));
+  const td = spiffeCa.trustDomain();
+  const entry = spiffeRegistry.createEntry({
+    spiffeId: 'spiffe://' + td + '/orm-' + suffix,
+    parentId: 'spiffe://' + td + '/spire/server',
+    selectors: [{ type: 'unix', value: 'uid:1000' }] }, 'api', td, 'test');
+  out.seeds.entry = outcome(entry);
+  out.entry = entry && entry.entry ? entry.entry.id : '';
+  // An agent exists only by attesting: what the Agent API's `AttestAgent`
+  // records once a join token is spent, recorded here without the token.
+  out.agent = 'spiffe://' + td + '/spire/agent/join_token/orm-' + suffix;
+  const agent = spiffeRegistry.recordAttestation(out.agent, {
+    attestationType: 'join_token',
+    selectors: [{ type: 'join_token', value: 'orm-' + suffix }],
+    canReattest: false, svidHash: '0123456789abcdef0123456789abcdef',
+    expiresAt: new Date(Date.now() + 3600000).toISOString() });
+  out.seeds.agent = agent && !agent.banned &&
+    spiffeRegistry.agentById(out.agent) ? 'ok' : JSON.stringify(agent);
+  const device = devices.create({ owner: seeded.person,
+    label: 'orm laptop ' + suffix, platform: 'linux' }, 'the-test');
+  out.seeds.device = outcome(device);
+  out.device = device && device.device ? device.device.id : '';
+  // A CAEP session and a RISC account: the rows those registers make when
+  // they observe a session established and a person's address changed,
+  // given to them as `ssf.ts` gives them a notice.
+  out.session = 'orm-session-' + suffix;
+  const caep = require('../ssf/caep');
+  caep.observe({ kind: 'established', via: 'test',
+    session: { id: out.session,
+               user: { sub: seeded.person, username: seeded.person } } });
+  out.seeds.caepSession = caep.get(out.session) ? 'ok' : 'no row';
+  // A RISC row is kept for a write that is an event: an address changed.
+  const risc = require('../ssf/risc');
+  risc.observe({ kind: 'updated', username: seeded.person,
+    dn: 'uid=' + seeded.person + ',ou=users,dc=example,dc=com',
+    before: { mail: ['before@orm.example'] },
+    after: { mail: ['after@orm.example'] } });
+  const account = risc.get(seeded.person);
+  out.account = account ? String(account.accountId || '') : '';
+  out.seeds.riscAccount = out.account ? 'ok' : 'no row';
+  // A message in the outbox: a person whose entry has an address (an
+  // invented entry has one), sent a notice the channel's capture transport
+  // keeps.
+  const recipient = 'orm-mail-' + suffix;
+  require('../ldap/ldap_server').createUser(recipient, { invent: true });
+  const sent = require('../common/mail').send({ username: recipient,
+    template: 'password-changed', via: 'test', actor: 'the-test' });
+  const queued = [].concat((sent && sent.queued) || [])[0] || {};
+  out.message = String(queued.id || '');
+  out.seeds.mail = out.message ? 'ok'
+    : JSON.stringify((sent && sent.refused) || sent);
+  log.debug("Leaving seedObjects().");
+  return out;
+}
+
+// The first row of a list operation's answer, by `key`: what a drill-down
+// opens when the object is one this child did not make (a group, a role, a
+// certificate or a Kerberos trust the development data carries).
+async function firstOf(door, operationId, member, key) {
+  log.debug("Entering firstOf(). " + operationId);
+  const row = rowOf(operationId);
+  const list = await askTheDoor(door, row, row.path, {});
+  const first = [].concat((list.json || {})[member] || [])[0] || {};
+  log.debug("Leaving firstOf().");
+  return String(first[key] || '');
+}
+
+// What a PEP's or a cluster's own page must carry for its check to mean
+// anything: the row, its three routes and, for a PEP, the listener.
+function pepTook(name, rows, listener) {
+  log.debug("Entering pepTook().");
+  log.debug("Leaving pepTook().");
+  return function (json) {
+    log.debug("Entering pepTook()'s check.");
+    const row = [].concat((json || {})[rows] || [])[0] || {};
+    const kinds = [].concat(row.proxyRoutes || []).map(function (one) {
+      return one.authorization;
+    }).sort().join(',');
+    const listeners = [].concat(row.listenerRows || []).map(function (one) {
+      return one.id;
+    });
+    log.debug("Leaving pepTook()'s check.");
+    return json && json.found === true && row.name === name &&
+      kinds === 'policy,public,simple' &&
+      (!listener || listeners.indexOf(listener) >= 0);
+  };
+}
+
+// What one route's page must carry: the route, found, of its kind.
+function routeTook(kind) {
+  log.debug("Entering routeTook().");
+  log.debug("Leaving routeTook().");
+  return function (json) {
+    log.debug("Entering routeTook()'s check.");
+    const detail = (json || {}).routeDetail || {};
+    log.debug("Leaving routeTook()'s check.");
+    return detail.found === true && !!detail.route &&
+      detail.route.authorization.kind === kind;
+  };
+}
+
+// That an answer names `value` somewhere in it: the one object asked for.
+function names(value) {
+  log.debug("Entering names().");
+  log.debug("Leaving names().");
+  return function (json) {
+    log.debug("Entering names()'s check.");
+    log.debug("Leaving names()'s check.");
+    return !!value && JSON.stringify(json || null).indexOf(
+      JSON.stringify(String(value)).slice(1, -1)) >= 0;
+  };
+}
+
+// THE DRILL-DOWNS OF WHAT WAS SEEDED: the reads that answer one object
+// rather than a list, asked for the person, the service account and the
+// application the seeds made; since 2026-11-16 also a remote PEP's pages,
+// its routes' and its listener's, a cluster's and its routes', and every
+// other drill-down whose object is cheap to have. Answers each ask's
+// `{ status, codes, sent, took, evidence }`: `took` is whether the answer
+// carries the object it was asked for, so the check cannot pass on an
+// empty answer; it is absent for the asks that say nothing of the kind.
+async function seededDrillDowns(seeded) {
+  log.debug("Entering seededDrillDowns().");
+  const door = theDoor();
+  const suffix = String(seeded.person).split('-').pop();
+  const pep = seedPeps(seeded, suffix);
+  const more = seedObjects(seeded, suffix);
+  const kinds = ['public', 'simple', 'policy'];
+  const group = await firstOf(door, 'getGroups', 'groups', 'dn');
+  const role = await firstOf(door, 'getRoles', 'roles', 'name');
+  const certificate = await firstOf(door, 'getCertificates', 'certificates',
+                                    'fingerprint');
+  const trust = await firstOf(door, 'getKerberosTrusts', 'trusts',
+                              'partnerRealm');
+  const asks = [
+    ['getApplications', { application: seeded.application }],
+    ['getApplications', { claimsUser: seeded.person }],
+    ['getServiceAccounts', { account: seeded.service }],
+    ['getLiveSessions', { user: seeded.person }],
+    ['getUserInfoClaims', { user: seeded.person }],
+    ['getSamlAttributes', { user: seeded.person }],
+    ['getIssued', { state: 'valid' }],
+    ['getAudit', { actor: seeded.person }],
+    // The PEP's own page, which is also its listener's page (the
+    // listener is a row of `listenerRows`), and each route's.
+    ['getXacmlPeps', { pep: pep.pep },
+     pepTook(pep.pep, 'peps', pep.listener)],
+    ['getXacmlPeps', { pep: pep.member }, function (json) {
+      const row = [].concat((json || {}).peps || [])[0] || {};
+      return pepTook(pep.member, 'peps', '')(json) &&
+        row.cluster === pep.cluster && !!row.clusterMember;
+    }],
+    ['getXacmlPepClusters', { cluster: pep.cluster },
+     pepTook(pep.cluster, 'clusters', '')]
+  ].concat(kinds.map(function (kind) {
+    return ['getXacmlPeps', { pep: pep.pep, route: 'orm-' + kind },
+            routeTook(kind)];
+  })).concat(kinds.map(function (kind) {
+    return ['getXacmlPepClusters', { cluster: pep.cluster,
+                                     route: 'orm-' + kind },
+            routeTook(kind)];
+  })).concat([
+    ['getGroups', { group: group }, names(group)],
+    ['getRoles', { role: role }, names(role)],
+    ['getCertificates', { certificate: certificate }, names(certificate)],
+    ['getKerberosTrusts', { trust: trust }, names(trust)],
+    ['getCaepSessions', { session: more.session }, names(more.session)],
+    ['getRiscAccounts', { account: more.account }, names(more.account)],
+    ['getSaml2ServiceProviders', { sp: more.sp }, names(more.sp)],
+    ['getSaml11RelyingParties', { rp: more.rp }, names(more.rp)],
+    ['getFederationRelationships', { relationship: more.relationship },
+     names(more.relationship)],
+    ['getSpiffeEntries', { entry: more.entry }, names(more.entry)],
+    ['getSpiffeAgents', { agent: more.agent }, names(more.agent)],
+    ['getDevices', { device: more.device }, names(more.device)],
+    ['getMailOutbox', { message: more.message }, names(more.message)]
+  ]);
+  const out = [];
+  for (const ask of asks) {
+    const row = rowOf(ask[0]);
+    const one = await askTheDoor(door, row, row.path, ask[1]);
+    const record = { operationId: ask[0], query: ask[1], status: one.status,
+                     codes: one.codes, sent: one.sent,
+                     members: Object.keys(one.json || {}) };
+    if (ask[2]) {
+      record.took = !!ask[2](one.json);
+      record.evidence = JSON.stringify(one.json || null).slice(0, 400);
+    }
+    out.push(record);
+  }
+  log.debug("Leaving seededDrillDowns().");
+  return { asked: out, seeds: Object.assign({}, pep.seeds, more.seeds) };
+}
+
+// EVERY PLAIN READ, ASKED (2026-11-16): each management GET whose path names
+// nothing, asked of its own handler with no query, through the API's own
+// check, after the seeds above. What `sts_admin_api_operations.js` does to a
+// stack, done here so that a member a view adds and its model lacks is caught
+// by the unit job — which runs first, and on whose failure that stack job
+// never runs. Answers each operation's `{ status, codes, sent }`.
+async function everyPlainRead() {
+  log.debug("Entering everyPlainRead().");
+  const adminApi = require('../mgmt-api/admin_api');
+  const door = theDoor();
+  const rows = adminApi.ROUTES.filter(function (route) {
+    return route.method === 'GET' && route.operationId && !route.actions &&
+      (route.kind || 'management') === 'management' &&
+      typeof route.path === 'string' && route.path.indexOf(':') < 0;
+  });
+  const out = {};
+  for (const row of rows) {
+    const one = await askTheDoor(door, row, row.path, {});
+    out[row.operationId] = { path: row.path, status: one.status,
+                             codes: one.codes, sent: one.sent };
+  }
+  log.debug("Leaving everyPlainRead(). " + rows.length);
+  return out;
+}
+
 // IN A CHILD: the operation tables are complete only with the whole stack loaded,
 // which runs load-time effects this runner's other files must not inherit.
 async function buildDocuments(out) {
@@ -591,6 +1313,7 @@ async function buildDocuments(out) {
     store: { dropContinuation: function () {},
              saveGrant: function () {} }
   } }, finalized, 'a note', 'issued');
+  const users = await usersAnswers();
   fs.writeFileSync(out, JSON.stringify({
     finalization: finalized.finalization,
     // What the read barrier reports on `/admin-api/cluster` and
@@ -600,6 +1323,21 @@ async function buildDocuments(out) {
     // What each `/admin-api/ldap/*` operation answers, from its own view
     // (#1760: `jsonBlob` on the PEP schema's rows answered 500).
     directoryPages: await directoryPages(),
+    // What `GET /admin-api/users` answers for the list, a person, a
+    // service account and a stranger, from its own handler (#1845).
+    users: users,
+    // The one-object reads of what the seeds made.
+    drillDowns: await seededDrillDowns(users),
+    // And every management GET whose path names nothing, after them.
+    plainReads: await everyPlainRead(),
+    // Each management operation whose console twin answers more (#454):
+    // the twin's operation and the members the management answer drops.
+    consoleTwins: adminApi.ROUTES.filter(function (route) {
+      return route.consoleMembers;
+    }).map(function (route) {
+      return { operationId: route.operationId, twin: route.consoleTwin,
+               members: route.consoleMembers };
+    }),
     admin: spec.buildSpec(adminApi.ROUTES, { authRequired: true }),
     // The two as `/admin-api/openapi.json` and its console twin serve them, for
     // the published pages (`tests/tools/openapi_pages.js`).
@@ -777,6 +1515,315 @@ function everyDirectoryPageMeetsItsModel(t, docs) {
           'all nine directory pages were built: ' +
           Object.keys(pages).join(', '), '');
   log.debug("Leaving everyDirectoryPageMeetsItsModel().");
+}
+
+// EVERY ANSWER OF `GET /admin-api/users` MEETS ITS MODEL (#1845, #1846). The
+// child asked the operation's own handler, behind the API's own check, for
+// the list, the service accounts, a person who signed in (on page one of
+// their history and on page two), a service account and a stranger. Each is
+// held twice: the check must have let it through as a 200, and the body must
+// meet `getUsers`' 200 model in the Management API OpenAPI document. And each
+// seed must have taken, or the person's answer would have empty lists and
+// the check would pass by building nothing.
+function everyUsersAnswerMeetsItsModel(t, docs) {
+  log.debug("Entering everyUsersAnswerMeetsItsModel().");
+  const Ajv = require('ajv');
+  const addFormats = require('ajv-formats');
+  const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
+                        useDefaults: false });
+  addFormats(ajv);
+  const users = docs.users || { seeds: {}, answers: {} };
+  const seeds = users.seeds || {};
+  t.check(seeds.codeFlow === 'ok' && seeds.refresh === 200 &&
+          seeds.passwordGrant === 200 && seeds.keyPair === 'ok' &&
+          seeds.serviceAccount === 'ok',
+          'users: the person signed in, was issued tokens on a session and ' +
+          'off one and a key pair, and owns a service account',
+          JSON.stringify(seeds));
+  const doc = docs.management;
+  const model = okModelOf(doc, '/admin-api/users');
+  t.check(!!model, 'GET /admin-api/users has a 200 model in the ' +
+          'Management API OpenAPI document', '');
+  const validate = model ? ajv.compile({ allOf: [model],
+                                         components: doc.components })
+    : function () {
+      return false;
+    };
+  const answers = users.answers || {};
+  const asked = ['list', 'services', 'person', 'personSecondPage',
+    'serviceAccount', 'unknown'];
+  asked.forEach(function (name) {
+    const one = answers[name] || {};
+    t.check(one.status === 200 && (one.codes || []).length === 0,
+            'GET /admin-api/users (' + name + '): the API\'s own check ' +
+            'lets the answer through',
+            JSON.stringify({ status: one.status, codes: one.codes,
+                             sent: one.sent }));
+    const met = !!one.json && validate(one.json);
+    // `anyOf` reports every branch; a person's answer is `UserDetail`'s.
+    const errors = validate.errors || [];
+    const detail = errors.filter(function (e) {
+      return /UserDetail/.test(String(e.schemaPath));
+    });
+    t.check(met, 'GET /admin-api/users (' + name + '): the answer meets ' +
+            'the Management API OpenAPI document\'s model',
+            JSON.stringify((detail.length ? detail : errors).slice(0, 5)));
+  });
+  // WHAT EACH ANSWER HAD TO CARRY for the check to mean anything.
+  const p = (answers.person || {}).json || {};
+  const sessions = [].concat(p.sessions || []);
+  const onSessions = sessions.reduce(function (n, s) {
+    return n + [].concat(s.tokens || []).length;
+  }, 0);
+  t.check(p.known === true && [].concat((p.user || {}).events || [])
+    .length >= 1 && [].concat(p.authenticationHistory || []).length >= 1 &&
+          !!p.authenticationHistoryPaging && sessions.length >= 1 &&
+          onSessions >= 1 &&
+          [].concat(p.tokensWithNoSession || []).length >= 1 &&
+          [].concat(p.authenticationEvents || []).length >= 1,
+          'users: the person\'s answer carries their history and its ' +
+          'paging, a session with tokens on it, a token on none, and ' +
+          'their attempts',
+          JSON.stringify({ known: p.known, members: Object.keys(p),
+                           sessions: sessions.length,
+                           onSessions: onSessions }));
+  const second = (answers.personSecondPage || {}).json || {};
+  t.check(((second.authenticationHistoryPaging || {}).page) === 2,
+          'users: and page two of their history is page two',
+          JSON.stringify(second.authenticationHistoryPaging));
+  const s = (answers.serviceAccount || {}).json || {};
+  t.check(s.known === true && !!s.serviceAccount,
+          'users: the service account\'s answer says it is one',
+          JSON.stringify({ known: s.known,
+                           serviceAccount: s.serviceAccount }));
+  const u = (answers.unknown || {}).json || {};
+  t.check(u.known === false, 'users: a name never seen is known: false',
+          JSON.stringify(u));
+  const list = (answers.list || {}).json || {};
+  const listed = [].concat(list.users || []).map(function (row) {
+    return row.key || row.name;
+  });
+  t.check(listed.indexOf(users.person) >= 0,
+          'users: the list carries the person', JSON.stringify(listed));
+  log.debug("Leaving everyUsersAnswerMeetsItsModel().");
+}
+
+// EVERY PLAIN READ MEETS ITS MODEL: no management GET whose path names
+// nothing, asked with no query after the seeds, was refused by the API's own
+// check (STS-API-0139) or threw past its handler (STS-API-0140). A handler
+// that did not answer here (one that needs what this child has not got) is
+// listed, not failed: what it would have sent is not known.
+function everyPlainReadMeetsItsModel(t, docs) {
+  log.debug("Entering everyPlainReadMeetsItsModel().");
+  const reads = docs.plainReads || {};
+  const ids = Object.keys(reads);
+  const refused = ids.filter(function (id) {
+    const codes = reads[id].codes || [];
+    return codes.indexOf('STS-API-0139') >= 0 ||
+      codes.indexOf('STS-API-0140') >= 0;
+  }).map(function (id) {
+    return id + ' ' + reads[id].path + ' ' + reads[id].status + ' ' +
+      (reads[id].codes || []).join(',');
+  });
+  const unanswered = ids.filter(function (id) {
+    return typeof reads[id].status !== 'number';
+  }).map(function (id) {
+    return id + ' (' + reads[id].status + ': ' +
+      String(reads[id].sent || '').split('\n')[0].slice(0, 160) + ')';
+  });
+  const byStatus = {};
+  ids.forEach(function (id) {
+    const key = String(reads[id].status);
+    byStatus[key] = (byStatus[key] || 0) + 1;
+  });
+  t.check(ids.length >= 100 && refused.length === 0,
+          'every plain management read meets its model (' + ids.length +
+          ' asked, ' + JSON.stringify(byStatus) + '): ' +
+          refused.join('; '), '');
+  log.info('plain reads not answered here: ' + unanswered.length +
+           (unanswered.length ? '\n  ' + unanswered.join('\n  ') : ''));
+  log.debug("Leaving everyPlainReadMeetsItsModel().");
+}
+
+// THE DRILL-DOWNS OF WHAT WAS SEEDED MEET THEIR MODELS: each one-object
+// read the child asked answered 200, through the API's own check.
+function everySeededDrillDownMeetsItsModel(t, docs) {
+  log.debug("Entering everySeededDrillDownMeetsItsModel().");
+  const drillDowns = docs.drillDowns || {};
+  const asked = drillDowns.asked || [];
+  const seeds = drillDowns.seeds || {};
+  const failed = Object.keys(seeds).filter(function (name) {
+    return seeds[name] !== 'ok';
+  });
+  t.check(Object.keys(seeds).length >= 15 && failed.length === 0,
+          'the drill-downs\' objects were made: a remote PEP with a route ' +
+          'of each kind and a listener, a cluster with a member and a ' +
+          'proxy, a SAML 2.0 service provider, a SAML 1.1 relying party, ' +
+          'a federation relationship, a SPIFFE entry and agent, a device, ' +
+          'a CAEP session, a RISC account and a message',
+          JSON.stringify(seeds));
+  t.check(asked.length >= 30, 'the seeded drill-downs were asked (' +
+          asked.length + ')', '');
+  asked.forEach(function (one) {
+    const what = 'GET ' + one.operationId + ' ' + JSON.stringify(one.query);
+    t.check(one.status === 200 && (one.codes || []).length === 0,
+            what + ': answered 200 through the API\'s own check',
+            JSON.stringify({ status: one.status, codes: one.codes,
+                             sent: one.sent,
+                             members: (one.members || []).slice(0, 12) }));
+    if (one.took !== undefined) {
+      t.check(one.took === true, what + ': and the answer carries what ' +
+              'was asked for', one.evidence);
+    }
+  });
+  log.debug("Leaving everySeededDrillDownMeetsItsModel().");
+}
+
+// The members a model declares, `$ref`s and `allOf`/`anyOf`/`oneOf`
+// followed, at its top level.
+function topMembers(doc, schema, seen) {
+  log.debug("Entering topMembers().");
+  const out = new Set();
+  let node = schema;
+  const been = seen || new Set();
+  while (node && node.$ref) {
+    if (been.has(node.$ref)) {
+      log.debug("Leaving topMembers(). A cycle.");
+      return out;
+    }
+    been.add(node.$ref);
+    node = doc.components.schemas[node.$ref.split('/').pop()];
+  }
+  if (!node) {
+    log.debug("Leaving topMembers(). Nothing.");
+    return out;
+  }
+  Object.keys(node.properties || {}).forEach(function (name) {
+    out.add(name);
+  });
+  ['allOf', 'anyOf', 'oneOf'].forEach(function (key) {
+    (node[key] || []).forEach(function (one) {
+      topMembers(doc, one, been).forEach(function (name) {
+        out.add(name);
+      });
+    });
+  });
+  log.debug("Leaving topMembers().");
+  return out;
+}
+
+// ONE ANSWER, ONE MODEL (2026-11-16). #1845 was a member added to a copy:
+// `models/api/console.tsp` carried 74 models under the names the Management
+// API OpenAPI document gives them — `UserDetail` among them — and no console
+// operation used any of them, so a member added there was read by nothing,
+// and the answer it was meant for still failed its real model. The copies
+// are deleted, and the models the two documents really share live once, in
+// `common.tsp` (models/CLAUDE.md, *One model, one place*). Three halves:
+//
+//   * A MODEL THE TWO DOCUMENTS BOTH NAME IS A `common.tsp` COMPONENT, and
+//     so the same model, whole: neither document's own namespace may declare
+//     it (the build refuses that too, `lib/api_lib.mjs`).
+//   * EVERY COMPONENT OF THE ADMIN CONSOLE API OPENAPI DOCUMENT IS REACHED
+//     FROM ONE OF ITS OPERATIONS, so no copy no operation reads can come
+//     back. `tests/model_typespec.js` holds the same of every declaration in
+//     `console.tsp`, the hoisted ones included.
+//   * A CONSOLE TWIN (#454) answers what its management operation answers
+//     and the members `sendJson()` drops from that one: the management
+//     model's members are the twin's, and the twin's are the management
+//     model's and the dropped ones. No path is in both documents (each twin
+//     is under `/admin-api/console`), so the pairs are the route table's.
+function consoleAndManagementAgree(t, docs) {
+  log.debug("Entering consoleAndManagementAgree().");
+  const management = docs.management;
+  const consoleDoc = docs.console;
+  const ms = management.components.schemas;
+  const cs = consoleDoc.components.schemas;
+  const common = [];
+  const declared = /@component\s+model\s+`?(\w+)`?/g;
+  const source = fs.readFileSync(path.join(ROOT, 'models', 'api',
+    'common.tsp'), 'utf8');
+  let found = declared.exec(source);
+  while (found) {
+    common.push(found[1]);
+    found = declared.exec(source);
+  }
+  const shared = Object.keys(cs).filter(function (name) {
+    return Object.prototype.hasOwnProperty.call(ms, name);
+  });
+  const notCommon = shared.filter(function (name) {
+    return common.indexOf(name) < 0 ||
+      JSON.stringify(cs[name]) !== JSON.stringify(ms[name]);
+  });
+  t.check(common.length > 0 && notCommon.length === 0,
+          'a model both documents name is one model, a common.tsp ' +
+          'component (' + shared.length + ' shared, ' + common.length +
+          ' in common.tsp): ' + notCommon.join(', '), '');
+  const reached = new Set();
+  const pending = [consoleDoc.paths];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object') {
+      continue;
+    }
+    if (typeof node.$ref === 'string') {
+      const name = node.$ref.split('/').pop();
+      if (!reached.has(name)) {
+        reached.add(name);
+        pending.push(cs[name]);
+      }
+    }
+    Object.keys(node).forEach(function (key) {
+      pending.push(node[key]);
+    });
+  }
+  const unread = Object.keys(cs).filter(function (name) {
+    return !reached.has(name);
+  });
+  t.check(Object.keys(cs).length > 0 && unread.length === 0,
+          'every component of the Admin Console API OpenAPI document is ' +
+          'reached from one of its operations (' + Object.keys(cs).length +
+          '): ' + unread.join(', '), '');
+  const samePath = Object.keys(consoleDoc.paths).filter(function (at) {
+    return Object.prototype.hasOwnProperty.call(management.paths, at);
+  });
+  t.check(samePath.length === 0, 'no path is in both documents, so a ' +
+          'twin is paired by the route table: ' + samePath.join(', '), '');
+  const twins = docs.consoleTwins || [];
+  t.check(twins.length >= 4, 'the route table names the console twins: ' +
+          twins.map(function (one) {
+            return one.operationId;
+          }).join(', '), '');
+  twins.forEach(function (twin) {
+    let managed = null;
+    Object.keys(management.paths).forEach(function (at) {
+      const op = management.paths[at].get;
+      if (op && op.operationId === twin.operationId) {
+        managed = at;
+      }
+    });
+    const mModel = managed && okModelOf(management, managed);
+    const cModel = okModelOf(consoleDoc, twin.twin);
+    t.check(!!mModel && !!cModel, twin.operationId + ' and its twin ' +
+            twin.twin + ' each have a 200 model', '');
+    if (!mModel || !cModel) {
+      return;
+    }
+    const m = Array.from(topMembers(management, mModel));
+    const c = Array.from(topMembers(consoleDoc, cModel));
+    const missing = m.filter(function (k) {
+      return c.indexOf(k) < 0;
+    });
+    const extra = c.filter(function (k) {
+      return m.indexOf(k) < 0 && twin.members.indexOf(k) < 0;
+    });
+    t.check(missing.length === 0 && extra.length === 0,
+            twin.operationId + ' and ' + twin.twin + ' declare the same ' +
+            'members, but for the console\'s own (' +
+            twin.members.join(', ') + ')',
+            JSON.stringify({ notInTheTwin: missing,
+                             notInTheManagementModel: extra }));
+  });
+  log.debug("Leaving consoleAndManagementAgree().");
 }
 
 // EVERY ROW THE MODEL'S GENERATOR WRITES INTO A SCHEMA TABLE MEETS THE
@@ -967,11 +2014,19 @@ function ruleOverDocuments(t) {
   aFinishedGrantMeetsEveryModel(t, docs);
   theBarrierReportMeetsEveryModel(t, docs);
   everyDirectoryPageMeetsItsModel(t, docs);
+  everyUsersAnswerMeetsItsModel(t, docs);
+  everyPlainReadMeetsItsModel(t, docs);
+  everySeededDrillDownMeetsItsModel(t, docs);
+  consoleAndManagementAgree(t, docs);
   everySchemaRowMeetsTheRowModel(t, docs);
   codesOnlyWhereDrawn(t, docs);
   delete docs.finalization;
   delete docs.barrier;
   delete docs.directoryPages;
+  delete docs.users;
+  delete docs.consoleTwins;
+  delete docs.plainReads;
+  delete docs.drillDowns;
   let total = 0;
   Object.keys(docs).forEach(function (api) {
     const rows = rowsOf(api, docs[api]);

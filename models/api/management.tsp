@@ -3750,18 +3750,6 @@ namespace IyaSts.Api.Management {
   }
 
 @js(#{
-    `description`:"A refusal or a failure. The sentence is for a person; no error code is ever in it."
-  }) @component model `RefusalFailure` {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `message`?: string;
-    `why`?: string;
-    `status`?: integer
-  }
-
-@js(#{
     `x-free-form`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines.",
     `description`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines."
   }) @component model `RFCMetadataMemberSValue` {}
@@ -5606,11 +5594,6 @@ namespace IyaSts.Api.Management {
     `result`?: `WithOkKeyScope2`
   }
 
-@component model `WithOnlyWhileOnAloneWhileOnKey` {
-    `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
-    `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
-  }
-
 @component model `WithKeyGroupLabel` {
     `key`?: string;
     `group`?: string;
@@ -5756,17 +5739,6 @@ namespace IyaSts.Api.Management {
     `owners`?: (WithDnKindNameEtc4)[]
   }
 
-@component model `WithPagePagesPerPage2` {
-    `page`?: integer;
-    `pages`?: integer;
-    `perPage`?: integer;
-    `firstRow`?: integer;
-    `lastRow`?: integer;
-    `total`?: integer;
-    `param`?: NullableString;
-    `noun`?: NullableString
-  }
-
 @component model `WithOkMessageErrors61` {
     `ok`: boolean;
     `message`?: string;
@@ -5897,17 +5869,6 @@ namespace IyaSts.Api.Management {
     `note`?: string;
     `chainKey`?: string
   }
-
-@component model `WithKindCountIdentifiers` {
-    `kind`?: string;
-    `count`?: integer;
-    `identifiers`?: (string)[];
-    `moreIdentifiers`?: integer;
-    `notes`?: (string)[]
-  }
-
-@component model `WithOkMessageErrors63` is (`WithKindCountIdentifiers`)[];
-  
 
 @component model `WithOkMessageErrors64` {
     `ok`: boolean;
@@ -8144,25 +8105,6 @@ namespace IyaSts.Api.Management {
 @component model `WithIdLabelClassical` is (`WithIdLabelCa`)[];
   
 
-@component model `WithIdLabelClassical2` is ({
-    `id`?: string;
-    `label`?: string;
-    `classical`?: boolean;
-    `families`?: (string)[];
-    `note`?: string
-  })[];
-  
-
-@component model `WithIdLabelSubject` is ({
-    `id`?: string;
-    `label`?: string;
-    `subject`?: string;
-    `keyAlg`?: string;
-    `notAfter`?: string;
-    `hasAlternativeKey`?: boolean
-  })[];
-  
-
 @component model `WithIdCaProfile` {
     `id`?: string;
     `ca`?: boolean;
@@ -8916,9 +8858,6 @@ namespace IyaSts.Api.Management {
 @component model `WithIdFromTo` is (`WithIdKindKey2`)[];
   
 
-@component model `WithIdFromTo2` is Record<`WithKindCountIdentifiers`>;
-  
-
 @component model `WithIdFromTo3` {
     `id`?: string;
     `from`?: string;
@@ -9067,17 +9006,6 @@ namespace IyaSts.Api.Management {
 
 @component model `WithApplicationsGrantsLines` is (`WithClientClientNamePermissionId2`)[];
   
-
-@component model `WithApplicationsGrantsLines2` {
-    `applications`?: integer;
-    `grants`?: integer;
-    `lines`?: integer;
-    `permissions`?: integer;
-    `dangling`?: integer;
-    `selfGrants`?: integer;
-    `asked`?: integer;
-    `unused`?: integer
-  }
 
 @hoisted union SharedModel419_ap_h1934 {StringOrNumericOrBooleanEtc, (StringOrNumericOrBooleanEtc)[]}
 
@@ -15862,6 +15790,13 @@ op `getMetrics`(`responses/200/content/application~1json/schema`: `Metrics`,
         `description`:"Which page of `artifacts` to return, answered by `artifactsPaging`. SAML assertions, Kerberos tickets and credentials."
       },
       #{
+        `name`:"authenticationHistoryPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `authenticationHistory` to return, answered by `authenticationHistoryPaging`. How they authenticated (`user.events`), most recent first, ten a page by default (#1844). `user.events` is still the whole list."
+      },
+      #{
         `name`:"federationLinksPage",
         `in`:"query",
         `required`:false,
@@ -15900,6 +15835,7 @@ op `getUsers`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/12/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/13/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/15/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_users_r200_application_json_h2549,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors13`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;

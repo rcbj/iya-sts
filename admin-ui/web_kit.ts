@@ -664,6 +664,22 @@ class WebKit {
     return { summary: WebKit.teaserOf(WebKit.plainTextOf(html)), body: html };
   }
 
+  // A FRAME (`.secframe`, rcbj 2026-11-16): a bordered, tinted box around one
+  // block of a page, its heading inside it, as each section of a person's Key
+  // pairs tab is drawn. Frames nest, the tint alternating (admin.ts's
+  // stylesheet). An empty block draws no frame, so a caller can frame a
+  // block that is drawn only sometimes without asking first.
+  /**
+   * Draws a block inside a section frame.
+   *
+   * @param html - the block as HTML, its heading first
+   * @returns the framed block, or '' for an empty one
+   */
+  static frame(html) {
+    html = String(html == null ? '' : html);
+    return html ? '<section class="secframe">' + html + '</section>' : '';
+  }
+
   // A paragraph of explanation. Short ones are the paragraph they always were;
   // long ones fold. `label` overrides the derived summary and forces the fold,
   // because a caller that bothered to name a block wanted the block.
