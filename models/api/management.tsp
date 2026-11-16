@@ -3832,7 +3832,7 @@ namespace IyaSts.Api.Management {
 @component union `ValueValue` {ValueValue_h1346}
 
 @js(#{
-    `description`:"Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is reachable only for the DERIVED settings, whose value is a function of a neighbouring setting: for every other setting, no value anywhere stops this service from STARTING."
+    `description`:"Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is the row's own built-in default, the floor beneath both files: for a DERIVED setting it is a function of a neighbouring setting; for any other it means `env/defaults.js` lacks the setting (an env/ directory older than the image, which the start warns of as STS-CORE-0177). Only a setting with no default and no value anywhere stops this service from STARTING."
   }) @component union `SourceValue` {
     "realm" | "override" | "env" | "env-legacy" | "appconfig" | "defaults" | "default"
   }

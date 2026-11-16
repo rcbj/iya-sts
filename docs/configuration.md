@@ -18,34 +18,17 @@ which is the state this arrangement exists to end.
 
 ## How a value is resolved
 
-Five levels, first match wins:
+Six levels, first match wins:
 
 1. **A runtime override** — set on the console page for that setting's protocol, or through `POST /admin-api/config/set`
 2. **The environment variable**
 3. **A legacy environment variable** — there is none since #523, when `STS_ISSUER` was retired
 4. **The appconfig file** named by `CONFIG_FILE`
 5. **`env/defaults.js`** — the default appconfig file that 4 is unioned on top of
+6. **The setting's own default**, built into the image — the floor beneath every file
 
 Environment beating the file is deliberate: it is what keeps existing containers
 and test harnesses working when the shipped `env/*.js` files carry every key.
-
-**There is no sixth level.** A setting with no value in 4 or 5 and no variable in
-2 or 3 **stops this service from starting**, naming every such setting and both
-places its value could go. A value that arrives from a constant buried in a
-module is a value nobody can find, change or see on a page, which is the state
-this arrangement exists to end — so there is no silent fallback underneath the
-table to lead back into it. The refusal looks like this:
-
-```
-config: FATAL — 2 setting(s) have no value in the appconfig layer and no environment variable:
-
-  global.domain       STS_DOMAIN
-  spiffe.trustDomain  STS_SPIFFE_TRUST_DOMAIN
-
-Each must be set in ./env/local.js, in ./env/defaults.js (the default appconfig
-file every other one is unioned on top of), or as the environment variable
-beside it.
-```
 
 **Levels 4 and 5 are one layer, unioned.** `env/defaults.js` carries a default
 for every setting; the file `CONFIG_FILE` names is merged over it key by key and
@@ -53,11 +36,54 @@ for every setting; the file `CONFIG_FILE` names is merged over it key by key and
 carry as few keys as its author likes and still be complete — a file carrying
 only `logLevel` resolves everything else through the defaults, which is what lets
 the parent project's in-process Kerberos jobs point `CONFIG_FILE` at their own
-test config and still load these modules — and a setting added to the table
-tomorrow does not break every config file in the world on the day it is added.
-What the refusal above actually catches is the one case left: a setting added to
-`common/config.js`'s table with no row in `env/defaults.js`, which is a setting
-somebody added and did not finish adding.
+test config and still load these modules.
+
+**Level 6 is what makes an upgrade safe with an older `env/`** (since
+2026-11-16). `env/defaults.js` lives in the directory an operator customises,
+and a directory mounted over the image's `/usr/src/sts/env` — or a copy of
+`defaults.js` kept beside a deployment — carries the file from the release it
+was copied from. When a newer image adds a setting, that older file has no row
+for it; the setting then takes the image's own default (the `dflt` the console,
+`GET /admin-api/config` and [Every setting](#every-setting) already show as
+*Default*), its source is reported as `default`, and the start logs a
+**warning**, `STS-CORE-0177`, naming each such setting and the defaults file
+that lacked it. A defaults file holding a value that is not this image's
+default is used as written — it is what the service ran on before the upgrade
+— and logged as `STS-CORE-0178`, because a stale copy also pins every default a
+later release changed. A missing `env/defaults.js` is the first case for every
+setting. See [Upgrading with a mounted `env/`](#upgrading-with-a-mounted-env).
+
+**What still stops the start**:
+
+* **A value you set that the console would refuse** — an enum value it does
+  not list, an integer out of bounds, a boolean spelt some other way — in the
+  environment, the `CONFIG_FILE` file or `env/defaults.js` (`STS-CORE-0108`),
+  naming each value and where it was found. A floor beneath the files does not
+  make a wrong value right.
+* **A setting with no default and no value anywhere** (`STS-CORE-0002`) — a
+  value that must be supplied, such as a required secret. The refusal names
+  each one and every place its value could go:
+
+```
+config: FATAL — 1 setting(s) have no default and no value in the appconfig layer or the environment:
+
+  example.secret  STS_EXAMPLE_SECRET
+
+Each must be set in ./env/local.js, in ./env/defaults.js (the default appconfig
+file every other one is unioned on top of), or as the environment variable
+beside it.
+```
+
+* **An `env/defaults.js` that is there and will not load** (`STS-CORE-0179`) —
+  whatever it was meant to say is unknown. Remove it to run on the image's own
+  defaults, or replace it with the image's.
+
+Until 2026-11-16 there was no sixth level, and any setting missing from both
+files stopped the start (`STS-CORE-0002`). That caught a maintainer adding a
+setting without regenerating `env/defaults.js` — which
+`tests/config_defaults_layer.js` now catches before an image is built — and it
+also stopped an upgraded image whose `env/` had been mounted from an older
+release, which is why it went.
 
 `env/defaults.js` is GENERATED from the table — `node env/generate_defaults.js`
 writes it from the `dflt` column, where each default is written down next to the
@@ -75,8 +101,8 @@ nothing: unset, every value comes from `env/defaults.js` or from the
 environment. A file that cannot be loaded is fatal and says so, because
 continuing would mean starting a service configured as nobody asked for.
 
-**Every setting has an environment variable**, and four settings are exempt from
-the refusal above and from both files, marked *(derived)* in
+**Every setting has an environment variable**, and four settings are absent
+from both files, marked *(derived)* in
 [Every setting](#every-setting), because their default is DERIVED from a
 neighbour rather than written in a file: `global.https` from `oauth2.rfc9700`,
 `oid4vp.walletUrl` from `oid4vci.walletUrl`, `krb5.serviceDomains` from
@@ -111,6 +137,44 @@ party configured from one name refuses tokens issued under another.
 `wsfed.entityId` were retired with it. A start that still names one of them,
 in the appconfig file or the environment, is refused and says so
 (`STS-CORE-0105`).
+
+### Upgrading with a mounted `env/`
+
+A deployment customises the service by mounting a directory over the image's
+`/usr/src/sts/env` (the compose file mounts the checkout's `./env` there), or by
+keeping its own copy of `env/defaults.js`. **That directory is not upgraded
+with the image**: after `docker pull` it still holds the files of the release it
+was copied from. What happens on the first start of the newer image:
+
+* **A setting the newer release added** has no row in the older
+  `defaults.js`. It takes the image's own default, and the start logs one
+  warning naming every such setting and the file:
+
+  ```
+  [STS-CORE-0177] config: 1 setting(s) have no row in the defaults file /usr/src/sts/env/defaults.js and no value in any layer above it, so each takes this image's own default: <each setting>. ...
+  ```
+
+  The service runs. `/admin/config` shows the setting with source *default*.
+* **A setting whose default the newer release changed** keeps the OLD value,
+  because the older `defaults.js` still says it, and the start logs
+  `STS-CORE-0178` naming each one. That is the value the service ran on before
+  the upgrade, so nothing changes under you — but it is no longer what the
+  release ships.
+* **No `defaults.js` in the mounted directory at all** is the first case for
+  every setting: every value the selected file does not carry is the image's
+  default, and `STS-CORE-0177` says the file is not there.
+* **A value you set that the newer release refuses** — a value an enum no
+  longer lists (`STS-CORE-0108`), a setting the release replaced with others
+  (`STS-CORE-0105`) — still stops
+  the start, naming the line. That is the one kind of change an upgrade may ask
+  you to make, and the release notes say which.
+
+**The cure for both warnings is the same: stop carrying `defaults.js`.** Keep
+only the file `CONFIG_FILE` names (`local.js`, or your own) in the mounted
+directory, holding only the settings you mean, and let the image supply the
+rest. If you mount the whole checkout's `env/`, update the checkout to the
+release you run. `env/defaults.js` is generated from the image's own table and
+is never the place to configure a deployment.
 
 ### An environment variable is a string, and the table knows what to do with it
 

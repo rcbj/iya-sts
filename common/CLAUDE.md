@@ -3679,8 +3679,10 @@ anything without restarting it, and no list anywhere of what could be changed at
 — the answer was a grep, and the grep only found the ones spelt the way you guessed.
 
 **A new setting is a row in `SETTINGS` and a regenerated `env/defaults.js`** —
-`node env/generate_defaults.js`, and the service tells you when you have forgotten
-by refusing to start and naming the row. The row carries the key
+`node env/generate_defaults.js`, and `tests/config_defaults_layer.js` tells you
+when you have forgotten, by failing and naming the row (until 2026-11-16 the
+service refused to start instead; *The image's floor*, below, says why it no
+longer does). The row carries the key
 (which is both the dot path in the appconfig file and the name every surface uses),
 the environment variable, the type, the default, the prose, and `runtime`. From that
 one row it appears in the admin console — on the page for the protocol it
@@ -3818,7 +3820,8 @@ module-level `const`s became functions — `vciBatchSize()`, `clockSkewSeconds()
 cannot change, and it fails in the direction that looks like the console is broken.
 
 **Resolution order is override, env var, LEGACY env var, the appconfig file
-`CONFIG_FILE` names, `env/defaults.js`.** Env beating the file is what keeps every
+`CONFIG_FILE` names, `env/defaults.js`, and the row's own `dflt`** (the sixth,
+since 2026-11-16 — below). Env beating the file is what keeps every
 existing container and test working: nothing in the parent project sets these
 variables in compose, but
 `tests/krb5_spnego_http.js` sets `KRB5_REALM`, `KRB5_KDC_PORT` and
@@ -3830,36 +3833,72 @@ name became the realm's OAuth issuer (`issuer_names.ts`). A start that still nam
 one is refused (`REPLACED_SETTINGS`, `STS-CORE-0105`). The level, and `legacyEnv`,
 stay for the next one.
 
-**AND THERE IS NO SIXTH LEVEL — `requireComplete()` REFUSES TO START INSTEAD.**
-A setting with no value in either appconfig file and no environment variable
-stops the process, by name, listing both places its value could go. That is the
-2026-08-24 change and it is the point of the table rather than a strictness bolted
-onto it: a value arriving from a constant buried in a module is a value nobody
-can find, change or see on a page, which is the state this file exists to end,
-and a silent fallback underneath it was one way back in. The `dflt` column is
-still there and is still where a default is WRITTEN DOWN — beside the paragraph
-saying why it is the default — but it is documentation and a generator input
-rather than a source the service leans on. `process.exit(1)` rather than a throw,
-because a throw out of a require lands as a stack trace whose top frame is node's
-module loader and the reason ends up three screens above where anybody looks.
+**THE IMAGE'S FLOOR: THE ROW'S OWN `dflt` IS THE SIXTH LEVEL (2026-11-16).**
+From 2026-08-24 until then there was no sixth level: a setting with no value in
+either appconfig file and no environment variable stopped the process
+(`requireComplete()`, `STS-CORE-0002`), on the argument that a value arriving
+from a constant buried in a module is a value nobody can find, change or see on
+a page, and that the refusal could only ever catch a MAINTAINER's mistake — a
+row added and `env/defaults.js` not regenerated — because an operator's file is
+unioned over `env/defaults.js` and so can never be incomplete, only smaller.
 
-**WHAT THAT REFUSAL CAN ACTUALLY CATCH IS A MAINTAINER'S MISTAKE, NOT AN
-OPERATOR'S**, and knowing which is the difference between the rule being useful
-and being a trap. **The appconfig layer is TWO FILES unioned**: `env/defaults.js`
-carries a default for every non-derived row, and the file `CONFIG_FILE` names is
-merged over it key by key with the operator's value winning. So an operator's
-file can never be incomplete — only smaller — and three things follow, each of
-which had to be true at once:
+**The second half of that argument was false, and an upgrade found it.** It
+assumed `env/defaults.js` is always the IMAGE's, and `env/` is the directory an
+operator customises: the port-8081 deployment mounts a host directory over
+`/usr/src/sts/env`, copied from an older checkout, so its `defaults.js` hid the
+image's own. An image adding `xacml.pepAuthentication` then had no value for it
+anywhere and crash-looped on `STS-CORE-0002` until the mount was moved. An
+upgrade that needs the operator to edit files first breaks rcbj's
+backwards-compatibility directive (2026-11-11).
 
-* a config file that is NOT this service's still loads every module here, which
-  is what the parent project's in-process Kerberos jobs need (`CONFIG_FILE`
-  pointing at the TEST suite's config, which carries `logLevel` and nothing else
-  of ours);
-* a row added to `SETTINGS` tomorrow does not break every config file in the
-  world on the day it is added;
-* so the refusal fires on the one case left — a row here with no row in
-  `env/defaults.js`, which is a setting somebody added and did not finish adding,
-  caught at the first start after the mistake.
+**Why the floor is the `dflt` and not a defaults file moved out of `env/`.** The
+other shape considered was to keep the image's generated defaults outside the
+mountable directory and make `env/defaults.js` an optional operator layer. It
+moves the problem rather than ending it — any file is replaceable by somebody's
+copy of it — and it would have changed the path the parent project's
+`tests/Dockerfile` copies and `snapshot()`'s `defaultsFile` reports. The `dflt`
+lives in `common/config.js`, which no supported customisation replaces, and it
+is not the "constant buried in a module" the refusal was written against: it is
+the same value `/admin/config`, `GET /admin-api/config`, the OpenAPI `default`
+property and `docs/configuration.md`'s table already publish as the default, and
+a value taken from it says so (`source: 'default'`). So:
+
+* **a setting an older `env/defaults.js` lacks takes the `dflt`**, and the start
+  logs one WARNING, `STS-CORE-0177`, naming every such setting and the file
+  (`reportStaleDefaults()`); a MISSING `env/defaults.js` is the same case for
+  every setting, said in the same line;
+* **a value in `env/defaults.js` that is not the `dflt` is USED**, and the start
+  logs `STS-CORE-0178` naming each one. It is what the service ran on before the
+  upgrade and an operator may have meant it; but a stale copy pins every default
+  a later release changed, which nobody would otherwise see;
+* neither is said for a setting a layer ABOVE the file supplies.
+
+**What still refuses, and why each survives.** A row with NO `dflt` and no value
+anywhere still stops the start with `STS-CORE-0002` (`floorVerdict()` answers
+`refuse`) — a value that must be supplied, a required secret being the example;
+there is none today, and the rule keeps the door for one. A value somebody DID
+set that the console would refuse still stops the start with `STS-CORE-0108`,
+in every layer, the defaults file included: the floor is beneath the files, not
+a repair of them. An `env/defaults.js` that is PRESENT and does not load stops
+the start with `STS-CORE-0179`, for the reason an unloadable `CONFIG_FILE` does
+(`STS-CORE-0001`): whatever it meant to say is unknown. **And the maintainer's
+mistake the old refusal existed for is caught before an image is built**:
+`tests/config_defaults_layer.js` fails while `env/defaults.js` and the table
+disagree in either direction — a row missing, a value different, a derived row
+present, a key the table does not know. That is cheaper than the first start
+after the mistake, which is where it used to be caught.
+
+**`process.exit(1)` rather than a throw** in each refusal, because a throw out
+of a require lands as a stack trace whose top frame is node's module loader and
+the reason ends up three screens above where anybody looks.
+
+**The appconfig layer is TWO FILES unioned**: `env/defaults.js` carries a
+default for every non-derived row, and the file `CONFIG_FILE` names is merged
+over it key by key with the operator's value winning. So an operator's file
+can never be incomplete — only smaller — which is what lets a config file that
+is NOT this service's still load every module here (the parent project's
+in-process Kerberos jobs point `CONFIG_FILE` at the TEST suite's config, which
+carries `logLevel` and nothing else of ours).
 
 **`env/defaults.js` IS GENERATED AND MUST NOT BE HAND-EDITED.** `node
 env/generate_defaults.js` writes it from the `dflt` column. Two copies of a
@@ -3868,9 +3907,9 @@ service running on one value while the console, the OpenAPI document's
 `default` property and `docs/configuration.md`'s table all report the other.
 That generator
 neutralises `process.exit` for the length of its own `require` of this module,
-because regenerating the file is the one moment when an incomplete
-`env/defaults.js` is EXPECTED; the bypass is in the build tool and deliberately
-not a flag here, since a flag in the service is a flag somebody can leave on.
+because a row being added may be half-written when it runs; the bypass is in the
+build tool and deliberately not a flag here, since a flag in the service is a
+flag somebody can leave on.
 
 **3q. THE RUNTIME OVERRIDE LAYER IS DURABLE SINCE 2026-08-27, AND IT IS STILL
 ONE LAYER.** `setOverrideStore()` is an inverted hook filled by
@@ -3892,7 +3931,7 @@ that is easy to miss: a store told only about writes would still hold a cleared
 override and would put it back on the next start, which is worse than no reset at
 all.
 
-**THERE IS STILL NO SIXTH LAYER**, and the reason is `applyPersistedOverrides()`:
+**THE STORE IS NOT A SEVENTH LAYER**, and the reason is `applyPersistedOverrides()`:
 saved values are put back through the same `setOverride()` path a caller uses, so
 what comes out of the store is a layer-1 runtime override and nothing else. The
 ordering above is untouched, and an environment variable still does NOT beat a

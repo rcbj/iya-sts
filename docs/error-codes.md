@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5661** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5664** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 108
+* [Service core (`STS-CORE`)](#sts-core) — 111
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 54
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 113
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
@@ -159,7 +159,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | Code | What failed | Client sees |
 |---|---|---|
 | `STS-CORE-0001` | The appconfig file CONFIG_FILE names could not be loaded, so the service refused to start. | — |
-| `STS-CORE-0002` | One or more settings have no value in the appconfig layer or the environment (env/defaults.js has not been regenerated), so the service refused to start. | — |
+| `STS-CORE-0002` | One or more settings have no default of their own and no value in the appconfig layer or the environment, so the service refused to start. Since 2026-11-16 a setting WITH a default takes it when env/defaults.js lacks it (STS-CORE-0177) rather than stopping the start. | — |
 | `STS-CORE-0003` | A runtime setting change could not be handed to persistence. The setting is in force and may not survive a restart. | — |
 | `STS-CORE-0004` | A setting was named that does not exist in the settings table. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0005` | A restart-only setting was changed while the service is running; it must be set in the appconfig file or the environment instead. | the caller's refusal (errors on a console or /admin-api reply) |
@@ -266,6 +266,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0174` | An XML document was refused because it carries a DOCTYPE or ENTITY declaration (ASVS 5.0.0 1.5.2). | SOAP 1.2 Part 1 section 5: no Document Type Declaration |
 | `STS-CORE-0175` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_VERSION_RELEASE names the release a build carries in place of the VERSION file's, and it was not M.N.O exactly (three non-negative integers with no leading zero). Nothing is written and the image build fails. | none — the image build exits non-zero |
 | `STS-CORE-0176` | A setting that holds an absolute URI (saml2.nameIdFormat, saml11.nameIdFormat) is set to text that is not one in the environment or an appconfig file. The service starts and uses it as configured, so its SAML assertions carry a NameID Format the schema refuses; /admin/config and the management API refuse the same value on a save (STS-CORE-0006). | saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning logged at startup; nothing is refused |
+| `STS-CORE-0177` | One or more settings have no row in env/defaults.js (or the file is not there) and no value in any layer above it, so each takes the image's own default. The defaults file is older than the image — usually an env/ directory mounted or copied from an earlier release. The service starts; the warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
+| `STS-CORE-0178` | One or more settings in env/defaults.js hold a value that is not the image's default. The file's value is used, as before the upgrade; a defaults file copied from an earlier release pins every default changed since. The warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
+| `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
 
 ## STS-WORKER
 
