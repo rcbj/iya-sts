@@ -3,7 +3,7 @@
   "info": {
     "title": "IYA STS remote PEP control plane",
     "version": "1",
-    "description": "What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304. Errors are the Error object, with Cache-Control: no-store; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+    "description": "What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
   },
   "servers": [
     {
@@ -2618,6 +2618,15 @@
             }
           },
           {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "pep",
             "in": "query",
             "required": false,
@@ -2690,6 +2699,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2731,7 +2749,7 @@
             }
           },
           "500": {
-            "description": "The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since is compared.",
+            "description": "The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since or If-None-Match is compared.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2762,6 +2780,15 @@
             "name": "since",
             "in": "query",
             "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
             "schema": {
               "type": "string"
             }
@@ -2845,7 +2872,7 @@
             "name": "If-None-Match",
             "in": "header",
             "required": false,
-            "description": "Sent by the PEP; not read.",
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
             "schema": {
               "type": "string"
             }
@@ -2929,7 +2956,7 @@
             "name": "If-None-Match",
             "in": "header",
             "required": false,
-            "description": "Sent by the PEP; not read.",
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
             "schema": {
               "type": "string"
             }

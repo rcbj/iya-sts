@@ -1520,6 +1520,75 @@ class XacmlSurface {
     return out;
   }
 
+  // ===========================================================================
+  // WHETHER A PULL IS ANSWERED 304 (#1830): `?since=<token>`, as it always
+  // was, OR an `If-None-Match` that matches the ETag the pull would send.
+  //
+  // Every pull sent `ETag: "<token>"` and read only `?since=`, so the header
+  // the PEP sends on the settings and proxy pulls — and that any ordinary
+  // HTTP client or cache sends back on its own — was answered 200 with the
+  // whole document every time. RFC 9110 section 13.1.2 is the rule: the
+  // field is `*` or a LIST of entity tags, compared WEAKLY (section 8.8.3.2:
+  // `W/"x"` and `"x"` match), and `*` matches whenever there is a current
+  // representation, which every one of these pulls always has. A field
+  // that matches nothing is not an error; the pull answers 200 as it would
+  // without it. `?since=` stays: a deployed PEP sends it on every pull and
+  // must keep being answered 304 by it.
+  // ===========================================================================
+  /**
+   * Whether an `If-None-Match` field value matches a sync token under RFC
+   * 9110's weak comparison: `*`, or any entity tag in the list whose opaque
+   * part is the token, with or without `W/`.
+   *
+   * @param field - the field value as received ('' when absent)
+   * @param token - the token the pull's ETag carries, unquoted
+   * @returns true when it matches
+   */
+  static etagMatches(field: unknown, token: string): boolean {
+    log.debug('Entering XacmlSurface.etagMatches().');
+    const value = String(Array.isArray(field) ? field.join(',')
+                                              : (field || '')).trim();
+    if (!value || !token) {
+      log.debug('Leaving XacmlSurface.etagMatches(). Nothing to compare.');
+      return false;
+    }
+    if (value === '*') {
+      log.debug('Leaving XacmlSurface.etagMatches(). Any.');
+      return true;
+    }
+    // An entity tag is `[W/] DQUOTE *etagc DQUOTE`, and etagc holds no
+    // double quote, so a quoted run is one tag wherever the commas are.
+    const tags = /(?:W\/)?"([^"]*)"/g;
+    let found = tags.exec(value);
+    while (found) {
+      if (found[1] === token) {
+        log.debug('Leaving XacmlSurface.etagMatches(). Matched.');
+        return true;
+      }
+      found = tags.exec(value);
+    }
+    log.debug('Leaving XacmlSurface.etagMatches(). No match.');
+    return false;
+  }
+
+  /**
+   * Whether a pull is unchanged for this caller: `?since=` equal to the
+   * token, or an `If-None-Match` that matches it (`etagMatches()`).
+   *
+   * @param req - the request
+   * @param token - the pull's current sync token
+   * @returns true when the pull answers 304
+   */
+  unchanged(req: Req, token: string): boolean {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.unchanged().');
+    const since = String((req.query && req.query.since) || '');
+    const out = (!!since && since === token) ||
+      XacmlSurface.etagMatches(req.headers['if-none-match'], token);
+    log.debug('Leaving XacmlSurface.unchanged(). ' + out);
+    return out;
+  }
+
   /**
    * Answers one of the four validation doors: the rate limit, the gate, the
    * question, the audit row and the closed answer.
@@ -2636,8 +2705,9 @@ class XacmlSurface {
     //   * THE STATIC PROBLEMS ARE NOT HERE either — a document that does not
     //     typecheck cannot be written through the store in the first place, and
     //     a PEP has its own validator and will refuse it again.
-    //   * IT CARRIES A SYNC TOKEN AND HONOURS `?since=`, which is what makes
-    //     polling cheap enough to be the contract.
+    //   * IT CARRIES A SYNC TOKEN AND HONOURS `?since=` — and, since #1830,
+    //     an `If-None-Match` matching its ETag (`unchanged()`) — which is
+    //     what makes polling cheap enough to be the contract.
     //
     // **IT REQUIRES `REMOTE_PEPS`**, and the comment inside the handler carries
     // the argument: this header said "no credential is required" for one day
@@ -2668,7 +2738,6 @@ class XacmlSurface {
         return;
       }
       const token = peps.syncToken();
-      const since = String(req.query.since || '');
       // A PEP that reports the name it registered under gets its `lastSeen`
       // moved by a PULL as well as by a heartbeat, because a PEP that is
       // polling is plainly alive and a register that called it stale would be
@@ -2689,7 +2758,7 @@ class XacmlSurface {
       if (asName && peps.read(asName)) {
         peps.heartbeat(asName, {});
       }
-      if (since && since === token) {
+      if (self.unchanged(req, token)) {
         // 304 AND NOT 200 WITH A FLAG, because a PEP polling every few seconds
         // is the ordinary case and this is the answer it gets almost every
         // time. The token goes in an ETag as well so that an ordinary HTTP
@@ -2837,8 +2906,7 @@ class XacmlSurface {
                   'applications could not be read.');
         return;
       }
-      const since = String(req.query.since || '');
-      if (since && since === catalogue.token) {
+      if (self.unchanged(req, catalogue.token)) {
         res.status(304)
            .set('Cache-Control', 'no-store')
            .set('ETag', '"' + catalogue.token + '"')
@@ -2877,8 +2945,7 @@ class XacmlSurface {
         return;
       }
       const callers = self.authzenCallers();
-      const since = String(req.query.since || '');
-      if (since && since === callers.token) {
+      if (self.unchanged(req, callers.token)) {
         res.status(304)
            .set('Cache-Control', 'no-store')
            .set('ETag', '"' + callers.token + '"')
@@ -2918,8 +2985,7 @@ class XacmlSurface {
                                   String(req.query.name || ''));
       const row = name ? pepClusters.effectiveRow(peps.read(name)) : null;
       const pulled = self.deps.pepProxy.pull(baseUrlOf(req), row, name);
-      const since = String(req.query.since || '');
-      if (since && since === pulled.token) {
+      if (self.unchanged(req, pulled.token)) {
         res.status(304)
            .set('Cache-Control', 'no-store')
            .set('ETag', '"' + pulled.token + '"')
@@ -2961,8 +3027,7 @@ class XacmlSurface {
                                   String(req.query.name || ''));
       const row = name ? pepClusters.effectiveRow(peps.read(name)) : null;
       const pulled = self.deps.pepSettings.pull(row, name);
-      const since = String(req.query.since || '');
-      if (since && since === pulled.token) {
+      if (self.unchanged(req, pulled.token)) {
         res.status(304)
            .set('Cache-Control', 'no-store')
            .set('ETag', '"' + pulled.token + '"')

@@ -24,8 +24,6 @@
 // WHAT IS IRREGULAR, DECLARED AS IT IS (`xacml-pep/CLAUDE.md` has the
 // argument for each):
 //
-// * a pull answers 304 only on `?since=`; `If-None-Match`, which the PEP
-//   also sends on the settings and proxy pulls, is not read;
 // * the PIP answers its own refusals as XML `PIPError` (400, 429) and the
 //   shared gate's as JSON (403, 501);
 // * the heartbeat answers every registry refusal 404, register every one
@@ -46,7 +44,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP control plane",
     `version`:"1",
-    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304. Errors are the Error object, with Cache-Control: no-store; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
   },
   `servers`:#[
     #{`url`:"https://localhost:8081",`description`:"PEP_PDP_URL: the service, with /realm/<id> for a realm."}
@@ -324,6 +322,7 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `description`:"Every PEP_POLL_INTERVAL_MS, on a nudge, and when a heartbeat says the PEP is not current.",
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`description`:"The token held; equal to the current one answers 304.",`schema`:#{`type`:"string"}},
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}},
     #{`name`:"pep",`in`:"query",`required`:false,`description`:"The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
@@ -374,13 +373,14 @@ op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
   `operationId`:"getAuthzenCatalogue",
   `summary`:"Pull the realm's AuthZEN attribute catalogue",
   `parameters`:#[
-    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}}
+    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The catalogue. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `500`:#{`description`:"The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since is compared.",`content`:#{`application/json`:#{`schema`:null}}},
+    `500`:#{`description`:"The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since or If-None-Match is compared.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
@@ -427,7 +427,8 @@ op `getAuthzenCatalogue`(`responses/200/content/application~1json/schema`: `Auth
   `operationId`:"getAuthzenCallers",
   `summary`:"Pull who may ask the AuthZEN edge PDP",
   `parameters`:#[
-    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}}
+    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The callers. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -544,7 +545,7 @@ op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `Authze
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
     #{`name`:"name",`in`:"query",`required`:false,`description`:"Read only when no certificate was presented; the PEP does not send it.",`schema`:#{`type`:"string"}},
-    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"Sent by the PEP; not read.",`schema`:#{`type`:"string"}}
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The configuration. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -650,7 +651,7 @@ op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
     #{`name`:"name",`in`:"query",`required`:false,`description`:"Read only when no certificate was presented; the PEP does not send it.",`schema`:#{`type`:"string"}},
-    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"Sent by the PEP; not read.",`schema`:#{`type`:"string"}}
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The settings. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},

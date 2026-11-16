@@ -1486,6 +1486,38 @@ async function childBody() {
     pepRegistry.remove('azforeign');
   });
 
+  // X12. IF-NONE-MATCH IS READ (#1830), on all five pulls, by RFC 9110's
+  // rule: the ETag as sent, weak, in a list, and `*` answer 304; another
+  // tag answers 200; `?since=` still answers 304 on its own.
+  for (const one of [['getPolicies', '/xacml/pep/policies'],
+    ['getAuthzenCatalogue', '/xacml/pep/authzen-catalogue'],
+    ['getAuthzenCallers', '/xacml/pep/authzen-callers'],
+    ['getSettings', '/xacml/pep/settings'],
+    ['getProxy', '/xacml/pep/proxy']]) {
+    const full = await request(port, 'GET', PREFIX + one[1], pullCred);
+    const etag = String(full.headers.etag || '');
+    const bare = etag.replace(/^"|"$/g, '');
+    const asked = [etag, 'W/' + etag, '"other", ' + etag, '*'];
+    const answers = [];
+    for (const field of asked) {
+      const got = await request(port, 'GET', PREFIX + one[1], pullCred,
+                                undefined, { 'if-none-match': field });
+      answers.push(got.status + (got.headers.etag === etag ? '' : '!etag'));
+    }
+    const other = await request(port, 'GET', PREFIX + one[1], pullCred,
+                                undefined, { 'if-none-match': '"other"' });
+    const since = await request(port, 'GET', PREFIX + one[1] + '?since=' +
+                                encodeURIComponent(bare), pullCred);
+    t.check(full.status === 200 && /^"[^"]+"$/.test(etag) &&
+            answers.join() === '304,304,304,304' && other.status === 200 &&
+            since.status === 304,
+            'X12. ' + one[1] + ' answers 304 to If-None-Match (as sent, ' +
+            'weak, in a list, *), 200 to another tag, and 304 to ?since=',
+            JSON.stringify({ etag: etag, answers: answers,
+                             other: other.status, since: since.status }));
+    heldToModel('X12', one[0], other);
+  }
+
   // -------------------------------------------------------------------------
   // O. OFF
   // -------------------------------------------------------------------------
