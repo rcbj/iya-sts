@@ -680,6 +680,25 @@ class WebKit {
     return html ? '<section class="secframe">' + html + '</section>' : '';
   }
 
+  // A FRAME THAT STAYS ON METADATA (rcbj 2026-11-16). `WebPages.
+  // protocolTabs()` cuts a page into tabs only at a heading at its top
+  // level, so a section framed after a tab's heading would join that tab;
+  // `data-metadata` is the splitter's marker that returns a block to
+  // Metadata. A `data-tab` heading itself is never framed: it has to stay
+  // at the top level to become the tab's label.
+  /**
+   * Draws a block inside a section frame that the tab splitter keeps on
+   * Metadata.
+   *
+   * @param html - the block as HTML, its heading first
+   * @returns the framed block, or '' for an empty one
+   */
+  static metadataFrame(html) {
+    return WebKit.frame(html).replace('<section class="secframe">',
+                                      '<section class="secframe" ' +
+                                      'data-metadata>');
+  }
+
   // A paragraph of explanation. Short ones are the paragraph they always were;
   // long ones fold. `label` overrides the derived summary and forces the fold,
   // because a caller that bothered to name a block wanted the block.
