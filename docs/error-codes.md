@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5664** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5665** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 207
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 208
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 124
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -4941,16 +4941,16 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-XACML-0001` | A request reached an XACML endpoint while the family is switched off (xacml.enabled). | HTTP 501 not_implemented |
-| `STS-XACML-0002` | A request reached a remote-PEP endpoint or POST /xacml/pip while remote enforcement points are switched off (xacml.remotePeps). | HTTP 501 not_implemented |
+| `STS-XACML-0001` | A request reached an XACML endpoint while the family is switched off (xacml.enabled). | HTTP 501 not_implemented (PIPError XML on /xacml/pip) |
+| `STS-XACML-0002` | A request reached a remote-PEP endpoint or POST /xacml/pip while remote enforcement points are switched off (xacml.remotePeps). | HTTP 501 not_implemented (PIPError XML on /xacml/pip) |
 | `STS-XACML-0003` | The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) was refused to a caller that presented no client certificate. | HTTP 403 access_denied |
 | `STS-XACML-0004` | The XACML surface was refused to a caller whose client certificate did not verify against this service's truststore. | HTTP 403 access_denied |
 | `STS-XACML-0005` | The XACML surface was refused to a verified certificate whose subject resolves to no directory entry holding XACML_USER (not in roles.xacmlUserGroup). | HTTP 403 access_denied |
 | `STS-XACML-0006` | The XACML surface was refused by the access policy to a verified caller that does hold XACML_USER — an operator-edited access-control document denied it. | HTTP 403 access_denied |
 | `STS-XACML-0007` | A remote-PEP endpoint (/xacml/pep/*, POST /xacml/pip) was refused to a caller that presented no client certificate. | HTTP 403 access_denied (PIPError XML on /xacml/pip) |
-| `STS-XACML-0008` | A remote-PEP endpoint was refused to a caller whose client certificate did not verify against this service's truststore. | HTTP 403 access_denied |
-| `STS-XACML-0009` | A remote-PEP endpoint was refused to a verified certificate whose subject resolves to no directory entry holding REMOTE_PEPS (not in roles.remotePepGroup). | HTTP 403 access_denied |
-| `STS-XACML-0010` | A remote-PEP endpoint was refused by the access policy to a verified caller that does hold REMOTE_PEPS — an operator-edited access-control document denied it. | HTTP 403 access_denied |
+| `STS-XACML-0008` | A remote-PEP endpoint was refused to a caller whose client certificate did not verify against this service's truststore. | HTTP 403 access_denied (PIPError XML on /xacml/pip) |
+| `STS-XACML-0009` | A remote-PEP endpoint was refused to a verified certificate whose subject resolves to no directory entry holding REMOTE_PEPS (not in roles.remotePepGroup). | HTTP 403 access_denied (PIPError XML on /xacml/pip) |
+| `STS-XACML-0010` | A remote-PEP endpoint was refused by the access policy to a verified caller that does hold REMOTE_PEPS — an operator-edited access-control document denied it. | HTTP 403 access_denied (PIPError XML on /xacml/pip) |
 | `STS-XACML-0011` | A decision request to POST /xacml/pdp was not a well-formed JSON Profile request. | HTTP 400 invalid_request |
 | `STS-XACML-0012` | A decision could not be made because the repository's root policy does not load; the PDP answered Indeterminate. | HTTP 200 with decision Indeterminate (XACML status syntax-error); a PEP asking it may then refuse with 403 |
 | `STS-XACML-0013` | The engine reached Indeterminate through a processing or syntax error while evaluating a policy (not a missing attribute). | HTTP 200 with decision Indeterminate (XACML status processing-error or syntax-error); a PEP asking it may then refuse with 403 |
@@ -4966,8 +4966,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0023` | A PIP query was not a well-formed <PIPRequest> carrying a <Request> and at least one <AttributeDesignator>. | HTTP 400 invalid_request (PIPError XML) |
 | `STS-XACML-0024` | A PIP query named more designators than xacml.pipMaxDesignators allows. | HTTP 400 invalid_request (PIPError XML) |
 | `STS-XACML-0025` | A PIP query carried a designator field or subject-id that is over its length cap or contains a control character. | HTTP 400 invalid_request (PIPError XML) |
-| `STS-XACML-0026` | A write to ou=policies, ou=peps or ou=roles was refused because no embedded directory is loaded in this process. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors }; remote PEP register/heartbeat: HTTP 400/404 invalid_request |
-| `STS-XACML-0027` | The embedded directory refused a write or removal in ou=policies, ou=peps or ou=roles — usually a container at its maximum. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors }; remote PEP register/heartbeat: HTTP 400/404 invalid_request |
+| `STS-XACML-0026` | A write to ou=policies, ou=peps or ou=roles was refused because no embedded directory is loaded in this process. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors }; remote PEP register/heartbeat: HTTP 503 server_error |
+| `STS-XACML-0027` | The embedded directory refused a write or removal in ou=policies, ou=peps or ou=roles — usually a container at its maximum. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors }; remote PEP register/heartbeat: HTTP 507 server_error |
 | `STS-XACML-0028` | A policy document was refused at write: it does not parse or fails XACML static type checking. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0029` | A policy write named an entry that is not 1 to 128 letters, digits, dot, dash or underscore. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0030` | A policy write asked to be the root while another policy already is. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
@@ -5041,8 +5041,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0176` | Taking an owner off a role was refused: the value is not one of the role's owners (#604). | HTTP 400 (API) or a refusal on the role page |
 | `STS-XACML-0177` | The access policy refused a request to GET /xacml, POST /xacml/pdp or GET /xacml/policies: the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied |
 | `STS-XACML-0178` | The access policy refused a request to GET /xacml, POST /xacml/pdp or GET /xacml/policies: the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
-| `STS-XACML-0179` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied |
-| `STS-XACML-0180` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0179` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied (PIPError XML on /xacml/pip) |
+| `STS-XACML-0180` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied (PIPError XML on /xacml/pip) |
 | `STS-XACML-0181` | The access gate had no decider, or its decider answered nothing: refused in product mode, allowed in development (#1450). | — |
 | `STS-XACML-0182` | An access check named no resource or no action, a defect at the call site: refused in product mode, allowed in development (#1450). | — |
 | `STS-XACML-0183` | The issuance gate refused because no decision could be made, in product (ASVS 5.0.0 16.5.3). | the token is not issued |
@@ -5148,6 +5148,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0283` *(retired)* | A remote PEP's Sync was refused because nudging is stopped for that PEP (disable-pep). Retired the day it was added: Sync dials a PEP whose change nudges are stopped (rcbj, 2026-11-16). | HTTP 400 on /admin-api |
 | `STS-XACML-0284` | A remote PEP's Sync was refused because the PEP has no notify URL, or its notify URL cannot be dialled (not https, or outside xacml.pepNotifyAllowedHosts). | HTTP 400 on /admin-api |
 | `STS-XACML-0285` | A remote PEP's Sync dialled the PEP and the nudge was not delivered: the connection failed, the certificate did not verify, or the PEP refused it. The result is recorded on the PEP's row. | HTTP 400 on /admin-api |
+| `STS-XACML-0298` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 
 ## STS-XPEP
 

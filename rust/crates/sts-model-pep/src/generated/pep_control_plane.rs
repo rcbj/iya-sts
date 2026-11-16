@@ -448,7 +448,6 @@ pub mod components {
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct ListenerCertificate {
-        pub ok: bool,
         pub pep: String,
         pub listener: String,
         pub renew: i64,
@@ -895,6 +894,9 @@ pub mod components {
     #[serde(deny_unknown_fields)]
     pub struct ProxyRoute {
         pub id: String,
+        /// Never /.iya-pep or under /.iya-pep/, which the proxy keeps
+        /// (STS-XACML-0298 at the save; a stored one makes the pull configured:
+        /// false).
         pub path: String,
         #[serde(rename = "match")]
         pub match_: ProxyRouteMatch,

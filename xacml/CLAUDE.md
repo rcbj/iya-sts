@@ -1284,6 +1284,57 @@ token that moves when nothing sent moved costs a re-pull and no more.)
 `current` is therefore a COMPARISON this service performs rather than a claim
 the PEP makes about itself.
 
+## What modelling the control plane corrected (#1830, 2026-11-16)
+
+`models/pep/pep_control_plane.tsp` describes every `/xacml/pep/*` answer and
+`POST /xacml/pip` (`xacml-pep/CLAUDE.md`, *THE MODEL OF EVERY ENDPOINT*), and
+writing it found six places where the service was irregular; a seventh
+came from the PEP's side. Each is fixed, and each keeps what a deployed PEP
+relies on — it treats any answer but 200, 201 and 304 as a failure and reads
+only the members the model names:
+
+* **A pull touches the CERTIFICATE's row.** `GET /xacml/pep/policies?pep=`
+  moved that row's `lastSeen` whatever the certificate said, so any
+  `REMOTE_PEPS` holder could keep another PEP looking alive after it had
+  gone. The name is `pepNameOf()`'s now, as on every other door: `?pep=` is
+  read only with no certificate. A PEP sends its own name, which is its
+  certificate's. (`authzen_evaluation.js` X11.)
+* **`If-None-Match` is read on all five pulls** (`unchanged()`): RFC 9110
+  section 13.1.2, `*` or a list, weak comparison. Only `?since=` answered
+  304 before, so the header the PEP sends on the settings and proxy pulls
+  was answered 200 with the whole body every time. `?since=` stays. (X12.)
+* **Register and heartbeat answer the registry's status**, carried on every
+  refusal and argued at `PepResult` in `xacml_pep_registry.ts`: 400 a bad
+  name or hostname, 404 a heartbeat from no row, **503** no directory
+  (`STS-XACML-0026`), **507** the directory refused the write — which
+  `writePep()` does only at `xacml.maxPeps` or the entry cap (`0027`).
+  Register answered every refusal 400 and the heartbeat every one 404, so a
+  fault of this service's read as the PEP's. (`xacml_pep.js` 4, X13.)
+* **`POST /xacml/pip` answers EVERY refusal as a `<PIPError>`** — the gate's
+  403 (`error="access_denied"`) and the off switches' 501
+  (`not_implemented`) as well as its own 400 and 429 — through an `xml` flag
+  on `offCheck()`, `remotePepOffCheck()` and `pepAccess()` that only the PIP
+  passes. The codes recorded are unchanged; every other door stays JSON.
+  (X14; `sts_xacml_endpoints.js` reads the two members out of the XML.)
+* **The listener certificate's 200 carries no `ok`**, which was
+  `issueForListener()`'s own flag sent whole. (`xacml_pep_proxy.js` L9b.)
+* **The nudge's `pdp` names the realm's PDP**: every caller passed `''`, so
+  it was always empty. An empty issuer asks `PepNotifier`'s `pdpIdentity()`
+  — the base `/xacml/pep/*` is served under, pinned where a listener or
+  `global.publicBaseUrl` pins it, else that of the request that made the
+  change (`helpers.urlOf()`), realm prefix included; `''` only with neither,
+  the rule every request-less URL here follows. KEPT rather than removed,
+  because the model and the PEP's generated type require it; the PEP reads
+  nothing in the body but `full`. (`pep_listener_certificate.js` F1d.)
+* **A route may not be `/.iya-pep` or under `/.iya-pep/`** (`STS-XACML-0298`,
+  `PepProxy.reservedPath()`): the proxy keeps that prefix for its callback
+  and sign-out and answers 404 (`STS-XPEP-0124`) to the rest, and an updated
+  PEP refuses the whole configuration holding such a route and keeps its
+  last good one. A document stored before this fails the pull's validation
+  like any stored document the grammar refuses — logged `STS-XACML-0200`,
+  pulled as `configured: false`, so the proxy answers 404 until an
+  administrator saves it again. (`xacml_pep_proxy.js` A3, A6, C9b.)
+
 ## `GET /xacml/pep/authzen-catalogue` — the pull's other half (#1179)
 
 **The container answers AuthZEN as an edge PDP** (`xacml-pep/CLAUDE.md`), and

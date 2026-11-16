@@ -197,7 +197,16 @@ interface PepNotifierDeps {
   // runs. See the comment on the headers block in `nudge()` for why the nudge
   // carries one at all.
   userAgent: string;
+  // The `pdp` member of the body (#1830): the base this realm's PDP is
+  // reached at, '' when it cannot be known. `nudge()` argues it.
+  pdpIdentity(): string;
 }
+
+/**
+ * The path every remote PEP's base URL (`PEP_PDP_URL`) is the base of: the
+ * pull, whose hosted application the `pdp` member's base is that of.
+ */
+const PDP_PULL_PATH = '/xacml/pep/policies';
 
 // A PEP that answers a nudge with more than this is not answering a nudge. The
 // expected reply is 204 with nothing in it; 16 KiB is generous for the error
@@ -283,7 +292,19 @@ class PepNotifier {
         helpers.log.debug("Leaving pepTlsChain().");
         return pki.useCaseChainPems('', 'pep-tls');
       },
-      userAgent: version.userAgent('xacml-pdp-notify')
+      userAgent: version.userAgent('xacml-pdp-notify'),
+      pdpIdentity: function () {
+        helpers.log.debug("Entering pdpIdentity().");
+        // The base `/xacml/pep/*` is served under in this realm: pinned
+        // where the listener or `global.publicBaseUrl` pins it, else the
+        // base the request that made the change was answered under, moved
+        // to the PDP's application (`helpers.urlOf()`) — the rule every URL
+        // this service builds follows. Nothing pinned and no request is ''.
+        const url = helpers.urlOf(audit.currentRequest(), PDP_PULL_PATH);
+        helpers.log.debug("Leaving pdpIdentity().");
+        return /^https?:\/\//i.test(url)
+          ? url.slice(0, url.length - PDP_PULL_PATH.length) : '';
+      }
     };
   }
 
@@ -598,7 +619,8 @@ class PepNotifier {
    * It resolves and never rejects; a nudge refused before dialling is
    * recorded on the audit log.
    * @param url - the PEP's notify URL
-   * @param issuer - the PDP's identifier, carried as `pdp` in the body
+   * @param issuer - the PDP's identifier, carried as `pdp` in the body;
+   *   empty asks `pdpIdentity()` for this realm's (#1830)
    * @param options - `{ full: true }` asks the PEP to pull every document
    *   whole (a Sync from the console, 2026-11-16)
    * @returns a promise of `{ ok, status, why }`
@@ -653,10 +675,16 @@ class PepNotifier {
       // rather than being answered 304. It carries no content, so the
       // nudge is still never the mechanism; a PEP that does not read it
       // pulls as it always did.
+      // `pdp` IS THIS REALM'S PDP (#1830): the base the PEP's own
+      // `PEP_PDP_URL` names, realm prefix included, so a receiver can tell
+      // which PDP — and which realm of it — is asking. Every caller passed
+      // '' until then, so the member was always empty. An explicit issuer
+      // still wins; '' asks `pdpIdentity()`, which is '' only with nothing
+      // pinned and no request in hand. The PEP reads none of it.
       const fields: Record<string, unknown> = {
         event: 'policy-repository-changed',
         at: new Date().toISOString(),
-        pdp: String(issuer || '')
+        pdp: String(issuer || self.deps.pdpIdentity() || '')
       };
       if (full) {
         fields.full = true;

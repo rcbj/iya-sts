@@ -3,7 +3,7 @@
   "info": {
     "title": "IYA STS remote PEP control plane",
     "version": "1",
-    "description": "What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304. Errors are the Error object, with Cache-Control: no-store; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+    "description": "What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/xml on POST /xacml/pip and Accept: application/json everywhere else, and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
   },
   "servers": [
     {
@@ -1337,7 +1337,8 @@
           },
           "path": {
             "type": "string",
-            "pattern": "^/"
+            "pattern": "^/",
+            "description": "Never /.iya-pep or under /.iya-pep/, which the proxy keeps (STS-XACML-0298 at the save; a stored one makes the pull configured: false)."
           },
           "match": {
             "type": "string",
@@ -2031,10 +2032,6 @@
       "ListenerCertificate": {
         "type": "object",
         "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          },
           "pep": {
             "type": "string"
           },
@@ -2077,7 +2074,6 @@
         },
         "additionalProperties": false,
         "required": [
-          "ok",
           "pep",
           "listener",
           "renew",
@@ -2445,7 +2441,7 @@
       "PipError": {
         "type": "string",
         "contentMediaType": "application/xml",
-        "description": "<PIPError xmlns=\"urn:sts:xacml:pip:1.0\" error=\"invalid_request|too_many_requests\"><Description>…</Description></PIPError>",
+        "description": "<PIPError xmlns=\"urn:sts:xacml:pip:1.0\" error=\"invalid_request|too_many_requests|access_denied|not_implemented\"><Description>…</Description></PIPError>",
         "x-iya-xml": {
           "namespace": "urn:sts:xacml:pip:1.0",
           "root": "PIPError"
@@ -2491,7 +2487,7 @@
             }
           },
           "400": {
-            "description": "The register refused: no usable name (STS-XACML-0019), a bad hostname (0261), no directory (0026), or the directory refused or xacml.maxPeps is reached (0027).",
+            "description": "No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2522,6 +2518,26 @@
           },
           "501": {
             "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The directory refused the entry: ou=peps holds xacml.maxPeps, or the directory its entry cap (STS-XACML-0027): server_error, until an operator makes room.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2580,7 +2596,7 @@
             }
           },
           "404": {
-            "description": "Not registered (STS-XACML-0021); also no directory (0026) and the directory refused (0027).",
+            "description": "Not registered (STS-XACML-0021).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2591,6 +2607,26 @@
           },
           "501": {
             "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No embedded directory in this process (STS-XACML-0026): server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The directory refused the write (STS-XACML-0027): server_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2618,10 +2654,19 @@
             }
           },
           {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "pep",
             "in": "query",
             "required": false,
-            "description": "The register name, whose last-seen time is touched. Not bound to the certificate.",
+            "description": "The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",
             "schema": {
               "type": "string"
             }
@@ -2690,6 +2735,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2731,7 +2785,7 @@
             }
           },
           "500": {
-            "description": "The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since is compared.",
+            "description": "The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since or If-None-Match is compared.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2762,6 +2816,15 @@
             "name": "since",
             "in": "query",
             "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
             "schema": {
               "type": "string"
             }
@@ -2845,7 +2908,7 @@
             "name": "If-None-Match",
             "in": "header",
             "required": false,
-            "description": "Sent by the PEP; not read.",
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
             "schema": {
               "type": "string"
             }
@@ -2929,7 +2992,7 @@
             "name": "If-None-Match",
             "in": "header",
             "required": false,
-            "description": "Sent by the PEP; not read.",
+            "description": "The ETag held; a match (weak comparison, a list, or *) answers 304.",
             "schema": {
               "type": "string"
             }
@@ -3548,11 +3611,11 @@
             }
           },
           "403": {
-            "description": "The gate, in JSON.",
+            "description": "The gate (the codes in the document's description), error=\"access_denied\".",
             "content": {
-              "application/json": {
+              "application/xml": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/PipError"
                 }
               }
             }
@@ -3575,11 +3638,11 @@
             }
           },
           "501": {
-            "description": "XACML or remote PEPs off, in JSON.",
+            "description": "XACML or remote PEPs off (STS-XACML-0001, 0002), error=\"not_implemented\".",
             "content": {
-              "application/json": {
+              "application/xml": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/PipError"
                 }
               }
             }

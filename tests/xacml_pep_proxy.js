@@ -402,6 +402,13 @@ async function childBody() {
       public: true }] }, 'STS-XACML-0193'],
     ['a path with no leading slash', { routes: [{ id: 'a', path: 'a',
       public: true }] }, 'STS-XACML-0193'],
+    // #1830: the proxy's own prefix, which an updated PEP refuses whole.
+    ['the reserved prefix itself', { routes: [{ id: 'a', path: '/.iya-pep',
+      public: true }] }, 'STS-XACML-0298'],
+    ['the reserved callback', { routes: [{ id: 'a',
+      path: '/.iya-pep/callback', public: true }] }, 'STS-XACML-0298'],
+    ['a path under the reserved prefix', { routes: [{ id: 'a',
+      path: '/.iya-pep/x/y', public: true }] }, 'STS-XACML-0298'],
     ['match glob', { routes: [{ id: 'a', path: '/a', match: 'glob',
       public: true }] }, 'STS-XACML-0194'],
     ['an unknown method', { routes: [{ id: 'a', path: '/a',
@@ -502,6 +509,13 @@ async function childBody() {
     { publicBaseUrl: 'http://xacml-pep:9180' }));
   t.check(devClear.ok, 'A5. in development it is accepted',
           JSON.stringify(devClear));
+  // A6 (#1830): only the prefix and what is under it are reserved.
+  const nearReserved = pepProxy.validate(Object.assign(example(), {
+    routes: [{ id: 'a', path: '/.iya-peps', public: true },
+             { id: 'b', path: '/x/.iya-pep', public: true }] }));
+  t.check(nearReserved.ok,
+          'A6. /.iya-peps and /x/.iya-pep are not the reserved prefix',
+          JSON.stringify(nearReserved));
 
   // -------------------------------------------------------------------------
   // THE STACK: a realm, a remote PEP's credential, a listener.
@@ -876,6 +890,18 @@ async function childBody() {
           !r.json.proxy && /does not validate/.test(r.json.note),
           'C9. a stored value that does not validate is pulled as ' +
           'configured: false', brief(r));
+  // C9b (#1830): a document stored before the reserved prefix was refused
+  // fails the same validation, and is pulled as configured: false.
+  const storedReserved = Object.assign(example(), {
+    routes: [{ id: 'cb', path: '/.iya-pep/callback', public: true }] });
+  inRealm(function () {
+    peps.setProxy(NAME, JSON.stringify(storedReserved));
+  });
+  r = await request(port, 'GET', PULL, pepCred);
+  t.check(r.status === 200 && r.json && r.json.configured === false &&
+          !r.json.proxy && /does not validate/.test(r.json.note),
+          'C9b. a stored route under /.iya-pep/ is pulled as configured: ' +
+          'false (STS-XACML-0200 in the log)', brief(r));
 
   // -------------------------------------------------------------------------
   // D. THE FOUR VALIDATION DOORS.
@@ -2185,6 +2211,7 @@ async function childBody() {
   const leaf = issuedL.json && issuedL.json.certificatePem
     ? new nodeCrypto.X509Certificate(issuedL.json.certificatePem) : null;
   t.check(issuedL.status === 200 && issuedL.json.issued === true &&
+          !('ok' in issuedL.json) &&
           issuedL.headers['cache-control'] === 'no-store' &&
           !/PRIVATE KEY/.test(issuedL.text) && leaf &&
           leaf.publicKey.export({ type: 'spki', format: 'pem' }) ===
@@ -2197,6 +2224,14 @@ async function childBody() {
           'L9. the listener\'s certificate certifies the PEP\'s own key, ' +
           'names the definition\'s names and not the request\'s, with its ' +
           'chain, no-store and no key', brief(issuedL));
+  // L9b. THE ANSWER IS THE MODEL'S (#1830): closed, so the internal `ok`
+  // it carried until then would fail here.
+  const certWrong = require('./tools/pep_model').problems(
+    'pep-control-plane.json', 'postListenerCertificate', issuedL.status,
+    issuedL.json);
+  t.check(certWrong.length === 0,
+          'L9b. the listener certificate\'s 200 is the model\'s answer, ' +
+          'with no ok member', certWrong.join('; '));
   const againL = await request(port, 'POST', CERT, pepCred,
                                { listener: 'pub', csr: csrPem });
   t.check(againL.status === 200 && againL.json.issued === false &&

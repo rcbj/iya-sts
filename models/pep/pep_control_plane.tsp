@@ -24,13 +24,6 @@
 // WHAT IS IRREGULAR, DECLARED AS IT IS (`xacml-pep/CLAUDE.md` has the
 // argument for each):
 //
-// * a pull answers 304 only on `?since=`; `If-None-Match`, which the PEP
-//   also sends on the settings and proxy pulls, is not read;
-// * the PIP answers its own refusals as XML `PIPError` (400, 429) and the
-//   shared gate's as JSON (403, 501);
-// * the heartbeat answers every registry refusal 404, register every one
-//   400;
-// * the listener certificate's 200 carries `ok: true`;
 // * `basic` answers a lockout 429 `{valid, retryAfterS}` and the limiter's
 //   429 `Error`.
 //
@@ -46,7 +39,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP control plane",
     `version`:"1",
-    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304. Errors are the Error object, with Cache-Control: no-store; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/json and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/xml on POST /xacml/pip and Accept: application/json everywhere else, and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
   },
   `servers`:#[
     #{`url`:"https://localhost:8081",`description`:"PEP_PDP_URL: the service, with /realm/<id> for a realm."}
@@ -114,10 +107,12 @@ namespace IyaSts.Pep.ControlPlane {
   `responses`:#{
     `200`:#{`description`:"Registered again.",`content`:#{`application/json`:#{`schema`:null}}},
     `201`:#{`description`:"Registered for the first time.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"The register refused: no usable name (STS-XACML-0019), a bad hostname (0261), no directory (0026), or the directory refused or xacml.maxPeps is reached (0027).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client.",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
+    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",`content`:#{`application/json`:#{`schema`:null}}},
+    `507`:#{`description`:"The directory refused the entry: ou=peps holds xacml.maxPeps, or the directory its entry cap (STS-XACML-0027): server_error, until an operator makes room.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterRequest`,
@@ -126,7 +121,9 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
-  `responses/501/content/application~1json/schema`: `Error`): void;
+  `responses/501/content/application~1json/schema`: `Error`,
+  `responses/503/content/application~1json/schema`: `Error`,
+  `responses/507/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- heartbeat
 
@@ -284,8 +281,10 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
     `200`:#{`description`:"Acknowledged.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"No name (STS-XACML-0020) or a bad hostname (0261).",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `404`:#{`description`:"Not registered (STS-XACML-0021); also no directory (0026) and the directory refused (0027).",`content`:#{`application/json`:#{`schema`:null}}},
-    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
+    `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},
+    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error.",`content`:#{`application/json`:#{`schema`:null}}},
+    `507`:#{`description`:"The directory refused the write (STS-XACML-0027): server_error.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatRequest`,
@@ -293,7 +292,9 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/404/content/application~1json/schema`: `Error`,
-  `responses/501/content/application~1json/schema`: `Error`): void;
+  `responses/501/content/application~1json/schema`: `Error`,
+  `responses/503/content/application~1json/schema`: `Error`,
+  `responses/507/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- policies
 
@@ -324,7 +325,8 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `description`:"Every PEP_POLL_INTERVAL_MS, on a nudge, and when a heartbeat says the PEP is not current.",
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`description`:"The token held; equal to the current one answers 304.",`schema`:#{`type`:"string"}},
-    #{`name`:"pep",`in`:"query",`required`:false,`description`:"The register name, whose last-seen time is touched. Not bound to the certificate.",`schema`:#{`type`:"string"}}
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}},
+    #{`name`:"pep",`in`:"query",`required`:false,`description`:"The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The policies. ETag: \"<syncToken>\".",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -374,13 +376,14 @@ op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
   `operationId`:"getAuthzenCatalogue",
   `summary`:"Pull the realm's AuthZEN attribute catalogue",
   `parameters`:#[
-    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}}
+    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The catalogue. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `500`:#{`description`:"The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since is compared.",`content`:#{`application/json`:#{`schema`:null}}},
+    `500`:#{`description`:"The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since or If-None-Match is compared.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
@@ -427,7 +430,8 @@ op `getAuthzenCatalogue`(`responses/200/content/application~1json/schema`: `Auth
   `operationId`:"getAuthzenCallers",
   `summary`:"Pull who may ask the AuthZEN edge PDP",
   `parameters`:#[
-    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}}
+    #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The callers. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -474,7 +478,7 @@ op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `Authze
 
 @component model `ProxyRoute` {
   @js(#{`pattern`:"^[A-Za-z0-9._-]{1,64}$"}) `id`: string;
-  @js(#{`pattern`:"^/"}) `path`: string;
+  @js(#{`pattern`:"^/",`description`:"Never /.iya-pep or under /.iya-pep/, which the proxy keeps (STS-XACML-0298 at the save; a stored one makes the pull configured: false)."}) `path`: string;
   `match`: "prefix" | "exact";
   @js(#{`description`:"Empty denies every method."}) `methods`: ("GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS")[];
   `mechanisms`: ("session" | "oauth2" | "saml2" | "basic")[];
@@ -544,7 +548,7 @@ op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `Authze
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
     #{`name`:"name",`in`:"query",`required`:false,`description`:"Read only when no certificate was presented; the PEP does not send it.",`schema`:#{`type`:"string"}},
-    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"Sent by the PEP; not read.",`schema`:#{`type`:"string"}}
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The configuration. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -650,7 +654,7 @@ op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`schema`:#{`type`:"string"}},
     #{`name`:"name",`in`:"query",`required`:false,`description`:"Read only when no certificate was presented; the PEP does not send it.",`schema`:#{`type`:"string"}},
-    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"Sent by the PEP; not read.",`schema`:#{`type`:"string"}}
+    #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The settings. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -672,7 +676,6 @@ op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull
 }
 
 @component model `ListenerCertificate` {
-  @js(#{`const`:true}) `ok`: boolean;
   `pep`: string;
   `listener`: string;
   `renew`: int64;
@@ -920,7 +923,7 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
 @js(#{`$raw`:#{`type`:"string",`contentMediaType`:"application/xml",`description`:"A PIPResponse in urn:sts:xacml:pip:1.0: one XACML core Attributes per category asked (only access-subject is ever resolved), each Attribute (IncludeInResult false) with one or more AttributeValue; an empty bag is an absent Attribute. Then, if any, Unresolved holding a Designator (Category, AttributeId, DataType, MustBePresent) with a Reason for each designator not resolved.",`x-iya-xml`:#{`namespace`:"urn:sts:xacml:pip:1.0",`root`:"PIPResponse"}}})
 @component model `PipResponse` {}
 
-@js(#{`$raw`:#{`type`:"string",`contentMediaType`:"application/xml",`description`:"<PIPError xmlns=\"urn:sts:xacml:pip:1.0\" error=\"invalid_request|too_many_requests\"><Description>…</Description></PIPError>",`x-iya-xml`:#{`namespace`:"urn:sts:xacml:pip:1.0",`root`:"PIPError"}}})
+@js(#{`$raw`:#{`type`:"string",`contentMediaType`:"application/xml",`description`:"<PIPError xmlns=\"urn:sts:xacml:pip:1.0\" error=\"invalid_request|too_many_requests|access_denied|not_implemented\"><Description>…</Description></PIPError>",`x-iya-xml`:#{`namespace`:"urn:sts:xacml:pip:1.0",`root`:"PIPError"}}})
 @component model `PipError` {}
 
 @endpoint("/xacml/pip", "post", #{
@@ -931,16 +934,16 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
   `responses`:#{
     `200`:#{`description`:"The attributes. Cache-Control: no-store.",`content`:#{`application/xml`:#{`schema`:null}}},
     `400`:#{`description`:"Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025).",`content`:#{`application/xml`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate, in JSON.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate (the codes in the document's description), error=\"access_denied\".",`content`:#{`application/xml`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0022). Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/xml`:#{`schema`:null}}},
-    `501`:#{`description`:"XACML or remote PEPs off, in JSON.",`content`:#{`application/json`:#{`schema`:null}}}
+    `501`:#{`description`:"XACML or remote PEPs off (STS-XACML-0001, 0002), error=\"not_implemented\".",`content`:#{`application/xml`:#{`schema`:null}}}
   }
 })
 op `postPip`(`requestBody/content/application~1xml/schema`: `PipRequest`,
   `responses/200/content/application~1xml/schema`: `PipResponse`,
   `responses/400/content/application~1xml/schema`: `PipError`,
-  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/403/content/application~1xml/schema`: `PipError`,
   `responses/429/content/application~1xml/schema`: `PipError`,
-  `responses/501/content/application~1json/schema`: `Error`): void;
+  `responses/501/content/application~1xml/schema`: `PipError`): void;
 
 }

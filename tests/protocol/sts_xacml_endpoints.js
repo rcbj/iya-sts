@@ -522,6 +522,24 @@ function pepRequest(method, url, identity, payload, rawBody) {
           // whole rather than as a parse failure.
           body = null;
         }
+        // `POST /xacml/pip` ANSWERS EVERY REFUSAL AS A <PIPError> (#1830) —
+        // the gate's 403 and the off switches' 501 as well as its own —
+        // so its two members are read out of the XML into the shape the
+        // assertions below read from every other door, with `xml: true`
+        // saying where they came from.
+        const pipError = body === null ? /<PIPError\b[^>]*\berror="([^"]*)"[^>]*>\s*<Description>([\s\S]*?)<\/Description>/
+          .exec(text) : null;
+        if (pipError) {
+          const unescape = function (value) {
+            log.debug("Entering unescape().");
+            log.debug("Leaving unescape().");
+            return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+              .replace(/&quot;/g, "\"").replace(/&apos;/g, "'")
+              .replace(/&amp;/g, "&");
+          };
+          body = { error: unescape(pipError[1]),
+                   error_description: unescape(pipError[2]), xml: true };
+        }
         log.debug("Leaving pepRequest(). status=" + response.statusCode);
         // `type` as well, because the fetch-based `get()` reports it and the
         // one assertion that reads it — GET /xacml must be HTML for a person —
@@ -1702,6 +1720,9 @@ async function turningItOff() {
           "xacml.remotePeps") > 0,
         "and the 501 should name the setting AND say that the register is " +
         "untouched; it says: " + r.body.error_description);
+      // The PIP's 501 is its own XML (#1830), every other door's JSON.
+      assert.strictEqual(!!r.body.xml, path === "/xacml/pip",
+        method + " " + path + " answered its 501 as " + r.type);
     });
   }
   const stillDeciding = await decisionFor(ADMIN_PERSON, "GET");
@@ -1735,6 +1756,9 @@ async function turningItOff() {
       assert.ok(String(r.body.error_description).indexOf("xacml.enabled") > 0,
         "the 501 should name xacml.enabled; it says: " +
         r.body.error_description);
+      // The PIP's 501 is its own XML (#1830), every other door's JSON.
+      assert.strictEqual(!!r.body.xml, path === "/xacml/pip",
+        method + " " + path + " answered its 501 as " + r.type);
     });
   }
 
@@ -1974,6 +1998,10 @@ async function theGateSplitsOnTheRole() {
                   .indexOf("client certificate") > 0,
         "and the refusal should say what to present; it says " +
         JSON.stringify(anonymous.body).slice(0, 300));
+      // The PIP's 403 is its own XML (#1830), every other door's JSON.
+      assert.strictEqual(!!(anonymous.body && anonymous.body.xml),
+        path === "/xacml/pip",
+        method + " " + path + " answered its 403 as " + anonymous.type);
     });
 
     const stranger = await drive(method, path, rogue);
