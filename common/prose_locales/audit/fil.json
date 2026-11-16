@@ -1871,6 +1871,34 @@
     "en": "c3a780c6921b5dd8",
     "text": "Humiling ang proxy ng isang remote PEP na i-validate ang isang credential"
   },
+  "audit.actions.xacml.pep.sync.label": {
+    "en": "a1e3feab83951fcf",
+    "text": "Hiniling sa isang remote PEP na kunin ngayon ang buong configuration nito"
+  },
+  "audit.actions.xacml.pep.listener.certificate.label": {
+    "en": "be45d48c8c187916",
+    "text": "Na-issue-han ng certificate ang HTTPS listener ng isang remote PEP"
+  },
+  "audit.actions.xacml.pep.cluster.create.label": {
+    "en": "6f6a985e3173c03a",
+    "text": "May ginawang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.delete.label": {
+    "en": "65ee97f601bfa789",
+    "text": "May binurang remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.member.add.label": {
+    "en": "dc0f84c7fa737cee",
+    "text": "May remote PEP na idinagdag sa isang cluster"
+  },
+  "audit.actions.xacml.pep.cluster.member.set.label": {
+    "en": "f40e76a089d7b7e1",
+    "text": "Itinakda ang mga address ng isang miyembro ng remote PEP cluster"
+  },
+  "audit.actions.xacml.pep.cluster.member.remove.label": {
+    "en": "a59512e4ad700e39",
+    "text": "May remote PEP na tinanggal mula sa isang cluster"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "May XACML policy na isinulat"

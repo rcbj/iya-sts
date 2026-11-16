@@ -1871,6 +1871,34 @@
     "en": "c3a780c6921b5dd8",
     "text": "遠端 PEP 的代理請求驗證一個認證"
   },
+  "audit.actions.xacml.pep.sync.label": {
+    "en": "a1e3feab83951fcf",
+    "text": "已要求遠端 PEP 立即拉取其全部設定"
+  },
+  "audit.actions.xacml.pep.listener.certificate.label": {
+    "en": "be45d48c8c187916",
+    "text": "已為遠端 PEP 的 HTTPS 接聽程式簽發憑證"
+  },
+  "audit.actions.xacml.pep.cluster.create.label": {
+    "en": "6f6a985e3173c03a",
+    "text": "已建立遠端 PEP 叢集"
+  },
+  "audit.actions.xacml.pep.cluster.delete.label": {
+    "en": "65ee97f601bfa789",
+    "text": "已刪除遠端 PEP 叢集"
+  },
+  "audit.actions.xacml.pep.cluster.member.add.label": {
+    "en": "dc0f84c7fa737cee",
+    "text": "遠端 PEP 已加入叢集"
+  },
+  "audit.actions.xacml.pep.cluster.member.set.label": {
+    "en": "f40e76a089d7b7e1",
+    "text": "已設定遠端 PEP 叢集成員的位址"
+  },
+  "audit.actions.xacml.pep.cluster.member.remove.label": {
+    "en": "a59512e4ad700e39",
+    "text": "遠端 PEP 已移出叢集"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "寫入了 XACML 原則"

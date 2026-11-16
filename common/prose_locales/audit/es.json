@@ -1871,6 +1871,34 @@
     "en": "c3a780c6921b5dd8",
     "text": "El proxy de un PEP remoto pidió validar una credencial"
   },
+  "audit.actions.xacml.pep.sync.label": {
+    "en": "a1e3feab83951fcf",
+    "text": "Se pidió a un PEP remoto que descargara ahora toda su configuración"
+  },
+  "audit.actions.xacml.pep.listener.certificate.label": {
+    "en": "be45d48c8c187916",
+    "text": "Se emitió un certificado para el escucha HTTPS de un PEP remoto"
+  },
+  "audit.actions.xacml.pep.cluster.create.label": {
+    "en": "6f6a985e3173c03a",
+    "text": "Se creó un clúster de PEP remotos"
+  },
+  "audit.actions.xacml.pep.cluster.delete.label": {
+    "en": "65ee97f601bfa789",
+    "text": "Se eliminó un clúster de PEP remotos"
+  },
+  "audit.actions.xacml.pep.cluster.member.add.label": {
+    "en": "dc0f84c7fa737cee",
+    "text": "Se añadió un PEP remoto a un clúster"
+  },
+  "audit.actions.xacml.pep.cluster.member.set.label": {
+    "en": "f40e76a089d7b7e1",
+    "text": "Se establecieron las direcciones de un miembro de un clúster de PEP remotos"
+  },
+  "audit.actions.xacml.pep.cluster.member.remove.label": {
+    "en": "a59512e4ad700e39",
+    "text": "Se quitó un PEP remoto de un clúster"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "Se escribió una política XACML"
