@@ -935,6 +935,7 @@ class PepRegistry {
     const given = record || {};
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.register(). No directory.');
+      // error-code: none — the code is the mark()'s, after the reason.
       return errorCodes.mark({ ok: false, status: 503,
                                why: 'There is no embedded directory, so ' +
                                     'there is nowhere to register a Policy ' +
@@ -943,6 +944,7 @@ class PepRegistry {
     const name = this.nameFrom(given.name);
     if (!name) {
       log.debug('Leaving PepRegistry.register(). No usable name.');
+      // error-code: none — the code is the mark()'s, after the reason.
       return errorCodes.mark({ ok: false, status: 400,
                why: 'A remote PEP is named from the common name of the ' +
                     'client certificate it registered with, or — when ' +
@@ -1028,6 +1030,7 @@ class PepRegistry {
     const written = directory.writePep(name, attributes);
     if (!written) {
       log.debug('Leaving PepRegistry.register(). The directory refused it.');
+      // error-code: none — the code is the mark()'s, after the reason.
       return errorCodes.mark({ ok: false, status: 507,
                why: 'The directory refused the entry. ou=peps may be at its ' +
                     'maximum of ' + config.value('xacml.maxPeps') +
@@ -1070,6 +1073,7 @@ class PepRegistry {
     log.debug('Entering PepRegistry.heartbeat(). name=' + name);
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.heartbeat(). No directory.');
+      // error-code: none — the code is the mark()'s, after the reason.
       return errorCodes.mark({ ok: false, status: 503,
                                why: 'There is no embedded directory.' },
                              'STS-XACML-0026');
@@ -1077,6 +1081,7 @@ class PepRegistry {
     const existing = this.read(name);
     if (!existing) {
       log.debug('Leaving PepRegistry.heartbeat(). Not registered.');
+      // error-code: none — the code is the mark()'s, after the reason.
       return errorCodes.mark({ ok: false, status: 404,
                why: 'No Policy Enforcement Point is registered as "' + name +
                     '". Register first — POST /xacml/pep/register. A ' +
@@ -1140,11 +1145,11 @@ class PepRegistry {
     const written = directory.writePep(name, attributes);
     log.debug('Leaving PepRegistry.heartbeat(). ' +
               (written ? 'Recorded.' : 'Refused.'));
-    return written ? { ok: true, name: name, current: this.syncToken() }
-                   : errorCodes.mark({ ok: false, status: 507,
-                                       why: 'The directory refused the ' +
-                                            'entry.' },
-                                     'STS-XACML-0027');
+    if (written) {
+      return { ok: true, name: name, current: this.syncToken() };
+    }
+    return errorCodes.mark({ ok: false, status: 507, why: 'The directory ' +
+                             'refused the entry.' }, 'STS-XACML-0027');
   }
 
   // What happened to the last nudge, written back onto the row. Separate from

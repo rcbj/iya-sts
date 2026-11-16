@@ -581,8 +581,10 @@ class XacmlSurface {
     const { log } = this.deps;
     log.debug("Entering XacmlSurface.refuse().");
     if (xml) {
+      // error-code: none — the helper's body; its callers mark the code.
       self.pipFail(res, status, code, description);
     } else {
+      // error-code: none — the helper's body; its callers mark the code.
       self.fail(res, status, code, description);
     }
     log.debug("Leaving XacmlSurface.refuse().");
@@ -2647,12 +2649,12 @@ class XacmlSurface {
       });
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/register. Refused.');
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0019');
         // THE REGISTRY'S STATUS (#1830), which names whose fault the refusal
         // is: every one was 400 until then, so a service with no directory
         // or a full ou=peps told the PEP its request was malformed. The
         // statuses are argued at `PepResult` in `xacml_pep_registry.ts`.
         const status = result.status || 400;
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0019');
         self.fail(res, status, status >= 500 ? 'server_error'
                                              : 'invalid_request', result.why);
         return;
@@ -3252,13 +3254,13 @@ class XacmlSurface {
       });
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0021');
         // THE REGISTRY'S STATUS (#1830): 404 for a PEP that never
         // registered, 400 for a bad `hostname` (#1760), 503 with no
         // directory and 507 when the directory refused the write — the
         // last two were 404 until then, telling a PEP it was not registered
         // when the fault was this service's. Argued at `PepResult`.
         const status = result.status || 404;
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0021');
         self.fail(res, status, status >= 500 ? 'server_error'
                                              : 'invalid_request', result.why);
         return;
