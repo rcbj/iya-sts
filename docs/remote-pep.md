@@ -485,35 +485,61 @@ username, and `PEP_CLIENT_ID=sts-remote-pep` (the default).
 ### Upgrading a deployment whose PEPs use a certificate
 
 **`xacml.pepAuthentication` defaults to `token` from 1.1.0**, and the PEP
-image no longer presents a client certificate. A 1.0.0 deployment's PEPs
-authenticate with a certificate, so on the default they are refused
-(`STS-XACML-0289`, 401) until they run on a key. Upgrade in this order:
+image no longer presents a client certificate. Every PEP a 1.0.0 deployment
+registered authenticated with a certificate, because 1.0.0 had no tokens
+for a PEP, so on the new default each would be refused (`STS-XACML-0289`,
+401).
 
-1. **Before upgrading the service, set `xacml.pepAuthentication` to `either`**
-   in every realm whose PEPs still present a certificate — on the console's
-   settings page, with `POST /admin-api/config/set`, or as
-   `STS_XACML_PEP_AUTHENTICATION=either` (or in your own appconfig file). A
-   value you set is kept across the upgrade; only the default moved. A 1.0.0
-   service does not know the setting, so set it in the appconfig file or
-   environment the 1.1.0 image starts with, or right after it starts.
-2. **Give each PEP its key**: generate it where the PEP runs and certify it
+**The 1.1.0 upgrade script keeps them working.** `postgres/upgrade-1.0.0.sql`
+and `mariadb/upgrade-1.0.0.sql` ([Release notes](release-notes.md#110))
+store `xacml.pepAuthentication` = `either` in every realm that has at least
+one registered remote PEP — an entry under that realm's `ou=peps` — and only
+where the realm stores no value of its own:
+
+* **The default realm**, when it has a PEP, gets `either` as a service-wide
+  setting. A service-wide setting is every realm's fallback, so the script
+  also stores `token` in each other realm that has no PEP and no value of
+  its own, which is the value it would have had. A realm you create after
+  the upgrade inherits `either` from the default realm until you set the
+  default realm to `token`.
+* **Any other realm** with a PEP gets `either` in its own settings.
+* **A realm with no PEP, and a new installation**, get the default, `token`.
+
+A value you stored is never replaced, and a second run of the script writes
+nothing. A 1.1.0 service that was started before the script picks the
+values up at its next change-log pull.
+
+**Then move each realm to `token`:**
+
+1. **Give each PEP its key**: generate it where the PEP runs and certify it
    with `issue-pep-credential`
    ([Provisioning the key](#provisioning-the-key-issue-pep-credential)), then
    start the 1.1.0 PEP image with `PEP_ASSERTION_KEY`. `GET /`'s
    `credential` shows a token held for each audience once it works.
-3. **Set `xacml.pepAuthentication` back to `token`** (or reset it to the
-   default) once every PEP in the realm runs on its key.
+2. **Set `xacml.pepAuthentication` to `token`** in the realm (the console's
+   settings page, or `POST /admin-api/config/set`), or reset it to the
+   default, once every PEP in the realm runs on its key. In the default
+   realm, reset it to the default and any realms the script pinned to
+   `token` can be reset too.
 
-**If you miss step 1**, the refusal says so: where the refused request
-presented a certificate that verifies, the 401's description says that
-`either` would accept it and names `PEP_ASSERTION_KEY`, and the service logs
-a warning under `STS-XACML-0289` once per realm until it restarts.
+**Without the script — the LDIF store, a cell or tier database that does
+not hold the directory and the settings together, or an upgrade that skips
+it** — set `xacml.pepAuthentication` to `either` yourself in each realm whose
+PEPs still present a certificate, as `STS_XACML_PEP_AUTHENTICATION=either`,
+in your own appconfig file, or right after the 1.1.0 service starts. A store
+that is only in memory starts empty and has no PEPs to keep.
+
+**If a PEP is refused anyway**, the refusal says so: where the refused
+request presented a certificate that verifies, the 401's description says
+that `either` would accept it and names `PEP_ASSERTION_KEY`, and the service
+logs a warning under `STS-XACML-0289` once per realm until it restarts.
 
 **Upgrading an installation that layers its own appconfig file.**
 `xacml.pepAuthentication` is new in 1.1.0. If you start a new image over
-your own file in `env/`, that file must carry the setting (`either` keeps the
-1.0.0 behaviour); a setting with no value anywhere stops the service from
-starting ([Configuration](configuration.md)).
+your own file in `env/`, that file must carry the setting; a setting with no
+value anywhere stops the service from starting
+([Configuration](configuration.md)). A value set there is the
+service-wide one, so the script's stored values still decide in each realm.
 
 ### The client certificate is retired
 

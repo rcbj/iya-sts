@@ -15041,10 +15041,12 @@ const SETTINGS = [
   // issues. `either` through phase 3 of the plan; PHASE 4 (rcbj, 2026-11-16)
   // MADE `token` THE DEFAULT, and `certificate` and `either` stay an
   // operator's choice for good. A value an operator stored or set in an
-  // appconfig file wins over this default, as every value does; a 1.0.0
-  // deployment whose PEPs still present a certificate sets `either` before
-  // it upgrades (docs/release-notes.md), and a PEP refused for that is
-  // refused under STS-XACML-0289 with a description saying so.
+  // appconfig file wins over this default, as every value does. The 1.1.0
+  // upgrade script (postgres/ and mariadb/upgrade-1.0.0.sql) stores `either`
+  // in every realm with a registered remote PEP, since 1.0.0's PEPs all
+  // authenticated by certificate; a store it does not reach sets it by
+  // hand, and a PEP refused for that is refused under STS-XACML-0289 with a
+  // description saying so.
   { key: 'xacml.pepAuthentication', group: 'XACML',
     label: 'How a remote PEP authenticates',
     env: 'STS_XACML_PEP_AUTHENTICATION', type: 'enum',

@@ -225,14 +225,17 @@ every call, unchanged.
   (console, `/admin-api/config/set`, a realm's overrides) or set in an
   appconfig file wins as every value does; with neither, the operator sets
   `either` before upgrading (`docs/release-notes.md`, `docs/remote-pep.md`
-  *Upgrading a deployment whose PEPs use a certificate*). So the refusal is
+  *Upgrading a deployment whose PEPs use a certificate*), and the upgrade
+  script does that for a SQL store (below). So the refusal is
   never silent: where the refused request presented a certificate that
   VERIFIES, `0289`'s description says `either` would accept it and names
   `PEP_ASSERTION_KEY`, and `warnCertificateRefused()` logs a warning under
-  `0289` once per realm and process. **Writing `either` automatically for a
-  realm that existed before the upgrade, or whose `ou=peps` rows registered
-  by certificate, was NOT done** — it is rcbj's decision (left on #1827), and
-  the stored-value rule above already serves an operator who set it. An
+  `0289` once per realm and process. **The upgrade script writes `either`
+  for every realm with a row under its `ou=peps`** (rcbj, 2026-11-16:
+  "create a migration script"; `postgres/upgrade-1.0.0.sql`,
+  `mariadb/upgrade-1.0.0.sql`, argued in `postgres/CLAUDE.md`), since every
+  PEP 1.0.0 registered authenticated by certificate; the manual step is left
+  for a store the script does not reach (LDIF, a split cell database). An
   anonymous request is now `0289`'s 401 where it was the policy's 403
   (`STS-XACML-0007`) under `either`.
 * **THE NAME IS THE USERNAME**, `commonName` of the identity — what a

@@ -21,13 +21,23 @@ service never holds it ([How the PEP authenticates to the service](remote-pep.md
   a client certificate is refused (401, `STS-XACML-0289`). `either` and
   `certificate` stay available for an older PEP image or another
   implementation.
-* **Before you upgrade a 1.0.0 deployment whose PEPs use a client
-  certificate, set `xacml.pepAuthentication` to `either`** in each realm (or
-  `STS_XACML_PEP_AUTHENTICATION=either`), give each PEP its key, then set it
-  back to `token`
+* **The 1.1.0 upgrade script keeps a 1.0.0 deployment's PEPs working.**
+  Every PEP 1.0.0 registered authenticated by its client certificate, so
+  `postgres/upgrade-1.0.0.sql` and `mariadb/upgrade-1.0.0.sql` store
+  `xacml.pepAuthentication` = `either` in every realm with at least one
+  registered remote PEP (an entry under its `ou=peps`), only where the realm
+  stores no value. When the default realm has a PEP its `either` is
+  service-wide, so the script also stores `token` in each other realm with no
+  PEP and no value. A realm with no PEP, and a new installation, get
+  `token`.
+* **Then move each realm to `token`**: give each PEP its key
+  (`issue-pep-credential`, then `PEP_ASSERTION_KEY` on the 1.1.0 PEP image),
+  and once every PEP in the realm holds its tokens, set
+  `xacml.pepAuthentication` to `token` or reset it
   ([Upgrading a deployment whose PEPs use a certificate](remote-pep.md#upgrading-a-deployment-whose-peps-use-a-certificate)).
-  A value you set is kept; only the default moved. If you miss it, the 401
-  says that `either` would accept the PEP's certificate, and the service
+  Without the script (the LDIF store, or a split cell database), set
+  `either` yourself before the PEPs reconnect. If a PEP is refused anyway,
+  the 401 says that `either` would accept its certificate, and the service
   logs a warning under `STS-XACML-0289` once per realm.
 * **The PEP ignores `PEP_TLS_CERT`** and says so once at start
   (`STS-XPEP-0135`). `PEP_TLS_KEY` is still read as the assertion key while
@@ -259,6 +269,14 @@ Release 1.0.0's database is schema version 31. 1.1.0 adds two indexes on
   newest first without sorting the whole table.
 * `sts_sessions_subject_band`, used by the per-subject session sweep.
 
+The script also stores `xacml.pepAuthentication` = `either` in every realm
+that has a registered remote PEP and no value of its own, so PEPs that
+authenticate by client certificate keep working on 1.1.0's new default,
+`token` ([The remote PEP authenticates with its key](#the-remote-pep-authenticates-with-its-key-the-client-certificate-is-retired)).
+It prints what it stored. That step needs the directory and the settings
+in the same database; in a cell or tier database that lacks either, it
+writes nothing and says so.
+
 Run the script as the table owner, from a checkout of 1.1.0. On the
 compose stack the owner is `sts`. The application role `sts_app` cannot
 create an index.
@@ -318,7 +336,9 @@ Returning to the 1.0.0 image ignores both indexes. Leave them.
 ### MariaDB
 
 MariaDB is the [second engine](persistence.md#a-second-engine-mariadb).
-Its upgrade adds `sts_sessions_started` and records schema version 32.
+Its upgrade adds `sts_sessions_started`, records schema version 32, and
+stores `xacml.pepAuthentication` = `either` in each realm with a registered
+remote PEP, as the PostgreSQL script does.
 `sts_sessions_subject_band` is PostgreSQL only. The build does not block
 writers. Run it as an account that can `ALTER` the table,
 in the service's database, and pass `--abort-source-on-error`:
