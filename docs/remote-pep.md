@@ -73,7 +73,7 @@ container's environment:
 | Variable | Default | What it binds |
 |---|---|---|
 | `PEP_HTTP` | `false` | the decision API (`GET /`, `/protected`, `/healthcheck`, `/crl/<name>`) in plain HTTP on `PEP_PORT` (9090). `POST /notify` is not answered there |
-| `PEP_CRL_HTTP` | *(unset)* | with `PEP_HTTP` off, `GET /crl/<name>` alone on `PEP_PORT`. Unset, it is bound when the PEP has a CRL directory to serve; `false` never, `true` always |
+| `PEP_CRL_HTTP` | *(unset)* | with `PEP_HTTP` off, `GET /crl/<name>` alone on `PEP_PORT`, only when `true` (since 1.1.0; it was bound by default where the PEP had a CRL directory). `false` or unset never |
 | `PEP_PROXY_HTTP` | `false` | the reverse proxy in plain HTTP on `PEP_PROXY_PORT` (9180) |
 
 **The precedence**, highest first:
@@ -113,15 +113,20 @@ listener's port is free, so a defined listener can take 9090.
   `XACML_PEP_NOTIFY_URL` still sets one. The nudge is HTTPS only (*The nudge
   is HTTPS only*, below), and the listener certificate the realm issues
   verifies with nothing set.
-* **The CRL point stays up.** A client credential minted with
-  `tests/tools/pep-credential.js --crl-base=http://<pep>:9090/crl` names the
-  PEP's plain port, and a product-mode service fetches that list under
-  hard-fail before it believes the certificate. So with `PEP_HTTP` off the PEP
-  still binds `PEP_PORT` for `GET /crl/<name>` and nothing else (anything
-  else is a 404, `STS-XPEP-0114`). A CRL is fetched in the clear by convention
-  (RFC 5280 section 4.2.1.13): one behind TLS would have to be validated with
-  itself. `PEP_CRL_HTTP` switches it (`STS-XPEP-0115` for a value that is
-  neither true nor false).
+* **The CRL point binds only when you ask for it.** A client credential
+  minted with `tests/tools/pep-credential.js --crl-base=http://<pep>:9090/crl`
+  names the PEP's plain port, and a product-mode service fetched that list
+  under hard-fail before it believed the certificate. The PEP no longer
+  presents a client certificate to the service
+  ([The client certificate is retired](#the-client-certificate-is-retired)),
+  so nothing of the service's fetches it, and with `PEP_HTTP` off the PEP
+  binds `PEP_PORT` for `GET /crl/<name>` alone **only with
+  `PEP_CRL_HTTP=true`** (anything else on it is a 404, `STS-XPEP-0114`). A
+  PEP that has a CRL directory and no `PEP_CRL_HTTP` says once at start that
+  the listener is not bound (`STS-XPEP-0136`). A CRL is fetched in the clear
+  by convention (RFC 5280 section 4.2.1.13): one behind TLS would have to be
+  validated with itself. A value of `PEP_CRL_HTTP` that is neither true nor
+  false is `STS-XPEP-0115`.
 * **The Listener tab** shows `api-http` and `proxy-http` as *off*, together
   with the switch that turns each on, and `api-http` as *listening, CRLs
   only*, with the purpose *CRL distribution*, when the CRL point is bound. A listener the PEP has not reported reads
@@ -164,6 +169,14 @@ Generating a certificate inside the image would have meant committing a private
 key to this repository. Mount one instead — that is the rest of this page.
 
 ## Admitting the PEP: three things, and each is a real check
+
+**Since 1.1.0 the PEP authenticates with its own key, not a client
+certificate** ([How the PEP authenticates to the service](#how-the-pep-authenticates-to-the-service)):
+steps 1 and 2 below become one, registering that key with
+`issue-pep-credential`, and step 3 is unchanged. The certificate checks
+below are how a realm that opted in to `either` or `certificate`
+(`xacml.pepAuthentication`) admits an older PEP image, or another
+implementation, that still presents one.
 
 None of this is a turnstile. A perfectly valid certificate for the wrong common
 name is refused while being fully authenticated, because **the certificate says
@@ -244,9 +257,13 @@ per realm and can be changed at runtime.
 
 | Value | Accepted |
 |---|---|
-| `either` (default) | the token or the certificate; a token, where one is sent, decides |
-| `token` | the token only; a certificate alone is refused |
+| `token` (default since 1.1.0) | the token only; a certificate alone is refused (`STS-XACML-0289`) |
+| `either` | the token or the certificate; a token, where one is sent, decides |
 | `certificate` | the certificate only; the `Authorization` header is not read |
+
+`either` and `certificate` stay for an older PEP, or another implementation,
+that presents a certificate. The PEP in this repository presents none since
+1.1.0 ([The client certificate is retired](#the-client-certificate-is-retired)).
 
 `GET /admin-api/xacml/peps` reports the value as `pepAuthentication`. The
 refusal codes are `STS-XACML-0289` to `STS-XACML-0297` and
@@ -287,6 +304,11 @@ owners, with a link to the person's Service account tab.
 each row.
 
 ### Minting the certificate
+
+**Only for a PEP that still presents one, to a realm that opted in to
+`either` or `certificate`.** The PEP in this repository no longer presents a
+client certificate to the service; give it a key with
+[`issue-pep-credential`](#provisioning-the-key-issue-pep-credential) instead.
 
 **Issue it from this realm.** On the PEP user's page, Credentials, Key pairs,
 **TLS client certificates** generates the key pair and certifies it from the
@@ -368,9 +390,9 @@ signs with its own key, and each token is bound to that key with DPoP
 
 `PEP_ASSERTION_KEY` names the PEP's private key, a PEM file: RSA or EC P-256.
 It signs the assertion and every DPoP proof. If you do not set it, the PEP
-uses its client certificate's key, `PEP_TLS_KEY`, and says so in its log
-(`STS-XPEP-0127`) — which is how a PEP provisioned with a certificate keeps
-working. Any other kind of key is refused by name (`STS-XPEP-0128`). The file
+uses the key `PEP_TLS_KEY` names — once its client certificate's — and says
+so in its log (`STS-XPEP-0127`), which is how a PEP whose certificate's key
+was registered as its assertion key keeps working. Any other kind of key is refused by name (`STS-XPEP-0128`). The file
 is read again every `httpsReloadIntervalMs`, so a rotated key is picked up
 without a restart; a file that goes missing or bad keeps the key already
 loaded.
@@ -460,19 +482,62 @@ certificate and the environment are shown once.
 Start the PEP with `PEP_ASSERTION_KEY` naming the key file, `PEP_NAME` the
 username, and `PEP_CLIENT_ID=sts-remote-pep` (the default).
 
-### When to set `xacml.pepAuthentication` to `token`
+### Upgrading a deployment whose PEPs use a certificate
 
-While it is `either`, the default, a PEP that also has a client certificate
-keeps working if its key is missing or not yet registered. Once every PEP in
-the realm runs on its key — `GET /`'s `credential` shows a token held for each
-audience — set `xacml.pepAuthentication` to `token`. A certificate alone is
-then refused, and you can stop setting `PEP_TLS_CERT` and `PEP_TLS_KEY`.
+**`xacml.pepAuthentication` defaults to `token` from 1.1.0**, and the PEP
+image no longer presents a client certificate. A 1.0.0 deployment's PEPs
+authenticate with a certificate, so on the default they are refused
+(`STS-XACML-0289`, 401) until they run on a key. Upgrade in this order:
+
+1. **Before upgrading the service, set `xacml.pepAuthentication` to `either`**
+   in every realm whose PEPs still present a certificate — on the console's
+   settings page, with `POST /admin-api/config/set`, or as
+   `STS_XACML_PEP_AUTHENTICATION=either` (or in your own appconfig file). A
+   value you set is kept across the upgrade; only the default moved. A 1.0.0
+   service does not know the setting, so set it in the appconfig file or
+   environment the 1.1.0 image starts with, or right after it starts.
+2. **Give each PEP its key**: generate it where the PEP runs and certify it
+   with `issue-pep-credential`
+   ([Provisioning the key](#provisioning-the-key-issue-pep-credential)), then
+   start the 1.1.0 PEP image with `PEP_ASSERTION_KEY`. `GET /`'s
+   `credential` shows a token held for each audience once it works.
+3. **Set `xacml.pepAuthentication` back to `token`** (or reset it to the
+   default) once every PEP in the realm runs on its key.
+
+**If you miss step 1**, the refusal says so: where the refused request
+presented a certificate that verifies, the 401's description says that
+`either` would accept it and names `PEP_ASSERTION_KEY`, and the service logs
+a warning under `STS-XACML-0289` once per realm until it restarts.
 
 **Upgrading an installation that layers its own appconfig file.**
-`xacml.pepAuthentication` is new in this release. If you start a new image
-over your own file in `env/`, that file must carry the setting (`either` keeps
-the old behaviour); a setting with no value anywhere stops the service from
+`xacml.pepAuthentication` is new in 1.1.0. If you start a new image over
+your own file in `env/`, that file must carry the setting (`either` keeps the
+1.0.0 behaviour); a setting with no value anywhere stops the service from
 starting ([Configuration](configuration.md)).
+
+### The client certificate is retired
+
+From 1.1.0 the PEP authenticates to the service with its key alone:
+
+* **`PEP_TLS_CERT` is ignored.** Set, the PEP says once at start that it is
+  no longer used and what to use instead (`STS-XPEP-0135`).
+* **`PEP_TLS_KEY` is still read as the assertion key** while
+  `PEP_ASSERTION_KEY` is unset (`STS-XPEP-0127`), so a PEP whose
+  certificate's key was registered keeps working. With `PEP_ASSERTION_KEY`
+  set too, `PEP_TLS_KEY` is not read, and `STS-XPEP-0135` says so.
+* **`GET /`'s `credential.clientCertificate`** is still reported, and is
+  always `false`.
+* **Unchanged**: the PEP's own listener certificates (`PEP_HTTPS_CERT` and
+  the listeners the service defines), the service's nudge to `POST /notify`,
+  which verifies the PEP's server certificate, and `PEP_AUTHZEN_CLIENT_CA`,
+  which admits the edge PDP's own callers.
+* **The CRL-only listener** binds only with `PEP_CRL_HTTP=true`
+  ([Plain HTTP is off by default](#plain-http-is-off-by-default)).
+* **The seeded client `sts-remote-pep` no longer declares certificate-bound
+  tokens** (`tls_client_certificate_bound_access_tokens`). Every token to it
+  is DPoP-bound. An entry seeded with the flag by a pre-release build has it
+  removed at the next start, with an `application.update` audit row. A token
+  request through it with no DPoP proof is refused as `STS-OAUTH-1012`.
 
 ### Three tokens
 
@@ -488,16 +553,16 @@ and a DPoP nonce the service asks for is sent once.
 
 ### When it cannot get one
 
-The PEP keeps working. A call it has no token for goes without one — on its
-client certificate, if `PEP_TLS_CERT` is set, which the service still
-accepts — and the PEP's log says why, naming what is missing
+The PEP keeps working. A call it has no token for goes without one, and so
+with no credential at all since 1.1.0, and is refused; the PEP's log says
+why, naming what is missing
 (`STS-XPEP-0129`): no key registered on the entry, the wrong client, or the
 entry not in the remote PEPs group. The refusal is asked again after five
 seconds, not on every call.
 
 `GET /`'s `credential` says which key file is in use, its type, its JWK
-thumbprint (to compare with what is registered), whether the client
-certificate is presented too, and for each of the three tokens whether one
+thumbprint (to compare with what is registered), `clientCertificate`
+(always `false` since 1.1.0), and for each of the three tokens whether one
 is held, until when, and the last refusal. It never shows a token or a key.
 
 ### What does not use it
@@ -566,8 +631,7 @@ since 2026-10-05; `cargo` builds it from the `rust/` workspace):
 ```bash
 PEP_PDP_URL=https://localhost:8081 \
 PEP_NAME=remote-pep-1 \
-PEP_TLS_CERT=/tmp/pep-certs/pep.crt \
-PEP_TLS_KEY=/tmp/pep-certs/pep.key \
+PEP_ASSERTION_KEY=/tmp/pep/pep-assertion.key \
 PEP_TLS_INSECURE=true \
 PEP_RESOURCE=https://expenses.example.test \
 cargo run --manifest-path rust/Cargo.toml --release -p xacml-pep
@@ -582,7 +646,7 @@ start rather than once.
 You should see, within a second or two:
 
 ```
-xacml-pep: Registered over mutual TLS as "remote-pep-1".
+xacml-pep: Registered as "remote-pep-1" on a DPoP-bound access token (the key in PEP_ASSERTION_KEY).
 xacml-pep: pulled 1 policy(ies), token cfwK-me7DUsHSd01xp-vAiqRiEmlT-2Wk2QVaj2sREU.
 ```
 
@@ -1014,8 +1078,8 @@ application. It forwards it to the service.**
   here. `X-Request-ID` is passed on (for a batch item, the batch's id and the
   item's index). The service's answer, including its `context`, is the
   item's answer.
-* **Who asks.** The container itself, on the client certificate it already
-  presents to pull (`PEP_TLS_CERT`). At the service it is an AuthZEN caller
+* **Who asks.** The container itself, on its own `authzen:evaluate`
+  access token ([Three tokens](#three-tokens)). At the service it is an AuthZEN caller
   like any other, so a policy there sees **the PEP** as
   `urn:sts:xacml:authzen:caller`, not the caller that asked the container,
   and the `urn:sts:xacml:authzen:supplied` bag names `context.application`
@@ -2026,7 +2090,8 @@ CAEP/RISC bounds, which rebuild the proxy's relying parties. A library
 session store keeps the bounds it was built with.
 
 **What stays in the environment, and why**: `PEP_PDP_URL`, `PEP_NAME`,
-`PEP_ASSERTION_KEY`, `PEP_CLIENT_ID`, `PEP_TLS_CERT`, `PEP_TLS_KEY`,
+`PEP_ASSERTION_KEY`, `PEP_CLIENT_ID`, `PEP_TLS_KEY` (the fallback
+assertion key; `PEP_TLS_CERT` is listed and ignored since 1.1.0),
 `PEP_TLS_CA` and `PEP_TLS_INSECURE` are needed
 to reach and authenticate to the service before the first pull; `PEP_PORT`,
 `PEP_HTTPS_PORT`, `PEP_PROXY_PORT` and `PEP_PROXY_HTTPS_PORT` are the ports
@@ -2167,7 +2232,7 @@ environment's, then the default.
 | `PEP_NAME` | `pep-1` | **the PEP's directory username**: the token's subject, and the name of its row |
 | `PEP_ASSERTION_KEY` | `PEP_TLS_KEY` | a path: the private key (RSA or EC P-256) the PEP signs its token requests and DPoP proofs with, read again every `httpsReloadIntervalMs` |
 | `PEP_CLIENT_ID` | `sts-remote-pep` | the client the PEP gets its tokens through. `PEP_AUDIT_CLIENT_ID` is still read when it is unset |
-| `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | the client certificate, the leaf followed by the issuing CA. Presented while it is set, beside the token |
+| `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | **retired as a client certificate in 1.1.0**: `PEP_TLS_CERT` is ignored and said once at start (`STS-XPEP-0135`); `PEP_TLS_KEY` is still the assertion key while `PEP_ASSERTION_KEY` is unset ([The client certificate is retired](#the-client-certificate-is-retired)) |
 | `PEP_TLS_CA` | — | an anchor for the PDP's certificate |
 | `PEP_TLS_INSECURE` | `false` | do not verify the PDP. The ordinary setting against this service in development |
 | `PEP_NOTIFY_URL` | derived | where the PDP should nudge: this PEP's HTTPS listener, `https://<host>:<PEP_HTTPS_PORT>/notify`. Unset, the PEP derives it (*The PEP derives its notify URL*). An `http://` value is rejected and no notify URL is advertised (`STS-XPEP-0113`) — *managed*: `notifyUrl`, https only |
@@ -2177,7 +2242,7 @@ environment's, then the default.
 | `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | — *managed*: `heartbeatIntervalMs` |
 | `PEP_PORT` | `9090` | the decision API's plain-HTTP port, bound with `PEP_HTTP=true`, or for the CRLs alone with it off |
 | `PEP_HTTP` | `false` | `true` binds plain HTTP on `PEP_PORT` (*Plain HTTP is off by default*) |
-| `PEP_CRL_HTTP` | *(unset)* | with `PEP_HTTP` off, `GET /crl/<name>` alone on `PEP_PORT`: bound by default where there is a CRL directory, `false` never, `true` always |
+| `PEP_CRL_HTTP` | *(unset)* | with `PEP_HTTP` off, `GET /crl/<name>` alone on `PEP_PORT`: bound only with `true` since 1.1.0 (`STS-XPEP-0136` when a CRL directory exists and it is unset) |
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | the **listener's** pair, issued by the PEP's realm: the leaf followed by its chain, and the key. Both or neither. They may not exist yet when the container starts |
 | `PEP_HTTPS_PORT` | `9443` | published on 9444 by `docker-compose.yml` |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read — *managed*: `httpsReloadIntervalMs` |

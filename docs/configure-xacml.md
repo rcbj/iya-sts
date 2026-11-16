@@ -402,18 +402,20 @@ attributes; the limits are:
 
 ## Run the container against a realm
 
-[Remote PEP](remote-pep.md) covers the container in full. What the service
-needs is the same admission as above, with the `remote-peps` group. The
-values are `sts_xacml_remote_pep.js`'s.
+[Remote PEP](remote-pep.md) covers the container in full. Since 1.1.0 the
+PEP authenticates with its own key — an RFC 7523 assertion and a DPoP-bound
+access token — not a client certificate, and the realm's
+`xacml.pepAuthentication` is `token` by default. The values are
+`sts_xacml_remote_pep.js`'s.
 
 **Console:**
-1. Trust the PEP certificate's CA on the **Client-certificate truststore**
-   page, as above.
-2. **Directory → Users**: create an entry for the PEP (`remote-pep-1` is
-   seeded in development mode), and under **Stored certificates** on its page
-   store the PEP's leaf certificate. Until it is stored the PEP is refused
-   (`STS-XACML-0179`; `0180` when it is stored on two entries).
-3. **Directory → Groups → remote-peps**: **Add a member** with that entry.
+1. **Directory → Users**: create an entry for the PEP (`remote-pep-1` is
+   seeded in development mode).
+2. **Directory → Groups → remote-peps**: **Add a member** with that entry.
+   That makes it a service account.
+3. Generate the PEP's key where it runs, with a certificate request, and
+   paste the request into **Certify the key** on the Remote PEPs tab (or the
+   PEP's Overview). Only the request reaches the service.
 4. Create the policy the PEP will enforce and make it root, as in
    [Create a policy from a template](#create-a-policy-from-a-template).
 
@@ -422,20 +424,20 @@ values are `sts_xacml_remote_pep.js`'s.
 api users/create '{"username":"my-pep","invent":false,
   "attributes":{"cn":"my-pep","givenName":"Remote","sn":"Remote PEP",
                 "mail":"my-pep@xacml-remote-pep.test","displayName":"my-pep"}}'
-api users/add-certificate "$(jq -n --rawfile pem pep-leaf.crt \
-  '{user:"my-pep", certificate:$pem}')"
 api groups/add-member '{"group":"remote-peps","member":"my-pep"}'
+# The key pair and its request, generated where the PEP runs:
+node tests/tools/pep-credential.js --assertion --csr-only --out=/certs \
+  --name=my-pep
+api xacml/issue-pep-credential "$(jq -n --rawfile csr /certs/pep-assertion.csr \
+  '{name:"my-pep", csr:$csr}')"
 ```
 
-`pep-leaf.crt` is the leaf alone: `pep.crt` from `pep-credential.js` is the
-leaf followed by its Issuing CA, and only the leaf is stored.
-
 `my-pep` stands for the job's per-run name. Then start the container with
-the certificate mounted:
+the key mounted:
 
 ```bash
 PEP_PDP_URL=https://localhost:8081/realm/<id>   # omit /realm/<id> for the default realm
-PEP_TLS_CERT=/certs/pep.crt PEP_TLS_KEY=/certs/pep.key
+PEP_NAME=my-pep PEP_ASSERTION_KEY=/certs/pep-assertion.key
 PEP_RESOURCE=https://example.test/records PEP_BIAS=deny-biased
 PEP_TLS_INSECURE=true                            # development: the service's Root changes every start
 PEP_NOTIFY_URL=https://my-pep.example.test:9443/notify   # optional: where the nudge goes
@@ -443,9 +445,18 @@ PEP_NOTIFY_URL=https://my-pep.example.test:9443/notify   # optional: where the n
 
 The PEP registers itself (`POST /xacml/pep/register`), and its row appears on
 the **Remote PEPs** tab with whether it holds the current policy. **The row
-is named from the entry the certificate is stored on**, not from
-`PEP_NAME`, when a certificate is presented. A PEP enforces whether or not it is registered;
-the registration buys the row and the nudge.
+is named from the token's subject, the entry `PEP_NAME` names.** A PEP
+enforces whether or not it is registered; the registration buys the row and
+the nudge.
+
+**A PEP that still presents a client certificate** (an older image, or
+another implementation) is admitted only in a realm that opted in to
+`xacml.pepAuthentication` `either` or `certificate`: trust its CA on the
+**Client-certificate truststore** page, store its leaf under **Stored
+certificates** on its entry (`api users/add-certificate`; until it is stored
+the PEP is refused, `STS-XACML-0179`, and `0180` when it is stored on two
+entries), and put the entry in `remote-peps`
+([Remote PEP](remote-pep.md#upgrading-a-deployment-whose-peps-use-a-certificate)).
 
 ## Issue the PEP an HTTPS listener certificate
 

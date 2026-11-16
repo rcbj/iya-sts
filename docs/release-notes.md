@@ -8,6 +8,43 @@ title: Release notes
 
 These changes are on a feature branch and are not part of any release yet.
 
+### The remote PEP authenticates with its key; the client certificate is retired
+
+A remote XACML PEP authenticates every call it makes to the service — the
+registration, the pulls, the heartbeat, the PIP, the decision records and
+the AuthZEN forward — with a DPoP-bound access token from an RFC 7523
+assertion it signs with its own key (`PEP_ASSERTION_KEY`). The key is
+generated where the PEP runs and certified with `issue-pep-credential`; the
+service never holds it ([How the PEP authenticates to the service](remote-pep.md#how-the-pep-authenticates-to-the-service)).
+
+* **`xacml.pepAuthentication` defaults to `token`.** A PEP that presents only
+  a client certificate is refused (401, `STS-XACML-0289`). `either` and
+  `certificate` stay available for an older PEP image or another
+  implementation.
+* **Before you upgrade a 1.0.0 deployment whose PEPs use a client
+  certificate, set `xacml.pepAuthentication` to `either`** in each realm (or
+  `STS_XACML_PEP_AUTHENTICATION=either`), give each PEP its key, then set it
+  back to `token`
+  ([Upgrading a deployment whose PEPs use a certificate](remote-pep.md#upgrading-a-deployment-whose-peps-use-a-certificate)).
+  A value you set is kept; only the default moved. If you miss it, the 401
+  says that `either` would accept the PEP's certificate, and the service
+  logs a warning under `STS-XACML-0289` once per realm.
+* **The PEP ignores `PEP_TLS_CERT`** and says so once at start
+  (`STS-XPEP-0135`). `PEP_TLS_KEY` is still read as the assertion key while
+  `PEP_ASSERTION_KEY` is unset. `GET /`'s `credential.clientCertificate` is
+  always `false`.
+* **The CRL-only plain listener binds only with `PEP_CRL_HTTP=true`.** It
+  served the client certificate's CRLs. A PEP with a CRL directory and no
+  switch says once that it is not bound (`STS-XPEP-0136`).
+* **An anonymous request to `/xacml/pep/*`** is now a 401 (`STS-XACML-0289`)
+  in a realm on the default, where it was the access policy's 403.
+* **The seeded client `sts-remote-pep`** no longer declares
+  certificate-bound tokens; an entry a pre-release build seeded with the flag
+  has it removed at the next start (audited as `application.update`). A token
+  request through it with no DPoP proof is `STS-OAUTH-1012`.
+* **The test stacks and the AWS suite runner** mint no client certificate
+  for the PEP and post no trust anchor for it.
+
 ### A remote PEP's directory entry is a service account
 
 The entry a remote XACML PEP's client certificate maps to is now a
@@ -58,6 +95,8 @@ unless you ask for them. Over HTTPS, 9443 and 9543 behave as before.
   `GET /crl/<name>` and nothing else, whenever it has a CRL directory to
   serve. `PEP_CRL_HTTP=false` turns it off and `PEP_CRL_HTTP=true` binds it
   even with no directory; a value that is neither logs `STS-XPEP-0115`.
+  **Since the client certificate was retired (above), only
+  `PEP_CRL_HTTP=true` binds it.**
   Anything else asked of that port is a 404 (`STS-XPEP-0114`). The Listener
   tab shows it as *listening, CRLs only*.
 * **Admin console**: the remote PEP's Listener tab shows the two listeners as
