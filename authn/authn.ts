@@ -2337,6 +2337,30 @@ class Authn {
     return live;
   }
 
+  // WHICH HALF OF "NO LONGER LIVE" (2026-11-17, `sts_jar_admin_client` in the
+  // cells mode on GitHub, three runs in a row): STS-AUTHN-0346 said only
+  // that, and the two causes — the set this process holds does not list the
+  // session, or it lists one this process reads as an arrival, ended or not
+  // at all — are different defects. Said on the line, never decided on.
+  private unlivedReason(set, sid) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.unlivedReason().");
+    if (!set || !set.sessions || !set.sessions[sid]) {
+      log.debug("Leaving Authn.unlivedReason(). Not listed.");
+      return 'the set held here does not list it';
+    }
+    const read = this.accountSessionRead(sid);
+    const session = read.session;
+    const why = read.error ? 'its read failed'
+      : !session ? 'no row for it is held or stored'
+      : this.sessionEnded(session) ? 'it has ended'
+      : 'it is not an account session here (chosen=' +
+        String(session.chosen) + ', authenticated=' +
+        String(session.authenticated) + ')';
+    log.debug("Leaving Authn.unlivedReason().");
+    return why;
+  }
+
   // ---------------------------------------------------------------------------
   // THE SESSION A SET LISTS, READ THE WAY #350'S READERS READ ONE. With
   // `authn.sessionWindow` on (and `auto` turns it on whenever minted
@@ -2757,7 +2781,8 @@ class Authn {
       : !set || set.id !== row.setId ? 'it was issued to another browser'
       : row.path !== path ? 'it was issued for another address'
       : !set.sessions[row.sid] || !this.accountSessionLive(row.sid)
-        ? 'the session it names is no longer live in this browser'
+        ? 'the session it names is no longer live in this browser (' +
+          this.unlivedReason(set, row.sid) + ')'
         : '';
     if (why) {
       // A CHOICE WHOSE SESSION ENDED IN FLIGHT CHOOSES NOBODY (#731). The
