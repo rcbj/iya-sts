@@ -23736,8 +23736,11 @@ const CODES = [
       'session cache, HTTP pooling, HTTP/2, the client-certificate ' +
       'questions or the thread pool — does not fit: a value outside its ' +
       'range, a cipher suite this service does not name, a ' +
-      'post-quantum-only choice with nothing post-quantum left, or a ' +
-      'thread-pool maximum below its minimum (#1760).',
+      'post-quantum-only choice with nothing post-quantum left, a ' +
+      'thread-pool maximum below its minimum (#1760), or ' +
+      'requireClientCertificate with no trust source to verify a ' +
+      'certificate against — no trustAnchorsFile, and on an API listener ' +
+      'trustIssuedClientCertificates off (2026-11-16).',
     spec: 'HTTP 400 on /admin-api' },
   { code: 'STS-XACML-0282',
     summary: 'A remote PEP\'s Sync was refused before anything was sent: ' +
@@ -24648,6 +24651,20 @@ const CODES = [
       '#1827\'s follow-up). PEP_CRL_HTTP=true binds it. Logged once at ' +
       'start.',
     spec: 'none — a notice in the PEP\'s log' },
+  { code: 'STS-XPEP-0137',
+    summary: 'A remote PEP HTTPS listener requires a client certificate ' +
+      '(requireClientCertificate) and has no authority to verify one ' +
+      'against: no readable trustAnchorsFile, and ' +
+      'trustIssuedClientCertificates off or PEP_AUTHZEN_CLIENT_CA not set ' +
+      '(a reverse-proxy listener has only the anchors file). The listener ' +
+      'is refused, fail-closed: a listener the service defined is not ' +
+      'bound and is reported failed (reason other); one of the ' +
+      'environment\'s keeps its socket and closes every connection ' +
+      'unanswered, reported failed, with the sentence as GET /\'s ' +
+      'https.problem. Until 2026-11-16 the API listener asked nobody and ' +
+      'admitted everybody. A tuning with a trust source, or without the ' +
+      'requirement, serves again.',
+    spec: 'none — an error in the PEP\'s log; the listener serves nothing' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

@@ -1804,6 +1804,18 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   `listenersProblem`, `listenersInUse` and `listenerRows` — every listener,
   the environment's first, joined to its report and, for a defined HTTPS
   one, the certificate the realm issued it — and `listenersCatalogue`.
+* **`requireClientCertificate` NEEDS A TRUST SOURCE** (2026-11-16,
+  `xacml_pep_listener_tuning.ts`'s `parse()`, `STS-XACML-0281`, on
+  `set-pep-listener` and `set-pep-environment-tuning` alike): a
+  `trustAnchorsFile`, or — on an API listener — `trustIssuedClientCertificates`.
+  The PEP's API listener had asked nobody and admitted everybody while it
+  reported the requirement, and its proxy listener had asked everybody and
+  admitted nobody; the cluster job's listener table found the first. What
+  this service cannot see — `trustIssuedClientCertificates` with no
+  `PEP_AUTHZEN_CLIENT_CA` in the PEP's environment, or an anchors file the
+  PEP cannot read — the PEP refuses itself, fail-closed (`STS-XPEP-0137`,
+  `xacml-pep/CLAUDE.md`). A stored tuning saved before this is not
+  re-validated; the PEP holds it to the same rule.
 * **PRODUCT MODE REFUSES A PLAIN-HTTP PROXY LISTENER** unless
   `xacml.pepPlainHttpProxyListeners` is on (`STS-XACML-0249`): the question
   is `mode.servesProxyBrowsersInTheClear()`, the proxy's public base URL's,

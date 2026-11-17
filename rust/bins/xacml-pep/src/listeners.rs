@@ -598,13 +598,27 @@ impl ListenerSet {
                     }
                     Err((reason, why)) => {
                         self.note(&mut entry, "STS-XPEP-0104", &why);
-                        if https.current().is_none() {
+                        if https.current().is_none()
+                            && https.refusal().is_none()
+                        {
                             entry.state = "waiting";
                             entry.reason = reason;
                             return entry;
                         }
                     }
                 }
+            }
+            // REQUIRED WITH NO TRUST SOURCE (STS-XPEP-0137, logged by the
+            // listener): not bound, so a client meets a closed port rather
+            // than a handshake that admits it. The certificate is kept, and
+            // the next pull that lifts the refusal binds it again.
+            if https.refusal().is_some() {
+                if let Some(task) = entry.task.take() {
+                    task.abort();
+                }
+                entry.state = "failed";
+                entry.reason = "other";
+                return entry;
             }
         }
         let alive = entry.task.as_ref().is_some_and(|t| !t.is_finished());
@@ -1416,5 +1430,54 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
         }
+    }
+
+    /// REQUIRED WITH NO TRUST SOURCE IS NOT BOUND (STS-XPEP-0137): the
+    /// defined API listener is `failed`, its port refuses, and a trust
+    /// anchors file binds it again — a client without a certificate is
+    /// then refused at the handshake.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn require_without_trust_is_refused_and_unbound() {
+        let (certify, ca, asked) = authority();
+        let listeners = set(certify, false);
+        let port = free_port();
+        listeners
+            .reconcile(vec![tuned(
+                "mtls",
+                true,
+                port,
+                json!({"requireClientCertificate": true}),
+            )])
+            .await;
+        assert_eq!(
+            listeners.states(),
+            vec![("mtls".to_string(), "failed", "other")]
+        );
+        assert!(get_tls(port, &ca).await.is_none(), "not bound");
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "the certificate is held");
+        let anchors = std::env::temp_dir()
+            .join(format!("pep-listeners-anchors-{}", std::process::id()));
+        std::fs::write(&anchors, ca.to_pem().unwrap()).unwrap();
+        listeners
+            .reconcile(vec![tuned(
+                "mtls",
+                true,
+                port,
+                json!({"requireClientCertificate": true,
+                       "trustAnchorsFile": anchors.to_str().unwrap()}),
+            )])
+            .await;
+        assert_eq!(
+            listeners.states(),
+            vec![("mtls".to_string(), "listening", "none")]
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "not asked again");
+        assert!(
+            get_tls(port, &ca)
+                .await
+                .is_none_or(|(body, _)| body.is_empty()),
+            "no client certificate, no answer"
+        );
+        std::fs::remove_file(&anchors).unwrap();
     }
 }

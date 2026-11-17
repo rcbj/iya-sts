@@ -1948,6 +1948,16 @@ its settings as follows (since 1.1.0):
   byte to its first request.
 * **`keepAliveTimeoutS`**: a connection with no bytes in either direction
   for this many seconds is closed.
+* **`requireClientCertificate`** needs something to verify the certificate
+  against: a `trustAnchorsFile`, or, on a decision-API listener,
+  `trustIssuedClientCertificates` with `PEP_AUTHZEN_CLIENT_CA` set in the
+  PEP's environment. A save with neither is refused (`STS-XACML-0281`).
+  What this service cannot see from here, `PEP_AUTHZEN_CLIENT_CA` unset or
+  an anchors file the PEP cannot read, the PEP refuses itself: the listener
+  serves no connection and is reported `failed`, a listener defined here is
+  not bound at all, and the PEP logs why (`STS-XPEP-0137`, also `GET /`'s
+  `https.problem` for the environment's). Until 1.1.0 such an API listener
+  asked nobody for a certificate and admitted everybody.
 
 ### A listener's own page
 

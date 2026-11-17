@@ -425,6 +425,26 @@ class PepListenerTuning {
                                       'least `threadPoolMin` (' +
                                       nums.threadPoolMin + ').');
     }
+    // REQUIRED WITH NOTHING TO VERIFY AGAINST (2026-11-16): a certificate
+    // the listener cannot verify is no requirement at all. The PEP's API
+    // listener asked nobody and admitted everybody while it reported the
+    // requirement; its reverse-proxy listener asked everybody and admitted
+    // nobody. A trust source is a trust anchors file, or — on an API
+    // listener — the certificates this realm issues
+    // (trustIssuedClientCertificates, PEP_AUTHZEN_CLIENT_CA on the PEP).
+    // The PEP cannot be seen from here, so it refuses the listener itself
+    // when that variable is not set (STS-XPEP-0137): both ends fail closed.
+    if (https && requireCert === true && !String(anchors) &&
+        !(purpose === 'api' && trustIssued === true)) {
+      log.debug("Leaving PepListenerTuning.parse(). No trust source.");
+      return PepListenerTuning.refuse(where + ': `requireClientCertificate` ' +
+                                      'needs a trust source to verify a ' +
+                                      'client certificate against: ' +
+                                      '`trustAnchorsFile`' +
+                                      (purpose === 'api'
+                                        ? ', or `trustIssuedClientCertificates`'
+                                        : '') + '.');
+    }
     const tls12Off = disableTls12 === true || pqcOnly === true;
     const tuning: Tuning = {
       minVersion: tls12Off ? 'TLSv1.3' : String(minVersion),

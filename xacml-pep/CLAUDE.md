@@ -2433,6 +2433,21 @@ configuration->Listeners", the HTTPS listener there now as the default, and
     (the first bytes are the preface) is held from its first byte to its
     first request and never re-armed: a later PING is not a head.
     `listeners::tests::a_slow_header_client_is_closed_after_headers_timeout`.
+  * **`requireClientCertificate` with no trust source** — the API listener
+    without `PEP_AUTHZEN_CLIENT_CA` or a readable `trustAnchorsFile` asked
+    nobody and ADMITTED EVERYBODY; the proxy's asked everybody and admitted
+    nobody. `apply_client_auth()` now sets `Built::refusal`, and the
+    listener serves NOTHING (`STS-XPEP-0137`, logged once per sentence):
+    the acceptor is dropped even when a permissive one was served (a strict
+    rebuild's knob fault does not keep it), a defined listener's accept
+    loop is aborted and reported `failed`/`other`, and an environment
+    listener keeps its socket, closes every connection at accept, and
+    reports `failed`/`other` with the sentence as `GET /`'s
+    `https.problem`. The certificate is kept, so a later tuning with a
+    source serves at once without a new request. The service refuses the
+    half it can see at save (`xacml/CLAUDE.md`, `STS-XACML-0281`).
+    `listener::tests::required_without_a_trust_source_serves_nothing`,
+    `listeners::tests::require_without_trust_is_refused_and_unbound`.
 * **THE HEARTBEAT'S `listeners` IS THE WHOLE REPORT.** `report()` is
   `{ listeners, memory?, paths? }`, and that object is what the heartbeat
   assigns to `listeners`. Each listener carries `stats`: accepted, open,

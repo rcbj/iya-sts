@@ -26,7 +26,10 @@
 //! verify still completes the handshake (`requestCert`,
 //! `rejectUnauthorized: false`). The reverse proxy asks everybody and
 //! checks nobody. `requireClientCertificate` is the one setting that fails
-//! the handshake when nothing is presented. A knob OpenSSL will not apply
+//! the handshake when nothing is presented, and it needs an authority to
+//! verify against: with none, the listener serves NOTHING
+//! (`STS-XPEP-0137`, 2026-11-16) rather than asking nobody and admitting
+//! everybody, as the API listener did. A knob OpenSSL will not apply
 //! is logged (`STS-XPEP-0119`); once a certificate is already served, that
 //! failure keeps the previous acceptor. [`peer_of`] reads what was
 //! presented and whether it verified.
@@ -70,6 +73,10 @@ struct Status {
     /// Why the socket would not bind, from the closed set the heartbeat
     /// reports (#1760); `None` while it has not failed.
     bind_failed: Option<&'static str>,
+    /// Why the listener serves nothing although it has a pair
+    /// (`STS-XPEP-0137`): it requires a client certificate and has no
+    /// authority to verify one against.
+    refused: Option<String>,
 }
 
 /// The listener's pair and what is known about it.
@@ -313,7 +320,7 @@ fn acceptor_for(
     ask_any: bool,
     tuning: &Tuning,
     strict: bool,
-) -> Result<(SslAcceptor, X509, ClientAuth), AcceptorFault> {
+) -> Result<Built, AcceptorFault> {
     let chain = X509::stack_from_pem(cert)
         .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     let mut chain = chain.into_iter();
@@ -353,13 +360,18 @@ fn acceptor_for(
         .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     let mut faults = Vec::new();
     apply_tls_knobs(&mut builder, tuning, &mut faults);
+    let mut refusal = None;
     let client_auth = apply_client_auth(
         &mut builder,
         client_ca,
         ask_any,
         tuning,
         &mut faults,
+        &mut refusal,
     );
+    // A refused listener serves nothing, so a knob that did not apply
+    // cannot make it keep the acceptor it had: that one may admit
+    // everybody, which is what the refusal is there to stop.
     if !faults.is_empty() {
         tracing::error!(
             "{}xacml-pep: a listener's TLS settings were not all applied: \
@@ -372,11 +384,26 @@ fn acceptor_for(
                 "The certificate is served without those settings."
             }
         );
-        if strict {
+        if strict && refusal.is_none() {
             return Err(AcceptorFault::Tuning);
         }
     }
-    Ok((builder.build(), leaf, client_auth))
+    Ok(Built {
+        acceptor: builder.build(),
+        leaf,
+        client_auth,
+        refusal,
+    })
+}
+
+/// What [`acceptor_for`] built. `refusal` is a listener that must serve
+/// NOTHING (`STS-XPEP-0137`): the acceptor is built so the pair is known
+/// good, and is never handed a connection.
+struct Built {
+    acceptor: SslAcceptor,
+    leaf: X509,
+    client_auth: ClientAuth,
+    refusal: Option<String>,
 }
 
 /// Records one knob OpenSSL refused. The builder keeps what it had.
@@ -470,6 +497,7 @@ fn apply_client_auth(
     ask_any: bool,
     tuning: &Tuning,
     faults: &mut Vec<String>,
+    refusal: &mut Option<String>,
 ) -> ClientAuth {
     let want =
         tuning.ask_client_certificate || tuning.require_client_certificate;
@@ -480,18 +508,36 @@ fn apply_client_auth(
     if tuning.trust_issued_client_certificates {
         authorities.extend(client_ca.iter().cloned());
     }
+    let mut anchors_problem = None;
     if !tuning.trust_anchors_file.is_empty() {
         match std::fs::read(&tuning.trust_anchors_file) {
             Ok(pem) => match X509::stack_from_pem(&pem) {
                 Ok(stack) => authorities.extend(stack),
                 Err(error) => {
+                    anchors_problem = Some(error.to_string());
                     faults.push(format!("trust anchors: {}", error));
                 }
             },
             Err(error) => {
+                anchors_problem = Some(error.to_string());
                 faults.push(format!("trust anchors file: {}", error));
             }
         }
+    }
+    if tuning.require_client_certificate && authorities.is_empty() {
+        // REQUIRED, WITH NOTHING TO VERIFY AGAINST (2026-11-16): the API
+        // listener used to ask nobody here, so it said it required a
+        // certificate and admitted everybody; the proxy's asked everybody
+        // and refused every certificate. Neither is what was asked for,
+        // so the listener is refused and serves nothing until a trust
+        // source is set or the requirement is turned off.
+        *refusal = Some(require_without_trust(
+            tuning,
+            client_ca,
+            ask_any,
+            anchors_problem.as_deref(),
+        ));
+        return ClientAuth::None;
     }
     if !authorities.is_empty() {
         if let Err(error) = client_store(builder, &authorities) {
@@ -545,6 +591,43 @@ fn apply_client_auth(
     ClientAuth::Any
 }
 
+/// Why a listener that requires a client certificate has nothing to
+/// verify one against: the sentence `STS-XPEP-0137` logs and `GET /`'s
+/// `problem` carries.
+fn require_without_trust(
+    tuning: &Tuning,
+    client_ca: &[X509],
+    ask_any: bool,
+    anchors_problem: Option<&str>,
+) -> String {
+    let anchors = if tuning.trust_anchors_file.is_empty() {
+        "trustAnchorsFile is not set".to_string()
+    } else {
+        format!(
+            "trustAnchorsFile {} holds no usable certificate ({})",
+            tuning.trust_anchors_file,
+            anchors_problem.unwrap_or("none could be read")
+        )
+    };
+    let issued = if ask_any {
+        "a reverse-proxy listener has no issuing CA to trust"
+    } else if !tuning.trust_issued_client_certificates {
+        "trustIssuedClientCertificates is off"
+    } else if client_ca.is_empty() {
+        "trustIssuedClientCertificates is on but PEP_AUTHZEN_CLIENT_CA is \
+         not set"
+    } else {
+        "the issuing CA added nothing"
+    };
+    format!(
+        "requireClientCertificate is on and the listener has no authority to \
+         verify a client certificate against: {}, and {}. The listener \
+         serves no connection until a trust source is set or the \
+         requirement is turned off.",
+        anchors, issued
+    )
+}
+
 /// What [`apply_client_auth`] will set for `tuning`, before an acceptor is
 /// built: the same decision, a trust anchors file taken as readable.
 fn planned_client_auth(
@@ -552,7 +635,12 @@ fn planned_client_auth(
     ask_any: bool,
     tuning: &Tuning,
 ) -> ClientAuth {
-    if !(tuning.ask_client_certificate || tuning.require_client_certificate) {
+    let trusted = (tuning.trust_issued_client_certificates
+        && !client_ca.is_empty())
+        || !tuning.trust_anchors_file.is_empty();
+    if !(tuning.ask_client_certificate || tuning.require_client_certificate)
+        || (tuning.require_client_certificate && !trusted)
+    {
         ClientAuth::None
     } else if (tuning.trust_issued_client_certificates && !client_ca.is_empty())
         || !tuning.trust_anchors_file.is_empty()
@@ -763,7 +851,7 @@ impl HttpsListener {
             return false;
         }
         let tuning = self.tuning_now();
-        let (acceptor, leaf, client_auth) = match acceptor_for(
+        let built = match acceptor_for(
             &cert,
             &key,
             &self.client_ca,
@@ -792,8 +880,12 @@ impl HttpsListener {
             // strict is false on a reload: a knob is logged and skipped.
             Err(AcceptorFault::Tuning) => return false,
         };
+        // The first pair is what starts the accept loop, whether or not
+        // the listener is refused: a refused one drops every connection it
+        // accepts, and a later tuning that lifts the refusal serves at once.
+        let first = self.has_no_pair();
         self.save_pair(&cert, &key);
-        let (served, from, to) = describe_served(&leaf);
+        let (served, from, to) = describe_served(&built.leaf);
         let now = Utc::now();
         if from.is_some_and(|f| now < f) || to.is_some_and(|t| now > t) {
             tracing::warn!(
@@ -808,14 +900,18 @@ impl HttpsListener {
                 served["validTo"]
             );
         }
-        let first = self.current().is_none();
-        self.swap_acceptor(acceptor, client_auth);
+        let refused = built.refusal.is_some();
+        {
+            let mut status = self.status();
+            status.last_problem = None;
+            status.last_logged_problem.clear();
+        }
+        let leaf = built.leaf.clone();
+        self.serve_built(built);
         let mut status = self.status();
         status.digest = digest;
         status.loaded_at = Some(sts_core::time::iso_now());
-        status.last_problem = None;
-        status.last_logged_problem.clear();
-        if !first {
+        if !first && !refused {
             tracing::info!(
                 "xacml-pep: the HTTPS listener on {} now serves certificate \
                  {} ({}), issued by {}. Connections already open keep the \
@@ -862,7 +958,11 @@ impl HttpsListener {
     /// reason from the closed sets, and the certificate it serves.
     pub fn state(&self) -> (&'static str, &'static str, Option<Value>) {
         let s = self.status().clone();
-        let state = if s.listening {
+        let state = if s.refused.is_some() {
+            // Bound, or about to be, and serving nobody: a failure, and the
+            // closed set's `other` (the sentence is the log's and GET /'s).
+            ("failed", "other")
+        } else if s.listening {
             ("listening", "none")
         } else if let Some(reason) = s.bind_failed {
             ("failed", reason)
@@ -937,9 +1037,7 @@ impl HttpsListener {
             &tuning,
             strict,
         ) {
-            Ok((acceptor, _, client_auth)) => {
-                self.swap_acceptor(acceptor, client_auth)
-            }
+            Ok(built) => self.serve_built(built),
             Err(AcceptorFault::Tuning) => {}
             Err(AcceptorFault::Pair(error)) => {
                 tracing::error!(
@@ -975,10 +1073,56 @@ impl HttpsListener {
     }
 
     fn swap_acceptor(&self, acceptor: SslAcceptor, client_auth: ClientAuth) {
-        let built = Some((Arc::new(acceptor), client_auth));
+        self.set_acceptor(Some((Arc::new(acceptor), client_auth)));
+    }
+
+    fn set_acceptor(&self, served: Option<(Arc<SslAcceptor>, ClientAuth)>) {
         match self.acceptor.write() {
-            Ok(mut slot) => *slot = built,
-            Err(poisoned) => *poisoned.into_inner() = built,
+            Ok(mut slot) => *slot = served,
+            Err(poisoned) => *poisoned.into_inner() = served,
+        }
+    }
+
+    /// Serves what was built, or — refused — NOTHING: the acceptor served
+    /// until now is dropped too, because it may admit everybody, and
+    /// every connection the accept loop takes is closed unanswered. The
+    /// sentence is logged once (`STS-XPEP-0137`) and is `GET /`'s
+    /// `problem`; a later build without the refusal serves again.
+    fn serve_built(&self, built: Built) {
+        match built.refusal {
+            Some(why) => {
+                self.set_acceptor(None);
+                self.status().refused = Some(why.clone());
+                self.problem("STS-XPEP-0137", why, false);
+            }
+            None => {
+                let was_refused = self.status().refused.take().is_some();
+                self.swap_acceptor(built.acceptor, built.client_auth);
+                if was_refused {
+                    let mut status = self.status();
+                    status.last_problem = None;
+                    status.last_logged_problem.clear();
+                    tracing::info!(
+                        "xacml-pep: the HTTPS listener on {} has a trust \
+                         source for the client certificate it requires, or \
+                         no longer requires one, and serves again.",
+                        self.port
+                    );
+                }
+            }
+        }
+    }
+
+    /// Why the listener serves nothing although it has a pair, when it is
+    /// refused (`STS-XPEP-0137`).
+    pub fn refusal(&self) -> Option<String> {
+        self.status().refused.clone()
+    }
+
+    fn has_no_pair(&self) -> bool {
+        match self.pair.lock() {
+            Ok(slot) => slot.is_none(),
+            Err(poisoned) => poisoned.into_inner().is_none(),
         }
     }
 
@@ -987,7 +1131,7 @@ impl HttpsListener {
     /// kept. Answers the served certificate's description.
     pub fn install(&self, cert: &[u8], key: &[u8]) -> Result<Value, String> {
         let tuning = self.tuning_now();
-        let (acceptor, leaf, client_auth) = acceptor_for(
+        let built = acceptor_for(
             cert,
             key,
             &self.client_ca,
@@ -1002,12 +1146,18 @@ impl HttpsListener {
             }
         })?;
         self.save_pair(cert, key);
+        let leaf = built.leaf.clone();
         let (served, _, _) = describe_served(&leaf);
-        self.swap_acceptor(acceptor, client_auth);
+        let refused = built.refusal.is_some();
+        if !refused {
+            self.status().last_problem = None;
+        }
+        // A refused listener keeps its certificate (it is the right one)
+        // and serves nothing: the caller reads `refusal()`.
+        self.serve_built(built);
         let mut status = self.status();
         status.configured = true;
         status.loaded_at = Some(sts_core::time::iso_now());
-        status.last_problem = None;
         status.certificate = Some(served.clone());
         status.dns_names = dns_names_of(&leaf);
         Ok(served)
@@ -1068,7 +1218,7 @@ impl HttpsListener {
         };
         json!({
             "configured": s.configured,
-            "listening": s.listening,
+            "listening": s.listening && s.refused.is_none(),
             "port": if s.listening { s.port.map(Value::from) } else { None },
             "certificate": s.certificate,
             "loadedAt": s.loaded_at,
@@ -1290,8 +1440,9 @@ mod tests {
         let (cert, key) = pair();
         let purpose = if ask_any { "proxy" } else { "api" };
         let tuning = Tuning::defaults(purpose, true);
-        let (acceptor, _, _) =
+        let acceptor =
             acceptor_for(&cert, &key, client_ca, ask_any, &tuning, false)
+                .map(|built| built.acceptor)
                 .unwrap_or_else(|fault| {
                     panic!(
                         "acceptor: {}",
@@ -1405,5 +1556,69 @@ mod tests {
         let proxy = HttpsListener::for_proxy("c", "k", 9543, 100);
         assert!(proxy.ask_any && proxy.asks_for_client_certificates());
         assert!(!proxy.verifies_client_certificates());
+    }
+
+    /// REQUIRED WITH NO TRUST SOURCE IS REFUSED, FAIL-CLOSED (2026-11-16):
+    /// the API listener without PEP_AUTHZEN_CLIENT_CA or trust anchors used
+    /// to ask nobody and admit everybody while its tuning said a
+    /// certificate was required. Now it serves nothing, says why
+    /// (`STS-XPEP-0137`, GET /'s `problem`) and reports `failed`; a trust
+    /// anchors file, or the requirement turned off, serves again.
+    #[test]
+    fn required_without_a_trust_source_serves_nothing() {
+        let listener = HttpsListener::in_memory(0, None, false);
+        let mut tuning = Tuning::defaults("api", true);
+        tuning.require_client_certificate = true;
+        listener.set_tuning(tuning.clone());
+        let (cert, key) = pair();
+        assert!(listener.install(&cert, &key).is_ok(), "the pair is kept");
+        assert!(listener.current().is_none(), "nothing is served");
+        let why = listener.refusal().unwrap();
+        assert!(why.contains("requireClientCertificate"), "{}", why);
+        assert!(why.contains("PEP_AUTHZEN_CLIENT_CA"), "{}", why);
+        assert_eq!(listener.state().0, "failed");
+        assert_eq!(listener.state().1, "other");
+        let overview = listener.overview();
+        assert_eq!(overview["listening"], false);
+        assert!(overview["problem"]
+            .as_str()
+            .unwrap()
+            .contains("requireClientCertificate"));
+        assert!(!listener.asks_for_client_certificates());
+
+        // A trust anchors file: served, and a certificate required.
+        let anchors = temp("anchors");
+        std::fs::write(&anchors, &cert).unwrap();
+        tuning.trust_anchors_file = anchors.to_str().unwrap().to_string();
+        listener.set_tuning(tuning.clone());
+        assert!(listener.current().is_some());
+        assert!(listener.refusal().is_none());
+        assert!(listener.overview()["problem"].is_null());
+        assert!(listener.verifies_client_certificates());
+
+        // An unreadable file is no trust source: refused again, and the
+        // acceptor that required one is not kept either.
+        tuning.trust_anchors_file = temp("missing").to_str().unwrap().into();
+        listener.set_tuning(tuning.clone());
+        assert!(listener.current().is_none());
+        assert!(listener.refusal().unwrap().contains("missing"));
+
+        // Not required: served without a certificate asked.
+        tuning.require_client_certificate = false;
+        tuning.trust_anchors_file.clear();
+        listener.set_tuning(tuning);
+        assert!(listener.current().is_some());
+        assert!(listener.refusal().is_none());
+        std::fs::remove_file(&anchors).unwrap();
+
+        // The reverse proxy's, required with no anchors, is refused too
+        // (it used to ask everybody and refuse every certificate).
+        let proxy = HttpsListener::in_memory(0, None, true);
+        let mut tuning = Tuning::defaults("proxy", true);
+        tuning.require_client_certificate = true;
+        proxy.set_tuning(tuning);
+        assert!(proxy.install(&cert, &key).is_ok());
+        assert!(proxy.current().is_none());
+        assert!(proxy.refusal().is_some());
     }
 }
