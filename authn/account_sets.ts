@@ -118,7 +118,15 @@ const sets = realms.map({ persist: 'authn.accountSets', tombstone: true,
                           },
                           mergeRow: function (mine: Json, theirs: Json) {
                             return AccountSets.merge(mine, theirs);
-                          } });
+                          },
+                          // Another process's copy is merged into the one
+                          // held here, never put over it (`realms.map()`'s
+                          // `mergeOnApply`): a copy from before a sign-in
+                          // joined the set dropped the session that had
+                          // just joined it (STS-AUTHN-0346). An ended
+                          // session is a tombstone in `endedSids`, so it
+                          // still leaves.
+                          mergeOnApply: true });
 
 // `authn.accountTickets` is SHORT-LIVED BY NATURE: a ticket is spent on the
 // next request or expires in two minutes.

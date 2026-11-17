@@ -2332,6 +2332,20 @@ too. The kept copy now takes `mergeSessionRows()` of the two, in place: it
 is what the flush will write. `tests/session_window.js`,
 `upgradedElsewhereCase()`.
 
+**AND WITH THE WINDOW OFF THE SAME MERGE HAPPENS IN THE APPLIER
+(2026-11-17).** The window's merges are on its own path, and a service of
+several cells runs with the window off (`active()` needs one cell): there
+`applyLocally()` handed another process's row to the store's `restore()`,
+which put it over the held session whole, and the account set's row the
+same way. `authn.sessions` and `authn.accountSets` declare `mergeOnApply`
+(`common/realms.js`), so the arriving row is merged into the held copy
+with `mergeSessionRows()` / `AccountSets.merge()`. `sts_jar_admin_client`'s
+STS-AUTHN-0346 in the cells mode (three GitHub runs in a row) went through
+it: a flush asked from a DEVELOPMENT realm in that product cell emptied the
+journal, and an older flight's merged arrival was then applied over the
+sign-in. `persistence/CLAUDE.md` has both halves;
+`tests/session_window.js`, `windowOffMergeCase()`.
+
 **AND THAT MERGE KEEPS A CLIENT'S `iss` AND `sub` (run 27, 2026-11-14).**
 `mergeSessionRows()` rebuilt an `oidcClients` entry both copies held from
 `first`, `last` and `count`, dropping the issuer and subject

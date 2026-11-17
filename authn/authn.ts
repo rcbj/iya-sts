@@ -600,7 +600,14 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
                               mergeRow: function (mine, theirs) {
                                 return slot.get().mergeSessionRows(mine,
                                                                    theirs);
-                              } });
+                              },
+                              // Another process's row is merged into the
+                              // copy held here (`realms.map()`'s
+                              // `mergeOnApply`): with the session window
+                              // off — several cells — a row read before a
+                              // sign-in here committed put the arrival back
+                              // over it (STS-AUTHN-0346).
+                              mergeOnApply: true });
 
 // A coalesced touch writes back through the facade, in the realm the
 // touch belongs to. Registered once: clearing it would drop later touches.

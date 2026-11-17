@@ -690,7 +690,26 @@ function enabled() {
   // address, and `sealed()` is guaranteed there: cluster.js refuses
   // active-active without persisted keys. Active-passive counts too — a
   // takeover that restored no sessions would sign everybody out.
-  return mode.isProduct() || keystore.hasEphemeralKek() ||
+  //
+  // **AND THE PROCESS'S MODE AS WELL AS THE AMBIENT REALM'S (2026-11-17, the
+  // cells mode's `sts_jar_admin_client`, three GitHub runs in a row).**
+  // `mode.isProduct()` is the AMBIENT realm's answer, so in a product
+  // process with no workers and no cluster — each cell of the `cells` mode,
+  // and any single-process product service — a realm switched to
+  // development read "not persisting" inside its own requests. A flush
+  // scheduled from one of them took `flush()`'s first branch and CLEARED
+  // THE WHOLE JOURNAL: every realm's pending writes, never written. A
+  // sign-in that had just upgraded an arrival lost its journal entry while
+  // an older flight still held the arrival, so that flight's merged answer
+  // — the arrival — could be applied over the sign-in (`settleDecided()`
+  // asks the journal), and the selection ticket the sign-in handed out
+  // then named a session read here as an arrival (STS-AUTHN-0346). The same
+  // realm's on-demand stores read as held whole and the session window
+  // went off inside it. A product PROCESS persists what every realm in it
+  // mints, as a process of several workers or nodes already did; a product
+  // realm in a development process keeps the ambient arm, as before.
+  return mode.isProduct() || processIsProduct() ||
+         keystore.hasEphemeralKek() ||
          ((severalProcesses() || severalNodes()) && keystore.sealed());
 }
 
@@ -1646,18 +1665,21 @@ function applyLocally(store, realmId, key, value, remove) {
       const held = store.read(realmId, key);
       decision = held && held.present ? 'restore' : 'skip';
     }
+    let windowDecided = false;
     if (store && store.handle === 'authn.sessions') {
       try {
         const sessionWindow = sessionWindowIfOn();
         if (sessionWindow) {
           decision = sessionWindow.considerApply(realmId, key, value,
                                                  !!remove);
+          windowDecided = true;
         }
       } catch (e) {
         // The window's decision is an optimisation of what is resident.
         // A throw falls back to today's restore, which is the full map.
         log.debug("Caught in applyLocally(): " + ((e && e.message) || e));
         decision = remove ? 'remove' : 'restore';
+        windowDecided = false;
       }
     }
     if (decision === 'remove' || remove) {
@@ -1673,12 +1695,66 @@ function applyLocally(store, realmId, key, value, remove) {
       return true;
     }
     if (decision === 'restore') {
-      store.restore(realmId, key, value);
+      store.restore(realmId, key,
+                    windowDecided ? value
+                                  : mergedWithHeld(store, realmId, key, value));
     }
     log.debug("Leaving applyLocally().");
     return true;
   } finally {
     restoring = was;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ANOTHER PROCESS'S ROW, MERGED INTO THE COPY HELD HERE (2026-11-17, the
+// cells mode's `sts_jar_admin_client`, three GitHub runs in a row). For a
+// store declared `mergeOnApply` (`common/realms.js`): what `restore()` is
+// given is `mergeRow(held, arriving)`, not the arriving row. A row is read
+// when its change-log page is prepared and applied later, serially, so it
+// can be older than a write this process committed in between, or than one
+// still in its journal; put over the held copy whole, the first was gone
+// from this process until the next change, and the second was then flushed
+// as the older row. The session window has merged into its own copies
+// since 2026-11-14 and 2026-11-16 (`considerApply()`), but a service of
+// several cells runs with the window off, and there the arrival read before
+// a sign-in could go back over the sign-in, and an account set copied before
+// the sign-in joined it drop the session — the selection ticket the sign-in
+// handed out then names a session not live here (STS-AUTHN-0346).
+// `mergeRow()` is what the store holds after every write — the further
+// state, the later clocks, the unions less the tombstoned — so the merge is
+// never behind either copy, and a real change made elsewhere still lands.
+// A held copy that is not an object, or a merge that throws, takes the
+// arriving row as before. Hot path (every row applied): no Entering/Leaving
+// pair, the exception the code style allows, stated as it requires.
+// ---------------------------------------------------------------------------
+function mergedWithHeld(store, realmId, key, value) {
+  if (!store || !store.mergeOnApply || typeof store.mergeRow !== 'function' ||
+      !value || typeof value !== 'object' ||
+      typeof store.read !== 'function') {
+    return value;
+  }
+  let held = null;
+  try {
+    held = store.read(realmId, key);
+  } catch (e) {
+    log.debug("Caught in mergedWithHeld(): " + ((e && e.message) || e));
+    held = null;
+  }
+  if (!held || !held.present || !held.value ||
+      typeof held.value !== 'object') {
+    return value;
+  }
+  try {
+    const merged = store.mergeRow(held.value, value);
+    return merged && typeof merged === 'object' ? merged : value;
+  } catch (e) {
+    log.debug("Caught in mergedWithHeld(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-STORE-0175') + 'persistence: another ' +
+             'process\'s "' + store.handle + '" row could not be merged ' +
+             'with the one held here (' + ((e && e.message) || e) + '), so ' +
+             'it replaces it.');
+    return value;
   }
 }
 

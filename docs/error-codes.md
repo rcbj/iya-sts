@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5715** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5716** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 111
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 54
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 113
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 114
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
@@ -454,6 +454,7 @@ Raised from: persistence/.
 | `STS-STORE-0172` | The store is owed an index added after release 1.0.0 (sts_sessions_subject_band, #876, or sts_sessions_started, #882): it is missing, or left invalid by an interrupted concurrent build, and the role this service dials with does not own the table to build it. The service starts and every question is answered, by a slower plan. Run postgres/upgrade-1.0.0.sql (or mariadb/upgrade-1.0.0.sql) as the table's owner; it builds the index without blocking writers. | none — the store opens without it |
 | `STS-STORE-0173` | A background build of an index the store was owed (#876, #882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER on MariaDB — failed. The service goes on without the index, by a slower plan; the next start tries again, or the owner runs the upgrade script. | none — the store opens without it |
 | `STS-STORE-0174` | A realm another process changed could not be applied in this one: the realm registry refused the replicated update. This process keeps the realm as it was until a later change applies, and does not write its copy back over the store. | none — logged; the request that wrote it was already answered |
+| `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
 
 ## STS-CLUSTER
 
