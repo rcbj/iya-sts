@@ -18,10 +18,15 @@ import config = require('./config');
 import errorCodes = require('./error_codes');
 import clientAddress = require('./client_address');
 import helpers = require('./helpers');
+import SurfaceRefusals = require('./surface_refusals');
 
 const WINDOW_MS = 60000;
 const MAX_ADDRESSES = 200000;
 const EXEMPT = /^\/healthcheck(?:$|\?)/;
+
+// The refusal on a JSON API, in that API's own error shape (2026-11-16); plain
+// text everywhere else, as it always was.
+const surfaceRefusals = new SurfaceRefusals({ log: helpers.log });
 
 class RequestBudget {
   private static windowStart = 0;
@@ -72,7 +77,14 @@ class RequestBudget {
       }
       RequestBudget.noteRefused(String(clientAddress.clientAddressOf(req)));
       errorCodes.mark(res, 'STS-CORE-0172');
-      res.status(429).type('text/plain').set('Retry-After', '60')
+      res.set('Retry-After', '60');
+      if (surfaceRefusals.answer(req, res, 429, 'Too many requests from ' +
+                                 'this address. Wait a minute.',
+                                 { part: 'request', retryAfterS: 60 })) {
+        return;
+      }
+      // error-code: none — marked three statements up (STS-CORE-0172).
+      res.status(429).type('text/plain')
         .send('Too many requests from this address.\n');
     };
   }

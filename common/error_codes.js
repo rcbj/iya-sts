@@ -549,33 +549,40 @@ const CODES = [
   { code: 'STS-HTTP-0004',
     summary: 'The request body exceeded the 5 MB limit the body parsers ' +
       'enforce.',
-    spec: 'HTTP 413' },
+    spec: 'HTTP 413, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); Express\'s own page elsewhere' },
   { code: 'STS-HTTP-0010',
     summary: 'A query string carried a parameter named constructor, ' +
       'prototype or __proto__, which the validation guard refuses ' +
       'before any endpoint sees the request.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); text/plain elsewhere' },
   { code: 'STS-HTTP-0011',
     summary: 'A query-string value contained a control character (a CR, LF, ' +
       'NUL or similar), which the validation guard refuses before any ' +
       'endpoint sees the request.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); text/plain elsewhere' },
   { code: 'STS-HTTP-0012',
     summary: 'The request body was in a charset or content encoding the body ' +
       'parsers do not read, so it was refused before any endpoint ' +
       'saw it.',
-    spec: 'HTTP 415' },
+    spec: 'HTTP 415, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); Express\'s own page elsewhere' },
   { code: 'STS-HTTP-0013',
     summary: 'The request body was cut off before it was complete, or did ' +
       'not match its Content-Length, so it was refused before any ' +
       'endpoint saw it.',
-    spec: 'HTTP 400' },
+    spec: 'HTTP 400, in the error shape of the JSON API the path belongs ' +
+      'to (common/surface_refusals.ts); Express\'s own page elsewhere' },
   { code: 'STS-HTTP-0014',
     summary: 'A middleware ahead of the router raised an error the body ' +
       'parsers do not classify (a body stream that could not be read, ' +
       'most often), so the request failed before any endpoint saw ' +
       'it.',
-    spec: 'HTTP status as Express\'s final handler sends it' },
+    spec: 'HTTP status as Express\'s final handler sends it; a 4xx in ' +
+      'the error shape of the JSON API the path belongs to ' +
+      '(common/surface_refusals.ts)' },
   { code: 'STS-HTTP-0015',
     summary: 'A state-changing form post from a signed-in session carried no ' +
       'CSRF token.',
@@ -1248,7 +1255,8 @@ const CODES = [
     spec: 'a refusal naming the setting or field, never the value' },
   { code: 'STS-CORE-0172',
     summary: 'A request was refused because its address made too many in a minute.',
-    spec: 'HTTP 429' },
+    spec: 'HTTP 429 and Retry-After, in the error shape of the JSON API the ' +
+      'path belongs to (common/surface_refusals.ts); text/plain elsewhere' },
   { code: 'STS-CORE-0173',
     summary: 'A SAML or WS-Federation request gave a parameter more than once.',
     spec: 'HTTP 400' },

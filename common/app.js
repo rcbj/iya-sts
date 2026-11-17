@@ -86,6 +86,12 @@ const certificateHeader = require('./jose_certificate_header');
 // order. `common/validation.js` is where every decision about what a value
 // from outside may be is argued.
 const validation = require('./validation');
+// A refusal made ahead of every route, answered in the error shape of the API
+// its path belongs to (2026-11-16). A LEAF that requires nothing of this
+// service, so it closes no cycle and moves no route.
+const SurfaceRefusals = require('./surface_refusals');
+// The registry of failure codes, a LEAF.
+const errorCodes = require('./error_codes');
 // The request worker pool. A LIBRARY as far as rule 1 goes — it registers no
 // route, and at load it requires only `config`, `keystore`, the error-code
 // table, `client_address` and node builtins (the modules that register routes
@@ -1283,7 +1289,7 @@ app.use(unlessStreamedUpload(bodyParser.text({
 app.use(corsPolicy.response());
 
 // ---------------------------------------------------------------------------
-// A BODY THE PARSERS ABOVE REFUSED, WRITTEN DOWN — AND NOTHING ELSE ABOUT IT.
+// A BODY THE PARSERS REFUSED, WRITTEN DOWN — AND, ON A JSON API, ANSWERED.
 //
 // A body too large, in a charset or content encoding body-parser does not
 // read, or cut off before its Content-Length arrived is refused by the parser
@@ -1293,11 +1299,35 @@ app.use(corsPolicy.response());
 // every other ordinary middleware, and a 413 or a 415 left no audit row at all.
 //
 // So this one error middleware writes the failure row itself, with the code for
-// the condition, and hands the error straight on. It changes nothing a client
-// receives — the same error reaches the same final handler — and it cannot
-// throw, because audit.failure() cannot. The target is the PATH only: a query
-// string on this service carries codes and hints the audit log redacts.
+// the condition, and it cannot throw, because audit.failure() cannot. The
+// target is the PATH only: a query string on this service carries codes and
+// hints the audit log redacts.
+//
+// **AND ON A JSON API IT ANSWERS, IN THAT API'S OWN ERROR SHAPE (2026-11-16).**
+// Handed on, a 413, a 415 or a 400 reached Express's final handler, which
+// answers with an HTML page: on `/admin-api`, `/xacml/pep/*` or `/scim/v2` a
+// body no client of the API reads and no model of it declares (the fuzzing of
+// the PEP control plane, PR #1858). `common/surface_refusals.ts` knows each
+// API's shape from the path and argues the list; any other path, and any
+// error of 500 or more, is handed on exactly as before, so a page and an
+// unrouted path answer as they did. The code is marked on the response and
+// written on the row; it is never in the body.
 // ---------------------------------------------------------------------------
+const surfaceRefusals = new SurfaceRefusals({ log: helpers.log });
+
+// The sentence for a body the parsers refused, by body-parser's `type`.
+const BODY_REFUSALS = {
+  'entity.too.large': 'The request body is larger than the 5 MB this ' +
+    'service reads.',
+  'charset.unsupported': 'The request body is in a character set this ' +
+    'service does not read. Send it as UTF-8.',
+  'encoding.unsupported': 'The request body is in a content encoding this ' +
+    'service does not read. Send it as identity, gzip, deflate or br.',
+  'request.aborted': 'The request body ended before it was complete.',
+  'request.size.invalid': 'The request body did not match its ' +
+    'Content-Length.'
+};
+
 app.use(function (err, req, res, next) {
   const type = String((err && err.type) || '');
   let code = 'STS-HTTP-0014';
@@ -1319,6 +1349,16 @@ app.use(function (err, req, res, next) {
     outcome: (err && (err.status || err.statusCode) >= 500) ? 'error' :
               'refused'
   });
+  const status = Number((err && (err.status || err.statusCode)) || 500);
+  errorCodes.mark(res, code);
+  if (status >= 400 && status < 500 &&
+      surfaceRefusals.answer(req, res, status,
+                             Object.prototype.hasOwnProperty.call(
+                               BODY_REFUSALS, type) ? BODY_REFUSALS[type] :
+                               'The request body could not be read.',
+                             { part: 'body' })) {
+    return;
+  }
   next(err);
 });
 

@@ -150,6 +150,11 @@ const log = bunyan.createLogger({
   level: config.value('global.logLevel') || 'info'
 });
 
+// The guard's refusal on a JSON API, in that API's own error shape. A LEAF that
+// requires nothing of this service, so this file stays one.
+const SurfaceRefusals = require('./surface_refusals');
+const surfaceRefusals = new SurfaceRefusals({ log: log });
+
 // ---------------------------------------------------------------------------
 // THE CAPS.
 //
@@ -754,14 +759,18 @@ function checkDocument(value, where, opts) {
 // schema knows which. A global refusal would break the two parameters this
 // service went to some trouble to support.
 //
-// **IT ANSWERS A PLAIN 400 AND DOES NOT SPEAK ANY PROTOCOL'S DIALECT**, which
-// is a deliberate exception to the rule in this file's header, and the argument
-// for the exception is that it is unreachable by a well-formed client. There is
-// no `error: "invalid_request"` here because there is no OAuth request here —
-// this middleware runs before the router has decided which endpoint, and
-// therefore which specification, the caller was aiming at. A request carrying a
-// NUL byte in a query parameter has not made an OAuth error; it has made a
-// request no protocol defines.
+// **IT ANSWERS A 400 IN THE ERROR SHAPE OF THE API THE PATH BELONGS TO, AND A
+// PLAIN 400 EVERYWHERE ELSE.** Until 2026-11-16 it answered `text/plain` on
+// every path, on the argument that this middleware runs before the router has
+// decided which endpoint, and therefore which specification, the caller was
+// aiming at. That is true of an endpoint and not of an API: `/admin-api`,
+// `/xacml/pep/*`, `/scim/v2` and the rest each document one error shape for
+// every operation they have, and a `text/plain` answer was one no client of
+// them reads and no model of them declares (the fuzzing of the PEP control
+// plane, PR #1858, found it on every pull). `common/surface_refusals.ts` keeps
+// the list and argues it. Off those APIs the old argument still holds — a NUL
+// byte in `/oauth2/authorize`'s query has not made an OAuth error, it has made
+// a request no protocol defines — and the answer is the plain 400 it was.
 //
 // **IT IS REGISTERED AFTER THE CALL LOG ON PURPOSE.** A refusal here is exactly
 // the request an operator most wants to see afterwards, and the call log is
@@ -779,7 +788,9 @@ function checkDocument(value, where, opts) {
  * parameter named `__proto__`, `constructor` or `prototype` and a query value
  * holding a control character.
  *
- * A refused request is answered 400 in plain text, in both modes.
+ * A refused request is answered 400, in both modes: in the error shape of
+ * the JSON API its path belongs to (`common/surface_refusals.ts`), and in
+ * plain text anywhere else.
  * @returns the middleware
  */
 function guard() {
@@ -827,6 +838,16 @@ function guard() {
         errorCodes.mark(res,
                         code === 'STS-HTTP-0010' ? 'STS-HTTP-0010' :
                         'STS-HTTP-0011');
+        if (surfaceRefusals.answer(req, res, 400,
+                                   'The query string was refused: ' +
+                                   why.detail + ' It is refused before any ' +
+                                   'endpoint sees it.',
+                                   { part: 'query' })) {
+          log.debug("Leaving the validation guard. Refused, in the API's " +
+                    "shape.");
+          return undefined;
+        }
+        // error-code: none — marked just above (STS-HTTP-0010 or -0011).
         res.status(400).type('text/plain').send(
           'Bad Request: ' + why.detail + '\n\n' +
           'This is refused before any endpoint sees it, in development mode ' +
