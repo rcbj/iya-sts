@@ -1762,9 +1762,12 @@ class DelegationPage {
           : '&mdash;') + '</td></tr>';
     }).join('');
     const register = view.register;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level for the tab splitter, what follows it
+    // is one frame, and each `<h3>` block a frame inside it.
     return '<h2 id="delegation-policy" data-tab="policy">' +
       t.html('consoleDelegation.hPolicy') + '</h2>' +
-      kit.note(t.html('consoleDelegation.policyLead') +
+      kit.frame(kit.note(t.html('consoleDelegation.policyLead') +
       (register.protectedGroups.length
         ? register.protectedGroups.map(function (one) {
           return '<code>' + kit.esc(one) + '</code>';
@@ -1786,15 +1789,16 @@ class DelegationPage {
         (register.enforced ? t.html('consoleDelegation.noPairsEnforced')
                            : t.html('consoleDelegation.noPairsDevelopment')) +
         '</td></tr>') + '</table>' + pairsNav.foot +
-      '<h3>' + t.html('consoleDelegation.hIntermediaries') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleDelegation.hIntermediaries') +
+      '</h3>' +
       intermediariesNav.head +
       '<table><tr><th>' + t.html('consoleDelegation.thApplication') +
       '</th><th>' + t.html('consoleDelegation.thSemantics') + '</th>' +
       '<th>' + t.html('consoleDelegation.thMayActFor') + '</th></tr>' +
       (intermediaryRows || '<tr><td colspan="3">' +
         t.html('consoleDelegation.noIntermediaries') + '</td></tr>') +
-      '</table>' + intermediariesNav.foot +
-      '<h3>' + t.html('consoleDelegation.hPeople') + '</h3>' +
+      '</table>' + intermediariesNav.foot) +
+      kit.frame('<h3>' + t.html('consoleDelegation.hPeople') + '</h3>' +
       kit.note(t.html('consoleDelegation.mayActNote')) +
       peopleNav.head +
       '<table><tr><th>' + t.html('consoleDelegation.thPerson') +
@@ -1803,7 +1807,7 @@ class DelegationPage {
       '</th><th>' + t.html('consoleDelegation.thSemantics') + '</th></tr>' +
       (peopleRows || '<tr><td colspan="4">' +
         t.html('consoleDelegation.nobodyCarries') + '</td></tr>') +
-      '</table>' + peopleNav.foot;
+      '</table>' + peopleNav.foot));
   }
 
   // The whole configured section. Extracted into a function of its own because
@@ -1901,11 +1905,15 @@ class DelegationPage {
     const permNav = kit.pageNavPair(here, navParams, permPage.paging);
     const grantNav = kit.pageNavPair(here, navParams, grantPage.paging);
 
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level for the tab splitter, what follows it
+    // is one frame, each `<h3>` block a frame inside it and each `<h4>`
+    // block a frame inside that.
     return '<h2 id="allowed" data-tab="register">' +
       t.html('consoleDelegation.hAllowed') +
       '</h2>' +
 
-      kit.note(t.html('consoleDelegation.allowedEvidence')) +
+      kit.frame(kit.note(t.html('consoleDelegation.allowedEvidence')) +
 
       kit.note(t.html('consoleDelegation.allowedResourceBefore') +
       '<a href="/admin/applications">' +
@@ -1937,7 +1945,8 @@ class DelegationPage {
       t.html('consoleDelegation.actsPictureLink') + '</a>' +
       t.html('consoleDelegation.secondDiagramAfter')) +
 
-      '<h3 id="permissions">' + t.html('consoleDelegation.hPermissions') +
+      kit.frame('<h3 id="permissions">' +
+      t.html('consoleDelegation.hPermissions') +
       '</h3>' +
       kit.note(t.html('consoleDelegation.permissionsLead')) +
       kit.sectionSearchForm({
@@ -1980,7 +1989,8 @@ class DelegationPage {
         t.html('consoleDelegation.readOnlyAfter'))) +
 
       (!editable ? '' :
-        '<h4>' + t.html('consoleDelegation.hExposeApi') + '</h4>' +
+        kit.frame('<h4>' + t.html('consoleDelegation.hExposeApi') +
+        '</h4>' +
         kit.note(t.html('consoleDelegation.exposeApiNote')) +
         '<form method="post" action="/admin/delegation-settings">' +
         DelegationPage.permissionsBack(listView) +
@@ -1994,8 +2004,9 @@ class DelegationPage {
         '</label><input type="text" ' +
         'id="baseUri" name="baseUri" size="34" ' +
         'placeholder="https://example.com/"><button type="submit">' +
-        t.html('consoleDelegation.setBaseUri') + '</button></div></form>' +
-        '<h4>' + t.html('consoleDelegation.hDefinePermission') + '</h4>' +
+        t.html('consoleDelegation.setBaseUri') + '</button></div></form>') +
+        kit.frame('<h4>' + t.html('consoleDelegation.hDefinePermission') +
+        '</h4>' +
         kit.note(t.html('consoleDelegation.definePermissionNote')) +
         '<form method="post" action="/admin/delegation-settings">' +
         DelegationPage.permissionsBack(listView) +
@@ -2015,8 +2026,9 @@ class DelegationPage {
         'placeholder="' +
         t.html('consoleDelegation.descriptionPlaceholder') + '"><button ' +
         'type="submit">' + t.html('consoleDelegation.defineIt') +
-        '</button></div></form>') +
-      '<h3 id="grants">' + t.html('consoleDelegation.hGrants') + '</h3>' +
+        '</button></div></form>'))) +
+      kit.frame('<h3 id="grants">' + t.html('consoleDelegation.hGrants') +
+      '</h3>' +
       kit.note(t.html('consoleDelegation.grantsLead')) +
       kit.sectionSearchForm({
         path: here, query: ctx.query,
@@ -2048,7 +2060,8 @@ class DelegationPage {
       '</table>' +
       grantNav.foot +
 
-      '<h4>' + t.html('consoleDelegation.hGrantPermission') + '</h4>' +
+      kit.frame('<h4>' + t.html('consoleDelegation.hGrantPermission') +
+      '</h4>' +
       (grantable.length
         ? kit.note(t.html('consoleDelegation.grantOnPagesBefore') +
           '<a href="/admin/applications">' +
@@ -2057,9 +2070,9 @@ class DelegationPage {
         : kit.note(t.html('consoleDelegation.nothingToGrantBefore') + '<a ' +
           'href="/admin/applications">' +
           t.html('consoleDelegation.directoryApplicationsLink') + '</a>' +
-          t.html('consoleDelegation.nothingToGrantAfter'))) +
+          t.html('consoleDelegation.nothingToGrantAfter')))) +
 
-      kit.note(t.html('consoleDelegation.ordinaryAttributes'));
+      kit.note(t.html('consoleDelegation.ordinaryAttributes'))));
   }
 
 
@@ -2237,11 +2250,14 @@ class DelegationPage {
             : t.html('consoleDelegation.mapNothing')) +
           t.html('consoleDelegation.mapNothingThree'))) +
 
-      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+      // section one frame; the way back, the filter and the picture above
+      // them are left as they are.
+      kit.frame('<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
       kit.note(t.html('consoleDelegation.keyNote')) +
-      json.mapKey +
+      json.mapKey) +
 
-      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
       kit.note(t.html('consoleDelegation.partiesNote') +
       (json.directoryLoaded ? '' :
         t.html('consoleDelegation.noDirectory'))) +
@@ -2256,7 +2272,8 @@ class DelegationPage {
                                                json.looks[node.id]);
       }).join('') || '<tr><td colspan="6">' +
         t.html('consoleDelegation.noPartiesYet') + '</td></tr>') +
-      '</table><h2>' + t.html('consoleDelegation.hRelationships') +
+      '</table>') + kit.frame('<h2>' +
+      t.html('consoleDelegation.hRelationships') +
       '</h2>' +
       kit.note(t.html('consoleDelegation.relationshipsNote')) +
       kit.note(t.html('consoleDelegation.lastColumnNote')) +
@@ -2272,9 +2289,9 @@ class DelegationPage {
         return DelegationPage.delegationEdgeRow(t, edge, labelOf);
       }).join('') || '<tr><td colspan="8">' +
         t.html('consoleDelegation.noRelationshipsYet') + '</td></tr>') +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hWhatIssued') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hWhatIssued') + '</h2>' +
       kit.note(t.html('consoleDelegation.whatIssuedNote')) +
       kit.note(t.html('consoleDelegation.refusedProducedNothing',
                       { tokens: json.tokens.length, acts: json.acts })) +
@@ -2295,9 +2312,9 @@ class DelegationPage {
       (json.tokensLeftOff
         ? kit.note(t.html('consoleDelegation.tokensLeftOff', {
             n: json.tokensLeftOff, max: json.maxTokenRows }))
-        : '') +
+        : '')) +
 
-      '<h2>' + t.html('consoleDelegation.hCannotSay') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hCannotSay') + '</h2>' +
       kit.note(t.html('consoleDelegation.impersonationInvisible')) +
       kit.note(t.html('consoleDelegation.lineIsRelationship') + '<a href="' +
       kit.esc(upHref) + '">' + t.html('consoleDelegation.theTableCap') +
@@ -2307,7 +2324,7 @@ class DelegationPage {
       t.html('consoleDelegation.theDelegationPage') + '</a>' +
       t.html('consoleDelegation.whoMayAfter')) +
       kit.note(t.html('consoleDelegation.noScript')) +
-      kit.note(t.html('consoleDelegation.mapFormats'));
+      kit.note(t.html('consoleDelegation.mapFormats')));
 
   }
 
@@ -2411,11 +2428,14 @@ class DelegationPage {
           Object.assign({}, listView, { chain: json.chainKey }))
         : kit.note(t.html('consoleDelegation.nothingToDraw'))) +
 
-      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+      // section one frame; what is above them and the closing line are left
+      // as they are.
+      kit.frame('<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
       kit.note(t.html('consoleDelegation.keyNote')) +
-      json.mapKey +
+      json.mapKey) +
 
-      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
       kit.note(t.html('consoleDelegation.chainParties')) +
       '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
       '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
@@ -2428,9 +2448,10 @@ class DelegationPage {
                                                json.looks[node.id]);
       }).join('') || '<tr><td colspan="6">' +
         t.html('consoleDelegation.noParties') + '</td></tr>') +
-        '</table>' +
+        '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hRelationships') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hRelationships') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.chainRelationships')) +
       '<table><tr><th>' + t.html('consoleDelegation.thFrom') + '</th><th>' +
       t.html('consoleDelegation.thTo') + '</th><th>' +
@@ -2444,9 +2465,9 @@ class DelegationPage {
         return DelegationPage.delegationEdgeRow(t, edge, labelOf);
       }).join('') || '<tr><td colspan="8">' +
         t.html('consoleDelegation.noRelationships') + '</td></tr>') +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hIssuedOnIt') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hIssuedOnIt') + '</h2>' +
       kit.note(t.html('consoleDelegation.chainIssued', {
         tokens: json.graph.tokens.length, acts: chain.acts })) +
       '<table><tr><th class="num">#</th><th>' +
@@ -2460,9 +2481,9 @@ class DelegationPage {
         return DelegationPage.delegationTokenRow(t, token, labelOf);
       }).join('') || '<tr><td colspan="7">' +
         t.html('consoleDelegation.nothingIssuedOnChain') + '</td></tr>') +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hEveryAct') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hEveryAct') + '</h2>' +
       kit.note(t.html('consoleDelegation.sameRowsBefore') + '<a href="' +
       kit.esc(upHref) + '">' +
       t.html('consoleDelegation.theDelegationTable') + '</a>' +
@@ -2483,7 +2504,7 @@ class DelegationPage {
         // being drawn, so the link would point at the page it is on.
         return DelegationPage.delegationRow(t, row, json.facts,
                                          { chainLink: false });
-      }).join('') + '</table>' +
+      }).join('') + '</table>') +
 
       kit.note(t.html('consoleDelegation.chainFormats'));
 
@@ -2522,16 +2543,19 @@ class DelegationPage {
     const labelOf = function (id) {
       return json.looks[id] ? json.looks[id].label : id;
     };
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+    // section one frame, the picture's included (the picture itself is
+    // never wrapped), and the bare page's chooser and catalogue one.
     if (!entry) {
     return back +
       (json.asked
         ? kit.note(t.html('consoleDelegation.appNoAct',
                           { name: json.asked, max: json.maxRecords }))
         : '') +
-      kit.note(t.html('consoleDelegation.appChoose')) +
+      kit.frame(kit.note(t.html('consoleDelegation.appChoose')) +
       chooser +
       DelegationPage.delegationApplicationTable(t, json.applications,
-                                                 json.facts, listView) +
+                                                 json.facts, listView)) +
       kit.note(t.html('consoleDelegation.appListFromActsBefore') + '<a ' +
       'href="/admin/applications">' +
       t.html('consoleDelegation.theRegistry') + '</a>' +
@@ -2582,7 +2606,7 @@ class DelegationPage {
         first: kit.whenText(entry.firstAt),
         last: kit.whenText(entry.lastAt) })) +
 
-      '<h2>' + t.html('consoleDelegation.hWhatItDoes') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hWhatItDoes') + '</h2>' +
       kit.note(t.html('consoleDelegation.bothSides')) +
       '<table><tr><th>' + t.html('consoleDelegation.thRole') + '</th><th>' +
       t.html('consoleDelegation.thActs') + '</th><th>' +
@@ -2596,21 +2620,22 @@ class DelegationPage {
             : '<span class="state-none">0</span>') + '</td>' +
           '<td>' + kit.esc(role.what) + '</td>' +
           '</tr>';
-      }).join('') + '</table>' +
+      }).join('') + '</table>') +
 
       (json.graph.acts
-        ? '<h2>' + t.html('consoleDelegation.hPartOf') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleDelegation.hPartOf') + '</h2>' +
           kit.note(t.html('consoleDelegation.partOfNote')) +
           DelegationPage.drawing(t, json, '/admin/delegation/application',
             Object.assign({}, listView,
-                          { application: entry.identifier }))
+                          { application: entry.identifier })))
         : '') +
 
-      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
       kit.note(t.html('consoleDelegation.keyNote')) +
-      json.mapKey +
+      json.mapKey) +
 
-      '<h2>' + t.html('consoleDelegation.hPartiesDeals') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hPartiesDeals') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.partiesDealsNote')) +
       '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
       '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
@@ -2623,9 +2648,10 @@ class DelegationPage {
                                                json.looks[node.id]);
       }).join('') || '<tr><td colspan="6">' +
         t.html('consoleDelegation.noParties') + '</td></tr>') +
-        '</table>' +
+        '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hEveryDelegated') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hEveryDelegated') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.everyDelegatedNote', {
         tokens: json.graph.tokens.length, acts: entry.acts })) +
       '<table><tr><th class="num">#</th><th>' +
@@ -2648,9 +2674,10 @@ class DelegationPage {
       (json.graph.tokensLeftOff
         ? kit.note(t.html('consoleDelegation.appTokensLeftOff', {
             n: json.graph.tokensLeftOff, max: json.graph.maxTokenRows }))
-        : '') +
+        : '')) +
 
-      '<h2>' + t.html('consoleDelegation.hEveryActPart') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hEveryActPart') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.theRows') + '<a href="' +
       kit.esc(upHref) + '">' +
       t.html('consoleDelegation.theDelegationTable') + '</a>' +
@@ -2668,12 +2695,13 @@ class DelegationPage {
       json.acts.map(function (row) {
         return DelegationPage.delegationRow(t, row, json.facts,
                                          { listView: listView });
-      }).join('') + '</table>' +
+      }).join('') + '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hAnotherApplication') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hAnotherApplication') +
+      '</h2>' +
       chooser +
       DelegationPage.delegationApplicationTable(t, json.applications,
-                                                 json.facts, listView) +
+                                                 json.facts, listView)) +
 
       kit.note(t.html('consoleDelegation.appFormats'));
 
@@ -2709,19 +2737,22 @@ class DelegationPage {
     const labelOf = function (id) {
       return json.looks[id] ? json.looks[id].label : id;
     };
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+    // section one frame, the picture's included (the picture itself is
+    // never wrapped), and the bare page's chooser and catalogue one.
     if (!entry) {
     return back +
       (json.asked
         ? kit.note(t.html('consoleDelegation.userNoRegister',
                           { name: json.asked }))
         : '') +
-      kit.note(t.html('consoleDelegation.userChoose')) +
+      kit.frame(kit.note(t.html('consoleDelegation.userChoose')) +
       chooser +
       (json.usersComplete === false
         ? kit.note(t.html('consoleDelegation.usersPartial'))
         : '') +
       DelegationPage.delegationUserTable(t, json.users, json.facts,
-                                        listView) +
+                                        listView)) +
       kit.note(t.html('consoleDelegation.userListUnioned'));
     }
     const parties = json.graph.nodes.filter(function (node) {
@@ -2768,17 +2799,17 @@ class DelegationPage {
       t.html('consoleDelegation.lastSeen',
              { last: kit.whenText(entry.lastAt) })) +
 
-      '<h2>' + t.html('consoleDelegation.hOnePicture') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hOnePicture') + '</h2>' +
       kit.note(t.html('consoleDelegation.onePictureNote')) +
       DelegationPage.drawing(t, json, '/admin/delegation/user',
-        Object.assign({}, listView, { user: json.key })) +
+        Object.assign({}, listView, { user: json.key }))) +
 
-      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
       kit.note(t.html('consoleDelegation.keyNote') + ' ' +
       t.html('consoleDelegation.userKeyNote')) +
-      json.mapKey +
+      json.mapKey) +
 
-      '<h2>' + t.html('consoleDelegation.hWhatUsed') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hWhatUsed') + '</h2>' +
       kit.note(t.html('consoleDelegation.whatUsedNote')) +
       (json.flows.length
         ? '<table><tr><th>' + t.html('consoleDelegation.thGrant') +
@@ -2810,9 +2841,10 @@ class DelegationPage {
                   : '') + '</td>' +
               '</tr>';
           }).join('') + '</table>'
-        : kit.note(t.html('consoleDelegation.noGrantStatedNote'))) +
+        : kit.note(t.html('consoleDelegation.noGrantStatedNote')))) +
 
-      '<h2>' + t.html('consoleDelegation.hEveryCredential') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hEveryCredential') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.everyCredentialNote') +
       (json.onDelegationLines
         ? t.html('consoleDelegation.onDelegationLines',
@@ -2833,9 +2865,9 @@ class DelegationPage {
       kit.note(t.html('consoleDelegation.sameRowsRevoke') + '<a href="' +
       kit.esc('/admin/users' + kit.queryWith({ user: json.key }, {})) +
       '">' + t.html('consoleDelegation.theirPage') + '</a>' +
-      t.html('consoleDelegation.sameRowsRevokeAfter')) +
+      t.html('consoleDelegation.sameRowsRevokeAfter'))) +
 
-      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
       kit.note(t.html('consoleDelegation.userPartiesNote')) +
       '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
       '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
@@ -2850,9 +2882,9 @@ class DelegationPage {
                                           json.looks[node.id]);
       }).join('') || '<tr><td colspan="8">' +
         t.html('consoleDelegation.noParties') + '</td></tr>') +
-        '</table>' +
+        '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hEveryLine') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hEveryLine') + '</h2>' +
       kit.note(t.html('consoleDelegation.everyLineNote')) +
       '<table><tr><th>' + t.html('consoleDelegation.thFrom') + '</th><th>' +
       t.html('consoleDelegation.thTo') + '</th><th>' +
@@ -2865,9 +2897,9 @@ class DelegationPage {
       (json.graph.edges.map(function (edge) {
         return DelegationPage.userEdgeRow(t, edge, labelOf);
       }).join('') || '<tr><td colspan="8">' +
-        t.html('consoleDelegation.noLines') + '</td></tr>') + '</table>' +
+        t.html('consoleDelegation.noLines') + '</td></tr>') + '</table>') +
 
-      (json.acts.length
+      kit.frame(json.acts.length
         ? '<h2>' + t.html('consoleDelegation.hEveryActNaming') + '</h2>' +
           kit.note(t.html('consoleDelegation.theRows') + '<a href="' +
           kit.esc(upHref) + '">' +
@@ -2890,13 +2922,14 @@ class DelegationPage {
         : '<h2>' + t.html('consoleDelegation.hDelegation') + '</h2>' +
           kit.note(t.html('consoleDelegation.noActNamesThem'))) +
 
-      '<h2>' + t.html('consoleDelegation.hSomebodyElse') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hSomebodyElse') +
+      '</h2>' +
       chooser +
       (json.usersComplete === false
         ? kit.note(t.html('consoleDelegation.usersPartial'))
         : '') +
       DelegationPage.delegationUserTable(t, json.users, json.facts,
-                                          listView) +
+                                          listView)) +
 
       kit.note(t.html('consoleDelegation.userFormats'));
 
@@ -2983,7 +3016,10 @@ class DelegationPage {
                  { max: json.maxGenerations }) + '</p>'
         : '') +
 
-      '<h2>' + t.html('consoleDelegation.hHowItCame') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+      // section one frame, the picture's included; the picture itself is
+      // never wrapped.
+      kit.frame('<h2>' + t.html('consoleDelegation.hHowItCame') + '</h2>' +
       kit.note(t.html('consoleDelegation.howItCameNote')) +
       '<table><tr><th class="num">' + t.html('consoleDelegation.thGen') +
       '</th><th>' + t.html('consoleDelegation.thIdentifier') + '</th><th>' +
@@ -3036,17 +3072,17 @@ class DelegationPage {
                       t.text('consoleDelegation.noIdentifier'));
           }).join('; ') +
           t.html('consoleDelegation.wallsAfter'))
-        : '') +
+        : '')) +
 
-      '<h2>' + t.html('consoleDelegation.hWholeLine') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hWholeLine') + '</h2>' +
       kit.note(t.html('consoleDelegation.wholeLineBefore') +
       '<a href="/admin/delegation/map">' +
       t.html('consoleDelegation.theMap') + '</a>' +
       t.html('consoleDelegation.wholeLineAfter')) +
       DelegationPage.drawing(t, json, '/admin/tokens/credential',
-        Object.assign({}, listView, { id: json.identifier })) +
+        Object.assign({}, listView, { id: json.identifier }))) +
 
-      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
       kit.note(t.html('consoleDelegation.credentialPartiesNote')) +
       '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
       '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
@@ -3059,9 +3095,9 @@ class DelegationPage {
                                                json.looks[node.id]);
       }).join('') || '<tr><td colspan="6">' +
         t.html('consoleDelegation.noParties') + '</td></tr>') +
-        '</table>' +
+        '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hEveryLine') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hEveryLine') + '</h2>' +
       kit.note(t.html('consoleDelegation.pictureAsTable')) +
       '<table><tr><th>' + t.html('consoleDelegation.thFrom') + '</th><th>' +
       t.html('consoleDelegation.thTo') + '</th><th>' +
@@ -3074,9 +3110,9 @@ class DelegationPage {
       (json.graph.edges.map(function (edge) {
         return DelegationPage.userEdgeRow(t, edge, labelOf);
       }).join('') || '<tr><td colspan="8">' +
-        t.html('consoleDelegation.noLines') + '</td></tr>') + '</table>' +
+        t.html('consoleDelegation.noLines') + '</td></tr>') + '</table>') +
 
-      (json.acts.length
+      kit.frame(json.acts.length
         ? '<h2>' + t.html('consoleDelegation.hEveryActLine') + '</h2>' +
           kit.note(t.html('consoleDelegation.theRows') +
           '<a href="/admin/delegation">' +
@@ -3193,7 +3229,11 @@ class DelegationPage {
                  t.text('consoleDelegation.tileDanglingNotDrawn')) +
       '</div>' +
 
-      '<h2 id="groups">' + t.html('consoleDelegation.hGroupings') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the `<h2>`
+      // section one frame; the notes and the picture above it are left as
+      // they are, the picture never wrapped.
+      kit.frame('<h2 id="groups">' +
+      t.html('consoleDelegation.hGroupings') + '</h2>' +
 
       kit.note(t.html('consoleDelegation.groupDefinition')) +
 
@@ -3228,7 +3268,7 @@ class DelegationPage {
                  t.text('consoleDelegation.tileLargest')) +
       '</div>' +
 
-      kit.note(t.html('consoleDelegation.groupOfOne')) +
+      kit.note(t.html('consoleDelegation.groupOfOne'))) +
 
       kit.note(t.html('consoleDelegation.registerItselfBefore') +
       '<a href="/admin/delegation#allowed">' +
@@ -3280,7 +3320,9 @@ class DelegationPage {
       'href="/admin/delegation/allowed">' +
       t.html('consoleDelegation.theWholeRegister') + '</a>' +
       t.html('consoleDelegation.clusterChooseAfter')) +
-      chooser +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the chooser
+      // and the groups one frame, as each `<h2>` section is below.
+      kit.frame(chooser +
       kit.perPageForm('/admin/delegation/cluster', 'permappq',
                        kit.queryOne(ctx.query, 'permappq'),
                        json.groupPage.paging.perPage,
@@ -3288,7 +3330,7 @@ class DelegationPage {
       groupNav.head +
       DelegationPage.allowedClusterTable(t, json.clusters,
         json.groupPage.shown, onward, json.apps) +
-      groupNav.foot +
+      groupNav.foot) +
       kit.note(t.html('consoleDelegation.configuredListBefore') +
       '<a href="/admin/applications">' +
       t.html('consoleDelegation.theRegistry') + '</a>' +
@@ -3408,13 +3450,14 @@ class DelegationPage {
                          DelegationPage.allowedChooserState(ctx.query))) +
 
       (group.counts.lines
-        ? '<h2>' + t.html('consoleDelegation.hGroupDrawn') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleDelegation.hGroupDrawn') +
+          '</h2>' +
           kit.note(t.html('consoleDelegation.groupDrawnBefore') + '<a href="' +
           kit.esc('/admin/delegation/allowed' + kit.queryWith(onward, {})) +
           '">' + t.html('consoleDelegation.wholeRegister') + '</a>' +
           t.html('consoleDelegation.groupDrawnAfter')) +
           DelegationPage.drawing(t, json, '/admin/delegation/cluster',
-            Object.assign({}, onward, { application: json.asked }))
+            Object.assign({}, onward, { application: json.asked })))
         // WHY THERE IS NOTHING TO DRAW, and the three reasons are three
         // different states rather than one empty page. Saying "every grant
         // here is dangling" about an application that holds no grants at all
@@ -3426,7 +3469,8 @@ class DelegationPage {
             : t.html('consoleDelegation.everyGrantLeftOut')) +
           t.html('consoleDelegation.svgEmpty'))) +
 
-      '<h2>' + t.html('consoleDelegation.hAppsInIt') + '</h2>' +
+      // Each `<h2>` section one frame, the picture's included.
+      kit.frame('<h2>' + t.html('consoleDelegation.hAppsInIt') + '</h2>' +
       kit.note(t.html('consoleDelegation.appsInItNote')) +
       '<table><tr><th>' + t.html('consoleDelegation.thApplication') +
       '</th><th>' + t.html('consoleDelegation.thPermsItExposes') +
@@ -3436,9 +3480,9 @@ class DelegationPage {
       '<th>' + t.html('consoleDelegation.thActsSide') + '</th></tr>' +
       (memberRows || '<tr><td colspan="5">' +
         t.html('consoleDelegation.noApplications') + '</td></tr>') +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleDelegation.hMayBeAsked') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hMayBeAsked') + '</h2>' +
       kit.note(t.html('consoleDelegation.mayBeAskedNote')) +
       permissionNav.head +
       '<table><tr><th>' + t.html('consoleDelegation.thResource') +
@@ -3454,9 +3498,10 @@ class DelegationPage {
         '<tr><td colspan="6">' +
         t.html('consoleDelegation.noPermsInGroup') + '</td></tr>') +
       '</table>' +
-      permissionNav.foot +
+      permissionNav.foot) +
 
-      '<h2>' + t.html('consoleDelegation.hEveryGrantGroup') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hEveryGrantGroup') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.theRows') +
       '<a href="/admin/delegation#allowed">' +
       t.html('consoleDelegation.theRegister') + '</a>' +
@@ -3475,14 +3520,15 @@ class DelegationPage {
         '<tr><td colspan="7">' +
         t.html('consoleDelegation.noGrantInGroup') + '</td></tr>') +
       '</table>' +
-      grantNav.foot +
+      grantNav.foot) +
 
-      '<h2>' + t.html('consoleDelegation.hAnotherApplication') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleDelegation.hAnotherApplication') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.sameSearchBefore') + '<a href="' +
       kit.esc('/admin/delegation/allowed' + kit.queryWith(onward, {})) +
       '">' + t.html('consoleDelegation.theAllowedPicture') + '</a>' +
       t.html('consoleDelegation.sameSearchAfter')) +
-      chooser +
+      chooser) +
 
       kit.note(t.html('consoleDelegation.clusterFormats',
                       { name: json.asked }));
@@ -3732,8 +3778,11 @@ class DelegationPage {
       // A TAB PER REGISTER (2026-10-12): the lead, the picture's link and
       // the two choosers above are Metadata, and so are the mechanisms and
       // the closing notes (`WebPages.protocolTabs()`).
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level for the tab splitter, what follows it
+      // is one frame, each `<h3>` block a frame inside it.
       '<h2 data-tab="happened">' + t.html('consoleDelegation.hWhatHappened') +
-      '</h2>' +
+      '</h2>' + kit.frame(
       // No `page` input in this form, deliberately: changing a filter or the
       // page size returns to page 1. Carrying the old page number over would
       // land somebody on page 6 of a two-page result and the clamp in
@@ -3827,11 +3876,11 @@ class DelegationPage {
           t.html('consoleDelegation.droppedAfter')
         : t.html('consoleDelegation.capNothingDropped',
                  { max: json.maxRecords })) +
-      t.html('consoleDelegation.seqNote')) +
+      t.html('consoleDelegation.seqNote'))) +
 
       '<h2 data-tab="chains">' + t.html('consoleDelegation.hChains') +
       '</h2>' +
-      kit.note(t.html('consoleDelegation.chainsBefore') +
+      kit.frame(kit.note(t.html('consoleDelegation.chainsBefore') +
       '<a href="/admin/delegation/map">' +
       t.html('consoleDelegation.chainsLink') + '</a>' +
       t.html('consoleDelegation.chainsAfter')) +
@@ -3881,14 +3930,14 @@ class DelegationPage {
       }).join('') || '<tr><td colspan="8">' +
         t.html('consoleDelegation.noChainsYet') + '</td></tr>') +
       '</table>' +
-      chainsNav.foot +
+      chainsNav.foot) +
 
       DelegationPage.permissionsSection(ctx, json.permissionsView,
                                         listView, false) +
 
       '<h2 data-tab="kerberos">' +
       t.html('consoleDelegation.hKerberosPolicy') + '</h2>' +
-      kit.note(t.html('consoleDelegation.kdcView')) +
+      kit.frame(kit.note(t.html('consoleDelegation.kdcView')) +
       kit.note(t.html('consoleDelegation.twoAttributes')) +
       kit.note(t.html('consoleDelegation.beyondAttribute')) +
       pairsNav.head +
@@ -3905,7 +3954,8 @@ class DelegationPage {
         '</td></tr>') + '</table>' +
       pairsNav.foot +
 
-      '<h3>' + t.html('consoleDelegation.hAccountFlags') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleDelegation.hAccountFlags') +
+      '</h3>' +
       kit.note(t.html('consoleDelegation.accountFlagsNote')) +
       flagsNav.head +
       '<table><tr><th>' + t.html('consoleDelegation.thPrincipal') +
@@ -3915,12 +3965,14 @@ class DelegationPage {
         '<tr><td colspan="3">' + t.html('consoleDelegation.noFlags') +
         '</td></tr>') +
       '</table>' +
-      flagsNav.foot +
+      flagsNav.foot)) +
 
       DelegationPage.delegationPolicySection(ctx,
                                              json.exchangePolicyView) +
 
-      '<div data-metadata><h3>' +
+      // The Metadata block keeps its marker; the `<h3>` block in it is a
+      // frame and the closing notes after it are not.
+      '<div data-metadata>' + kit.frame('<h3>' +
       t.html('consoleDelegation.hMechanisms') + '</h3>' +
       kit.note(t.html('consoleDelegation.mechanismsNote')) +
       mechanismsNav.head +
@@ -3942,7 +3994,7 @@ class DelegationPage {
               : ' ' + t.html('consoleDelegation.nothingChecksWho'))) +
           '</li>';
       }).join('') + '</ul>' +
-      mechanismsNav.foot +
+      mechanismsNav.foot) +
 
       kit.note(t.html('consoleDelegation.inMemory')) +
 

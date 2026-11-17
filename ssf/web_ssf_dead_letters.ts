@@ -370,49 +370,54 @@ class SsfDeadLettersPage {
 
       // A TAB PER SECTION (2026-10-12): the intro, the tiles and the note
       // above are Metadata, and so are the closing links
-      // (`WebPages.protocolTabs()`).
+      // (`WebPages.protocolTabs()`). FRAMED AS KEY PAIRS IS (`secframe`,
+      // rcbj 2026-11-16): a tab's heading stays at the top level, where the
+      // splitter cuts, and what follows it is the frame, its h3s inside.
       '<h2 data-tab="when">' + t.html('consoleSsfDeadLetters.when.heading') +
       '</h2>' +
-      kit.note(t.html('consoleSsfDeadLetters.when.note', {
+      kit.frame(kit.note(t.html('consoleSsfDeadLetters.when.note', {
         bucket: SsfDeadLettersPage.deadLetterSpan(timeline.bucketS),
         window: SsfDeadLettersPage.deadLetterSpan(timeline.windowS) })) +
       legend +
       SsfDeadLettersPage.deadLetterTimeline(timeline, json.causes, t) +
       timelineTable +
-      older +
+      older) +
 
       '<h2 data-tab="why">' + t.html('consoleSsfDeadLetters.why.heading') +
       '</h2>' +
-      kit.note(t.html('consoleSsfDeadLetters.why.note')) +
+      kit.frame(kit.note(t.html('consoleSsfDeadLetters.why.note')) +
       '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.cause') +
       '</th><th>' + t.html('consoleSsfDeadLetters.th.meaning') + '</th>' +
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
       '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
       '</th></tr>' +
       causeRows + '</table>' +
-      '<h3>' + t.html('consoleSsfDeadLetters.why.byCode') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleSsfDeadLetters.why.byCode') +
+      '</h3>' +
       '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.code') +
       '</th><th>' + t.html('consoleSsfDeadLetters.th.cause') + '</th><th>' +
       t.html('consoleSsfDeadLetters.th.codeMeaning') + '</th>' +
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
-      '</th></tr>' + codeRows + '</table>' +
-      '<h3>' + t.html('consoleSsfDeadLetters.why.byAnswer') + '</h3>' +
+      '</th></tr>' + codeRows + '</table>') +
+      kit.frame('<h3>' + t.html('consoleSsfDeadLetters.why.byAnswer') +
+      '</h3>' +
       '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.status') +
       '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
       '</th>' +
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
-      '</th></tr>' + statusRows + '</table>' +
-      '<h3>' + t.html('consoleSsfDeadLetters.why.byType') + '</h3>' +
+      '</th></tr>' + statusRows + '</table>') +
+      kit.frame('<h3>' + t.html('consoleSsfDeadLetters.why.byType') +
+      '</h3>' +
       '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.event') +
       '</th><th>' + t.html('consoleSsfDeadLetters.th.type') +
       '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
       '</th>' +
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
-      '</th></tr>' + typeRows + '</table>' +
+      '</th></tr>' + typeRows + '</table>')) +
 
       '<h2 data-tab="streams">' +
       t.html('consoleSsfDeadLetters.streams.heading') + '</h2>' +
-      kit.note(t.html('consoleSsfDeadLetters.streams.note')) +
+      kit.frame(kit.note(t.html('consoleSsfDeadLetters.streams.note')) +
       streamNav.head +
       kit.wideTable(t.text('consoleSsfDeadLetters.streams.tableLabel'),
                      '<table><tr><th>' +
@@ -425,11 +430,11 @@ class SsfDeadLettersPage {
       '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.ever') +
       '</th></tr>' +
       streamRows + '</table>') +
-      streamNav.foot +
+      streamNav.foot) +
 
       '<h2 id="letters" data-tab="letters">' +
       t.html('consoleSsfDeadLetters.letters.heading') + '</h2>' +
-      search +
+      kit.frame(search +
       (narrowed.length
         ? '<p class="sub">' + t.html('consoleSsfDeadLetters.narrow.before') +
           narrowed.join(t.html('consoleSsfDeadLetters.narrow.and')) +
@@ -447,11 +452,11 @@ class SsfDeadLettersPage {
       '</th><th>SET</th></tr>' +
       letterRows + '</table>') +
       nav.foot +
-      kit.note(t.html('consoleSsfDeadLetters.letters.note')) +
+      kit.note(t.html('consoleSsfDeadLetters.letters.note'))) +
 
       '<h2 data-tab="process">' +
       t.html('consoleSsfDeadLetters.process.heading') + '</h2>' +
-      kit.warn(t.html('consoleSsfDeadLetters.process.warn',
+      kit.frame(kit.warn(t.html('consoleSsfDeadLetters.process.warn',
                       { pid: String(proc.pid), role: proc.role })) +
       '<div class="tiles">' +
       kit.tile(String(pushes.active || 0) + ' / ' +
@@ -467,7 +472,8 @@ class SsfDeadLettersPage {
       kit.tile(since.trimmed, t.text('consoleSsfDeadLetters.tile.overCap')) +
       kit.tile(since.probes, t.text('consoleSsfDeadLetters.tile.probes')) +
       '</div>' +
-      '<h3>' + t.html('consoleSsfDeadLetters.sweeps.heading') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleSsfDeadLetters.sweeps.heading') +
+      '</h3>' +
       kit.note(t.html('consoleSsfDeadLetters.sweeps.note')) +
       kit.wideTable(t.text('consoleSsfDeadLetters.sweeps.heading'),
                     '<table><tr><th>' +
@@ -482,18 +488,18 @@ class SsfDeadLettersPage {
       '</th><th class="num">' +
       t.html('consoleSsfDeadLetters.th.deadStreams') + '</th>' +
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.probes') +
-      '</th></tr>' + sweepRows + '</table>') +
+      '</th></tr>' + sweepRows + '</table>'))) +
 
       '<h2 data-tab="settings">' +
       t.html('consoleSsfDeadLetters.settings.heading') + '</h2>' +
-      kit.note(t.html('consoleSsfDeadLetters.settings.before') +
+      kit.frame(kit.note(t.html('consoleSsfDeadLetters.settings.before') +
       '<a href="/admin/ssf">' + t.html('consoleSsfDeadLetters.link.ssf') +
       '</a>' + t.html('consoleSsfDeadLetters.settings.after')) +
       '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.setting') +
       '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.value') +
       '</th><th>' + t.html('consoleSsfDeadLetters.th.settingMeaning') +
       '</th></tr>' + settingRows +
-      '</table>' +
+      '</table>') +
 
       '<div data-metadata>' +
       kit.note('<a href="/admin/ssf/dead-letters?format=json">' +

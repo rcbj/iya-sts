@@ -193,6 +193,7 @@ class ProviderCommandsPage {
     const send = '<h3 data-tab="send">' +
       t.html('consoleProviderCommands.sendHeading') +
       '</h3>' +
+      kit.frame(
       '<form method="post" action="' + PAGE + '" id="command-send-account">' +
       '<input type="hidden" name="action" value="send-account">' +
       '<label>' + t.html('consoleProviderCommands.client') +
@@ -214,7 +215,7 @@ class ProviderCommandsPage {
       ' <select name="command">' +
       tenantOptions + '</select></label> <button type="submit">' +
       t.html('consoleProviderCommands.start') +
-      '</button></form>';
+      '</button></form>');
     const accounts = json.accounts.length ? json.accounts.map(function (a:
                                                                      Json) {
       return '<tr><td><code>' + esc(a.clientId) + '</code></td><td>' +
@@ -264,39 +265,43 @@ class ProviderCommandsPage {
       // Metadata.
       '<h3 data-tab="clients">' +
       t.html('consoleProviderCommands.clientsHeading') + '</h3>' +
-      nav.clients.head +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content after its heading, which `WebPages.protocolTabs()` cuts at
+      // the top level.
+      kit.frame(nav.clients.head +
       '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       '<th>command_endpoint</th>' +
       th('consoleProviderCommands.colSupports') +
       '<th></th></tr></thead><tbody>' +
-      clients + '</tbody></table>' + nav.clients.foot + send +
+      clients + '</tbody></table>' + nav.clients.foot) + send +
       '<h3 data-tab="accounts">' +
       t.html('consoleProviderCommands.accountsHeading') + '</h3>' +
-      nav.accounts.head +
+      kit.frame(nav.accounts.head +
       '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colPerson') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colLastCommand') +
       th('consoleProviderCommands.colWhen') + '</tr></thead><tbody>' +
-      accounts + '</tbody></table>' + nav.accounts.foot +
+      accounts + '</tbody></table>' + nav.accounts.foot) +
       '<h3 data-tab="tenants">' +
       t.html('consoleProviderCommands.runsHeading') + '</h3>' +
-      nav.runs.head + '<table><thead>' +
+      kit.frame(nav.runs.head + '<table><thead>' +
       '<tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colCommand') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colProgress') +
       th('consoleProviderCommands.colStarted') +
-      '</tr></thead><tbody>' + runs + '</tbody></table>' + nav.runs.foot +
+      '</tr></thead><tbody>' + runs + '</tbody></table>' +
+      nav.runs.foot) +
       '<h3 data-tab="deliveries">' +
       t.html('consoleProviderCommands.deliveriesHeading') + '</h3>' +
-      nav.deliveries.head +
+      kit.frame(nav.deliveries.head +
       '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colCommand') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colQueued') +
       '<th></th></tr></thead><tbody>' +
-      deliveries + '</tbody></table>' + nav.deliveries.foot +
+      deliveries + '</tbody></table>' + nav.deliveries.foot) +
       '<p class="links" data-metadata><a href="' + PAGE +
       '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/commands</code> · <a href="' + DELIVERIES +
@@ -340,7 +345,9 @@ class ProviderCommandsPage {
       // the state filter above are Metadata (`WebPages.protocolTabs()`).
       return '<h3 id="kind-' + esc(k.id) + '" data-tab="' + esc(k.id) +
         '">' + esc(k.title) + '</h3>' +
-        '<p class="sub">' +
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+        // content after its heading, which the splitter cuts at.
+        kit.frame('<p class="sub">' +
         t.html('consoleProviderCommands.counts',
                { pending: k.counts.pending, sent: k.counts.sent,
                  dead: k.counts.dead }) +
@@ -351,10 +358,10 @@ class ProviderCommandsPage {
         t.html('consoleProviderCommands.colState') + '</th><th>' +
         t.html('consoleProviderCommands.colQueued') +
         '</th><th></th></tr></thead><tbody>' + rows +
-        '</tbody></table>' + nav.foot;
+        '</tbody></table>' + nav.foot);
     }).join('');
     return kit.note(t.html('consoleProviderCommands.deliveriesNote')) +
-      filter + kinds + '<p class="links" data-metadata><a href="' +
+      kit.frame(filter) + kinds + '<p class="links" data-metadata><a href="' +
       DELIVERIES + '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/deliveries</code></p>';
   }

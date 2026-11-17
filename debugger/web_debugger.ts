@@ -159,7 +159,10 @@ class DebuggerPage {
                  : '')
         : t.html('consoleDebugger.api.anything')) +
       '</table>';
-    return tiles + what + warning + listener + process +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the two status
+    // sections, before the settings tab, stay on Metadata.
+    return tiles + what + warning + kit.frame(listener) +
+           kit.frame(process) +
            // The listener and the api process are status, so Metadata; the
            // settings are a tab (2026-10-12).
            '<h2 data-tab="settings">' + t.html('consoleDebugger.settings') +

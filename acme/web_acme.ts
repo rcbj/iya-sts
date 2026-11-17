@@ -369,8 +369,15 @@ class AcmePage {
   static countsTable(title, rows, t, tab?) {
     // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
     // table of counts (`WebPages.protocolTabs()`).
-    return '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
-      esc(title) + '</h2><table><thead><tr><th>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a tab's heading
+    // stays at the top level for the splitter and its table is the frame;
+    // an unmarked heading goes inside its frame.
+    const heading = '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') +
+      '>' + esc(title) + '</h2>';
+    const framed = function (html) {
+      return tab ? heading + kit.frame(html) : kit.frame(heading + html);
+    };
+    return framed('<table><thead><tr><th>' +
       t.html('consoleAcme.thName') + '</th><th>' +
       t.html('consoleAcme.thCount') + '</th></tr></thead><tbody>' +
       (rows.length ? rows.map(function (r) {
@@ -378,7 +385,7 @@ class AcmePage {
                r.count + '</td></tr>';
       }).join('') : '<tr><td colspan="2" class="sub">' +
                     t.html('consoleAcme.none') + '</td></tr>') +
-      '</tbody></table>';
+      '</tbody></table>');
   }
 
   // THE TWO PAGES' BODIES (#446), each one method so that it can be one
@@ -405,27 +412,29 @@ class AcmePage {
       // EACH SECTION A SUB-TAB (2026-10-12): the ACME tab of Protocols →
       // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
       // CERT_SUB_TAB_IDS.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each sub-tab's
+      // content one frame; the settings forms frame themselves.
       kit.subTabbedPanels(t.text('console.nav.acme'), [
         { id: 'cert-acme-ca', label: t.text('consoleAcme.hIssuingCa'),
-          html: self.authorityHtml(json, t) },
+          html: kit.frame(self.authorityHtml(json, t)) },
         { id: 'cert-acme-profiles', label: t.text('consoleAcme.hProfiles'),
-          html: self.profilesHtml(json, t) },
+          html: kit.frame(self.profilesHtml(json, t)) },
         { id: 'cert-acme-eab', label: t.text('consoleAcme.hEab'),
-          html: self.eabHtml(ctx, json) },
+          html: kit.frame(self.eabHtml(ctx, json)) },
         { id: 'cert-acme-accounts', label: t.text('consoleAcme.hAccounts'),
-          html: self.accountsHtml(ctx, json) },
+          html: kit.frame(self.accountsHtml(ctx, json)) },
         { id: 'cert-acme-certificates',
           label: t.text('consoleAcme.hCertificates'),
-          html: self.certificatesHtml(ctx, json) },
+          html: kit.frame(self.certificatesHtml(ctx, json)) },
         { id: 'cert-acme-host-names', label: t.text('consoleAcme.hHostNames'),
-          html: self.hostNamesHtml(ctx, json) },
+          html: kit.frame(self.hostNamesHtml(ctx, json)) },
         { id: 'cert-acme-mode', label: t.text('consoleAcme.hMode'),
-          html: kit.note('<strong>' + esc(json.mode.current) +
+          html: kit.frame(kit.note('<strong>' + esc(json.mode.current) +
             '</strong>: ' + esc(json.mode.inForce) + '<div class="sub">' +
             t.html('consoleAcme.development') + ' ' +
             esc(json.mode.development) + '</div><div ' +
             'class="sub">' + t.html('consoleAcme.product') + ' ' +
-            esc(json.mode.product) + '</div>') },
+            esc(json.mode.product) + '</div>')) },
         { id: 'cert-acme-settings', label: t.text('consoleAcme.hSettings'),
           html: SettingsForms.forms(json.settings,
                                     '/admin/cert-issuance#cert-acme-settings',
@@ -492,7 +501,7 @@ class AcmePage {
                        'principals') +
       '<h2 id="list-page" data-tab="recent">' + t.html('consoleAcme.recent') +
       '</h2>' +
-      pager.head +
+      kit.frame(pager.head +
       '<table><thead><tr><th>' + t.html('consoleAcme.thAt') + '</th><th>' +
       t.html('consoleAcme.thOperation') + '</th><th>' +
       t.html('consoleAcme.thOutcome') + '</th><th>' +
@@ -504,7 +513,7 @@ class AcmePage {
       '</th><th>' + t.html('consoleAcme.serial') +
       '</th></tr></thead><tbody>' + recent +
       '</tbody></table>' +
-      pager.foot +
+      pager.foot) +
       '<div data-metadata>' +
       kit.note(t.html('consoleAcme.noReset') +
                  ' <a href="/admin/audit">' + t.html('consoleAcme.auditLog') +

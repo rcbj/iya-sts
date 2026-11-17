@@ -38,14 +38,16 @@ class ConfigDumpPage {
         total: view.settingCount,
         masked: view.masking.maskedValues,
         realms: realms.length })) +
-      '<p><button type="button" class="secondary" data-download-view="' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame('<p><button type="button" class="secondary" ' +
+      'data-download-view="' +
       kit.esc('iya-sts-config-' + view.realm + '-' + stamp + '.json') + '">' +
       t.html('consoleConfigDump.download') + '</button></p>' +
       (realms.length
         ? '<table><thead><tr><th>' + t.html('consoleConfigDump.thRealm') +
           '</th><th>' + t.html('consoleConfigDump.thOwn') +
           '</th></tr></thead><tbody>' + rows + '</tbody></table>'
-        : '');
+        : ''));
   }
 }
 

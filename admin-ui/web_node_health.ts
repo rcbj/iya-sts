@@ -54,6 +54,11 @@ const MARK = '\u0001';
 const PAGE = '/admin/node-health';
 const COLLECT_ACTION = 'collect-garbage';
 
+// A section's heading followed by the frame drawn after it, for
+// `clusterHtml()`, which moves the heading inside.
+const HEADING_BEFORE_FRAME =
+  /(<h2\b[^>]*>(?:(?!<\/h2>)[\s\S])*<\/h2>)<section class="secframe">/g;
+
 /**
  * Draws Monitoring → Node Health from the answer of `GET
  * /admin-api/node-health`: the cluster's totals and, for each node, its
@@ -115,16 +120,20 @@ class NodeHealthPage {
   // Each section below is handed the page's translator `t` by its caller
   // (#539); a local that was called `t` before — the throttling figures,
   // the totals — has a longer name now.
+  // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section's
+  // heading stays at the top level, where the tab splitter cuts, and what
+  // follows it is one frame; `clusterHtml()` moves the heading in.
   static cpuHtml(cpu: Json, t: Json): string {
     const head = '<h2 id="cpu" data-tab="cpu">' +
       t.html('consoleNodeHealth.headCpu') +
       '</h2>';
     if (!cpu.available) {
-      return head + this.notAvailableHtml(t, cpu.unavailableText);
+      return head + kit.frame(this.notAvailableHtml(t, cpu.unavailableText));
     }
     const thr = cpu.throttling;
     if (cpu.fromEcs) {
-      const ecsHtml = head + '<p>' + kit.esc(cpu.limitText) + '</p>' +
+      const ecsHtml = head + kit.frame('<p>' + kit.esc(cpu.limitText) +
+        '</p>' +
         this.rows([
           [t.text('consoleNodeHealth.utilisation'),
            kit.esc(this.pct(cpu.utilisationPercent)),
@@ -135,10 +144,10 @@ class NodeHealthPage {
              : t.html('consoleNodeHealth.ecsCores',
                       { cores: String(cpu.coresUsed) })]
         ]) + '<p><small>' + t.html('consoleNodeHealth.theCgroup') + ' ' +
-        kit.esc(cpu.cgroupUnavailableText || '') + '</small></p>';
+        kit.esc(cpu.cgroupUnavailableText || '') + '</small></p>');
       return ecsHtml;
     }
-    const html = head + '<p>' + kit.esc(cpu.limitText) + '</p>' +
+    const html = head + kit.frame('<p>' + kit.esc(cpu.limitText) + '</p>' +
       this.rows([
         [t.text('consoleNodeHealth.utilisation'),
          kit.esc(this.pct(cpu.utilisationPercent)),
@@ -167,7 +176,7 @@ class NodeHealthPage {
       ]) + '<p><small>' +
       t.html('consoleNodeHealth.fromCgroup',
              { version: String(cpu.cgroupVersion),
-               source: String(cpu.source) }) + '</small></p>';
+               source: String(cpu.source) }) + '</small></p>');
     return html;
   }
 
@@ -175,9 +184,9 @@ class NodeHealthPage {
     const head = '<h2 id="memory" data-tab="memory">' +
       t.html('consoleNodeHealth.headMemory') + '</h2>';
     if (!m.available) {
-      return head + this.notAvailableHtml(t, m.unavailableText);
+      return head + kit.frame(this.notAvailableHtml(t, m.unavailableText));
     }
-    const html = head + '<p>' + kit.esc(m.limitText) + '</p>' +
+    const html = head + kit.frame('<p>' + kit.esc(m.limitText) + '</p>' +
       this.rows([
         [t.text('consoleNodeHealth.inUse'),
          kit.esc(this.mib(m.currentBytes)),
@@ -207,7 +216,7 @@ class NodeHealthPage {
                    kit.esc(m.cgroupUnavailableText || ''))
         : t.html('consoleNodeHealth.fromCgroup',
                  { version: String(m.cgroupVersion),
-                   source: String(m.source) })) + '</small></p>';
+                   source: String(m.source) })) + '</small></p>');
     return html;
   }
 
@@ -234,7 +243,7 @@ class NodeHealthPage {
     };
     const html = '<h2 id="processes" data-tab="processes">' +
       t.html('consoleNodeHealth.headProcesses') + '</h2>' +
-      this.rows([
+      kit.frame(this.rows([
         [t.text('consoleNodeHealth.processes'), kit.esc(totals.processes),
          t.html('consoleNodeHealth.listedBelow')],
         [t.text('consoleNodeHealth.workerThreads'),
@@ -252,7 +261,8 @@ class NodeHealthPage {
       ]) + kit.note(kit.esc(p.totalsText),
                     t.text('consoleNodeHealth.totalsLabel')) +
       (controls ? this.collectAllHtml(t) : '') +
-      (gc && gc.collected ? this.collectedHtml(gc.collected, t) : '') +
+      (gc && gc.collected ? kit.frame(this.collectedHtml(gc.collected, t))
+                          : '') +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleNodeHealth.thProcess') + '</th>' +
       '<th>' + t.html('consoleNodeHealth.thResident') + '</th><th>' +
@@ -299,7 +309,7 @@ class NodeHealthPage {
             kit.esc(u.role) + ' (' + kit.esc(u.why) + ')';
         }).join('; ') + '.') : '') +
       (p.debuggerNote ? '<p><small>' + kit.esc(p.debuggerNote) +
-                        '</small></p>' : '');
+                        '</small></p>' : ''));
     return html;
   }
 
@@ -379,11 +389,11 @@ class NodeHealthPage {
       t.html('consoleNodeHealth.headEcs') +
       '</h2>';
     if (!e.available) {
-      return head + this.notAvailableHtml(t, e.unavailableText);
+      return head + kit.frame(this.notAvailableHtml(t, e.unavailableText));
     }
     const s = e.stats || {};
     const limits = e.taskLimits || {};
-    const html = head + '<p>' + kit.esc(e.text) + '</p>' +
+    const html = head + kit.frame('<p>' + kit.esc(e.text) + '</p>' +
       this.rows([
         [t.text('consoleNodeHealth.taskLimits'),
          kit.esc(limits.cpuVcpus === undefined ||
@@ -406,7 +416,7 @@ class NodeHealthPage {
          t.html('consoleNodeHealth.ecsCpuWhy',
                 { pct: this.pct(s.cpuPercentOfTaskLimit) })]
       ]) + (e.unavailableText ? '<p><small>' + kit.esc(e.unavailableText) +
-                                '</small></p>' : '');
+                                '</small></p>' : ''));
     return html;
   }
 
@@ -441,7 +451,7 @@ class NodeHealthPage {
     const m = json.machine;
     const machine = '<h2 id="machine" data-tab="machine">' +
       t.html('consoleNodeHealth.headMachine') + '</h2>' +
-      '<p>' + kit.esc(m.text) + '</p>' +
+      kit.frame('<p>' + kit.esc(m.text) + '</p>' +
       this.rows([
         [t.text('consoleNodeHealth.loadAverage'),
          kit.esc((m.loadavg || []).map(function (n: number): string {
@@ -453,7 +463,7 @@ class NodeHealthPage {
                   total: this.mib(m.totalmemBytes) }),
          'os.freemem() and os.totalmem()'],
         [t.text('consoleNodeHealth.cpus'), kit.esc(m.cpus), 'os.cpus()']
-      ]);
+      ]));
     const html = tiles + about + this.cpuHtml(cpu, t) +
       this.memoryHtml(mem, t) +
       this.processesHtml(json.processes, t,
@@ -488,7 +498,10 @@ class NodeHealthPage {
       return html;
     }
     const totals = json.totals;
-    const html = '<h2 id="cluster">' + t.html('consoleNodeHealth.cluster') +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the cluster a
+    // frame, and each node a frame with its sections inside it.
+    const html = kit.frame('<h2 id="cluster">' +
+      t.html('consoleNodeHealth.cluster') +
       '</h2><p>' + kit.esc(c.text) +
       '</p>' + (c.readError ? kit.warn(kit.esc(c.readError)) : '') +
       this.rows([
@@ -528,7 +541,7 @@ class NodeHealthPage {
           '</td><td>' + kit.esc(n.state) + '</td><td>' +
           (n.ageSeconds === null ? '—' : kit.esc(n.ageSeconds) + ' s') +
           '</td></tr>';
-      }).join('') + '</tbody></table>' +
+      }).join('') + '</tbody></table>') +
       nodes.map(function (n: Json): string {
         const head = '<h2 id="node-' + kit.esc(n.name) + '">' +
           t.html('consoleNodeHealth.nodeNamed', { name: String(n.name) }) +
@@ -537,7 +550,7 @@ class NodeHealthPage {
           '<strong>' + kit.esc(n.state) + '</strong>: ' +
           kit.esc(n.stateText) + '</p>';
         if (!n.view) {
-          return head;
+          return kit.frame(head);
         }
         let body = '';
         try {
@@ -545,18 +558,22 @@ class NodeHealthPage {
         } catch (e) {
           // A snapshot from another version of this page may lack a figure
           // this one draws; the node is still listed, and says so.
-          return head + kit.warn('This node\'s snapshot could not be ' +
-                                   'drawn: ' + kit.esc((e && e.message) ||
-                                                         e) + '.');
+          return kit.frame(head +
+                           kit.warn('This node\'s snapshot could not be ' +
+                                    'drawn: ' + kit.esc((e && e.message) ||
+                                                          e) + '.'));
         }
         // Another node's sections carry its name in their anchors, so the
         // page's own `id="cpu"` and the rest stay this node's. On a cluster
         // the page is one column per node, as it was: the sections are tabs
         // (`WebPages.protocolTabs()`, 2026-10-12) only where one node is
         // drawn, so their marks go here.
-        return head + (n.self ? body
+        // With no tabs to cut, a section's heading goes inside the frame
+        // drawn after it, as every other page's is.
+        return kit.frame(head + (n.self ? body
           : body.replace(/ id="/g, ' id="' + kit.esc(n.name) + '-'))
-          .replace(/ data-tab="[^"]*"/g, '');
+          .replace(/ data-tab="[^"]*"/g, '')
+          .replace(HEADING_BEFORE_FRAME, '<section class="secframe">$1'));
       }).join('');
     return html;
   }

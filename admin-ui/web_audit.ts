@@ -143,6 +143,8 @@ class AuditPage {
 
       // TWO TABS (2026-10-12; `WebPages.protocolTabs()`): what happened and
       // the settings; the notes above and the legend below are Metadata.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // heading stays at the top level, its content one frame.
       '<h2 data-tab="events">' + t.html('consoleAudit.whatHappened') +
       '</h2>' +
       // No `page` input in this form, deliberately: changing a filter or the
@@ -150,7 +152,7 @@ class AuditPage {
       // land somebody on page 6 of a two-page result and the clamp in
       // pagingOf() would then move them again, which reads as the form
       // ignoring them.
-      '<form method="get" action="/admin/audit"><div ' +
+      kit.frame('<form method="get" action="/admin/audit"><div ' +
         'class="formrow"><label for="category">' +
         t.html('consoleAudit.category') + '</label><select ' +
         'id="category" name="category">' +
@@ -228,10 +230,10 @@ class AuditPage {
         : t.html('consoleAudit.noneDropped',
                  { max: String(summary.maxEvents) }))) +
 
-      kit.note(t.html('consoleAudit.seqNote')) +
+      kit.note(t.html('consoleAudit.seqNote'))) +
 
       '<div data-metadata>' +
-      '<h3>' + t.html('consoleAudit.whereRowsComeFrom') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleAudit.whereRowsComeFrom') + '</h3>' +
       kit.note(t.html('consoleAudit.sixCategories')) +
       '<ul>' + json.categories.map(function (entry) {
         // The label, the category and the count stay on the row and the
@@ -250,7 +252,7 @@ class AuditPage {
       // whether a password behind its rows was checked.
       kit.note(t.html(!json.verifiesCredentials ? 'consoleAudit.inMemory'
         : json.persisted ? 'consoleAudit.persistedProduct'
-          : 'consoleAudit.inMemoryProduct')) + '</div>' +
+          : 'consoleAudit.inMemoryProduct'))) + '</div>' +
 
       // THE TWO SETTINGS ARE ON THIS PAGE NOW rather than being described
       // here and typed in somewhere else. `audit.protocolCalls` is the reason

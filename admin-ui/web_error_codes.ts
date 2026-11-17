@@ -93,7 +93,8 @@ class ErrorCodesPage {
     }).join('');
 
     const unregistered = json.unregisteredSeen.length
-      ? '<h3>' + t.html('consoleErrorCodes.unregistered.heading') +
+      ? kit.frame('<h3>' +
+        t.html('consoleErrorCodes.unregistered.heading') +
         '</h3>' +
         kit.note(t.html('consoleErrorCodes.unregistered.note')) +
         '<table><tr><th>' + t.html('consoleErrorCodes.th.code') +
@@ -105,7 +106,7 @@ class ErrorCodesPage {
                  '"><code>' + kit.esc(u.code) +
                  '</code></a></td><td class="num">' +
                  kit.esc(u.seen) + '</td></tr>';
-        }).join('') + '</table>'
+        }).join('') + '</table>')
       : '';
 
     const filtering = (json.filter.subsystem || '') || (json.filter.q || '') ||
@@ -135,18 +136,20 @@ class ErrorCodesPage {
       kit.note(t.html('consoleErrorCodes.note.http')) +
 
       // TWO TABS (2026-10-12; `WebPages.protocolTabs()`): the subsystems and
-      // the codes; the notes above them are Metadata.
+      // the codes; the notes above them are Metadata. FRAMED AS KEY PAIRS
+      // IS (`secframe`, rcbj 2026-11-16): each tab's content after its
+      // heading, the unregistered codes a frame inside the codes'.
       '<h2 data-tab="subsystems">' +
       t.html('consoleErrorCodes.subsystems.heading') + '</h2>' +
-      '<table><tr><th>' + t.html('consoleErrorCodes.th.prefix') +
+      kit.frame('<table><tr><th>' + t.html('consoleErrorCodes.th.prefix') +
       '</th><th>' + t.html('consoleErrorCodes.th.subsystem') + '</th><th ' +
       'class="num">' + t.html('consoleErrorCodes.th.codes') +
       '</th><th class="num">' + t.html('consoleErrorCodes.th.seen') +
       '</th><th>' + t.html('consoleErrorCodes.th.raisedFrom') +
       '</th></tr>' + subsystemRows +
-      '</table><h2 data-tab="codes">' +
+      '</table>') + '<h2 data-tab="codes">' +
       t.html('consoleErrorCodes.codes.heading') +
-      '</h2><form ' +
+      '</h2>' + kit.frame('<form ' +
       'method="get" action="/admin/error-codes"><div ' +
       'class="formrow"><label for="subsystem">' +
       t.html('consoleErrorCodes.th.subsystem') + '</label><select ' +
@@ -181,7 +184,7 @@ class ErrorCodesPage {
        t.html('consoleErrorCodes.codes.none') + '</td></tr>') +
       '</table>' +
       nav.foot +
-      unregistered +
+      unregistered) +
 
       kit.note(t.html('consoleErrorCodes.note.table',
                       { max: kit.MAX_ROWS }));

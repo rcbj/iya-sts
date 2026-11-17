@@ -38,15 +38,6 @@ import kit = require('../admin-ui/web_kit');
 
 type Json = any;
 
-// A FRAMED SECTION THAT STAYS IN METADATA (`secframe`, rcbj 2026-11-16).
-// `WebPages.protocolTabs()` cuts only at a heading at the page's top level,
-// so a schema section framed after the Entries tab would join that tab;
-// `data-metadata` returns it to Metadata, where it always was.
-const metadataFrame = function (html: string): string {
-  return kit.frame(html).replace('<section class="secframe">',
-                                 '<section class="secframe" data-metadata>');
-};
-
 /**
  * Draws the directory's console pages from their answers.
  *
@@ -182,20 +173,20 @@ class LdapPage {
         '</td></tr>') +
       '</table>' +
       nav.foot) +
-      metadataFrame('<h2>' + t.html('consoleLdap.apps.kindsHeading') +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.apps.kindsHeading') +
       '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.apps.thKind') + '</th><th>' +
       t.html('consoleLdap.apps.thLabel') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItMeans') + '</th></tr>' +
       kindRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.apps.schemaNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
       classRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.apps.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
@@ -319,7 +310,7 @@ class LdapPage {
         '</td></tr>') +
       '</table>' +
       nav.foot) +
-      metadataFrame('<h2>' + t.html('consoleLdap.fed.directionsHeading') +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.fed.directionsHeading') +
       '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thRole') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItMeans') + '</th></tr>' +
@@ -328,7 +319,7 @@ class LdapPage {
           kit.esc(one.what) +
           '</td></tr>';
       }).join('') + '</table>') +
-      metadataFrame('<h2>' + t.html('consoleLdap.fed.protocolsHeading') +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.fed.protocolsHeading') +
       '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.fed.thProtocol') + '</th><th>' +
       t.html('consoleLdap.fed.thWhatHappens') + '</th><th>' +
@@ -339,13 +330,13 @@ class LdapPage {
           '</td><td><code>' + kit.esc(one.needs.join(
               ', ')) + '</code></td></tr>';
       }).join('') + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.objectClassesHeading') +
       '</h2><table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
       classRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.fed.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
@@ -500,13 +491,13 @@ class LdapPage {
        '</td></tr>') +
       '</table>' +
       agentsNav.foot) +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.spiffe.objectClassesHeading') +
       '</h2><table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th>' +
       '<th>' + t.html('consoleLdap.spiffe.thWhat') + '</th></tr>' +
       classRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.spiffe.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.spiffe.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
@@ -606,13 +597,13 @@ class LdapPage {
           ' <a href="/admin/devices">' + t.html('consoleLdap.devices.link') +
           '</a>' + t.html('consoleLdap.common.period')) +
         '</td></tr>') + '</table>' + nav.foot) +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.objectClassesHeading') +
       '</h2><table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
       classRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.devices.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
@@ -725,19 +716,19 @@ class LdapPage {
         '</td></tr>') +
       '</table>' +
       nav.foot) +
-      metadataFrame('<h2>' + t.html('consoleLdap.roles.builtInHeading') +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.roles.builtInHeading') +
       '</h2>' +
       kit.note(t.html('consoleLdap.roles.builtInNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thRole') + '</th><th>' +
       t.html('consoleLdap.roles.thWhoHolds') + '</th></tr>' +
       builtInRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.common.schemalessNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
       classRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
@@ -880,13 +871,13 @@ class LdapPage {
         '</td></tr>') +
       '</table>' +
       nav.foot) +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.common.schemalessNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
       classRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
@@ -1010,13 +1001,13 @@ class LdapPage {
         '</td></tr>') +
       '</table>' +
       nav.foot) +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.common.schemalessNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
       classRows + '</table>') +
-      metadataFrame('<h2>' +
+      kit.metadataFrame('<h2>' +
       t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +

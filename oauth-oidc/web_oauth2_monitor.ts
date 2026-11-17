@@ -300,18 +300,23 @@ class OAuth2MonitorPage {
     return '<h2 id="section-' + esc(section.id) + '" data-tab="' +
       esc(section.id) + '">' + esc(section.title) +
       '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content after its heading, which `WebPages.protocolTabs()` cuts at
+      // the top level; each `<h3>` block a frame inside it.
+      kit.frame(
       kit.note(t.html('consoleOauth2Monitor.parNote')) +
       self.tilesHtml(section, t) +
+      kit.frame(
       '<h3>' + t.html('consoleOauth2Monitor.everyCounter') + '</h3>' +
-      self.countersHtml(section, t) +
-      '<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +
+      self.countersHtml(section, t)) +
+      kit.frame('<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +
       self.clientsHtml(ctx, section,
-                       t.text('consoleOauth2Monitor.parNoClients')) +
-      '<h3>' + t.html('consoleOauth2Monitor.allErrors') + '</h3>' +
-      self.errorsHtml(section.errors, t) +
-      '<h3 id="held">' + t.html('consoleOauth2Monitor.heldHeading') +
-      '</h3>' +
-      self.pushedRequestsHtml(ctx, section);
+                       t.text('consoleOauth2Monitor.parNoClients'))) +
+      kit.frame('<h3>' + t.html('consoleOauth2Monitor.allErrors') + '</h3>' +
+      self.errorsHtml(section.errors, t)) +
+      kit.frame('<h3 id="held">' +
+      t.html('consoleOauth2Monitor.heldHeading') + '</h3>' +
+      self.pushedRequestsHtml(ctx, section)));
   }
 
   // ---------------------------------------------------------------------------
@@ -358,6 +363,8 @@ class OAuth2MonitorPage {
     return '<h2 id="section-' + esc(section.id) + '" data-tab="' +
       esc(section.id) + '">' + esc(section.title) +
       '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16), as above.
+      kit.frame(
       kit.note(t.html('consoleOauth2Monitor.stepUpNote') +
         section.acrValuesSupported.map(function (one) {
           return '<code>' + esc(one) + '</code>';
@@ -370,13 +377,14 @@ class OAuth2MonitorPage {
       // A registered API enforces its own requirement: the stand-in resource
       // that answered for one here went with #593.
       t.html('consoleOauth2Monitor.ownApi') + '</p>' +
+      kit.frame(
       '<h3>' + t.html('consoleOauth2Monitor.everyCounter') + '</h3>' +
-      self.countersHtml(section, t) +
-      '<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +
+      self.countersHtml(section, t)) +
+      kit.frame('<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +
       self.clientsHtml(ctx, section,
-                       t.text('consoleOauth2Monitor.stepUpNoClients')) +
-      '<h3>' + t.html('consoleOauth2Monitor.allErrors') + '</h3>' +
-      self.errorsHtml(section.errors, t);
+                       t.text('consoleOauth2Monitor.stepUpNoClients'))) +
+      kit.frame('<h3>' + t.html('consoleOauth2Monitor.allErrors') + '</h3>' +
+      self.errorsHtml(section.errors, t)));
   }
 
   // THE PAGE'S BODY, one method so that it can be one renderer (#446): what

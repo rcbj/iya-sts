@@ -77,20 +77,22 @@ class PasskeyReportPage {
       self.counted(v, t) +
       self.filterForm(v, context) +
       self.recountForm(context) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level, its content one frame.
       '<h2 data-tab="people">' + t.html('consolePasskeyReport.people') +
-      '</h2>' + self.people(v, context) +
+      '</h2>' + kit.frame(self.people(v, context)) +
       '<h2 data-tab="algorithms">' +
       t.html('consolePasskeyReport.algorithms') + '</h2>' +
-      self.algorithms(v, context) +
+      kit.frame(self.algorithms(v, context)) +
       '<h2 data-tab="models">' + t.html('consolePasskeyReport.models') +
-      '</h2>' + self.models(v, context) +
+      '</h2>' + kit.frame(self.models(v, context)) +
       '<h2 data-tab="profiles">' + t.html('consolePasskeyReport.profiles') +
-      '</h2>' + self.profiles(v, context) +
+      '</h2>' + kit.frame(self.profiles(v, context)) +
       '<h2 data-tab="attestation">' +
       t.html('consolePasskeyReport.attestation') + '</h2>' +
-      self.attestation(v, t) +
+      kit.frame(self.attestation(v, t)) +
       (v.list ? '<h2 data-tab="list">' + t.html('consolePasskeyReport.list') +
-                '</h2>' + self.list(v, context) : '') +
+                '</h2>' + kit.frame(self.list(v, context)) : '') +
       '<div data-metadata>' + kit.note('<a href="' + API_PATH + '">' +
         t.html('consolePasskeyReport.linkApi') + '</a> &middot; ' +
         '<a href="/admin/policies#passkey">' +

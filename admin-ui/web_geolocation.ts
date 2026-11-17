@@ -288,16 +288,19 @@ class GeolocationPage {
     const noPlace = v.datasets.every(function (d: Json): boolean {
       return d.state === 'empty';
     });
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the section,
+    // and each table under it a frame inside that.
     let tables = '';
     if (v.level === 'world') {
-      tables += '<h3>' + t.html('consoleGeolocation.byContinent') + '</h3>' +
+      tables += kit.frame('<h3>' + t.html('consoleGeolocation.byContinent') +
+        '</h3>' +
         this.table('geo-continents',
         t.text('consoleGeolocation.th.continent'),
         v.continents.map(function (c: Json): Json {
           return Object.assign({ label: c.name }, c);
         }), function (r: Json): string {
           return place(r.continent);
-        }, v.minimumCount, '', t);
+        }, v.minimumCount, '', t));
     }
     if (v.level !== 'country') {
       const unknown = v.unknown.people !== null || v.unknown.suppressed
@@ -307,14 +310,15 @@ class GeolocationPage {
                              v.minimumCount, t)) +
           '</td><td class="num">' + esc(v.unknown.signIns === null ? ''
             : String(v.unknown.signIns)) + '</td><td></td></tr>' : '';
-      tables += '<h3>' + t.html('consoleGeolocation.byCountry') + '</h3>' +
+      tables += kit.frame('<h3>' + t.html('consoleGeolocation.byCountry') +
+        '</h3>' +
         this.table('geo-countries',
         t.text('consoleGeolocation.th.country'),
         v.countries.map(function (c: Json): Json {
           return Object.assign({ label: c.name }, c);
         }), function (r: Json): string {
           return r.onMap ? place('', r.iso) : '';
-        }, v.minimumCount, v.level === 'world' ? unknown : '', t);
+        }, v.minimumCount, v.level === 'world' ? unknown : '', t));
     } else {
       const other = v.hidden.cities
         ? '<tr id="geo-hidden"><td><em>' +
@@ -331,14 +335,15 @@ class GeolocationPage {
           '</td>' +
           '<td class="num">' + esc(v.countryOnly.signIns === null ? ''
             : String(v.countryOnly.signIns)) + '</td><td></td></tr>' : '';
-      tables += '<h3>' + t.html('consoleGeolocation.byCity') + '</h3>' +
+      tables += kit.frame('<h3>' + t.html('consoleGeolocation.byCity') +
+        '</h3>' +
         this.table('geo-cities', t.text('consoleGeolocation.th.city'),
         v.cities.map(function (c: Json): Json {
           return Object.assign({ label: c.city + (c.subdivision
             ? ', ' + c.subdivision : '') }, c);
         }), function (): string {
           return '';
-        }, v.minimumCount, other + only, t);
+        }, v.minimumCount, other + only, t));
     }
     const states = v.datasets.map(function (d: Json): string {
       return esc(d.title) + ': ' + esc(d.state) +
@@ -355,8 +360,8 @@ class GeolocationPage {
     }).join('');
     // Links are markup a message cannot carry, so each sentence holding one
     // is drawn around it (#539).
-    return '<div class="card"><h2>' + t.html('consoleGeolocation.heading') +
-      '</h2>' +
+    return '<div class="card">' + kit.frame('<h2>' +
+      t.html('consoleGeolocation.heading') + '</h2>' +
       '<p>' + windows + '</p>' +
       '<p class="geo-zoom">' + crumbs.join(' &rsaquo; ') + '</p>' +
       (noPlace ? '<p class="warn" id="geo-no-dataset">' +
@@ -378,7 +383,7 @@ class GeolocationPage {
       t.html('consoleGeolocation.counting.before', { min: v.minimumCount }) +
       '<a href="/admin/risk">' + t.html('consoleGeolocation.link.risk') +
       '</a>' + t.html('consoleGeolocation.counting.after') +
-      '</small></p>' + tables +
+      '</small></p>' + tables) +
       '<p><small>' + (v.database
         ? t.html('consoleGeolocation.counted.database')
         : t.html('consoleGeolocation.counted.memory')) +

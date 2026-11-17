@@ -106,7 +106,9 @@ class GrantsPage {
                            { path: '/oauth2/grants/{grant_id}' }) +
         '<a href="/admin/consent">' + t.html('consoleGrants.consentLink') +
         '</a>' + t.html('consoleGrants.noteEnd')) +
-      kit.sectionSearchForm({
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list,
+      // with its search and pagers, is one frame.
+      kit.frame(kit.sectionSearchForm({
         path: PAGE, query: q, param: 'grantq', pageParam: 'grantsPage',
         label: t.text('consoleGrants.searchLabel'),
         placeholder: t.text('consoleGrants.searchPlaceholder')
@@ -122,7 +124,7 @@ class GrantsPage {
       t.html('consoleGrants.colTokens') + '</th><th></th></tr></thead>' +
       '<tbody>' +
       rows + '</tbody></table>' +
-      nav.foot +
+      nav.foot) +
       '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/grants</code></p>';
   }

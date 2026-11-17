@@ -54,8 +54,10 @@ class KerberosTrustsPage {
     const j = json || {};
     const mayChange = !!ctx.write;
     if (!j.kerberos || !j.kerberos.enabled) {
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+      // section one frame, each `<h3>` block a frame inside it.
       return kit.note(t.html('consoleKerberosTrusts.intro')) +
-        kit.warn(t.html('consoleKerberosTrusts.noKerberos'));
+        kit.frame(kit.warn(t.html('consoleKerberosTrusts.noKerberos')));
     }
     const back = kit.queryWith(kit.listViewOf(PAGE, ctx.query), {});
     const listBack = kit.queryWith(
@@ -92,7 +94,8 @@ class KerberosTrustsPage {
       return KerberosTrustsPage.row(ctx, row, back);
     }).join('') || '<tr><td colspan="11">' +
       t.html('consoleKerberosTrusts.none') + '</td></tr>';
-    const table = '<h2>' + t.html('consoleKerberosTrusts.hList') + '</h2>' +
+    const table = kit.frame('<h2>' + t.html('consoleKerberosTrusts.hList') +
+      '</h2>' +
       nav.head +
       kit.wideTable(t.text('consoleKerberosTrusts.hList'),
         '<table id="kerberos-trusts"><tr>' +
@@ -103,13 +106,14 @@ class KerberosTrustsPage {
           }).join('') + '<th></th></tr>' + rows + '</table>') +
       nav.foot +
       kit.perPageForm(PAGE, 'trustsPage', '1',
-                      (j.trustsPaging || {}).perPage, undefined, undefined, t);
+                      (j.trustsPaging || {}).perPage, undefined, undefined,
+                      t));
 
     const add = mayChange
-      ? '<h2>' + t.html('consoleKerberosTrusts.hAdd') + '</h2>' +
+      ? kit.frame('<h2>' + t.html('consoleKerberosTrusts.hAdd') + '</h2>' +
         kit.note(t.html('consoleKerberosTrusts.addIntro', {
           min: String((j.form || {}).minPasswordLength || '') })) +
-        KerberosTrustsPage.form(ctx, j, null, back)
+        KerberosTrustsPage.form(ctx, j, null, back))
       : kit.note(t.html('consoleKerberosTrusts.needWrite'));
 
     return intro + detail + table + add +
@@ -248,8 +252,9 @@ class KerberosTrustsPage {
     }).join('') + '</table>';
     const write = !!ctx.write;
     const edit = write
-      ? '<h3 id="trust-edit">' + t.html('consoleKerberosTrusts.hEdit') +
-        '</h3>' + KerberosTrustsPage.form(ctx, j, r, back)
+      ? kit.frame('<h3 id="trust-edit">' +
+        t.html('consoleKerberosTrusts.hEdit') +
+        '</h3>' + KerberosTrustsPage.form(ctx, j, r, back))
       : '';
     const sourceSelect = function (id: string): string {
       return '<div class="formrow"><label for="' + id + '-source">' +
@@ -265,7 +270,8 @@ class KerberosTrustsPage {
         'name="password" autocomplete="new-password" size="32"></div>';
     };
     const rotate = write
-      ? '<h3 id="trust-rotate">' + t.html('consoleKerberosTrusts.hRotate') +
+      ? kit.frame('<h3 id="trust-rotate">' +
+        t.html('consoleKerberosTrusts.hRotate') +
         '</h3>' + kit.note(kit.esc(t.text('consoleKerberosTrusts.rotateIntro',
           { grace: String((j.settings || {}).graceSeconds) }))) +
         '<form method="post" action="' + PAGE + '">' +
@@ -286,10 +292,11 @@ class KerberosTrustsPage {
             t.html('consoleKerberosTrusts.mirror') + '</label></div>'
           : '') +
         '<button type="submit">' + t.html('consoleKerberosTrusts.rotate') +
-        '</button></form>'
+        '</button></form>')
       : '';
     const remove = write
-      ? '<h3 id="trust-remove">' + t.html('consoleKerberosTrusts.hRemove') +
+      ? kit.frame('<h3 id="trust-remove">' +
+        t.html('consoleKerberosTrusts.hRemove') +
         '</h3>' + kit.warn(t.html('consoleKerberosTrusts.removeIntro')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="remove">' +
@@ -302,13 +309,13 @@ class KerberosTrustsPage {
         '<input type="text" id="trust-remove-confirm" name="confirm" ' +
         'size="24" autocomplete="off"><button type="submit" ' +
         'class="danger">' + t.html('consoleKerberosTrusts.remove') +
-        '</button></div></form>'
+        '</button></div></form>')
       : '';
-    return '<h2 id="trust-detail">' + kit.esc(t.text(
+    return kit.frame('<h2 id="trust-detail">' + kit.esc(t.text(
       'consoleKerberosTrusts.hDetail', { partner: r.partnerRealm })) +
       '</h2>' + facts + edit + rotate + remove +
       kit.note('<a href="' + kit.esc(PAGE + listBack) + '">' +
-               t.html('consoleKerberosTrusts.backToList') + '</a>');
+               t.html('consoleKerberosTrusts.backToList') + '</a>'));
   }
 
   // THE ADD AND EDIT FORM. On an edit the partner realm is fixed (every key

@@ -58,14 +58,19 @@ class TlsConnectionPage {
     return kit.note(t.html('consoleTlsConnection.lead')) +
       '<h2 data-tab="connection">' +
       t.html('consoleTlsConnection.connection') + '</h2>' +
-      TlsConnectionPage.connection(v.connection || {}, t) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content after its heading, which stays at the top level for the
+      // tab splitter, and each `<h3>` block a frame inside it.
+      kit.frame(TlsConnectionPage.connection(v.connection || {}, t) +
       // An `<h3>`, so the console's tab splitter keeps it inside the
       // Connection tab (`WebPages.protocolTabs()`).
-      '<h3>' + t.html('consoleTlsConnection.clientCertificate') + '</h3>' +
-      TlsConnectionPage.certificate(v.clientCertificate || {}, t) +
+      kit.frame('<h3>' + t.html('consoleTlsConnection.clientCertificate') +
+                '</h3>' +
+                TlsConnectionPage.certificate(v.clientCertificate || {},
+                                              t))) +
       '<h2 data-tab="forwarded">' +
       t.html('consoleTlsConnection.forwarded') + '</h2>' +
-      TlsConnectionPage.forwarded(v.forwarded || {}, t) +
+      kit.frame(TlsConnectionPage.forwarded(v.forwarded || {}, t)) +
       // The closing links go back to Metadata, beside the lead.
       '<div data-metadata>' + kit.note('<a href="/admin-api/tls-connection">' +
         t.html('consoleTlsConnection.linkApi') + '</a> &middot; ' +
@@ -203,17 +208,19 @@ class TlsConnectionPage {
         [t.html('consoleTlsConnection.effectiveBase'),
          self.code(f.effectiveBaseUrl)]
       ]) +
-      '<h3>' + t.html('consoleTlsConnection.forwardingHeaders') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleTlsConnection.forwardingHeaders') +
+      '</h3>' +
       '<table><tr><th>' + t.html('consoleTlsConnection.header') +
       '</th><th>' + t.html('consoleTlsConnection.thisRequest') +
       '</th><th>' + t.html('consoleTlsConnection.whatHere') + '</th></tr>' +
-      headerRows(f.forwarding) + '</table>' +
-      '<h3>' + t.html('consoleTlsConnection.certificateHeaders') + '</h3>' +
+      headerRows(f.forwarding) + '</table>') +
+      kit.frame('<h3>' + t.html('consoleTlsConnection.certificateHeaders') +
+      '</h3>' +
       kit.warn(kit.esc(certHeaders.note || '')) +
       '<table><tr><th>' + t.html('consoleTlsConnection.header') +
       '</th><th>' + t.html('consoleTlsConnection.thisRequest') +
       '</th><th>' + t.html('consoleTlsConnection.whatItIs') + '</th></tr>' +
-      headerRows(certHeaders.headers) + '</table>' +
+      headerRows(certHeaders.headers) + '</table>') +
       kit.note(kit.esc(f.proxyMustSanitize || ''));
   }
 }

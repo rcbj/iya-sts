@@ -131,7 +131,7 @@ class SsfTransmittersPage {
     const blocks = json.blocks.length
       ? '<h3 data-tab="blocks">' +
         t.html('consoleSsfTransmitters.blocks.heading') +
-        '</h3>' + blockNav.head + '<table><thead><tr><th>' +
+        '</h3>' + kit.frame(blockNav.head + '<table><thead><tr><th>' +
         t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.since') + '</th><th>' +
@@ -140,12 +140,12 @@ class SsfTransmittersPage {
           return '<tr><td>' + esc(b.username) + '</td><td>' +
             link(b.relationship) + '</td><td>' + esc(b.at) + '</td><td>' +
             '<code>' + esc(b.event) + '</code></td></tr>';
-        }).join('') + '</tbody></table>' + blockNav.foot
+        }).join('') + '</tbody></table>' + blockNav.foot)
       : '';
     const locks = json.locks.length
       ? '<h3 data-tab="locks">' +
         t.html('consoleSsfTransmitters.locks.heading') +
-        '</h3>' + lockNav.head + '<table><thead><tr><th>' +
+        '</h3>' + kit.frame(lockNav.head + '<table><thead><tr><th>' +
         t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.since') +
@@ -153,7 +153,7 @@ class SsfTransmittersPage {
         json.locks.map(function (l: Json): string {
           return '<tr><td>' + esc(l.username) + '</td><td>' +
             link(l.relationship) + '</td><td>' + esc(l.at) + '</td></tr>';
-        }).join('') + '</tbody></table>' + lockNav.foot
+        }).join('') + '</tbody></table>' + lockNav.foot)
       : '';
     const received = json.received.length ? json.received.map(function (r:
                                                                        Json) {
@@ -190,13 +190,15 @@ class SsfTransmittersPage {
           : '')) +
       // A TAB PER LIST (2026-10-12): the note is Metadata
       // (`WebPages.protocolTabs()`); the cards are headed by federation's
-      // own word for them.
+      // own word for them. A tab's heading stays at the top level, where
+      // the splitter cuts, and what follows it is the frame.
       '<h3 data-tab="relationships">' +
-      t.html('consoleFederation.headingRelationships') + '</h3>' + cards +
+      t.html('consoleFederation.headingRelationships') + '</h3>' +
+      kit.frame(cards) +
       blocks + locks +
       '<h3 data-tab="arrived">' +
       t.html('consoleSsfTransmitters.arrived.heading') +
-      '</h3>' + receivedNav.head + '<table><thead><tr><th>' +
+      '</h3>' + kit.frame(receivedNav.head + '<table><thead><tr><th>' +
       t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.when') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.events') + '</th><th>' +
@@ -204,7 +206,7 @@ class SsfTransmittersPage {
       t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.reactions') +
       '</th></tr></thead><tbody>' + received + '</tbody></table>' +
-      receivedNav.foot +
+      receivedNav.foot) +
       '<p class="links" data-metadata><a href="' + PAGE +
       '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/ssf/transmitters</code></p>';

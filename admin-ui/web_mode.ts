@@ -144,11 +144,13 @@ class ModePage {
         (inForce ? '</strong>' : '') + '</td>';
     };
     // THE THREE TABLES ARE TABS (2026-10-12); the tiles, what the mode is
-    // and the warning about ignored values are Metadata.
+    // and the warning about ignored values are Metadata. FRAMED AS KEY
+    // PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's content after its
+    // heading.
     const requirements = '<h2 data-tab="requirements">' +
       t.html('consoleMode.changesHeading') +
       '</h2>' +
-      '<table class="grid"><thead><tr><th>' +
+      WebKit.frame('<table class="grid"><thead><tr><th>' +
       t.html('consoleMode.thRequirement') + '</th>' +
       '<th>' + t.html('consoleMode.thDevelopment') + '</th><th>' +
       t.html('consoleMode.thProduct') + '</th><th>' +
@@ -160,10 +162,10 @@ class ModePage {
           cell(row.product, product) + '<td><small>' +
           WebKit.esc(row.where || '') + '</small></td></tr>' +
           ModePage.waived(row, t);
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
     const settings = '<h2 data-tab="development">' +
       t.html('consoleMode.devOnlyHeading') + '</h2>' +
-      '<p>' + t.html('consoleMode.devOnlyLead') + '</p>' +
+      WebKit.frame('<p>' + t.html('consoleMode.devOnlyLead') + '</p>' +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleMode.thSetting') + '</th><th>' +
       t.html('consoleMode.thDevOnlyValues') + '</th><th>' +
@@ -186,13 +188,13 @@ class ModePage {
                          '</strong>' + t.html('consoleMode.ignoredMark')
             : ModePage.shown(row.inForce, t)) +
           '</td><td><small>' + WebKit.esc(row.why) + '</small></td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
     const notYet = '<h2 data-tab="notyet">' +
       t.html('consoleMode.notYetHeading') + '</h2>' +
-      '<ul>' + json.notYet.map(function (row: Json): string {
+      WebKit.frame('<ul>' + json.notYet.map(function (row: Json): string {
         return '<li id="not-yet-' + WebKit.esc(row.id) + '">' +
           WebKit.esc(row.what) + '</li>';
-      }).join('') + '</ul>';
+      }).join('') + '</ul>');
     return tiles + about + warning + requirements + settings + notYet;
   }
 }

@@ -119,7 +119,9 @@ class SpiffePage {
         function (s) {
           return t.html('consoleSpiffe.entriesCount', s);
         })) +
-      '<form method="get" action="/admin/spiffe/entries"><div ' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list is
+      // one frame, and creating an entry another.
+      kit.frame('<form method="get" action="/admin/spiffe/entries"><div ' +
       'class="formrow"><label for="q">' + t.html('consoleSpiffe.search') +
       '</label>' +
       '<input id="q" name="q" value="' + kit.esc(json.filter.q) +
@@ -143,7 +145,7 @@ class SpiffePage {
       '<th>' +
       t.html('consoleSpiffe.revision') + '</th></tr>' + rows + '</table>' +
       kit.pageNavPair('/admin/spiffe/entries', kit.filterOnly(listView),
-                       json.paging).head +
+                       json.paging).head) +
       SpiffePage.spiffeCreateEntryForm(t, json.trustDomain);
     return inner;
   }
@@ -190,7 +192,9 @@ class SpiffePage {
    * @returns the form as HTML
    */
   static spiffeCreateEntryForm(t, trustDomain) {
-    return '<h2>' + t.html('consoleSpiffe.createEntryHeading') + '</h2>' +
+    // A frame (`secframe`, rcbj 2026-11-16); its one caller is `entries()`.
+    return kit.frame('<h2>' + t.html('consoleSpiffe.createEntryHeading') +
+      '</h2>' +
       kit.note(t.html('consoleSpiffe.createEntryNote')) +
       '<form method="post" action="/admin/spiffe/entries"><div ' +
       'class="formrow"><input type="hidden" name="action" value="create">' +
@@ -221,7 +225,7 @@ class SpiffePage {
       'placeholder="other.example"><button>' +
       t.html('consoleSpiffe.create') + '</button>' +
       kit.note(t.html('consoleSpiffe.selectorsSyntaxNote')) +
-      '</div></form>';
+      '</div></form>');
   }
 
   /**
@@ -254,6 +258,9 @@ class SpiffePage {
           return t.html('consoleSpiffe.agentsCount', s);
         })) +
       kit.note(t.html('consoleSpiffe.nodeAttestationNote')) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab has
+      // no heading, so its forms and list are one frame.
+      kit.frame(
       '<form method="get" action="/admin/spiffe/agents"><div class="formrow">' +
       '<label for="q">' + t.html('consoleSpiffe.search') + '</label>' +
       '<input id="q" name="q" value="' + kit.esc(json.filter.q) +
@@ -279,7 +286,7 @@ class SpiffePage {
       '<th>' + t.html('consoleSpiffe.attestations') + '</th><th>' +
       t.html('consoleSpiffe.lastSeen') + '</th></tr>' + rows + '</table>' +
       kit.pageNavPair('/admin/spiffe/agents', kit.filterOnly(listView),
-                       json.paging).head;
+                       json.paging).head);
     return inner;
   }
 
@@ -324,7 +331,9 @@ class SpiffePage {
           return t.html('consoleSpiffe.brokersIntro', s);
         })) +
       kit.note(t.html('consoleSpiffe.brokersPidNote')) +
-      '<form method="get" action="/admin/spiffe/brokers"><div ' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list is
+      // one frame, and authorizing a broker another.
+      kit.frame('<form method="get" action="/admin/spiffe/brokers"><div ' +
       'class="formrow"><label for="q">' + t.html('consoleSpiffe.search') +
       '</label><input id="q" name="q" ' +
       'value="' + kit.esc(json.filter.q) + '" size="30" placeholder="' +
@@ -338,8 +347,8 @@ class SpiffePage {
       t.html('consoleSpiffe.mayReference') + '</th><th></th></tr>' +
       rows + '</table>' +
       kit.pageNavPair('/admin/spiffe/brokers', kit.filterOnly(listView),
-                       json.paging).head +
-      '<h2>' + t.html('consoleSpiffe.authorizeBroker') + '</h2>' +
+                       json.paging).head) +
+      kit.frame('<h2>' + t.html('consoleSpiffe.authorizeBroker') + '</h2>' +
       '<form method="post" action="/admin/spiffe/brokers"><div ' +
       'class="formrow"><input type="hidden" name="action" value="set">' +
       back + '<label for="b-id">' + t.html('consoleSpiffe.spiffeId') +
@@ -353,7 +362,7 @@ class SpiffePage {
       'type="checkbox" name="referenceTypes" value="*"> ' +
       t.html('consoleSpiffe.refBoth') + '</label>' +
       '<button>' + t.html('consoleSpiffe.save') + '</button>' +
-      kit.note(t.html('consoleSpiffe.brokerSaveNote')) + '</div></form>';
+      kit.note(t.html('consoleSpiffe.brokerSaveNote')) + '</div></form>');
     return inner;
   }
 
@@ -396,8 +405,10 @@ class SpiffePage {
                       revision: kit.esc(entry.revisionNumber),
                       origin: kit.esc(entry.origin),
                       dn: kit.esc(entry.dn) };
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the entry is
+      // a frame, and each of its h3 blocks one inside it.
       inner = SpiffePage.spiffePostureNote(t, json.serverApiAuthenticated) +
-        '<h2><code>' + kit.esc(entry.spiffeId) + '</code></h2>' +
+        kit.frame('<h2><code>' + kit.esc(entry.spiffeId) + '</code></h2>' +
         kit.note(entry.expired
           ? SpiffePage.compose(lives, function (s) {
               return t.html('consoleSpiffe.entryLivesExpired', s);
@@ -450,7 +461,7 @@ class SpiffePage {
           : '') +
         '</td></tr></table>' +
 
-        '<h3>' + t.html('consoleSpiffe.changeIt') + '</h3>' +
+        kit.frame('<h3>' + t.html('consoleSpiffe.changeIt') + '</h3>' +
         kit.note(t.html('consoleSpiffe.changeItNote')) +
         '<form method="post" action="/admin/spiffe/entries"><div ' +
         'class="formrow"><input type="hidden" name="action" value="update">' +
@@ -475,13 +486,14 @@ class SpiffePage {
         carried +
         '<button class="danger">' + t.html('consoleSpiffe.deleteEntry') +
         '</button>' +
-        kit.note(t.html('consoleSpiffe.deleteEntryNote')) + '</div></form>' +
+        kit.note(t.html('consoleSpiffe.deleteEntryNote')) +
+        '</div></form>') +
 
-        '<h3>' + t.html('consoleSpiffe.directoryEntry') + '</h3>' +
+        kit.frame('<h3>' + t.html('consoleSpiffe.directoryEntry') + '</h3>' +
         '<p>' + t.html('consoleSpiffe.directoryEntryNote') + '</p>' +
         '<table><tr><th>' + t.html('consoleSpiffe.attribute') + '</th><th>' +
         t.html('consoleSpiffe.value') + '</th></tr>' + attributeRows +
-        '</table>';
+        '</table>'));
     }
     return inner;
   }
@@ -520,8 +532,10 @@ class SpiffePage {
                       '"><input ' +
                       'type="hidden" name="agent" value="' + kit.esc(agent.id) +
                       '">';
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the agent is
+      // a frame, and its directory entry one inside it.
       inner = SpiffePage.spiffePostureNote(t, json.serverApiAuthenticated) +
-        '<h2><code>' + kit.esc(agent.id) + '</code></h2>' +
+        kit.frame('<h2><code>' + kit.esc(agent.id) + '</code></h2>' +
         kit.note(SpiffePage.compose({
             type: kit.esc(agent.attestationType),
             count: kit.esc(agent.attestations),
@@ -572,10 +586,10 @@ class SpiffePage {
         '<button class="danger">' + t.html('consoleSpiffe.deleteAgent') +
         '</button>' +
         kit.note(t.html('consoleSpiffe.deleteAgentNote')) + '</div></form>' +
-        '<h3>' + t.html('consoleSpiffe.directoryEntry') + '</h3>' +
+        kit.frame('<h3>' + t.html('consoleSpiffe.directoryEntry') + '</h3>' +
         '<table><tr><th>' + t.html('consoleSpiffe.attribute') + '</th><th>' +
         t.html('consoleSpiffe.value') + '</th></tr>' + attributeRows +
-        '</table>';
+        '</table>'));
     }
     return inner;
   }
@@ -654,7 +668,10 @@ class SpiffePage {
           'issue an SVID: ' + kit.esc(json.error)
         : t.html('consoleSpiffe.authorityGenerating')))) +
 
-      '<h2>' + t.html('consoleSpiffe.trustDomainHeading') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is a
+      // frame, each h3 one inside it.
+      kit.frame('<h2>' + t.html('consoleSpiffe.trustDomainHeading') +
+      '</h2>' +
       kit.note(SpiffePage.compose({
           trustDomainId: kit.esc(json.trustDomainId),
           serverId: kit.esc(json.serverId ||
@@ -669,9 +686,9 @@ class SpiffePage {
           hint: kit.esc(json.bundle.refreshHint) },
         function (s) {
           return t.html('consoleSpiffe.bundleNote', s);
-        })) +
+        }))) +
 
-      '<h2>' + t.html('consoleSpiffe.authorities') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleSpiffe.authorities') + '</h2>' +
       // ---------------------------------------------------------------------
       // THE X.509 AUTHORITY CAME FROM ONE OF TWO PLACES AND THIS PAGE SAYS
       // WHICH (2026-09-11).
@@ -705,7 +722,8 @@ class SpiffePage {
       // **WHAT SIGNS AND WHAT IS TRUSTED ARE TWO TABLES.** They were one, and
       // could be, while a self-signed authority was both. See `/spiffe`'s own
       // version of this note.
-      '<h3>' + t.html('consoleSpiffe.whatConsumerTrusts') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleSpiffe.whatConsumerTrusts') +
+      '</h3>' +
       '<table><tr><th>' + t.html('consoleSpiffe.anchor') + '</th><th>' +
       t.html('consoleSpiffe.subject') + '</th><th>' +
       t.html('consoleSpiffe.until') + '</th></tr>' +
@@ -715,7 +733,7 @@ class SpiffePage {
           kit.esc(anchor.subject) + '</code></td><td>' +
           kit.esc(anchor.notAfter) +
           '</td></tr>';
-      }).join('') + '</table>' +
+      }).join('') + '</table>') +
       '<form method="post" action="/admin/spiffe"><div class="formrow">' +
       '<input type="hidden" name="action" value="rotate">' +
       '<label for="which">' + t.html('consoleSpiffe.rotate') + '</label>' +
@@ -729,11 +747,11 @@ class SpiffePage {
       '<button>' + t.html('consoleSpiffe.rotate') + '</button>' +
       '<span class="note">' + t.html('consoleSpiffe.rotateNote') +
       '</span>' +
-      '</div></form>' +
+      '</div></form>') +
 
       SpiffePage.spiffeWorkloadAttestation(t, json.workloadAttestation) +
 
-      '<h2>' + t.html('consoleSpiffe.whoMayCall') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleSpiffe.whoMayCall') + '</h2>' +
       '<p>' + kit.esc(json.authentication.what || '') + '</p>' +
       kit.note(t.html('consoleSpiffe.anyOfNote')) +
       '<table><tr><th>' + t.html('consoleSpiffe.entity') + '</th><th>' +
@@ -763,16 +781,16 @@ class SpiffePage {
               ? t.html('consoleSpiffe.assertedBelieved', s)
               : t.html('consoleSpiffe.assertedIgnored', s);
           }) + ' ' + t.html('consoleSpiffe.bothSwitchesInForce')) +
-      '<h3>' + t.html('consoleSpiffe.perMethodTable') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleSpiffe.perMethodTable') + '</h3>' +
       kit.note(t.html('consoleSpiffe.perMethodNote')) +
       '<table><tr><th>' + t.html('consoleSpiffe.method') + '</th><th>' +
       t.html('consoleSpiffe.allowedTo') + '</th></tr>' +
       json.authentication.policy.map(function (row) {
         return '<tr><td><code>' + kit.esc(row.method) + '</code></td><td>' +
           kit.esc(row.allow.join(', ')) + '</td></tr>';
-      }).join('') + '</table>' +
+      }).join('') + '</table>')) +
 
-      '<h2>' + t.html('consoleSpiffe.federatedHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleSpiffe.federatedHeading') + '</h2>' +
       kit.note(t.html('consoleSpiffe.federatedNote')) +
       '<table><tr><th>' + t.html('consoleSpiffe.trustDomain') + '</th><th>' +
       t.html('consoleSpiffe.keys') + '</th><th>' +
@@ -800,9 +818,9 @@ class SpiffePage {
       '"spiffe_sequence":1,"spiffe_refresh_hint":300}\'></textarea><button>' +
       t.html('consoleSpiffe.set') + '</button>' +
       kit.note(t.html('consoleSpiffe.jwkSetNote')) +
-      '</div></form>' +
+      '</div></form>') +
 
-      '<h2>' + t.html('consoleSpiffe.elsewhere') + '</h2><ul>' +
+      kit.frame('<h2>' + t.html('consoleSpiffe.elsewhere') + '</h2><ul>' +
       '<li><a href="/admin/spiffe/entries">' +
       t.html('consoleSpiffe.registrationEntries') + '</a> &mdash; ' +
       SpiffePage.compose({ n: kit.esc(json.counts.entries),
@@ -826,7 +844,7 @@ class SpiffePage {
       '</a></li><li><a href="/admin/ldap/spiffe">' +
       t.html('consoleSpiffe.containersSchema') +
       '</a></li><li><a href="/admin-api/spiffe">' +
-      t.html('consoleSpiffe.sameOverJson') + '</a></li></ul>' +
+      t.html('consoleSpiffe.sameOverJson') + '</a></li></ul>') +
       // The spiffe.* rows (thirty-four as of 2026-09-16), on the page about
       // the trust domain rather than on /admin/config. The two lists below
       // them — the registration entries and the agents — are a STORE and are
@@ -955,7 +973,8 @@ class SpiffePage {
           return t.html('consoleSpiffe.tcpPort', s);
         })
       : '';
-    const out = '<h2>' + t.html('consoleSpiffe.workloadAttestation') +
+    // A frame (`secframe`, rcbj 2026-11-16); its one caller is `overview()`.
+    const out = kit.frame('<h2>' + t.html('consoleSpiffe.workloadAttestation') +
       '</h2>' + kit.note(kernel +
       tcpLine + ' ' +
       SpiffePage.compose({
@@ -997,7 +1016,7 @@ class SpiffePage {
                                   t.text('consoleSpiffe.attested'))) +
               '</td></tr>';
           }).join('') + '</table>'
-        : kit.note(t.html('consoleSpiffe.noConnection')));
+        : kit.note(t.html('consoleSpiffe.noConnection'))));
     return out;
   }
 }
