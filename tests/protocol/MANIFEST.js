@@ -1163,8 +1163,12 @@ const JOBS = [
   // topology (the `pep-cluster` profile, STS_TEST_PEP_CLUSTER_MODES), so it
   // runs in CI; with none it declines to run, saying why. Not `docker`: it
   // starts nothing. A realm of its own, left standing. `local: true`: the
-  // remote PEP, its cluster and the proxy are ours.
-  { file: 'sts_xacml_pep_proxy_cluster.js', browser: false, local: true },
+  // remote PEP, its cluster and the proxy are ours. ITS OWN WATCHDOG
+  // (2026-11-16): the listener table changes and observes about a hundred
+  // settings at some ten seconds each, so the shared 300 s killed it two
+  // listeners in, every row passing, on the first local memory run.
+  { file: 'sts_xacml_pep_proxy_cluster.js', browser: false, local: true,
+    timeoutMs: 2400000 },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
   // (2026-09-18): every one of these families was covered in process and by
   // nothing driven over the network, so a stack behind a load balancer said
