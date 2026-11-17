@@ -1446,6 +1446,89 @@ page; `0108` is always the page (the callback is a navigation).
   under a policy with no `style-src`, which is the unstyled page a person
   met after *Use a different account*.
 
+### Every error is a standard one, or the application's (2026-11-16)
+
+**rcbj: "every error page returned by the remote pep (or reverse proxy) is
+a standard error page. If an error comes from the backend, it may return
+it to the caller."** `proxy_error_tests.rs` (a child of `proxy_tests.rs`,
+on its harness) holds both halves.
+
+**STANDARD**, on the proxy listeners, is one of two shapes and nothing
+else. A caller whose `Accept` names `text/html` gets the page above: the
+refusal's status, `text/html; charset=utf-8`, `no-store`, the page policy
+(`default-src 'none'`, the sheet by its hash, `frame-ancestors 'none'`,
+`base-uri 'none'`, no `script-src`), `nosniff`, `no-referrer`,
+`wording()`'s title, the box holding the `error`, the start-page link, and
+the Diagnostics pane, whose incident ID (16 hex digits) is named by
+exactly ONE log line, the one carrying the code. Any other caller gets the
+model's `Refusal`, `{error, error_description}` and no other member, as
+`application/json` and `no-store`, `error` the model's name for the
+status. Either way: no `STS-` code, no script, no stack trace, a 5xx's
+description one of `shown_description()`'s generic sentences (never the
+logged reason, so never an address), and the refusal's own headers (a
+405's `Allow`, a 429's and `0118`'s `Retry-After`, a 401's challenges).
+
+**THE ENUMERATION IS A TABLE, AND A SOURCE SCAN GUARDS IT.** `SOURCES` is
+every refusal the proxy constructs — status, code, the function, when —
+and how the test reaches it: 49 rows, 45 by a request in the harness, made
+once as a browser and once as an API client, and 4 that no request
+reaches (`0075` from a failing `authorize()`, `0110` at 500, `0091`,
+`0092`), drawn through `refuse()` itself (`Proxy::refusal_for_test()`).
+`every_error_source_has_a_row` reads `proxy.rs`, `proxy_auth.rs` and
+`jwt.rs`'s `confirmation_problem()`: every `Refusal::new`/`token` and
+every literal call of the `refuse`/`refused` closures is a (status, code)
+pair the table must hold, and the table may hold no pair the source does
+not make; a construction whose status or code is a VARIABLE is counted
+against `DYNAMIC_SITES`, each argued; every code not inside a `tag(` is a
+row's; `proxy_page::wording()`'s arms name only rows; `proxy.rs` uses no
+status constant but the two redirects' and `json_answer()`'s fallback, and
+answers JSON or HTML only at 200 or the refusal's status; `error_page()` is
+called by `refuse()` and the `0108` callback alone. A new refusal fails
+there until it has a row and a trigger.
+
+**THE DOCUMENTED EXCEPTIONS, each held to ITS shape:**
+
+* `0108` is always the page (the callback is a navigation).
+* A request hyper cannot parse (a header line with no colon, not HTTP at
+  all) never reaches `answer()`: hyper's `400 Bad Request`,
+  `content-length: 0`, `connection: close`. There is no `Accept` to choose
+  by and nothing to log, and the empty body carries nothing.
+* A browser's GET of a `session` route with no live session is a 302 to
+  sign in, not an error; the same request that is not a browser's GET is
+  `0081`, or `0084` when its cookie names a session no longer held.
+* The API listener (`service.rs`) is JSON-only whatever the caller
+  accepts — no person is in front of it: its 404s
+  `{error, error_description}` (`0009`, `0112`, `0114`; the CRL's
+  `{error}` alone), `/protected`'s decision document, `POST /notify`'s
+  204 with no body and no `Content-Type`, and AuthZEN's
+  `{error: {status, message}}` from `Reply::error()`, the one AuthZEN reply
+  with a status of its own (`the_api_listener_errors_are_its_two_shapes`).
+  The PIP's XML `PIPError` is the service's `POST /xacml/pip`, not this
+  binary's.
+
+**PASS-THROUGH: AN ERROR THE APPLICATION ANSWERS IS THE APPLICATION'S.**
+Its status, its body byte for byte (a `Content-Encoding: gzip` body is not
+decoded: reqwest is built without decompression), its `Content-Type` or
+none, and its own headers — its own `Content-Security-Policy`,
+`Cache-Control`, `Retry-After`, `WWW-Authenticate` — reach the caller, a
+browser included. Only the hop-by-hop headers go (`response_headers()`:
+`Connection` and what it names, `Keep-Alive`, `TE`, `Trailer`,
+`Transfer-Encoding`, `Upgrade`, every `Proxy-*`), and the one documented
+change is mode `saml`'s: a `Set-Cookie` for a jar cookie is kept here and
+removed. The proxy adds NOTHING to such an answer — no policy, no
+`no-store`, no challenge, no page — logs no refusal, and records it
+forwarded and no `fault`. **So a 502 or 504 tells its maker by its
+shape**: the proxy's (`0069` unreachable, `0068` too slow) is the standard
+page or JSON with an incident; the application's is its own body.
+`an_error_the_application_answers_is_passed_through` asks the same path
+both ways.
+
+**What the tests found** (2026-11-16): one defect, fixed — a 5xx outside
+502, 503 and 504 (the account add page's 500 `0110`, unreachable in
+practice) was answered its logged reason as `error_description`, against
+the rule above; `shown_description()` now gives any other 5xx "The request
+could not be completed." Everything else was already the standard.
+
 ### The headers that may not cross
 
 **To the application** (`forward_headers()`): the hop-by-hop headers gone —
