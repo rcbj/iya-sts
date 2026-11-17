@@ -1812,6 +1812,28 @@ The page runs no script. Its `Content-Security-Policy` is the proxy's own,
 plus `style-src` with the hash of its one style sheet. The page is in
 English.
 
+Every error the proxy makes itself is one of these two answers: the page
+for a request that accepts HTML, the JSON for anything else, each with
+`Cache-Control: no-store`, and never with an error code, a script or a
+stack trace. For a `5xx` the description is a general sentence, never
+where the proxy was trying to connect. The exceptions are documented:
+the sign-in callback's **Too many accounts** is always the page; a request
+that is not valid HTTP gets a bare `400` with no body; and the PEP's
+decision API (`GET /protected`, `POST /notify`, the AuthZEN endpoints)
+always answers JSON, because no person reads it.
+
+**An error the application answers is passed to the caller unchanged:**
+its status, its body, its `Content-Type` and its own headers, a browser's
+request included. The proxy removes only the hop-by-hop headers
+(`Connection` and those it names, `Keep-Alive`, `TE`, `Trailer`,
+`Transfer-Encoding`, `Upgrade` and every `Proxy-*`) and adds nothing: no
+`Content-Security-Policy`, no `Cache-Control`, no page. So you can tell who
+made a `502` or `504`. When the proxy cannot reach the application, or the
+application is too slow, the proxy answers its own **The application
+cannot be reached** or **The application did not answer in time**, with
+an incident ID. A `502`, `503` or `504` with the application's own body
+came from the application.
+
 ### What the PEP asks the service
 
 Everything the proxy cannot decide by itself it asks over its mutual TLS, and

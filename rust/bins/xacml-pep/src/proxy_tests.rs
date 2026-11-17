@@ -3882,3 +3882,8 @@ async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
     );
     assert!(!proxy::logged::holding("STS-XPEP-0134").is_empty());
 }
+
+/// Every error the proxy makes itself is a standard one, and every error
+/// the application makes is passed through (`proxy_error_tests.rs`).
+#[path = "proxy_error_tests.rs"]
+mod error_sources;

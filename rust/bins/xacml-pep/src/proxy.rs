@@ -289,6 +289,11 @@ fn shown_description(refusal: &Refusal) -> String {
             .to_string(),
         (503, _) => "This proxy cannot take the request now.".to_string(),
         (504, _) => "The application did not answer in time.".to_string(),
+        // Any other 5xx of the proxy's own (2026-11-16): a generic sentence
+        // too, as the rule above says, never the reason it was logged with.
+        (status, _) if status >= 500 => {
+            "The request could not be completed.".to_string()
+        }
         (_, "STS-XPEP-0093") => "This route cannot be used now.".to_string(),
         (_, "STS-XPEP-0117") => "This route cannot be decided now.".to_string(),
         _ => refusal.why.clone(),
@@ -2976,6 +2981,33 @@ pub async fn serve_https(
             drive(tls, tower_service(proxy, transport), cfg, offer_h2, job)
                 .await;
         });
+    }
+}
+
+/// A refusal through the one envelope, `refuse()`, for a request that
+/// accepts HTML or does not: the tests' way to hold a refusal no request
+/// in the harness can reach (an upstream client that will not build, a
+/// path off the upstream after normalisation) to the same standard as the
+/// ones they trigger (`proxy_error_tests.rs`).
+#[cfg(test)]
+impl Proxy {
+    pub(crate) fn refusal_for_test(
+        &self,
+        refusal: &Refusal,
+        html: bool,
+        path: &str,
+    ) -> Response<Body> {
+        let (pulled, _) = self.pep.sync.proxy_received();
+        let asked = Asked {
+            method: "GET",
+            path,
+            query: None,
+            route: None,
+            html,
+            who: String::new(),
+            note: None,
+        };
+        self.refuse(refusal, &asked, &pulled)
     }
 }
 
