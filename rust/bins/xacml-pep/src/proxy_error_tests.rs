@@ -1156,6 +1156,7 @@ async fn failing_application() -> u16 {
             .header("x-app-hop", "1")
             .header("proxy-app", "1");
         let built = match last.as_str() {
+            // error-code: none — the mock app's own error, which the proxy passes on
             "e404" => builder
                 .status(404)
                 .header("content-type", "text/html; charset=iso-8859-1")
@@ -1165,32 +1166,39 @@ async fn failing_application() -> u16 {
                     "<html><body>The application has no such page.\
                      </body></html>",
                 )),
+            // error-code: none — the mock app's own error, which the proxy passes on
             "e500" => builder
                 .status(500)
                 .header("content-type", "text/plain")
                 .body(axum::body::Body::from("the application broke")),
+            // error-code: none — the mock app's own error, which the proxy passes on
             "e502" => builder
                 .status(502)
                 .header("content-type", "application/json")
                 .body(axum::body::Body::from(r#"{"app":"its own 502"}"#)),
+            // error-code: none — the mock app's own error, which the proxy passes on
             "e503" => builder
                 .status(503)
                 .header("retry-after", "7")
                 .header("content-type", "text/html")
                 .body(axum::body::Body::from("<p>busy</p>")),
+            // error-code: none — the mock app's own error, which the proxy passes on
             "e504" => builder
                 .status(504)
                 .header("content-type", "text/plain")
                 .body(axum::body::Body::from("its own gateway timed out")),
+            // error-code: none — the mock app's own error, which the proxy passes on
             "e401" => builder
                 .status(401)
                 .header("www-authenticate", "Bearer realm=\"app\"")
                 .body(axum::body::Body::from("app says sign in")),
+            // error-code: none — the mock app's own error, which the proxy passes on
             "e403" => builder
                 .status(403)
                 .header("content-type", "application/problem+json")
                 .body(axum::body::Body::from(r#"{"title":"no"}"#)),
             // Bytes the proxy must not decode or re-encode.
+            // error-code: none — the mock app's own error, which the proxy passes on
             "gzip" => builder
                 .status(500)
                 .header("content-type", "text/plain")
@@ -1198,6 +1206,7 @@ async fn failing_application() -> u16 {
                 .body(axum::body::Body::from(vec![
                     0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef,
                 ])),
+            // error-code: none — the mock app's own error, which the proxy passes on
             "empty" => builder.status(404).body(axum::body::Body::empty()),
             _ => builder.status(200).body(axum::body::Body::from("ok")),
         };
