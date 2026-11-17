@@ -42,6 +42,14 @@
 //                                `pep_app_saml` (`pep_app_identity.js`)
 //   POST /pep-app/saml/_setup    what the ACS and the JWT check trust; not
 //                                counted
+//   GET  /pep-app/whoami[/...]   page "whoami" (2026-11-16): beside the
+//                                echo, `whoami` — the identity headers the
+//                                proxy forwarded (X-Remote-User, X-Iya-*)
+//                                and the listener the request came through,
+//                                read off the proxy's X-Forwarded-Host and
+//                                X-Forwarded-Proto: what
+//                                sts_xacml_pep_proxy_cluster.js asserts of a
+//                                route served on a listener of its own
 //   *    /pep-app/...            page "other"
 //
 // Every echo also carries `jwt` ({ header, payload, verified, expired, why })
@@ -244,6 +252,35 @@ class PepApp {
   }
 
   /**
+   * Who the proxy said the caller is, and which of its listeners the
+   * request came through: the identity headers it forwarded, and the host,
+   * port and scheme of X-Forwarded-Host and X-Forwarded-Proto, which are
+   * the proxy's own and never the client's.
+   *
+   * @param {object} headers - the request's headers, names lower-cased
+   * @returns {object} `{ user, subject, email, groups, mechanism, via }`
+   */
+  static whoami(headers) {
+    log.debug("Entering PepApp.whoami().");
+    const h = headers || {};
+    const host = String(h["x-forwarded-host"] || "");
+    const m = /^(.*?)(?::(\d+))?$/.exec(host) || [];
+    const proto = String(h["x-forwarded-proto"] || "");
+    const out = {
+      user: String(h["x-remote-user"] || ""),
+      subject: String(h["x-iya-user"] || ""),
+      email: String(h["x-iya-email"] || ""),
+      groups: String(h["x-iya-groups"] || ""),
+      mechanism: String(h["x-iya-auth"] || h["x-remote-auth"] || ""),
+      via: { host: m[1] || "", proto: proto,
+             port: m[2] ? Number(m[2]) : (proto === "https" ? 443
+                                          : (proto === "http" ? 80 : 0)) }
+    };
+    log.debug("Leaving PepApp.whoami().");
+    return out;
+  }
+
+  /**
    * Which page a raw path is.
    *
    * @param {string} method - the method
@@ -266,6 +303,8 @@ class PepApp {
       page = "protected";
     } else if (p === PREFIX + "/api/items") {
       page = method === "POST" ? "item-created" : "items";
+    } else if (under(PREFIX + "/whoami")) {
+      page = "whoami";
     } else if (p === PREFIX + "/slow") {
       page = "slow";
     } else if (p === PREFIX + "/saml/acs" && method === "POST") {
@@ -336,6 +375,9 @@ class PepApp {
       echo.body = { length: bytes.length,
                     sha256: crypto.createHash("sha256").update(bytes)
                       .digest("hex") };
+    }
+    if (page === "whoami") {
+      echo.whoami = PepApp.whoami(req.headers);
     }
     if (page === "slow") {
       const asked = Number(query.ms);
