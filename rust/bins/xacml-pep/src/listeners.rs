@@ -1432,6 +1432,66 @@ mod tests {
         }
     }
 
+    /// ALPN SELECTS h2 END TO END (2026-11-16): a client offering h2 and
+    /// http/1.1 to a defined HTTPS listener negotiates h2 and the
+    /// connection is counted HTTP/2; with `http2` off, http/1.1.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn alpn_offering_h2_negotiates_h2() {
+        let (certify, ca, _) = authority();
+        let listeners = set(certify, false);
+        let (on, off) = (free_port(), free_port());
+        listeners
+            .reconcile(vec![
+                tuned("h2", true, on, json!({})),
+                tuned("h1", true, off, json!({"http2": false})),
+            ])
+            .await;
+        let chosen = |port: u16| {
+            let ca = ca.clone();
+            async move {
+                let mut connector =
+                    SslConnector::builder(SslMethod::tls()).unwrap();
+                connector.cert_store_mut().add_cert(ca).unwrap();
+                connector.set_verify(SslVerifyMode::PEER);
+                connector.set_alpn_protos(b"\x02h2\x08http/1.1").unwrap();
+                let ssl = connector
+                    .build()
+                    .configure()
+                    .unwrap()
+                    .into_ssl("localhost")
+                    .unwrap();
+                let tcp = tokio::net::TcpStream::connect(("127.0.0.1", port))
+                    .await
+                    .unwrap();
+                let mut tls = tokio_openssl::SslStream::new(ssl, tcp).unwrap();
+                Pin::new(&mut tls).connect().await.unwrap();
+                let alpn =
+                    tls.ssl().selected_alpn_protocol().map(<[u8]>::to_vec);
+                // An HTTP/2 preface and SETTINGS frame, so the server
+                // starts serving and counts the connection.
+                tls.write_all(
+                    b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\0\0\0\x04\0\0\0\0\0",
+                )
+                .await
+                .unwrap();
+                let mut buf = [0u8; 64];
+                let read = tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    tls.read(&mut buf),
+                )
+                .await;
+                assert!(read.is_ok(), "the server answered the preface");
+                alpn
+            }
+        };
+        assert_eq!(chosen(on).await.as_deref(), Some(&b"h2"[..]));
+        assert_eq!(chosen(off).await.as_deref(), Some(&b"http/1.1"[..]));
+        let report = listeners.report();
+        let rows = report["listeners"].as_array().unwrap();
+        let h2 = rows.iter().find(|r| r["id"] == "h2").unwrap();
+        assert_eq!(h2["stats"]["http2"], 1, "{}", h2);
+    }
+
     /// REQUIRED WITH NO TRUST SOURCE IS NOT BOUND (STS-XPEP-0137): the
     /// defined API listener is `failed`, its port refuses, and a trust
     /// anchors file binds it again — a client without a certificate is

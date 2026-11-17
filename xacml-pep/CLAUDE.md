@@ -2448,6 +2448,14 @@ configuration->Listeners", the HTTPS listener there now as the default, and
     half it can see at save (`xacml/CLAUDE.md`, `STS-XACML-0281`).
     `listener::tests::required_without_a_trust_source_serves_nothing`,
     `listeners::tests::require_without_trust_is_refused_and_unbound`.
+  * **ALPN** — `listener.rs` called `set_alpn_protos`, the CLIENT's offer,
+    so no handshake ever selected `h2` and only a prior-knowledge client
+    spoke HTTP/2. It is `set_alpn_select_callback` with `select_next_proto`
+    over the server's order (`h2`, `http/1.1` with `http2` on; `http/1.1`
+    alone off); no overlap is `NOACK`, no ALPN. Prior knowledge still works
+    while `http2` is on (hyper's auto builder answers the preface).
+    `listener::tests::alpn_selects_h2_when_the_listener_offers_it`,
+    `listeners::tests::alpn_offering_h2_negotiates_h2`.
 * **THE HEARTBEAT'S `listeners` IS THE WHOLE REPORT.** `report()` is
   `{ listeners, memory?, paths? }`, and that object is what the heartbeat
   assigns to `listeners`. Each listener carries `stats`: accepted, open,

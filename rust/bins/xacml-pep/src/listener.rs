@@ -43,8 +43,8 @@ use openssl::asn1::{Asn1Time, Asn1TimeRef};
 use openssl::hash::{hash, MessageDigest};
 use openssl::pkey::PKey;
 use openssl::ssl::{
-    SslAcceptor, SslMethod, SslRef, SslSessionCacheMode, SslVerifyMode,
-    SslVersion,
+    select_next_proto, AlpnError, SslAcceptor, SslMethod, SslRef,
+    SslSessionCacheMode, SslVerifyMode, SslVersion,
 };
 use openssl::stack::Stack;
 use openssl::x509::store::X509StoreBuilder;
@@ -477,13 +477,28 @@ fn apply_tls_knobs(
             tuning.session_timeout_s
         );
     }
-    let alpn: &[u8] = if tuning.http2 {
-        b"\x02h2\x08http/1.1"
+    // THE SERVER CHOOSES (2026-11-16). `set_alpn_protos` is the CLIENT's
+    // offer, and on an acceptor it made no handshake ever select h2, so a
+    // browser never spoke HTTP/2 to this PEP; only a client sending the
+    // preface by prior knowledge did (hyper's auto builder still answers
+    // that when `http2` is on). The selection is the server's own order —
+    // h2 first when the listener offers it, then http/1.1 — over what the
+    // client offered; a client offering neither goes on without ALPN.
+    let ours: &'static [u8] = if tuning.http2 {
+        ALPN_H2_FIRST
     } else {
-        b"\x08http/1.1"
+        ALPN_HTTP1
     };
-    knob(faults, "ALPN", builder.set_alpn_protos(alpn));
+    builder.set_alpn_select_callback(move |_, offered| {
+        select_next_proto(ours, offered).ok_or(AlpnError::NOACK)
+    });
 }
+
+/// The protocols a listener with HTTP/2 on selects from, in its order
+/// (RFC 7301's wire format).
+const ALPN_H2_FIRST: &[u8] = b"\x02h2\x08http/1.1";
+/// And with HTTP/2 off.
+const ALPN_HTTP1: &[u8] = b"\x08http/1.1";
 
 /// Who is asked for a certificate. Neither ask nor require sets nothing,
 /// even when a client CA is configured. An authority list asks and checks
@@ -1556,6 +1571,71 @@ mod tests {
         let proxy = HttpsListener::for_proxy("c", "k", 9543, 100);
         assert!(proxy.ask_any && proxy.asks_for_client_certificates());
         assert!(!proxy.verifies_client_certificates());
+    }
+
+    /// One handshake against an acceptor built from `tuning`, the client
+    /// offering `alpn` (RFC 7301 wire format). Answers what the server
+    /// selected and the lifetime of the session the server made.
+    fn negotiate(tuning: &Tuning, alpn: &[u8]) -> (Option<Vec<u8>>, i64) {
+        use openssl::ssl::{SslConnector, SslVerifyMode};
+        let (cert, key) = pair();
+        let acceptor = match acceptor_for(&cert, &key, &[], false, tuning, true)
+        {
+            Ok(built) => built.acceptor,
+            Err(_) => panic!("the acceptor did not build"),
+        };
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        let thread = std::thread::spawn(move || {
+            let (stream, _) = server.accept().unwrap();
+            let tls = acceptor.accept(stream).unwrap();
+            let chosen = tls.ssl().selected_alpn_protocol().map(<[u8]>::to_vec);
+            let lifetime = tls.ssl().session().map(|s| s.timeout()).unwrap();
+            (chosen, lifetime)
+        });
+        let mut connector =
+            SslConnector::builder(SslMethod::tls_client()).unwrap();
+        connector.set_verify(SslVerifyMode::NONE);
+        connector.set_alpn_protos(alpn).unwrap();
+        let stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let tls = connector
+            .build()
+            .configure()
+            .unwrap()
+            .verify_hostname(false)
+            .connect("localhost", stream)
+            .unwrap();
+        let client_chose =
+            tls.ssl().selected_alpn_protocol().map(<[u8]>::to_vec);
+        let (server_chose, lifetime) = thread.join().unwrap();
+        assert_eq!(client_chose, server_chose, "both ends agree");
+        drop(tls);
+        (server_chose, lifetime)
+    }
+
+    /// ALPN IS SELECTED BY THE SERVER (2026-11-16): a client offering h2
+    /// and http/1.1 — what every browser offers — gets h2 when the
+    /// listener's `http2` is on and http/1.1 when it is off; a client
+    /// offering only http/1.1 gets it either way, and one offering
+    /// nothing this listener speaks goes on without ALPN.
+    #[test]
+    fn alpn_selects_h2_when_the_listener_offers_it() {
+        let browser = b"\x02h2\x08http/1.1";
+        let on = Tuning::defaults("api", true);
+        assert!(on.http2);
+        assert_eq!(negotiate(&on, browser).0.as_deref(), Some(&b"h2"[..]));
+        assert_eq!(
+            negotiate(&on, b"\x08http/1.1").0.as_deref(),
+            Some(&b"http/1.1"[..])
+        );
+        let mut off = on.clone();
+        off.http2 = false;
+        assert_eq!(
+            negotiate(&off, browser).0.as_deref(),
+            Some(&b"http/1.1"[..]),
+            "http2 off never selects h2"
+        );
+        assert_eq!(negotiate(&off, b"\x02h2").0, None, "no overlap, no ALPN");
     }
 
     /// REQUIRED WITH NO TRUST SOURCE IS REFUSED, FAIL-CLOSED (2026-11-16):

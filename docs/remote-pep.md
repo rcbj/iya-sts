@@ -1948,6 +1948,10 @@ its settings as follows (since 1.1.0):
   byte to its first request.
 * **`keepAliveTimeoutS`**: a connection with no bytes in either direction
   for this many seconds is closed.
+* **`http2`**: an HTTPS listener with it on selects `h2` when the client
+  offers it in ALPN, as every browser does, and `http/1.1` otherwise; with
+  it off, only `http/1.1`. A client that speaks HTTP/2 without asking (prior
+  knowledge) is answered too while it is on. Plain HTTP never offers it.
 * **`requireClientCertificate`** needs something to verify the certificate
   against: a `trustAnchorsFile`, or, on a decision-API listener,
   `trustIssuedClientCertificates` with `PEP_AUTHZEN_CLIENT_CA` set in the
