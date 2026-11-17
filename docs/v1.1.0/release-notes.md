@@ -8,6 +8,38 @@ title: Release notes
 
 These changes are on a feature branch and are not part of any release yet.
 
+### `bbs-2023` is the W3C cryptosuite
+
+Until 1.1.0 an `ldp_vc` this service issued was labelled `bbs-2023` but
+used a private format: no W3C bbs-2023 implementation could verify it, and
+the Verifier could verify no other issuer's. It now follows *W3C Data
+Integrity BBS Cryptosuites v1.0* (baseline), in issuance, presentation and
+verification ([Verifiable credentials](verifiable-credentials.md#bbs-2023)).
+
+* **The base proof** is the specification's: blank nodes relabelled by HMAC,
+  the statements named by the configuration's mandatory JSON pointers hashed
+  into the BBS header, and the other statements signed as messages
+  (`oid4vci.ldpVcMandatoryPointers`, `oid4vci.ldpVcDidMandatoryPointers`;
+  default `/issuer,/type,/validFrom,/validUntil`). The proof carries no
+  `created`.
+* **A presentation is a reveal document**, the credential with only what the
+  holder reveals, carrying a derived `DataIntegrityProof`. Presented on its
+  own, its presentation header must be the request's nonce; inside a
+  `VerifiablePresentation`, the presentation's proof carries the nonce as its
+  `challenge` and the client as its `domain` (OpenID4VP 1.0 B.1.3.2.5), and
+  the header may be the nonce or empty.
+* **The BBS key is published as the specification's Multikey**:
+  `publicKeyMultibase` is `z` and base58btc of `0xeb01` and the 96-byte key,
+  at `/bbs/keys/{kid}` and in the DID document. It was `u` and the raw bytes.
+* **Credentials issued by 1.0.x** cannot be turned into the new format. Their
+  holders can present them in the old envelope, labelled
+  `iya-bbs-2023-legacy` instead of `bbs-2023`, while
+  `oid4vp.legacyBbsEnvelope` is on (the default). Each acceptance is logged
+  under `STS-VC-0182`. The old envelope labelled `bbs-2023` is refused
+  (`STS-VC-0181`). Such a credential expires after
+  `oid4vci.credentialLifetimeS` (thirty days by default); refreshing it gives
+  a W3C one. Nothing issues the old format.
+
 ### The remote PEP authenticates with its key; the client certificate is retired
 
 A remote XACML PEP authenticates every call it makes to the service — the

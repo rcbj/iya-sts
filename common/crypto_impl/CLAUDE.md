@@ -58,7 +58,7 @@ and ML-KEM on node's OpenSSL) rather than on `@noble/post-quantum`;
 | `key_material.js` | Key generation and JWK/PEM conversion. What `x509.js` rests on. |
 | `jose_jwe.js` | JWE, for the same reason. |
 | `crypto_bytes.js` | The byte-level helpers those three rest on. |
-| `bbs2023.js` | The bbs-2023 Data Integrity cryptosuite, for `ldp_vc`. |
+| `bbs2023.js` | The BBS primitives (Sign, Verify, ProofGen, ProofVerify) behind `bbs-2023`, the BLS12-381 G2 Multikey, and, read only, the pre-1.1 private format. The W3C cryptosuite itself is `oid4vc/vc_bbs.ts` since #1878. |
 | `xmldsig.js` | **XML Signature and XML Encryption, and since 2026-08-27 the signer behind every signed document this service emits.** It is not a library somebody found — it is the OTHER END of most of these exchanges: the debugger signs, verifies, encrypts and decrypts with this exact file on its WS-Trust, SAML and Digital Signature pages. Both ends of a SAML exchange now canonicalize with the same code, which matters because a disagreement about c14n is invisible until it is a signature that verifies on one side and not the other. |
 | `contexts/` | The three JSON-LD contexts `bbs2023.js` reads: the two W3C ones (W3C's, byte for byte) and `iya_identity_v1.json`, this issuer's own since #663. |
 

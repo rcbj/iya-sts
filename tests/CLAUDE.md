@@ -1083,6 +1083,7 @@ Three rules that are not optional here:
 | `vc_data_integrity.js` | The HOLDER'S Data Integrity proof as a library: the W3C's published vectors for `ecdsa-jcs-2019`, `eddsa-jcs-2022` and `mldsa44-jcs-2024` (canonical forms, hashes, and a reproduced `proofValue`), round trips for P-256, P-384, Ed25519 and ML-DSA-44, `did:jwk` and `did:key`, and eighteen refusals each naming its own check |
 | `vc_jsonld.js` | The CLOSED JSON-LD loader (#194-#196): every vendored context held to its SHA-256, the VC 2.0 context to the VCDM's own relatedResource digest, an unknown context refused with its URL (nothing fetched), a protected term's redefinition refused, RDFC-1.0 reproducing the ECDSA specification's canonical document and proof configuration, and a directed language value canonicalized. Reads the ECDSA TestVectors from `STS_VC_SUITES_DIR` (the tests image fetches them: they carry private keys) |
 | `vc_rdfc_suites.js` | `eddsa-rdfc-2022`, `ecdsa-rdfc-2019` and `ecdsa-sd-2023` (#195, #196): the specification's combined hashes and signed credentials, round trips over Ed25519, P-256 and P-384 for VC 2.0 and 1.1, proof sets and chains, a chain to a missing proof refused; `ecdsa-sd-2023` against the specification's intermediate values — its HMAC-relabelled statements and mandatory group, a derived proof byte for byte its vector, its derived credential verifying and a changed one not, a base proof refused by a verifier — and the JCS default kept for the sign-in |
+| `vc_bbs2023.js` | **`bbs-2023` IS W3C's (#1878)**: `oid4vc/vc_bbs.ts` against W3C Data Integrity BBS Cryptosuites v1.0's TestVectors (`vc-di-bbs`, windsurf and prc): the Multikey of its key, the HMAC-shuffled statements, the mandatory group, the BBS header, the base proofValue byte for byte, the label map, the adjusted indexes, the reveal document, the derived proofValue byte for byte around the (randomized) BBS proof, the vectors' derived documents verifying and a changed one, another key, a base proof and an at-risk feature header refused; then `@digitalbazaar/bbs-2023-cryptosuite` (from the BBS suite's lockfile) deriving this service's base proofs and verifying its derivations, and the reverse. Reads `STS_VC_SUITES_DIR` (`STS_VC_DI_BBS_VECTORS` to point at another copy of the vectors) |
 | `vc_data_model.js` | The VC Data Model MUSTs `oid4vc/vc_data_model.ts` refuses for (#194), one row per rule, beside the positives (2.0, 1.1, enveloped, a presentation) |
 | `vc_jose_cose.js` | VC-JOSE-COSE (#198): every form round-tripping by its kid and by a caller-named key; a contradicting type header, a `vc` claim, an expired exp, another key's signature, a private key named, a hex COSE value and an unknown data: type refused; a missing typ accepted and a string iat a warning; RFC 9901 section 7.1's refusals |
 | `vc_api.js` | The VC-API adapter's gate (#194-#199): nine routes under `/vc-api`, each one handler (the demonstration mark #585 put first was removed by #599; the surface is off by default since #598), each token refusal `STS-VC-0101` with its status, an admitted token; the issuer's own refusals before a key is touched; DID resolution and dereferencing per DID Core section 7; the two scopes protected |
@@ -3097,6 +3098,7 @@ VC API asks for the same token in both modes, and
 | w3c/vc-bitstring-status-list-test-suite | `960ab9a3ad275bb5e56dd3f300939f83cba759b7` | W3C 3-clause BSD |
 | w3c/vc-jose-cose-test-suite | `cf4c93ddf7e1bfef5a3e5db4b9a798b02ea778a9` | W3C 3-clause BSD |
 | w3c/did-test-suite | `939b31d07d5b1699340ac0702ec0fa46ffcdef0a` | W3C |
+| w3c/vc-di-bbs-test-suite (+ w3c/vc-di-bbs's TestVectors at `495310858ad0b54c4b6cb1423c59a90a22091459`, the CRD of 2026-09-10) | `77c9e16996abedbb4bff9c9272ad20cd6e5132d8` | W3C 3-clause BSD |
 
 **FETCHED AT IMAGE BUILD TIME, NEVER COMMITTED** — several carry test private
 keys. `tests/vc-suites/fetch-suites.sh`, in the `vc-suites` stage of
@@ -3108,7 +3110,12 @@ vc-test-suite-implementations from `main` at test time, an unpinned
 download; the lockfile's commit is used, and the jobs run mocha directly.
 The DID suite keeps its scripts, because its lerna postinstall builds its
 matcher package. The in-process files `vc_jsonld.js` and
-`vc_rdfc_suites.js` read the ECDSA TestVectors from the same directory.
+`vc_rdfc_suites.js` read the ECDSA TestVectors from the same directory, and
+`vc_bbs2023.js` the BBS ones and the BBS suite's installed
+`@digitalbazaar/bbs-2023-cryptosuite` (#1878) — as do the ldp_vc protocol
+jobs, through `tests/protocol/bbs_w3c.js`. **No job runs the BBS suite's own
+mocha against this service yet**: the VC API issues no bbs-2023
+(`oid4vc/CLAUDE.md`).
 
 **How a suite meets the service.** `tests/protocol/vc_suites_kit.js` makes
 the realm with the VC API on, a client with `vc-api:issue` and `vc-api:verify` declared, and a
