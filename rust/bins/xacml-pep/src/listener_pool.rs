@@ -1028,6 +1028,22 @@ Threads:\t7\n";
         let job: Job =
             Box::new(move |_rt| while flag.load(Ordering::Acquire) {});
         assert!(rt.inner.pool.enqueue(job));
+        // The one worker takes the blocking job off the queue whenever it
+        // is scheduled, which made the next enqueue race it: refused when
+        // the job was still waiting, accepted when it had been taken (PR
+        // #1871's rust job). Wait until it is RUNNING, so what the queue
+        // holds is known: nothing, then the one job max allows.
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while lock_queue(&rt.inner.pool.inner.queue).len() > 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the worker never took the blocking job"
+            );
+            std::thread::yield_now();
+        }
+        let job: Job = Box::new(|_rt| {});
+        assert!(rt.inner.pool.enqueue(job), "the queue has room for one");
         let job: Job = Box::new(|_rt| {});
         assert!(
             !rt.inner.pool.enqueue(job),
