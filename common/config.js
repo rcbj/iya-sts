@@ -12635,6 +12635,34 @@ const SETTINGS = [
                  'URL that existing tests dereference, and switching it to a ' +
                  'DID URL breaks them silently.' },
 
+  // THE STATEMENTS A HOLDER CANNOT WITHHOLD (#1878): bbs-2023's mandatory
+  // JSON pointers, per ldp_vc credential configuration. vc-di-bbs hashes the
+  // statements they select into the BBS header, so a derived proof that
+  // leaves one out does not verify. The default is what a verifier of this
+  // credential needs to know which issuer stands behind it, what it is and
+  // whether it is still valid; the subject and the claims stay the holder's
+  // to choose. The specification's privacy considerations are the reason
+  // the list is short: every mandatory statement shrinks the anonymity set.
+  { key: 'oid4vci.ldpVcMandatoryPointers', group: 'OID4VCI',
+    label: 'ldp_vc mandatory JSON pointers',
+    env: 'OID4VCI_LDP_VC_MANDATORY_POINTERS', type: 'csv',
+    dflt: '/issuer,/type,/validFrom,/validUntil', runtime: true,
+    description: 'The JSON pointers (RFC 6901) of the statements every ' +
+                 'derived proof of an IdentityCredentialLdpVc credential ' +
+                 'must reveal: bbs-2023 (W3C Data Integrity BBS ' +
+                 'Cryptosuites v1.0) hashes them into the signature\'s ' +
+                 'header, so a holder cannot leave one out. The default ' +
+                 'names the issuer, the type and the validity window. A ' +
+                 'pointer that is not a JSON pointer, or names nothing in ' +
+                 'the credential, refuses the issuance (STS-VC-0180). A ' +
+                 'change applies to the next credential issued.' },
+  { key: 'oid4vci.ldpVcDidMandatoryPointers', group: 'OID4VCI',
+    label: 'ldp_vc (did:web) mandatory JSON pointers',
+    env: 'OID4VCI_LDP_VC_DID_MANDATORY_POINTERS', type: 'csv',
+    dflt: '/issuer,/type,/validFrom,/validUntil', runtime: true,
+    description: 'The same for the IdentityCredentialLdpVcDid ' +
+                 'configuration, whose issuer names itself by did:web.' },
+
   // --- OID4VP --------------------------------------------------------------
   { key: 'oid4vp.clientId', group: 'OID4VP', label: 'Verifier client ID',
     env: 'OID4VP_CLIENT_ID', type: 'string', dflt: 'sts-verifier',
@@ -12642,6 +12670,29 @@ const SETTINGS = [
     description: 'The client_id this service\'s Verifier presents in its ' +
                  'Authorization Request, and the `aud` the Key Binding JWT ' +
                  'must name.' },
+
+  // THE PRE-1.1 bbs-2023 ENVELOPE, READ FOR A WHILE (#1878). Until 1.1.0
+  // this service's bbs-2023 was a private format; since then it is the W3C
+  // cryptosuite. A credential issued in the old format cannot be turned into
+  // a W3C derived proof (its signature covers different messages), so a
+  // holder of one may still present it, as the old envelope, but only under
+  // the non-standard label `iya-bbs-2023-legacy` — never as `bbs-2023` — and
+  // each acceptance is logged under STS-VC-0182. `oid4vc/vc_verifier.ts`
+  // argues it.
+  { key: 'oid4vp.legacyBbsEnvelope', group: 'OID4VP',
+    label: 'Accept pre-1.1 bbs-2023 presentations',
+    env: 'OID4VP_LEGACY_BBS_ENVELOPE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the Verifier still accepts an ldp_vc ' +
+                 'presentation in the format iya-sts 1.0 issued, labelled ' +
+                 'iya-bbs-2023-legacy: a credential issued before 1.1.0 ' +
+                 'cannot be derived into a W3C bbs-2023 proof, and lives ' +
+                 'oid4vci.credentialLifetimeS (thirty days by default). ' +
+                 'Every acceptance is logged under STS-VC-0182. An ' +
+                 'envelope labelled bbs-2023 is refused either way ' +
+                 '(STS-VC-0181), because bbs-2023 names the W3C ' +
+                 'cryptosuite. Nothing issues the old format any more. Off ' +
+                 'refuses it (STS-VC-0183).' },
 
   { key: 'oid4vp.walletUrl', group: 'OID4VP', label: 'Wallet URL',
     env: 'OID4VP_WALLET_URL', type: 'string',

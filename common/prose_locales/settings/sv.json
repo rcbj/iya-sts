@@ -6287,6 +6287,22 @@
     "en": "de851f5fe529cc0b",
     "text": "vc_did.js läser den en gång när modulen laddas, och utfärdarens metadata byggs utifrån det som lästes"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "Obligatoriska JSON-pekare för ldp_vc"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "JSON-pekarna (RFC 6901) till de påståenden som varje härlett bevis för en IdentityCredentialLdpVc-legitimation måste avslöja: bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0) tar med dem i hashen i signaturens huvud, så en innehavare kan inte utelämna något av dem. Standardvärdet anger utfärdaren, typen och giltighetsperioden. En pekare som inte är en JSON-pekare, eller som inte pekar på något i legitimationen, gör att utfärdandet avvisas (STS-VC-0180). En ändring gäller nästa legitimation som utfärdas."
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "Obligatoriska JSON-pekare för ldp_vc (did:web)"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "Detsamma för konfigurationen IdentityCredentialLdpVcDid, vars utfärdare anger sig själv med did:web."
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "Verifierarens klient-ID"
@@ -6294,6 +6310,14 @@
   "oid4vp.clientId|description": {
     "en": "fad43765b51b8297",
     "text": "Det client_id som den här tjänstens Verifier presenterar i sin Authorization Request, och den `aud` som Key Binding JWT måste ange."
+  },
+  "oid4vp.legacyBbsEnvelope|label": {
+    "en": "d5d9a936ecf619b3",
+    "text": "Acceptera bbs-2023-presentationer från före 1.1"
+  },
+  "oid4vp.legacyBbsEnvelope|description": {
+    "en": "4e86f1b86cc145e2",
+    "text": "Om verifieraren fortfarande accepterar en ldp_vc-presentation i det format som iya-sts 1.0 utfärdade, märkt iya-bbs-2023-legacy: en legitimation som utfärdats före 1.1.0 kan inte härledas till ett W3C bbs-2023-bevis och lever i oid4vci.credentialLifetimeS (trettio dagar som standard). Varje godkännande loggas under STS-VC-0182. Ett kuvert märkt bbs-2023 avvisas i vilket fall som helst (STS-VC-0181), eftersom bbs-2023 betecknar W3C:s kryptosvit. Ingenting utfärdar längre det gamla formatet. Avstängd avvisas det (STS-VC-0183)."
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",

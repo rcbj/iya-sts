@@ -6287,6 +6287,22 @@
     "en": "de851f5fe529cc0b",
     "text": "binabasa ito ng vc_did.js nang isang beses sa oras ng require, at binubuo ang issuer metadata mula sa nabasa nito"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "Mga sapilitang JSON pointer ng ldp_vc"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "Ang mga JSON pointer (RFC 6901) ng mga pahayag na dapat ibunyag ng bawat derived proof ng isang IdentityCredentialLdpVc credential: isinasama ng bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0) ang hash ng mga ito sa header ng lagda, kaya hindi maaaring alisin ng may-hawak ang alinman. Pinangangalanan ng default ang issuer, ang uri at ang panahon ng bisa. Ang pointer na hindi JSON pointer, o walang pinangangalanan sa credential, ay tumatanggi sa pag-isyu (STS-VC-0180). Ang pagbabago ay umiiral sa susunod na credential na iisyu."
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "Mga sapilitang JSON pointer ng ldp_vc (did:web)"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "Pareho para sa configuration na IdentityCredentialLdpVcDid, na ang issuer ay nagpapakilala sa sarili sa pamamagitan ng did:web."
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "Client ID ng verifier"
@@ -6294,6 +6310,14 @@
   "oid4vp.clientId|description": {
     "en": "fad43765b51b8297",
     "text": "Ang client_id na ipinapakita ng Verifier ng serbisyong ito sa Authorization Request nito, at ang `aud` na dapat pangalanan ng Key Binding JWT."
+  },
+  "oid4vp.legacyBbsEnvelope|label": {
+    "en": "d5d9a936ecf619b3",
+    "text": "Tanggapin ang mga bbs-2023 presentation bago ang 1.1"
+  },
+  "oid4vp.legacyBbsEnvelope|description": {
+    "en": "4e86f1b86cc145e2",
+    "text": "Kung tumatanggap pa ang Verifier ng ldp_vc presentation sa format na inisyu ng iya-sts 1.0, na may label na iya-bbs-2023-legacy: ang credential na inisyu bago ang 1.1.0 ay hindi maaaring gawing W3C bbs-2023 proof, at tumatagal ng oid4vci.credentialLifetimeS (tatlumpung araw bilang default). Bawat pagtanggap ay itinatala sa ilalim ng STS-VC-0182. Ang envelope na may label na bbs-2023 ay tinatanggihan sa alinmang kaso (STS-VC-0181), dahil pinangangalanan ng bbs-2023 ang W3C cryptosuite. Wala nang nag-iisyu ng lumang format. Kapag naka-off, tinatanggihan ito (STS-VC-0183)."
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",

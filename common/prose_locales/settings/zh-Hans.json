@@ -6287,6 +6287,22 @@
     "en": "de851f5fe529cc0b",
     "text": "vc_did.js 在 require 时读取一次，颁发者元数据由其读到的内容构建"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "ldp_vc 强制 JSON 指针"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "IdentityCredentialLdpVc 凭证的每个派生证明都必须披露的陈述的 JSON 指针（RFC 6901）：bbs-2023（W3C Data Integrity BBS Cryptosuites v1.0）将它们哈希进签名头，因此持有者不能省略其中任何一个。默认值指明签发者、类型和有效期。不是 JSON 指针、或在凭证中不指向任何内容的指针会使签发被拒绝（STS-VC-0180）。更改适用于下一个签发的凭证。"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "ldp_vc（did:web）强制 JSON 指针"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "对 IdentityCredentialLdpVcDid 配置同样适用，该配置的签发者以 did:web 标识自身。"
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "验证方客户端 ID"
@@ -6294,6 +6310,14 @@
   "oid4vp.clientId|description": {
     "en": "fad43765b51b8297",
     "text": "本服务的验证方在其授权请求中提供的 client_id，也是密钥绑定 JWT 必须指明的 `aud`。"
+  },
+  "oid4vp.legacyBbsEnvelope|label": {
+    "en": "d5d9a936ecf619b3",
+    "text": "接受 1.1 之前的 bbs-2023 出示"
+  },
+  "oid4vp.legacyBbsEnvelope|description": {
+    "en": "4e86f1b86cc145e2",
+    "text": "验证者是否仍接受以 iya-sts 1.0 所签发格式、标记为 iya-bbs-2023-legacy 的 ldp_vc 出示：1.1.0 之前签发的凭证无法派生为 W3C bbs-2023 证明，其有效期为 oid4vci.credentialLifetimeS（默认三十天）。每次接受都以 STS-VC-0182 记录。标记为 bbs-2023 的信封无论如何都会被拒绝（STS-VC-0181），因为 bbs-2023 指的是 W3C 密码套件。已不再有任何组件签发旧格式。关闭时会拒绝它（STS-VC-0183）。"
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",

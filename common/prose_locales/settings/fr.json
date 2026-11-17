@@ -6287,6 +6287,22 @@
     "en": "de851f5fe529cc0b",
     "text": "vc_did.js le lit une seule fois au chargement, et les métadonnées de l’émetteur sont construites à partir de ce qu’il a lu"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "Pointeurs JSON obligatoires de ldp_vc"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "Les pointeurs JSON (RFC 6901) des déclarations que toute preuve dérivée d'un justificatif IdentityCredentialLdpVc doit révéler : bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0) les intègre au hachage de l'en-tête de la signature, si bien qu'un détenteur ne peut en omettre aucun. La valeur par défaut nomme l'émetteur, le type et la période de validité. Un pointeur qui n'est pas un pointeur JSON, ou qui ne désigne rien dans le justificatif, fait refuser l'émission (STS-VC-0180). Une modification s'applique au prochain justificatif émis."
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "Pointeurs JSON obligatoires de ldp_vc (did:web)"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "La même chose pour la configuration IdentityCredentialLdpVcDid, dont l'émetteur se désigne par did:web."
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "Identifiant client du vérificateur"
@@ -6294,6 +6310,14 @@
   "oid4vp.clientId|description": {
     "en": "fad43765b51b8297",
     "text": "Le client_id que le vérificateur de ce service présente dans sa requête d’autorisation, et le `aud` que le Key Binding JWT doit nommer."
+  },
+  "oid4vp.legacyBbsEnvelope|label": {
+    "en": "d5d9a936ecf619b3",
+    "text": "Accepter les présentations bbs-2023 antérieures à 1.1"
+  },
+  "oid4vp.legacyBbsEnvelope|description": {
+    "en": "4e86f1b86cc145e2",
+    "text": "Indique si le Vérificateur accepte encore une présentation ldp_vc au format qu'émettait iya-sts 1.0, étiquetée iya-bbs-2023-legacy : un justificatif émis avant 1.1.0 ne peut pas être dérivé en une preuve bbs-2023 du W3C et vit oid4vci.credentialLifetimeS (trente jours par défaut). Chaque acceptation est journalisée sous STS-VC-0182. Une enveloppe étiquetée bbs-2023 est refusée dans tous les cas (STS-VC-0181), car bbs-2023 désigne la suite cryptographique du W3C. Plus rien n'émet l'ancien format. Désactivé, il est refusé (STS-VC-0183)."
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",

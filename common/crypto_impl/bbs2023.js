@@ -4,7 +4,18 @@
 'use strict';
 //
 // ---------------------------------------------------------------------------
-// The issuer and verifier half of the `bbs-2023` cryptosuite.
+// THE BBS PRIMITIVES BEHIND THE `bbs-2023` CRYPTOSUITE, and the key's
+// Multikey encoding (#1878, 2026-11-17).
+//
+// Until #1878 this file WAS the cryptosuite, and it was not W3C's: every
+// canonical statement was a BBS message, the header was the proof options'
+// N-Quads, and a presentation was an envelope of disclosed statements. Since
+// then the cryptosuite is `oid4vc/vc_bbs.ts`, W3C Data Integrity BBS
+// Cryptosuites v1.0 step for step, and this file holds what it rests on:
+// Sign, Verify, ProofGen and ProofVerify (draft-irtf-cfrg-bbs-signatures,
+// BLS12-381-SHA-256), the BLS12-381 G2 Multikey, the closed JSON-LD loader
+// the issuer reads its identity context through, and — READ ONLY — the
+// pre-1.1 private format, for the verifier's legacy envelope.
 //
 // THIS SERVICE'S OWN SINCE #663 (2026-11-02), not a copy of the parent
 // project's file any more, on the same terms as `pqc.js` under #363: the
@@ -13,21 +24,13 @@
 // minted credential carries no other project's name. It is edited here and
 // is not re-synced from the parent.
 //
-// This deliberately does NOT reuse the debugger's client/src/bbs2023.js. The
-// BBS protocol code here is @digitalbazaar/bbs-signatures — a different
-// implementation from the one the browser runs — so a credential this
-// service issues is signed by one codebase and its derived proof is
-// produced by another, and each side verifies the other's work. That
-// cross-check is the point: BBS has several places where a signer and
-// verifier can share a mistake, agree perfectly, and agree with nobody else.
-//
-// What IS shared, and must be, is the canonical form. bbs-2023 signs
-// canonical N-Quad statements, so both sides run the same `jsonld`
-// canonicalization over the same contexts. A one-byte difference there fails
-// every signature while looking exactly like a crypto bug — so a wallet
-// needs this issuer's identity context before it can derive a proof from a
-// credential issued here. Nothing here is vendored to or from the parent
-// any more (rcbj, #663).
+// The BBS protocol code is @digitalbazaar/bbs-signatures. BBS has several
+// places where a signer and verifier can share a mistake, agree perfectly,
+// and agree with nobody else, which is why `tests/vc_bbs2023.js` holds the
+// cryptosuite to the W3C specification's own test vectors and to a second
+// implementation of it (Digital Bazaar's bbs-2023-cryptosuite, test tooling
+// only), not only to itself. Nothing here is vendored to or from the
+// parent any more (rcbj, #663).
 //
 // The library is ESM-only and this service is CommonJS, so it is loaded with
 // a dynamic import() the first time it is needed and then kept.
@@ -59,6 +62,9 @@ if (logLevelProblem) {
 }
 
 const CRYPTOSUITE = 'bbs-2023';
+// The label the verifier reads the pre-1.1 envelope under (see the LEGACY
+// section below): never `bbs-2023`, which is the W3C cryptosuite's.
+const LEGACY_CRYPTOSUITE = 'iya-bbs-2023-legacy';
 const PROOF_TYPE = 'DataIntegrityProof';
 const IDENTITY_CONTEXT_URL = 'https://iyasec.io/contexts/identity/v1';
 
@@ -124,40 +130,6 @@ async function ciphersuite() {
 // no Entering/Leaving pair here — it would drown the log.
 const te = (s) => new TextEncoder().encode(s);
 
-async function canonicalizedStatements(doc) {
-  log.debug('Entering canonicalizedStatements().');
-  const nquads = await jsonld.canonize(doc, {
-    algorithm: 'URDNA2015',
-    format: 'application/n-quads',
-    documentLoader,
-    safe: true
-  });
-  const statements = String(nquads).split('\n')
-    .filter((l) => l.trim() !== '')
-    .map((l) => l + '\n');
-  log.debug('Leaving canonicalizedStatements().');
-  return statements;
-}
-
-function proofConfig(proof) {
-  log.debug('Entering proofConfig().');
-  const config = {};
-  Object.keys(proof).forEach((k) => {
-    if (k !== 'proofValue') {
-      config[k] = proof[k];
-    }
-  });
-  log.debug('Leaving proofConfig().');
-  return config;
-}
-
-async function headerFor(proof) {
-  log.debug('Entering headerFor().');
-  const statements = await canonicalizedStatements(proofConfig(proof));
-  log.debug('Leaving headerFor().');
-  return te(statements.join(''));
-}
-
 function bytesToB64u(bytes) {
   log.debug('Entering bytesToB64u().');
   log.debug('Leaving bytesToB64u().');
@@ -202,95 +174,232 @@ async function generateKeyPair() {
   return { secretKey, publicKey };
 }
 
-// --- issue ------------------------------------------------------------------
-async function issue(unsecured, proofOptions, secretKey, publicKey) {
-  log.debug('Entering issue().');
+// ---------------------------------------------------------------------------
+// THE BBS PRIMITIVES (#1878): Sign, Verify, ProofGen and ProofVerify of
+// draft-irtf-cfrg-bbs-signatures over BLS12-381-SHA-256, and nothing about a
+// document. `oid4vc/vc_bbs.ts` is the cryptosuite — W3C Data Integrity BBS
+// Cryptosuites v1.0, its base proof, its derived proof and their checks —
+// and asks these through `common/crypto.js` (rule 3r). Each verifier answers
+// false for a signature or proof the library rejects by throwing: one that
+// does not verify, as far as a caller is concerned.
+// ---------------------------------------------------------------------------
+async function sign(input) {
+  log.debug('Entering sign().');
   const lib = await bbs();
   const suite = await ciphersuite();
-  const proof = Object.assign({
-    '@context': unsecured['@context'],
-    type: PROOF_TYPE,
-    cryptosuite: CRYPTOSUITE,
-    proofPurpose: 'assertionMethod'
-  }, proofOptions);
-
-  const document = Object.assign({}, unsecured);
-  delete document.proof;
-  const statements = await canonicalizedStatements(document);
-  const header = await headerFor(proof);
   const signature = await lib.sign({
-    secretKey, publicKey, header, messages: statements.map(te),
-    ciphersuite: suite
+    secretKey: input.secretKey, publicKey: input.publicKey,
+    header: input.header, messages: input.messages, ciphersuite: suite
   });
-
-  const attached = Object.assign({}, proof);
-  delete attached['@context'];
-  attached.proofValue = 'u' + bytesToB64u(signature);
-  const secured = Object.assign({}, document, { proof: attached });
-  log.debug('Leaving issue().');
-  return { credential: secured, statements, header, signature };
+  log.debug('Leaving sign().');
+  return signature;
 }
 
-// --- verify -----------------------------------------------------------------
-// Every crypto operation this service is handed goes through one of these
-// two. A signature the library rejects by throwing is a signature that did
-// not verify, so each answers false for it rather than throwing on.
-async function verifyBase(secured, publicKey) {
-  log.debug('Entering verifyBase().');
+async function verifySignature(input) {
+  log.debug('Entering verifySignature().');
   const lib = await bbs();
   const suite = await ciphersuite();
-  const proof = secured.proof || {};
-  const document = Object.assign({}, secured);
-  delete document.proof;
-  const reproof = Object.assign({ '@context': secured['@context'] }, proof);
-  delete reproof.proofValue;
-  const statements = await canonicalizedStatements(document);
-  const header = await headerFor(reproof);
-  const signature = multibaseToBytes(proof.proofValue);
   const ok = await lib.verifySignature({
-    publicKey, signature, header, messages: statements.map(te),
-    ciphersuite: suite
+    publicKey: input.publicKey, signature: input.signature,
+    header: input.header, messages: input.messages, ciphersuite: suite
   }).catch((e) => {
-    log.debug('Caught in verifyBase(): ' + ((e && e.message) || e));
+    log.debug('Caught in verifySignature(): ' + ((e && e.message) || e));
     return false;
   });
-  log.debug('Leaving verifyBase().');
-  return { ok, statements, header };
+  log.debug('Leaving verifySignature(). ' + !!ok);
+  return !!ok;
 }
 
-async function verifyDerived(publicKey, derivedProof, header,
-                             presentationHeader, disclosedStatements,
-                             disclosedIndexes) {
-  log.debug('Entering verifyDerived().');
+async function deriveProof(input) {
+  log.debug('Entering deriveProof().');
+  const lib = await bbs();
+  const suite = await ciphersuite();
+  const proof = await lib.deriveProof({
+    publicKey: input.publicKey, signature: input.signature,
+    header: input.header, messages: input.messages,
+    presentationHeader: input.presentationHeader,
+    disclosedMessageIndexes: input.disclosedMessageIndexes,
+    ciphersuite: suite
+  });
+  log.debug('Leaving deriveProof().');
+  return proof;
+}
+
+async function verifyProof(input) {
+  log.debug('Entering verifyProof().');
   const lib = await bbs();
   const suite = await ciphersuite();
   const ok = await lib.verifyProof({
+    publicKey: input.publicKey, proof: input.proof, header: input.header,
+    presentationHeader: input.presentationHeader,
+    disclosedMessages: input.disclosedMessages,
+    disclosedMessageIndexes: input.disclosedMessageIndexes,
+    ciphersuite: suite
+  }).catch((e) => {
+    log.debug('Caught in verifyProof(): ' + ((e && e.message) || e));
+    return false;
+  });
+  log.debug('Leaving verifyProof(). ' + !!ok);
+  return !!ok;
+}
+
+// ---------------------------------------------------------------------------
+// THE PUBLIC KEY AS A MULTIKEY (vc-di-bbs section 2.1.1, #1878): `z` and the
+// base58btc of the bls12_381-g2-pub multicodec (0xeb 0x01) followed by the
+// 96-byte compressed G2 point. "Any other encoding MUST NOT be allowed."
+// Until #1878 this service published `u` and the raw 96 bytes, which no
+// other implementation reads.
+// ---------------------------------------------------------------------------
+const G2_MULTICODEC = [0xeb, 0x01];
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+function base58Encode(bytes) {
+  log.debug('Entering base58Encode().');
+  const input = Buffer.from(bytes);
+  let n = BigInt('0x' + (input.length ? input.toString('hex') : '0'));
+  let out = '';
+  while (n > BigInt(0)) {
+    out = B58[Number(n % BigInt(58))] + out;
+    n = n / BigInt(58);
+  }
+  for (let i = 0; i < input.length && input[i] === 0; i++) {
+    out = '1' + out;
+  }
+  log.debug('Leaving base58Encode().');
+  return out;
+}
+
+function base58Decode(text) {
+  log.debug('Entering base58Decode().');
+  const s = String(text || '');
+  let n = BigInt(0);
+  for (const ch of s) {
+    const v = B58.indexOf(ch);
+    if (v < 0) {
+      log.debug('Leaving base58Decode(). Not base58.');
+      throw new Error('not base58btc: "' + ch + '".');
+    }
+    n = n * BigInt(58) + BigInt(v);
+  }
+  let hex = n === BigInt(0) ? '' : n.toString(16);
+  if (hex.length % 2) {
+    hex = '0' + hex;
+  }
+  let zeros = 0;
+  while (zeros < s.length && s.charAt(zeros) === '1') {
+    zeros += 1;
+  }
+  log.debug('Leaving base58Decode().');
+  return Buffer.concat([Buffer.alloc(zeros), Buffer.from(hex, 'hex')]);
+}
+
+function publicKeyMultibase(publicKey) {
+  log.debug('Entering publicKeyMultibase().');
+  const key = Buffer.from(publicKey || []);
+  if (key.length !== 96) {
+    log.debug('Leaving publicKeyMultibase(). Not a G2 key.');
+    throw new Error('a BLS12-381 G2 public key is 96 bytes; got ' +
+                    key.length + '.');
+  }
+  log.debug('Leaving publicKeyMultibase().');
+  return 'z' + base58Encode(Buffer.concat([Buffer.from(G2_MULTICODEC), key]));
+}
+
+function publicKeyFromMultibase(value) {
+  log.debug('Entering publicKeyFromMultibase().');
+  const text = String(value || '');
+  if (text.charAt(0) !== 'z') {
+    log.debug('Leaving publicKeyFromMultibase(). Not base58btc.');
+    throw new Error('a bbs-2023 publicKeyMultibase starts with "z" ' +
+                    '(base58btc); got "' + text.slice(0, 12) + '".');
+  }
+  const bytes = base58Decode(text.slice(1));
+  if (bytes.length !== 98 || bytes[0] !== G2_MULTICODEC[0] ||
+      bytes[1] !== G2_MULTICODEC[1]) {
+    log.debug('Leaving publicKeyFromMultibase(). Not bls12_381-g2-pub.');
+    throw new Error('not a bls12_381-g2-pub Multikey (0xeb01 and 96 bytes).');
+  }
+  log.debug('Leaving publicKeyFromMultibase().');
+  return new Uint8Array(bytes.subarray(2));
+}
+
+// ---------------------------------------------------------------------------
+// THE PRE-1.1 PRIVATE FORMAT, READ AND NEVER MADE (#1878). Until 1.1.0 this
+// service's `bbs-2023` was its own: every canonical statement a BBS message,
+// the header the canonical N-Quads of the proof options, the proofValue the
+// raw signature, and a presentation an envelope of disclosed statements
+// beside a raw BBS proof. No W3C implementation reads it, and nothing here
+// makes it any more. The OpenID4VP verifier still READS such an envelope,
+// only under the non-standard label `iya-bbs-2023-legacy` and only while
+// `oid4vp.legacyBbsEnvelope` is on — `oid4vc/vc_verifier.ts` argues it.
+// ---------------------------------------------------------------------------
+async function legacyCanonicalizedStatements(doc) {
+  log.debug('Entering legacyCanonicalizedStatements().');
+  const nquads = await jsonld.canonize(doc, {
+    algorithm: 'URDNA2015',
+    format: 'application/n-quads',
+    documentLoader,
+    safe: true
+  });
+  const statements = String(nquads).split('\n')
+    .filter((l) => l.trim() !== '')
+    .map((l) => l + '\n');
+  log.debug('Leaving legacyCanonicalizedStatements().');
+  return statements;
+}
+
+function proofConfig(proof) {
+  log.debug('Entering proofConfig().');
+  const config = {};
+  Object.keys(proof).forEach((k) => {
+    if (k !== 'proofValue') {
+      config[k] = proof[k];
+    }
+  });
+  log.debug('Leaving proofConfig().');
+  return config;
+}
+
+async function legacyHeaderFor(proof) {
+  log.debug('Entering legacyHeaderFor().');
+  const statements =
+    await legacyCanonicalizedStatements(proofConfig(proof));
+  log.debug('Leaving legacyHeaderFor().');
+  return te(statements.join(''));
+}
+
+async function legacyVerifyDerived(publicKey, derivedProof, header,
+                                   presentationHeader, disclosedStatements,
+                                   disclosedIndexes) {
+  log.debug('Entering legacyVerifyDerived().');
+  const ok = await verifyProof({
     publicKey,
     proof: derivedProof,
     header,
     presentationHeader,
     disclosedMessages: disclosedStatements.map(te),
     disclosedMessageIndexes:
-      disclosedIndexes.slice().sort((a, b) => a - b),
-    ciphersuite: suite
-  }).catch((e) => {
-    log.debug('Caught in verifyDerived(): ' + ((e && e.message) || e));
-    return false;
+      disclosedIndexes.slice().sort((a, b) => a - b)
   });
-  log.debug('Leaving verifyDerived().');
+  log.debug('Leaving legacyVerifyDerived().');
   return ok;
 }
 
 module.exports = {
   CRYPTOSUITE,
+  LEGACY_CRYPTOSUITE,
   PROOF_TYPE,
   IDENTITY_CONTEXT_URL,
-  canonicalizedStatements,
-  headerFor,
   generateKeyPair,
-  issue,
-  verifyBase,
-  verifyDerived,
+  sign,
+  verifySignature,
+  deriveProof,
+  verifyProof,
+  publicKeyMultibase,
+  publicKeyFromMultibase,
+  legacyCanonicalizedStatements,
+  legacyHeaderFor,
+  legacyVerifyDerived,
   bytesToB64u,
   b64uToBytes,
   multibaseToBytes,
