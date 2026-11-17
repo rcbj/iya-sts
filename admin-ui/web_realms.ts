@@ -109,8 +109,11 @@ class RealmsPage {
 
       // THE LIST, THE CREATE FORM AND THE SETTINGS ARE TABS (2026-10-12),
       // after a Metadata tab holding the notes above and the support table.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level, its content one frame; the support
+      // table follows the tabs and `metadataFrame()` keeps it on Metadata.
       '<h2 data-tab="realms">' + t.html('consoleRealms.theRealms') +
-      '</h2><table><tr><th>' +
+      '</h2>' + kit.frame('<table><tr><th>' +
       t.html('consoleRealms.id') + '</th><th>' +
       t.html('consoleRealms.name') + '</th>' +
       '<th>' + t.html('consoleRealms.domain') + '</th><th>' +
@@ -120,13 +123,13 @@ class RealmsPage {
       rows + '</table>' +
       kit.pageNavPair('/admin/realms', kit.pageParamsOf(ctx.query), pg).head +
       kit.perPageForm('/admin/realms', '', '', pg.perPage, '',
-                       kit.filterOnly(listView)) +
+                       kit.filterOnly(listView))) +
 
       '<h2 data-tab="define">' + t.html('consoleRealms.defineHeading') +
       '</h2>' +
       // The reserved segments are code, and sit between two messages: the
       // catalog carries no markup a list of <code> elements would need.
-      kit.note(t.html('consoleRealms.idRuleHead') + ' ' +
+      kit.frame(kit.note(t.html('consoleRealms.idRuleHead') + ' ' +
       (json.reserved.length ? kit.codeList(json.reserved.slice(0, 12)) +
         (json.reserved.length > 12
           ? t.html('consoleRealms.andMore',
@@ -151,10 +154,11 @@ class RealmsPage {
       'for="rdesc">' + t.html('consoleRealms.description') +
       '</label><input type="text" id="rdesc" ' +
       'name="description" size="40"><button type="submit">' +
-      t.html('consoleRealms.defineIt') + '</button></div></form><h2>' +
+      t.html('consoleRealms.defineIt') + '</button></div></form>') +
+      kit.metadataFrame('<h2>' +
       t.html('consoleRealms.separatedHeading') + '</h2><p class="lead">' +
       t.html('consoleRealms.separatedLead') + '</p>' +
-      RealmsPage.realmSupportTable(json.support, t) +
+      RealmsPage.realmSupportTable(json.support, t)) +
       // The realms.* rows. `realms.enabled` is the one that makes every
       // prefixed path in this service answer or not, which is worth being able
       // to see beside the list of realms it governs.
@@ -364,11 +368,13 @@ class RealmsPage {
             kit.esc(json.currentName) + '</strong>' +
             t.html('consoleRealms.readingInTail'))) +
 
-        '<h2>' + t.html('consoleRealms.itsDomain') + '</h2>' +
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+        kit.frame('<h2>' + t.html('consoleRealms.itsDomain') + '</h2>' +
         kit.note(t.html('consoleRealms.domainDetail',
                         { domain: row.domain, baseDn: row.baseDn,
-                          builtin: realm.builtin ? 'yes' : 'no' })) +
-        '<h2>' + t.html('consoleRealms.whereItAnswers') + '</h2>' +
+                          builtin: realm.builtin ? 'yes' : 'no' }))) +
+        kit.frame('<h2>' + t.html('consoleRealms.whereItAnswers') +
+        '</h2>' +
         kit.note(t.html('consoleRealms.prefixNote',
                         { prefix: row.pathPrefix ||
                             t.text('consoleRealms.noPrefix'),
@@ -376,9 +382,9 @@ class RealmsPage {
         '<table><tr><th>' + t.html('consoleRealms.document') + '</th><th>' +
         t.html('consoleRealms.url') + '</th></tr>' + endpointRows +
         '</table>' +
-        kit.note(t.html('consoleRealms.kidNote', { kid: row.kid })) +
+        kit.note(t.html('consoleRealms.kidNote', { kid: row.kid }))) +
 
-        '<h2>' + t.html('consoleRealms.whatItSets') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleRealms.whatItSets') + '</h2>' +
         kit.note(t.html('consoleRealms.setsHead') +
         ' <a href="/admin/config">' + t.html('consoleRealms.setsLink') +
         '</a> ' + t.html('consoleRealms.setsTail')) +
@@ -396,7 +402,8 @@ class RealmsPage {
         'for="sval">' + t.html('consoleRealms.value') +
         '</label><input type="text" id="sval" name="value" ' +
         'size="30"><button type="submit">' +
-        t.html('consoleRealms.setItHere') + '</button></div></form><h2>' +
+        t.html('consoleRealms.setItHere') + '</button></div></form>') +
+        kit.frame('<h2>' +
         t.html('consoleRealms.nameAndDescription') + '</h2><form ' +
         'method="post" action="/admin/realms">' + carryBack +
         '<input type="hidden" name="action" value="update">' +
@@ -410,12 +417,14 @@ class RealmsPage {
         'name="description" size="46" value="' +
         kit.esc(realm.description) + '">' +
         '<button type="submit">' + t.html('consoleRealms.save') +
-        '</button></div></form>' +
+        '</button></div></form>') +
 
         (realm.builtin
-          ? '<h2>' + t.html('consoleRealms.cannotRemoveHeading') + '</h2>' +
-            kit.note(t.html('consoleRealms.cannotRemove'))
-          : '<h2>' + t.html('consoleRealms.removeHeading') + '</h2>' +
+          ? kit.frame('<h2>' +
+            t.html('consoleRealms.cannotRemoveHeading') + '</h2>' +
+            kit.note(t.html('consoleRealms.cannotRemove')))
+          : kit.frame('<h2>' + t.html('consoleRealms.removeHeading') +
+            '</h2>' +
             kit.note(t.html('consoleRealms.removeNote')) +
             '<form method="post" action="/admin/realms">' + carryBack +
             '<input type="hidden" name="action" value="remove">' +
@@ -423,7 +432,7 @@ class RealmsPage {
               '">' +
             '<button type="submit" class="danger">' +
             t.html('consoleRealms.removeButton', { id: realm.id }) +
-            '</button></form>');
+            '</button></form>'));
 
     }
 

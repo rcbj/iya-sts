@@ -66,7 +66,9 @@ class SamlAssertionsPage {
 
       SamlAssertionsPage.samlAssertionWarnings(t, json) +
 
-      '<h2>' + t.html('consoleSamlAssertions.hSixteen') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is a
+      // frame, and each profile's h3 a frame inside it.
+      kit.frame('<h2>' + t.html('consoleSamlAssertions.hSixteen') + '</h2>' +
       kit.note(t.html('consoleSamlAssertions.defaultsBefore') +
       '<a href="/admin/applications">' +
       t.html('consoleSamlAssertions.defaultsLink') + '</a>' +
@@ -90,7 +92,7 @@ class SamlAssertionsPage {
                       : (profile === 'saml11' ? 'SAML 1.1'
                       : (profile === 'wsfed' ? 'WS-Federation' :
                          t.text('consoleSamlAssertions.everyProfile')));
-        return '<h3>' + kit.esc(heading) + '</h3>' +
+        return kit.frame('<h3>' + kit.esc(heading) + '</h3>' +
           '<table><tr><th>' + t.html('consoleSamlAssertions.thSetting') +
           '</th><th>' + t.html('consoleSamlAssertions.thValue') +
           '</th><th>' + t.html('consoleSamlAssertions.thWhichIs') + '</th>' +
@@ -101,7 +103,7 @@ class SamlAssertionsPage {
             return SamlAssertionsPage.samlAssertionSettingRow(t, setting,
               snapshot);
           }).join('') +
-          '</table>';
+          '</table>');
       }).join('') +
       '<p><button>' + t.html('consoleSamlAssertions.save') +
       '</button></p>' +
@@ -127,9 +129,9 @@ class SamlAssertionsPage {
         : kit.note(t.html('consoleSamlAssertions.noneOverridden', {
             file: (json.context || {}).configFile ||
               t.text('consoleSamlAssertions.theAppconfigFile'),
-            defaults: (json.context || {}).defaultsFile }))) +
+            defaults: (json.context || {}).defaultsFile })))) +
 
-      '<h2>' + t.html('consoleSamlAssertions.hSkew') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleSamlAssertions.hSkew') + '</h2>' +
       kit.note(t.html('consoleSamlAssertions.skewBothEnds')) +
       '<table><tr><th>' + t.html('consoleSamlAssertions.thProfile') +
       '</th><th>NotBefore</th><th>NotOnOrAfter</th>' +
@@ -150,7 +152,8 @@ class SamlAssertionsPage {
           kit.esc(kit.humanSeconds(lifetime + 2 * skew)) +
           '</td></tr>';
       }).join('') +
-      '</table><h2>' + t.html('consoleSamlAssertions.hFour') + '</h2>' +
+      '</table>') +
+      kit.frame('<h2>' + t.html('consoleSamlAssertions.hFour') + '</h2>' +
       kit.note(t.html('consoleSamlAssertions.four')) +
       // The path's `{id}` is a parameter, because a message's braces are
       // its placeholders.
@@ -158,9 +161,10 @@ class SamlAssertionsPage {
                       { path: '/federation/acs/{id}' }) +
       '<a href="/admin/token-lifetimes">' +
       t.html('consoleSamlAssertions.notOauthLink') + '</a>' +
-      t.html('consoleSamlAssertions.notOauthAfter')) +
+      t.html('consoleSamlAssertions.notOauthAfter'))) +
 
-      '<h2>' + t.html('consoleSamlAssertions.hOutThere') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleSamlAssertions.hOutThere') +
+      '</h2>' +
       kit.note(t.html('consoleSamlAssertions.outThere', {
         held: String(json.assertionsIssued.held),
         cap: String(json.assertionsIssued.cap),
@@ -183,10 +187,11 @@ class SamlAssertionsPage {
           '<td class="num state-expired">' + row.expired + '</td>' +
           '<td class="num state-none">' + row.noExpiry + '</td></tr>';
       }).join('')) +
-      '</table>' +
+      '</table>') +
 
-      '<h2>' + t.html('consoleSamlAssertions.hTwoThings') + '</h2>' +
-      kit.note(t.html('consoleSamlAssertions.twoThings')) +
+      kit.frame('<h2>' + t.html('consoleSamlAssertions.hTwoThings') +
+      '</h2>' +
+      kit.note(t.html('consoleSamlAssertions.twoThings'))) +
 
       kit.note(t.html('consoleSamlAssertions.footer'));
 

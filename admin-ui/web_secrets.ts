@@ -212,8 +212,10 @@ class SecretsPage {
 
   static probeRows(probes: Json, t: Json): string {
     const self = this;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a probe is a
+    // frame inside its secret's or its store's.
     return probes.map(function (probe) {
-      return '<h4>' + kit.esc(probe.id) +
+      return kit.frame('<h4>' + kit.esc(probe.id) +
         ' <span class="muted">' +
         (probe.ok ? t.html('consoleSecrets.tookMs', { ms: probe.tookMs })
                   : t.html('consoleSecrets.unavailableTookMs',
@@ -227,7 +229,7 @@ class SecretsPage {
                        kit.esc(probe.error) + '</code></p>' +
                        (self.whyNot(probe, t)
                          ? '<p>' + self.whyNot(probe, t) + '</p>' : ''),
-                       t.html('consoleSecrets.didNotAnswer')));
+                       t.html('consoleSecrets.didNotAnswer'))));
     }).join('');
   }
 
@@ -300,9 +302,11 @@ class SecretsPage {
              // what the catalog test reads as a key (`tab.keys`,
              // `tab.database`, `tab.mail`).
              const label = 'consoleSecrets.tab.' + kind;
+             // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+             // tab's heading stays at the top level, each secret one frame.
              return '<h3 data-tab="' + kind + '">' + t.html(label) + '</h3>' +
-               self.secretBlock(row, json, t)
-                 .replace(/^<h3>/, '<h4>').replace('</h3>', '</h4>');
+               kit.frame(self.secretBlock(row, json, t)
+                 .replace(/^<h3>/, '<h4>').replace('</h3>', '</h4>'));
            }).join('') +
            self.storesBlock(json, t);
   }
@@ -415,9 +419,9 @@ class SecretsPage {
                  t.html('consoleSecrets.whatItIsTitle')) +
       where + read +
       (row.probes.length
-        ? '<h4 class="muted">' + t.html('consoleSecrets.storeSays') +
-          '</h4>' +
-          self.probeRows(row.probes, t)
+        ? kit.frame('<h4 class="muted">' +
+          t.html('consoleSecrets.storeSays') + '</h4>' +
+          self.probeRows(row.probes, t))
         : '');
   }
 
@@ -432,13 +436,17 @@ class SecretsPage {
     if (!json.stores.length) {
       return '<h3 data-tab="stores">' + t.html('consoleSecrets.stores') +
         '</h3>' +
-        kit.note(t.html('consoleSecrets.noStores'));
+        kit.frame(kit.note(t.html('consoleSecrets.noStores')));
     }
+    // The tab's heading stays at the top level, its content one frame and
+    // each store a frame inside it.
     return '<h3 data-tab="stores">' + t.html('consoleSecrets.stores') +
       '</h3>' +
-      kit.note('<p>' + t.html('consoleSecrets.perStore') + '</p>') +
+      kit.frame(kit.note('<p>' + t.html('consoleSecrets.perStore') +
+                         '</p>') +
       json.stores.map(function (store) {
-        return '<h4>' + kit.esc(store.label) + ' <span class="muted">' +
+        return kit.frame('<h4>' + kit.esc(store.label) +
+          ' <span class="muted">' +
           kit.esc(store.where) + '</span></h4>' +
           '<p class="muted">' + t.html('consoleSecrets.holds') + ' ' +
           store.secrets.map(function (one) {
@@ -446,8 +454,8 @@ class SecretsPage {
           }).join(', ') + '</p>' +
           (store.probes.length
             ? self.probeRows(store.probes, t)
-            : kit.note(t.html('consoleSecrets.nothingPublished')));
-      }).join('');
+            : kit.note(t.html('consoleSecrets.nothingPublished'))));
+      }).join(''));
   }
 }
 

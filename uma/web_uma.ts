@@ -108,14 +108,16 @@ class UmaPage {
         'name="application" size="30" required></label> <button ' +
         'type="submit">' + t.html('consoleUma.enable') + '</button></form>'
       : '';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // content after its heading, which `WebPages.protocolTabs()` cuts at.
     return '<h2 data-tab="servers">' + t.html('consoleUma.servers') +
-      '</h2>' + kit.note(t.html('consoleUma.serversLead')) +
+      '</h2>' + kit.frame(kit.note(t.html('consoleUma.serversLead')) +
       '<table><thead><tr><th>' + t.html('consoleUma.thApplication') +
       '</th><th>' + t.html('consoleUma.thOwns') + '</th><th>' +
       t.html('consoleUma.thProtection') + '</th><th>' +
       t.html('consoleUma.thResources') + '</th><th>' +
       t.html('consoleUma.thRpts') + '</th><th></th></tr></thead><tbody>' +
-      rows + '</tbody></table>' + enable;
+      rows + '</tbody></table>' + enable);
   }
 
   // The resources tab, filtered by resource server and owner.
@@ -149,15 +151,17 @@ class UmaPage {
       t.html('consoleUma.thOwner') + ' <input type="text" name="owner" ' +
       'value="' + esc(filter.owner || '') + '"></label> <button ' +
       'type="submit">' + t.html('consoleUma.filter') + '</button></form>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // content after its heading, which `WebPages.protocolTabs()` cuts at.
     return '<h2 id="list-resourcesPage" data-tab="resources">' +
-      t.html('consoleUma.resources') + '</h2>' + form + nav.head +
+      t.html('consoleUma.resources') + '</h2>' + kit.frame(form + nav.head +
       '<table><thead><tr><th>' + t.html('consoleUma.thId') + '</th><th>' +
       t.html('consoleUma.thName') + '</th><th>' +
       t.html('consoleUma.thScopes') + '</th><th>' +
       t.html('consoleUma.thResourceServer') + '</th><th>' +
       t.html('consoleUma.thOwner') + '</th><th>' +
       t.html('consoleUma.thRegistered') + '</th><th></th></tr></thead>' +
-      '<tbody>' + rows + '</tbody></table>' + nav.foot;
+      '<tbody>' + rows + '</tbody></table>' + nav.foot);
   }
 
   // The tokens tab: live tickets, then live RPTs with a Revoke each.
@@ -191,9 +195,12 @@ class UmaPage {
       }).join('')
       : '<tr><td colspan="7" class="sub">' + t.html('consoleUma.noRpts') +
         '</td></tr>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // content after its heading, which `WebPages.protocolTabs()` cuts at.
+    // The RPTs' `<h3>` block is a frame inside it.
     return '<h2 id="list-ticketsPage" data-tab="tokens">' +
       t.html('consoleUma.tickets') + '</h2>' +
-      kit.note(t.html('consoleUma.ticketsLead')) + ticketNav.head +
+      kit.frame(kit.note(t.html('consoleUma.ticketsLead')) + ticketNav.head +
       '<table><thead><tr><th>' + t.html('consoleUma.thTicket') +
       '</th><th>' + t.html('consoleUma.thState') + '</th><th>' +
       t.html('consoleUma.thResourceServer') + '</th><th>' +
@@ -201,6 +208,7 @@ class UmaPage {
       t.html('consoleUma.thPermissions') + '</th><th>' +
       t.html('consoleUma.thExpires') + '</th></tr></thead><tbody>' +
       tickets + '</tbody></table>' + ticketNav.foot +
+      kit.frame(
       '<h3 id="list-rptsPage">' + t.html('consoleUma.rpts') + '</h3>' +
       rptNav.head + '<table><thead><tr><th>jti</th><th>' +
       t.html('consoleUma.thParty') + '</th><th>' +
@@ -208,7 +216,7 @@ class UmaPage {
       t.html('consoleUma.thResourceServer') + '</th><th>' +
       t.html('consoleUma.thPermissions') + '</th><th>' +
       t.html('consoleUma.thExpires') + '</th><th></th></tr></thead>' +
-      '<tbody>' + rpts + '</tbody></table>' + rptNav.foot;
+      '<tbody>' + rpts + '</tbody></table>' + rptNav.foot));
   }
 
   // A table of requests waiting for an owner; `owner` adds the answer
@@ -243,10 +251,12 @@ class UmaPage {
     const t = ctx.t;
     const nav = kit.pageNavPair(PAGE, ctx.query,
       Object.assign({}, json.pending.paging, { param: 'pendingPage' }), t);
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // content after its heading, which `WebPages.protocolTabs()` cuts at.
     return '<h2 id="list-pendingPage" data-tab="pending">' +
       t.html('consoleUma.pending') + '</h2>' +
-      kit.note(t.html('consoleUma.pendingLead')) + nav.head +
-      UmaPage.pendingTable(json.pending.rows, t, '') + nav.foot;
+      kit.frame(kit.note(t.html('consoleUma.pendingLead')) + nav.head +
+      UmaPage.pendingTable(json.pending.rows, t, '') + nav.foot);
   }
 
   // The share form for an application's own document.
@@ -259,7 +269,8 @@ class UmaPage {
     if (!options) {
       return '';
     }
-    return '<h3>' + t.html('consoleUma.shareHeading') + '</h3>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h3>' + t.html('consoleUma.shareHeading') + '</h3>' +
       '<form method="post" action="' + PAGE + '#uma-tab-owner">' +
       '<input type="hidden" name="action" value="owner-share">' +
       '<input type="hidden" name="owner" value="' + esc(owner.owner) + '">' +
@@ -278,7 +289,7 @@ class UmaPage {
       t.html('consoleUma.expires') + ' <input type="date" name="expires">' +
       '</label> <label><input type="checkbox" name="askMe" value="on"> ' +
       t.html('consoleUma.askMe') + '</label> <button type="submit">' +
-      t.html('consoleUma.share') + '</button></form>';
+      t.html('consoleUma.share') + '</button></form>');
   }
 
   // The owner tab: `?owner=` chooses, and an application that owns
@@ -291,15 +302,20 @@ class UmaPage {
       '<label>' + t.html('consoleUma.ownerLabel') + ' <input type="text" ' +
       'name="owner" value="' + esc(asked) + '"></label> <button ' +
       'type="submit">' + t.html('consoleUma.open') + '</button></form>';
-    const head = '<h2 data-tab="owner">' + t.html('consoleUma.owner') +
-      '</h2>' + kit.note(t.html('consoleUma.ownerLead')) + form;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // content after its heading, which `WebPages.protocolTabs()` cuts at;
+    // each `<h3>` block a frame inside it.
+    const heading = '<h2 data-tab="owner">' + t.html('consoleUma.owner') +
+      '</h2>';
+    const head = kit.note(t.html('consoleUma.ownerLead')) + form;
     const owner = json.owner;
     if (!owner) {
-      return head;
+      return heading + kit.frame(head);
     }
     if (!owner.found) {
-      return head + kit.warn(t.html('consoleUma.ownerNotFound',
-                                    { owner: owner.asked }));
+      return heading + kit.frame(head +
+        kit.warn(t.html('consoleUma.ownerNotFound',
+                        { owner: owner.asked })));
     }
     const editable = !!owner.editable && ctx.write === true;
     const shares = owner.document && owner.document.ok
@@ -319,7 +335,8 @@ class UmaPage {
         '</td></tr>';
     const unreadable = owner.document && !owner.document.ok
       ? kit.warn(esc(owner.document.why || '')) : '';
-    return head + '<h3>' + esc(owner.owner) + ' <span class="sub">' +
+    return heading + kit.frame(head +
+      kit.frame('<h3>' + esc(owner.owner) + ' <span class="sub">' +
       esc(owner.kind) + '</span></h3>' +
       (owner.kind === 'user'
         ? kit.note(t.html('consoleUma.personReadOnly'))
@@ -328,15 +345,15 @@ class UmaPage {
       '<table><thead><tr><th>' + t.html('consoleUma.thResource') +
       '</th><th>' + t.html('consoleUma.thScopes') + '</th><th>' +
       t.html('consoleUma.recipient') + '</th><th></th></tr></thead><tbody>' +
-      shareRows + '</tbody></table>' +
+      shareRows + '</tbody></table>') +
       (editable ? UmaPage.shareForm(owner, t) : '') +
-      '<h3>' + t.html('consoleUma.pending') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleUma.pending') + '</h3>' +
       UmaPage.pendingTable(owner.pending || [], t,
                            editable ? owner.owner : '') +
       (owner.documentXml
         ? '<details><summary>' + t.html('consoleUma.documentXml') +
           '</summary><pre>' + esc(owner.documentXml) + '</pre></details>'
-        : '');
+        : '')));
   }
 
   // The what-if: every layer's answer for one permission, a dry run.
@@ -375,8 +392,10 @@ class UmaPage {
               esc(layer.missing.join(', ')) + '</div>' : '') + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // content after its heading, which `WebPages.protocolTabs()` cuts at.
     return '<h2 data-tab="whatif">' + t.html('consoleUma.whatIf') + '</h2>' +
-      kit.note(t.html('consoleUma.whatIfLead')) + form + result;
+      kit.frame(kit.note(t.html('consoleUma.whatIfLead')) + form + result);
   }
 
   /**
@@ -402,14 +421,16 @@ class UmaPage {
     const monitor = json.monitor;
     return kit.note(t.html('consoleUma.intro') +
         (json.enabled ? '' : ' ' + t.html('consoleUma.turnedOff'))) +
-      '<h2>' + t.html('consoleUma.endpoints') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): Metadata's
+      // one section, before every tab heading.
+      kit.frame('<h2>' + t.html('consoleUma.endpoints') + '</h2>' +
       (endpointRows ? '<table class="kv">' + endpointRows + '</table>'
                     : kit.note(t.html('consoleUma.noEndpoints'))) +
       (monitor ? '<p>' + kit.tile(monitor.decisions || 0,
                                   t.html('consoleUma.decisions')) +
                  kit.tile(monitor.allowed || 0, t.html('consoleUma.allowed')) +
                  kit.tile(monitor.refused || 0, t.html('consoleUma.refused')) +
-                 '</p>' : '') +
+                 '</p>' : '')) +
       UmaPage.servers(json, t, write) +
       UmaPage.resources(json, ctx, write) +
       UmaPage.tokens(json, ctx, write) +

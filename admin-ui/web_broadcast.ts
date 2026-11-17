@@ -72,7 +72,9 @@ class BroadcastPage {
                               { seconds: Math.round(
                                 (Number(v.pollMs) || 5000) / 1000) })) +
       notReady + readOnly +
-      '<form method="post" action="' + PAGE + '" id="broadcast-form">' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      WebKit.frame('<form method="post" action="' + PAGE +
+      '" id="broadcast-form">' +
       '<input type="hidden" name="action" value="send">' +
       '<div class="formrow"><label for="broadcast-message">' +
       t.html('consoleBroadcast.message') + '</label>' +
@@ -86,7 +88,7 @@ class BroadcastPage {
       t.html('consoleBroadcast.surfaces') + '</legend>' + surfaces +
       '</fieldset>' + scope +
       '<div class="formrow"><button type="submit" id="broadcast-send"' + off +
-      '>' + t.html('consoleBroadcast.send') + '</button></div></form>' +
+      '>' + t.html('consoleBroadcast.send') + '</button></div></form>') +
       '<p><a href="/admin/ssf">' + t.html('consoleBroadcast.streamsLink') +
       '</a></p>';
   }

@@ -1598,24 +1598,28 @@ class WebAnswers {
     if (result.appPassword) {
       // AN APP PASSWORD (#101): shown once, and nothing else happened — no
       // sign-out and no RISC event, so this is the whole answer.
-      return '<h2>' + t.html('consoleAnswers.appPassword.heading',
-                             { name: result.name, who: who }) + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+      // its heading inside; the Back link stays outside.
+      return kit.frame('<h2>' +
+        t.html('consoleAnswers.appPassword.heading',
+               { name: result.name, who: who }) + '</h2>' +
         WebAnswers.secretBlock(result.appPassword, t) +
         kit.warn(t.html('consoleAnswers.appPassword.warn', {
           who: who,
           doors: (result.doorLabels || result.doors || []).join(', ') })) +
-        kit.note(t.html('consoleAnswers.appPassword.caep')) +
+        kit.note(t.html('consoleAnswers.appPassword.caep'))) +
         kit.note('<a class="btn" href="' + kit.esc(back) + '">' +
                  t.html('consoleAnswers.backTo', { label: who }) + '</a>');
     }
     if (result.password) {
-      out.push('<h2>' + t.html('consoleAnswers.reset.passwordHeading',
-                               { who: who }) + '</h2>' +
+      out.push(kit.frame('<h2>' +
+        t.html('consoleAnswers.reset.passwordHeading', { who: who }) +
+        '</h2>' +
         WebAnswers.secretBlock(result.password, t) +
         kit.warn(t.html('consoleAnswers.reset.passwordWarn') + (
           result.forcedChange
             ? t.html('consoleAnswers.reset.forced', { who: who })
-            : t.html('consoleAnswers.reset.notForced'))));
+            : t.html('consoleAnswers.reset.notForced')))));
     }
     if (result.mailError) {
       // A FAILURE, and failures stay English (#539).
@@ -1623,22 +1627,23 @@ class WebAnswers {
         kit.esc(result.mailError) + ' It is shown below instead.'));
     }
     if (result.resetUrl) {
-      out.push('<h2>' + t.html('consoleAnswers.reset.linkHeading',
-                               { who: who }) +
+      out.push(kit.frame('<h2>' +
+        t.html('consoleAnswers.reset.linkHeading', { who: who }) +
         '</h2>' + WebAnswers.secretBlock(result.resetUrl, t) +
         kit.warn(t.html('consoleAnswers.reset.linkWarn', {
           who: who,
           until: result.expiresAt || t.text('consoleAnswers.itExpires') }) +
           (result.passwordRevoked
             ? t.html('consoleAnswers.reset.revoked')
-            : t.html('consoleAnswers.reset.noPassword'))));
+            : t.html('consoleAnswers.reset.noPassword')))));
     }
-    out.push('<h2>' + t.html('consoleAnswers.reset.elseHeading') + '</h2>' +
+    out.push(kit.frame('<h2>' + t.html('consoleAnswers.reset.elseHeading') +
+      '</h2>' +
       kit.note(kit.esc(result.message || '')) +
       kit.note(t.html('consoleAnswers.reset.signals') + ' <a ' +
       'href="/admin/caep">CAEP</a>' + t.html('consoleAnswers.and') +
       '<a href="/admin/risc">RISC</a>' +
-      t.html('consoleAnswers.reset.signalsAfter')));
+      t.html('consoleAnswers.reset.signalsAfter'))));
     out.push(kit.note('<a class="btn" href="' + kit.esc(back) + '">' +
                       t.html('consoleAnswers.backTo', { label: who }) +
                       '</a>'));
@@ -1677,21 +1682,25 @@ class WebAnswers {
     const base = String((env && env.base) || '');
     const secret = [];
     if (result.password) {
-      secret.push('<h2>' + t.html('consoleAnswers.created.passwordHeading') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+      // its heading inside; the closing links stay outside.
+      secret.push(kit.frame('<h2>' +
+        t.html('consoleAnswers.created.passwordHeading') +
         '</h2>' +
         WebAnswers.secretBlock(result.password, t) +
         kit.warn(t.html('consoleAnswers.created.passwordWarn',
-                        { username: result.username })));
+                        { username: result.username }))));
     }
     if (result.mailedTo) {
-      secret.push('<h2>' + t.html('consoleAnswers.created.mailedHeading') +
+      secret.push(kit.frame('<h2>' +
+        t.html('consoleAnswers.created.mailedHeading') +
         '</h2>' +
         kit.note(t.html('consoleAnswers.created.mailed', {
           to: result.mailedTo,
           until: result.expiresAt || t.text('consoleAnswers.itExpires') }) +
           '<a href="/admin/mail/outbox">' +
           t.html('consoleAnswers.created.mailLink') + '</a>' +
-          t.html('consoleAnswers.created.mailedAfter')));
+          t.html('consoleAnswers.created.mailedAfter'))));
     }
     if (result.mailError) {
       // A FAILURE, and failures stay English (#539).
@@ -1703,12 +1712,14 @@ class WebAnswers {
       // ABSOLUTE: a link somebody is about to paste into a message. The
       // operation builds it (`activationLink`) on the address the server
       // would use; this console's own is the fallback.
-      secret.push('<h2>' + t.html('consoleAnswers.created.linkHeading') +
+      secret.push(kit.frame('<h2>' +
+        t.html('consoleAnswers.created.linkHeading') +
         '</h2>' +
         WebAnswers.secretBlock(result.activationLink ||
                                base + result.activationUrl, t) +
         kit.warn(t.html('consoleAnswers.created.linkWarn', {
-          until: result.expiresAt || t.text('consoleAnswers.itExpires') })));
+          until: result.expiresAt ||
+            t.text('consoleAnswers.itExpires') }))));
     }
     const attributes = (result.entry && result.entry.attributes) || {};
     return (result.credentialError
@@ -1721,7 +1732,8 @@ class WebAnswers {
           t.html('consoleAnswers.created.exists', { dn: result.dn }) +
           '</div>') +
       secret.join('') +
-      '<h2>' + t.html('consoleAnswers.created.writtenHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleAnswers.created.writtenHeading') +
+      '</h2>' +
       kit.note(kit.esc(result.message)) +
       '<table><tr><th>' + t.html('consoleAnswers.attribute') + '</th><th>' +
       t.html('consoleAnswers.value') + '</th></tr>' +
@@ -1742,7 +1754,7 @@ class WebAnswers {
       kit.note(t.html('consoleAnswers.created.entry') +
       '<a href="/admin/ldap/directory">' +
       t.html('consoleAnswers.created.directoryPage') + '</a>' +
-      t.html('consoleAnswers.created.entryAfter')) +
+      t.html('consoleAnswers.created.entryAfter'))) +
       '<div class="formrow"><a href="' + kit.esc('/admin/users' +
         kit.queryWith({ user: result.username }, {})) +
       '">' + t.html('consoleAnswers.created.theirRow') + '</a></div>' +
@@ -1768,13 +1780,15 @@ class WebAnswers {
     const back = '/admin/realms' + kit.queryWith({ realm: result.realm }, {});
     const realmUrl = String((env && env.realmRoot) || '') +
                      String(result.prefix || '') + '/admin';
-    return '<h2>' + t.html('consoleAnswers.realm.heading',
-                           { realm: result.realm }) +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2>' + t.html('consoleAnswers.realm.heading',
+                                     { realm: result.realm }) +
       '</h2><table class="key"><tr>' +
       '<th>' + t.html('consoleAnswers.username') + '</th><td><code>' +
       kit.esc(result.username) + '</code></td></tr></table>' +
       WebAnswers.secretBlock(result.password, t) +
-      kit.warn(t.html('consoleAnswers.realm.warn', { realm: result.realm })) +
+      kit.warn(t.html('consoleAnswers.realm.warn',
+                      { realm: result.realm }))) +
       kit.note('<a class="btn" href="' + kit.esc(back) + '">' +
                t.html('consoleAnswers.realm.back') + '</a> &middot; <a ' +
                'href="' + kit.esc(realmUrl) + '">' +
@@ -1860,7 +1874,9 @@ class WebAnswers {
       code(result.alg) + '</td></tr><tr><th>' +
       t.html('consoleAnswers.eab.unusedUntil') + '</th><td>' +
       kit.esc(result.expiresAt) + '</td></tr></table>' +
-      '<h2>certbot</h2><pre>' + kit.esc(result.certbot) + '</pre>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame('<h2>certbot</h2><pre>' + kit.esc(result.certbot) +
+                '</pre>') +
       '<p class="links"><a href="' + kit.esc(back) + '">' +
       t.html('consoleAnswers.back') + '</a> · ' +
       '<a href="/admin/cert-issuance#cert-acme-eab">' +
@@ -1891,9 +1907,11 @@ class WebAnswers {
       t.html('consoleAnswers.scep.url') + '</th><td>' +
       code(result.url) + '</td></tr><tr><th>' +
       t.html('consoleAnswers.scep.plainUrl') + '</th><td>' +
-      code(result.plainUrl) + '</td></tr></table><h3>' +
+      code(result.plainUrl) + '</td></tr></table>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame('<h3>' +
       t.html('consoleAnswers.scep.withSscep') + '</h3><pre>' +
-      kit.esc(result.hint) + '</pre>' +
+      kit.esc(result.hint) + '</pre>') +
       '<p class="links"><a href="' + kit.esc(back) + '">' +
       t.html('consoleAnswers.back') + '</a></p>';
   }
@@ -1934,12 +1952,13 @@ class WebAnswers {
       '</th><td><a href="' +
       kit.esc(answer.documentUrl) + '"><code>' +
       kit.esc(answer.documentUrl) + '</code></a></td></tr></table>' +
-      '<h3>' + t.html('consoleAnswers.did.jwkHeading') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame('<h3>' + t.html('consoleAnswers.did.jwkHeading') +
       '</h3><textarea readonly rows="9" cols="80">' +
-      kit.esc(jwk) + '</textarea>' +
-      '<h3>' + t.html('consoleAnswers.did.pemHeading') +
+      kit.esc(jwk) + '</textarea>') +
+      kit.frame('<h3>' + t.html('consoleAnswers.did.pemHeading') +
       '</h3><textarea readonly rows="6" ' +
-      'cols="80">' + kit.esc(answer.privateKeyPem) + '</textarea>' +
+      'cols="80">' + kit.esc(answer.privateKeyPem) + '</textarea>') +
       kit.note(t.html('consoleAnswers.did.how')) +
       WebAnswers.backButton(back, t.text('consoleAnswers.backTo',
                                          { label: identifier }));

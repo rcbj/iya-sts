@@ -58,21 +58,25 @@ class ConsentPage {
 
     // Where a sentence runs into a link (a tag with an href, which a
     // message may not carry) it is split around the link (#539).
-    const inner =
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // content after its heading, which `WebPages.protocolTabs()` cuts at the
+    // top level; each `<h4>` block a frame inside it.
+    const inner = kit.frame(
       '<h2>' + t.html('consoleConsent.heading') + '</h2>' +
       kit.note(t.html('consoleConsent.intro',
                       { attribute: register.attribute })) +
       (register.required ? '' : kit.warn(
         t.html('consoleConsent.notAsked') +
         '<a href="/admin/oauth2">OAuth 2.0 / OIDC</a>.')) +
-      (register.storable ? '' : kit.warn(t.html('consoleConsent.notStored'))) +
+      (register.storable ? '' :
+        kit.warn(t.html('consoleConsent.notStored')))) +
 
       // A TAB PER HALF (2026-10-12): the heading, the intro and the
       // warnings above are Metadata, and so is the closing note
       // (`WebPages.protocolTabs()`).
       '<h3 id="globals" data-tab="globals">' +
       t.html('consoleConsent.globalsHeading') + '</h3>' +
-      kit.note(t.html('consoleConsent.globalsNote',
+      kit.frame(kit.note(t.html('consoleConsent.globalsNote',
                       { attribute: register.globalAttribute })) +
       globalsNav.head +
       (json.globals.length
@@ -86,6 +90,7 @@ class ConsentPage {
         : kit.note(t.html('consoleConsent.noGlobals'))) +
       globalsNav.foot +
 
+      kit.frame(
       '<h4>' + t.html('consoleConsent.grantHeading') + '</h4>' +
       kit.note(t.html('consoleConsent.grantNote')) +
       '<form method="post" action="/admin/consent">' +
@@ -100,11 +105,11 @@ class ConsentPage {
         '</label><input type="text" id="gc-scope" ' +
         'name="scope" size="30" placeholder="openid"><button ' +
         'type="submit">' + t.html('consoleConsent.grantButton') +
-        '</button></div></form><h3 ' +
+        '</button></div></form>')) + '<h3 ' +
         'id="recorded" data-tab="recorded">' +
         t.html('consoleConsent.recordedHeading') +
         '</h3>' +
-      kit.note(t.html('consoleConsent.recordedNote',
+      kit.frame(kit.note(t.html('consoleConsent.recordedNote',
                       { attribute: json.withdrawnAttribute })) +
       // READ FROM THE STORE A PAGE AT A TIME (#820): the paging is over
       // people and the search is exact, and a bounded search says when it
@@ -138,6 +143,7 @@ class ConsentPage {
             : t.html('consoleConsent.noneRecorded'))) +
       consentsNav.foot +
 
+      kit.frame(
       '<h4>' + t.html('consoleConsent.withdrawHeading') + '</h4>' +
       kit.note(t.html('consoleConsent.withdrawNote')) +
       '<form method="post" action="/admin/consent">' +
@@ -156,8 +162,9 @@ class ConsentPage {
         '</select>' +
         '<button type="submit" class="danger">' +
         t.html('consoleConsent.withdraw') + '</button>' +
-      '</div></form>' +
+      '</div></form>') +
 
+      kit.frame(
       '<h4>' + t.html('consoleConsent.forgetHeading') + '</h4>' +
       kit.note(t.html('consoleConsent.forgetNote')) +
       '<form method="post" action="/admin/consent">' +
@@ -170,7 +177,7 @@ class ConsentPage {
           'placeholder="alice">' +
         '<button type="submit" class="danger">' +
         t.html('consoleConsent.forget') + '</button>' +
-      '</div></form>' +
+      '</div></form>')) +
 
       '<div data-metadata>' +
       kit.note(t.html('consoleConsent.bothHalves',

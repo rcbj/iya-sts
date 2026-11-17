@@ -223,7 +223,10 @@ class EncryptionPage {
       : '<p class="muted">' + t.html('consoleEncryption.noDataKey') + '</p>';
     let forms = '';
     if (life && life.on && ctx.write) {
-      forms = '<h4>' + t.html('consoleEncryption.rotateByHand') + '</h4>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each door a
+      // frame inside the tab's.
+      forms = kit.frame('<h4>' + t.html('consoleEncryption.rotateByHand') +
+        '</h4>' +
         '<form method="post" action="/admin/encryption/data-keys">' +
         '<input type="hidden" name="action" value="rotate-data-keys">' +
         '<label>' + t.html('consoleEncryption.realmLabel') +
@@ -248,8 +251,8 @@ class EncryptionPage {
             '<button type="submit" id="data-keys-count">' +
             t.html('consoleEncryption.countNow') + '</button> ' +
             t.html('consoleEncryption.countNote') + '</form>'
-          : '') +
-        '<h4>' + t.html('consoleEncryption.rotateKek') + '</h4>' +
+          : '')) +
+        kit.frame('<h4>' + t.html('consoleEncryption.rotateKek') + '</h4>' +
         (life.kekRotation
           ? '<form method="post" action="/admin/encryption/data-keys">' +
             '<input type="hidden" name="action" value="rotate-kek">' +
@@ -260,7 +263,7 @@ class EncryptionPage {
             EncryptionPage.fill(
               t.html('consoleEncryption.notFromHere',
                      EncryptionPage.marks({ reason: 1 })),
-              { reason: life.kekRotationOffReason }) + '</p>');
+              { reason: life.kekRotationOffReason }) + '</p>'));
 
     }
     return status + tiles + '<p class="muted">' + kit.esc(dk.note) +
@@ -391,21 +394,28 @@ class EncryptionPage {
     // and the data encryption keys with their controls. The key, the
     // algorithm and the counting are what the page explains and reports,
     // and are Metadata.
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // heading stays at the top level, its content one frame; the Metadata
+    // sections between the tabs are `metadataFrame()`s, which keep them
+    // there.
     return tiles + what +
                   '<h3 data-tab="classes">' +
                   t.html('consoleEncryption.hEncrypted') + '</h3>' +
-                  self.classesTable(json, t) +
-                  self.unclassifiedBlock(json, t) +
-                  '<h3>' + t.html('consoleEncryption.hKey') + '</h3>' +
-                  keyBlock + boundsBlock +
-                  '<h3>' + t.html('consoleEncryption.hAlgorithm') + '</h3>' +
-                  algBlock +
+                  kit.frame(self.classesTable(json, t) +
+                            self.unclassifiedBlock(json, t)) +
+                  kit.metadataFrame('<h3>' +
+                    t.html('consoleEncryption.hKey') + '</h3>' +
+                    keyBlock + boundsBlock) +
+                  kit.metadataFrame('<h3>' +
+                    t.html('consoleEncryption.hAlgorithm') + '</h3>' +
+                    algBlock) +
                   '<h3 data-tab="datakeys">' +
                   t.html('consoleEncryption.hDataKeys') + '</h3>' +
-                  self.renderDataKeys(ctx, json) +
-                  '<h3>' + t.html('consoleEncryption.hCounting') + '</h3>' +
-                  countsBlock +
-                  storeBlock;
+                  kit.frame(self.renderDataKeys(ctx, json)) +
+                  kit.metadataFrame('<h3>' +
+                    t.html('consoleEncryption.hCounting') + '</h3>' +
+                    countsBlock +
+                    storeBlock);
   }
 }
 

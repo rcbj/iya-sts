@@ -99,7 +99,9 @@ class AuthorizationServersPage {
                t.text('consoleAuthorizationServers.tileDrift')) +
       '</div>' +
       kit.note(t.html('consoleAuthorizationServers.intro')) +
-      nav.head +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list,
+      // and the add section, its heading inside.
+      kit.frame(nav.head +
       '<table><tr>' + th('', 'consoleAuthorizationServers.colAs') +
       th('', 'consoleAuthorizationServers.colLabel') +
       th(' class="num"', 'consoleAuthorizationServers.colOverrides') +
@@ -113,8 +115,8 @@ class AuthorizationServersPage {
                t.html('consoleAuthorizationServers.noneNamed') +
                '</td></tr>') +
       '</table>' +
-      nav.foot +
-      '<h2>' + t.html('consoleAuthorizationServers.addHeading') +
+      nav.foot) +
+      kit.frame('<h2>' + t.html('consoleAuthorizationServers.addHeading') +
       '</h2><form method="post" ' +
       'action="/admin/authorization-servers"><div class="formrow"><input ' +
       'type="hidden" name="action" value="create"><label ' +
@@ -131,7 +133,7 @@ class AuthorizationServersPage {
       kit.esc(t.text('consoleAuthorizationServers.whatFor')) + '"><button ' +
       'type="submit">' + t.html('consoleAuthorizationServers.add') +
       '</button></div></form>' +
-      kit.note(t.html('consoleAuthorizationServers.idRule')) +
+      kit.note(t.html('consoleAuthorizationServers.idRule'))) +
       AuthorizationServersPage.asCaveat(t) + asLinks(t);
 
     return inner;
@@ -229,7 +231,9 @@ class AuthorizationServersPage {
           '</button></form></td></tr>';
       }).join('');
 
-      inner = '<h2><code>' + kit.esc(profile.id) + '</code>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+      // its heading inside.
+      inner = kit.frame('<h2><code>' + kit.esc(profile.id) + '</code>' +
         (profile.label ? ' &mdash; ' + kit.esc(profile.label) : '') + '</h2>' +
         (profile.description ? kit.note(kit.esc(profile.description)) : '') +
         '<table><tr><th>' + t.html('consoleAuthorizationServers.colThing') +
@@ -251,8 +255,8 @@ class AuthorizationServersPage {
           ? kit.warn(t.html('consoleAuthorizationServers.driftWarn',
                             { n: drift.length }))
           : '<div class="ok">' +
-            t.html('consoleAuthorizationServers.allAgree') + '</div>') +
-        '<h2>' + t.html('consoleAuthorizationServers.doesHeading') +
+            t.html('consoleAuthorizationServers.allAgree') + '</div>')) +
+        kit.frame('<h2>' + t.html('consoleAuthorizationServers.doesHeading') +
         '</h2><p class="sub">' +
         t.html('consoleAuthorizationServers.doesNote') +
         '</p><table><tr><th>' +
@@ -272,7 +276,7 @@ class AuthorizationServersPage {
                   '</td>' +
               '<td class="sub">' + kit.esc(row.enforces) + '</td></tr>';
           }).join('') +
-        '</table><h2>' +
+        '</table>') + kit.frame('<h2>' +
         t.html('consoleAuthorizationServers.overriddenHeading') +
         '</h2><table><tr><th>' +
         t.html('consoleAuthorizationServers.colMember') + '</th><th>' +
@@ -282,16 +286,18 @@ class AuthorizationServersPage {
         '</th><th></th></tr>' +
         (memberRows || '<tr><td colspan="5">' +
                        t.html('consoleAuthorizationServers.noneOverridden') +
-                       '</td></tr>') + '</table>' +
+                       '</td></tr>') + '</table>') +
         (removedRows
-          ? '<h2>' + t.html('consoleAuthorizationServers.removedHeading') +
+          ? kit.frame('<h2>' +
+            t.html('consoleAuthorizationServers.removedHeading') +
             '</h2><table><tr><th>' +
             t.html('consoleAuthorizationServers.colMember') + '</th><th>' +
             t.html('consoleAuthorizationServers.colMeans') +
             '</th><th></th></tr>' +
-            removedRows + '</table>'
+            removedRows + '</table>')
           : '') +
-        '<h2>' + t.html('consoleAuthorizationServers.publishHeading') +
+        kit.frame('<h2>' +
+        t.html('consoleAuthorizationServers.publishHeading') +
         '</h2>' +
         kit.note(t.html('consoleAuthorizationServers.publishNote')) +
         '<form method="post" action="/admin/authorization-servers">' +
@@ -325,8 +331,8 @@ class AuthorizationServersPage {
         '<input type="text" id="asothervalue" name="value" size="26">' +
         '<button type="submit">' +
         t.html('consoleAuthorizationServers.publish') + '</button>' +
-        '</div></form>' +
-        '<h2>' + t.html('consoleAuthorizationServers.stopHeading') +
+        '</div></form>') +
+        kit.frame('<h2>' + t.html('consoleAuthorizationServers.stopHeading') +
         '</h2>' +
         '<form method="post" action="/admin/authorization-servers">' +
           carryBack +
@@ -343,7 +349,7 @@ class AuthorizationServersPage {
         t.html('consoleAuthorizationServers.removeButton') +
         '</button><span class="sub">' +
         t.html('consoleAuthorizationServers.removeNote') +
-        '</span></div></form><h2>' +
+        '</span></div></form>') + kit.frame('<h2>' +
         t.html('consoleAuthorizationServers.deleteHeading') +
         '</h2><form method="post" ' +
         'action="/admin/authorization-servers">' + carryBack + '<div ' +
@@ -354,7 +360,7 @@ class AuthorizationServersPage {
         t.html('consoleAuthorizationServers.delete') +
         '</button><span class="sub">' +
         t.html('consoleAuthorizationServers.deleteNote') +
-        '</span></div></form>' +
+        '</span></div></form>') +
         AuthorizationServersPage.asCaveat(t) + asLinks(t);
     }
 

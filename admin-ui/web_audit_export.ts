@@ -333,30 +333,33 @@ class AuditExportPage {
     const rows = (json.destinations || []).map((row: Json) =>
       AuditExportPage.row(t, row, !!c.write, draft)).join('');
     const stats = json.stats || {};
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // heading stays at the top level, its content one frame.
     const add = c.write
       ? '<h2 id="add" data-tab="add">' + key('body.add') +
-        '</h2><form method="post" action="' + PAGE + '">' +
+        '</h2>' + kit.frame('<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="add">' +
         '<div class="formrow">' +
         AuditExportPage.text('id', t.text('consoleAuditExport.body.id'),
                              addDraft ? addDraft.id : '') + '</div>' +
         AuditExportPage.fields(t, addDraft, 'add') +
         '<button type="submit">' +
-        key('body.addButton') + '</button></form>'
+        key('body.addButton') + '</button></form>')
       : '<h2 id="add" data-tab="add">' + key('body.add') + '</h2>';
     return kit.note(key('body.lead')) +
       kit.note(key('body.thisProcess')) +
       '<h2 id="destinations" data-tab="destinations">' +
-      key('body.destinations') + '</h2><table><thead><tr><th>' +
+      key('body.destinations') + '</h2>' +
+      kit.frame('<table><thead><tr><th>' +
       key('body.thName') + '</th><th>' + key('body.thType') + '</th><th>' +
       key('body.thEnabled') + '</th><th>' + key('body.thQueue') +
       '</th><th>' + key('body.thDelivered') + '</th><th>' +
       key('body.thLast') + '</th><th></th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="7"><span class="state-none">' +
                key('body.none') + '</span></td></tr>') +
-      '</tbody></table>' + add +
+      '</tbody></table>') + add +
       '<h2 id="status" data-tab="status">' + key('body.status') +
-      '</h2><ul><li>' + key('stats.delivered') + ' ' +
+      '</h2>' + kit.frame('<ul><li>' + key('stats.delivered') + ' ' +
       esc(stats.delivered || 0) + '</li><li>' + key('stats.awaiting') +
       ' ' + esc(stats.awaiting || 0) + '</li><li>' +
       key('stats.retrying') + ' ' + esc(stats.retrying || 0) +
@@ -366,7 +369,7 @@ class AuditExportPage {
       '</li><li>' + key('stats.latency') + ' ' +
       esc(stats.latencyMs || 0) + '</li><li>' +
       key('stats.availability') + ' ' + esc(stats.availability == null
-        ? '' : stats.availability) + '</li></ul>' +
+        ? '' : stats.availability) + '</li></ul>') +
       SettingsForms.forms(json.settings || { groups: [] }, PAGE,
                           undefined, t) +
       '<p class="links" data-metadata><code>GET ' +

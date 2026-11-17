@@ -49,23 +49,25 @@ class VcClaimsPage {
 
       kit.warn(t.html('consoleVcClaims.garbage')) +
 
-      '<h2>' + t.html('consoleVcClaims.hAttributes') + '</h2>' +
-      VcClaimsPage.vcAttributeTable(json, t) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+      // its heading inside.
+      kit.frame('<h2>' + t.html('consoleVcClaims.hAttributes') + '</h2>' +
+      VcClaimsPage.vcAttributeTable(json, t)) +
 
-      '<h2>' + t.html('consoleVcClaims.hPreview') + '</h2>' +
-      VcClaimsPage.vcPreviewSection(json, t) +
+      kit.frame('<h2>' + t.html('consoleVcClaims.hPreview') + '</h2>' +
+      VcClaimsPage.vcPreviewSection(json, t)) +
 
-      '<h2>' + t.html('consoleVcClaims.hSources') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleVcClaims.hSources') + '</h2>' +
       // Split at the link: a message carries no element with an attribute.
       kit.note(t.html('consoleVcClaims.sources1') +
       '<a href="/admin/claims">' + t.html('consoleVcClaims.customClaims') +
       '</a>' + t.html('consoleVcClaims.sources2')) +
-      kit.note(t.html('consoleVcClaims.neverOverwrites')) +
+      kit.note(t.html('consoleVcClaims.neverOverwrites'))) +
 
-      '<h2>' + t.html('consoleVcClaims.hNotDo') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleVcClaims.hNotDo') + '</h2>' +
       kit.note(t.html('consoleVcClaims.notDo1') +
       '<a href="/admin/users">' + t.html('consoleVcClaims.users') + '</a>' +
-      t.html('consoleVcClaims.notDo2'));
+      t.html('consoleVcClaims.notDo2')));
 
     return inner;
   }

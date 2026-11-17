@@ -147,7 +147,10 @@ class SamlPage {
       '&middot; <a ' +
       'href="/admin/applications?kind=' + json.kind + '">' +
       t.html('consoleSaml.common.linkApplications') +
-      '</a></p><form method="get" ' +
+      '</a></p>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list,
+      // which has no heading, is one frame, and each h2 after it another.
+      kit.frame('<form method="get" ' +
       'action="/admin/saml2"><div class="formrow"><label ' +
       'for="q">' + t.html('consoleSaml.common.search') +
       '</label><input type="text" id="q" name="q" ' +
@@ -179,8 +182,8 @@ class SamlPage {
           '<th>' + t.html('consoleSaml.common.thLastSeen') +
           '</th></tr></thead><tbody>' + rows + '</tbody></table>' + nav.foot
         : kit.note(t.html('consoleSaml.saml2.noneYet',
-          { filtered: needle ? 'yes' : 'no' }))) +
-      '<h2>' + t.html('consoleSaml.saml2.hRegister') +
+          { filtered: needle ? 'yes' : 'no' })))) +
+      kit.frame('<h2>' + t.html('consoleSaml.saml2.hRegister') +
       '</h2><p class="sub">' + t.html('consoleSaml.saml2.registerIntro') +
       '</p><form ' +
       'method="post" action="/admin/saml2"><div class="formrow"><input ' +
@@ -189,8 +192,8 @@ class SamlPage {
       'placeholder="https://sp.example.com/saml"><button>' +
       t.html('consoleSaml.common.register') + '</button>' +
       '<span class="note">' + t.html('consoleSaml.saml2.registerNote') +
-      '</span></div></form>' +
-      '<h2>' + t.html('consoleSaml.saml2.hMdqImport') + '</h2><p ' +
+      '</span></div></form>') +
+      kit.frame('<h2>' + t.html('consoleSaml.saml2.hMdqImport') + '</h2><p ' +
       'class="sub">' + t.html('consoleSaml.saml2.mdqIntro') +
       '</p><form method="post" ' +
       'action="/admin/saml2"><div class="formrow"><input type="hidden" ' +
@@ -198,8 +201,8 @@ class SamlPage {
       '<input type="text" id="mdq_sp" name="sp" ' +
       'placeholder="https://sp.example.com/saml"><button>' +
       t.html('consoleSaml.saml2.import') + '</button>' +
-      '</div></form>' +
-      '<h2>' + t.html('consoleSaml.saml2.hRefused') + '</h2><p ' +
+      '</div></form>') +
+      kit.frame('<h2>' + t.html('consoleSaml.saml2.hRefused') + '</h2><p ' +
       'class="sub">' + t.html('consoleSaml.saml2.refusedIntro') + '</p>' +
       (refusedRows
         ? refusedNav.head + '<table><thead><tr><th>entityID</th><th>' +
@@ -208,7 +211,7 @@ class SamlPage {
           t.html('consoleSaml.saml2.thFirst') + '</th><th>' +
           t.html('consoleSaml.saml2.thLast') + '</th></tr></thead>' +
           '<tbody>' + refusedRows + '</tbody></table>' + refusedNav.foot
-        : '<p class="sub">' + t.html('consoleSaml.saml2.none') + '</p>') +
+        : '<p class="sub">' + t.html('consoleSaml.saml2.none') + '</p>')) +
       (includeSettings
         ? SettingsForms.forms(json.settings, '/admin/saml2') : '') +
       kit.note(t.html('consoleSaml.saml2.shape') + '<a ' +
@@ -267,7 +270,10 @@ class SamlPage {
        '<a href="/admin/applications?application=' +
              encodeURIComponent(sp) +
              '">' + t.html('consoleSaml.common.inRegistry') + '</a>'
-           : t.html('consoleSaml.common.notInRegistry')) + '.</p><h2>' +
+           : t.html('consoleSaml.common.notInRegistry')) + '.</p>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is a
+      // frame, each h3 one inside it.
+      kit.frame('<h2>' +
       t.html('consoleSaml.common.hEndpoints') + '</h2>' +
       '<table><thead><tr><th>' + t.html('consoleSaml.common.thWhat') +
       '</th><th>' + t.html('consoleSaml.common.thWhere') +
@@ -278,7 +284,8 @@ class SamlPage {
       kit.esc(facts.slug) +
       '</code>' +
       (facts.slug === sp ? '' :
-        t.html('consoleSaml.detail2.slugDigest')) + '.</p><h2>' +
+        t.html('consoleSaml.detail2.slugDigest')) + '.</p>') +
+      kit.frame('<h2>' +
       t.html('consoleSaml.common.hRecorded') + '</h2><table><tbody><tr><td>' +
       t.html('consoleSaml.detail2.acsSeen') + '</td><td>' +
         (acs.length ? kit.codeList(acs) : '<span class="sub">' +
@@ -323,8 +330,9 @@ class SamlPage {
         t.html('consoleSaml.detail2.responsesIssued') +
         '</td><td>' + kit.esc(String(json.authentications || 0)) +
         '</td></tr>' +
-      '</tbody></table>' +
-      '<h2>' + t.html('consoleSaml.detail2.hLogoutResponse') + '</h2>' +
+      '</tbody></table>') +
+      kit.frame('<h2>' + t.html('consoleSaml.detail2.hLogoutResponse') +
+      '</h2>' +
       kit.note(t.html('consoleSaml.detail2.logoutNote')) +
       (slo.length
         ? '<table><thead><tr><th>' + t.html('consoleSaml.detail2.thDeclared') +
@@ -357,7 +365,7 @@ class SamlPage {
       t.html('consoleSaml.detail2.add') + '</button>' +
       '<span ' +
       'class="note">' + t.html('consoleSaml.detail2.addNote') +
-      '</span></div></form>' +
+      '</span></div></form>') +
       SamlPage.saml2SigningCertificatesSection(t, sp, json, carryBack) +
       SamlPage.saml2MetadataSection(t, sp, json, carryBack) +
       '<p class="sub"><a ' +
@@ -403,7 +411,9 @@ class SamlPage {
       return '<pre>' + kit.esc(String(der).replace(/(.{72})/g, '$1\n')) +
              '</pre>';
     };
-    const html = '<h2>' + t.html('consoleSaml.certs.title') + '</h2>' +
+    // A frame (`secframe`, rcbj 2026-11-16), its h3 one inside it.
+    const html = kit.frame('<h2>' + t.html('consoleSaml.certs.title') +
+      '</h2>' +
       kit.note(t.html('consoleSaml.certs.intro')) +
       (certs.length
         ? '<table><thead><tr><th>' + t.html('consoleSaml.certs.thRegistered') +
@@ -425,7 +435,7 @@ class SamlPage {
       t.html('consoleSaml.common.set') + '</button>' +
       '<span class="note">' + t.html('consoleSaml.certs.replaceNote') +
       '</span></div></form>' +
-      '<h3>' + t.html('consoleSaml.certs.hObserved') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleSaml.certs.hObserved') + '</h3>' +
       (json.observedSigningCertificate
         ? kit.note(t.html('consoleSaml.certs.observed')) +
           shown(json.observedSigningCertificate) +
@@ -435,7 +445,7 @@ class SamlPage {
           hidden('discard-signing-certificate') +
           '<button class="secondary">' + t.html('consoleSaml.certs.discard') +
           '</button></form></div>'
-        : kit.note(t.html('consoleSaml.certs.noneObserved')));
+        : kit.note(t.html('consoleSaml.certs.noneObserved')))));
     return html;
   }
 
@@ -547,20 +557,22 @@ class SamlPage {
                                       : t.html('consoleSaml.common.none')) +
           '</td></tr>' +
         '</tbody></table>' +
-        '<h3>' + t.html('consoleSaml.meta.hAcs') + '</h3>' +
+        kit.frame('<h3>' + t.html('consoleSaml.meta.hAcs') + '</h3>' +
         (acsRows
           ? '<table><thead><tr><th>index</th><th>isDefault</th>' +
             '<th>Binding</th><th>Location</th></tr></thead><tbody>' +
             acsRows + '</tbody></table>'
-          : kit.note(t.html('consoleSaml.meta.registeredNone'))) +
-        '<h3>' + t.html('consoleSaml.meta.hSlo') + '</h3>' +
+          : kit.note(t.html('consoleSaml.meta.registeredNone')))) +
+        kit.frame('<h3>' + t.html('consoleSaml.meta.hSlo') + '</h3>' +
         (sloRows
           ? '<table><thead><tr><th>Binding</th><th>Location</th>' +
             '<th>ResponseLocation</th></tr></thead><tbody>' + sloRows +
             '</tbody></table>'
-          : kit.note(t.html('consoleSaml.meta.registeredNone')))
+          : kit.note(t.html('consoleSaml.meta.registeredNone'))))
       : kit.note(t.html('consoleSaml.meta.noneConsumed'));
-    const html = '<h2>' + t.html('consoleSaml.meta.title') + '</h2>' +
+    // A frame (`secframe`, rcbj 2026-11-16), each h3 one inside it.
+    const html = kit.frame('<h2>' + t.html('consoleSaml.meta.title') +
+      '</h2>' +
       kit.note(t.html('consoleSaml.meta.intro') + '<a ' +
       'href="/admin/applications?application=' +
       encodeURIComponent(identifier) + '">' +
@@ -596,7 +608,7 @@ class SamlPage {
                      kit.esc(meta.mdqUrl) + '</code>'
                    : t.html('consoleSaml.meta.fromMdqUnset')) +
       '.</span></div></form>' +
-      '<h3>' + t.html('consoleSaml.meta.hSigningCert') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleSaml.meta.hSigningCert') + '</h3>' +
       kit.note((meta.signingCertificateConfigured
         ? t.html('consoleSaml.meta.signingSet')
         : (meta.trustAnchors
@@ -617,7 +629,7 @@ class SamlPage {
       '<button>' + t.html('consoleSaml.common.set') +
       '</button><span class="note">' +
       t.html('consoleSaml.meta.emptyClears') + '</span>' +
-      '</div></form>';
+      '</div></form>'));
     return html;
   }
 
@@ -689,7 +701,9 @@ class SamlPage {
       '&middot; <a ' +
       'href="/admin/applications?kind=' + json.kind + '">' +
       t.html('consoleSaml.common.linkApplications') +
-      '</a></p><form method="get" ' +
+      '</a></p>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16), as SAML 2.0's.
+      kit.frame('<form method="get" ' +
       'action="/admin/saml11"><div class="formrow"><label ' +
       'for="q">' + t.html('consoleSaml.common.search') +
       '</label><input type="text" id="q" name="q" ' +
@@ -721,8 +735,8 @@ class SamlPage {
           '</th></tr></thead><tbody>' + rows +
           '</tbody></table>' + nav.foot
         : kit.note(t.html('consoleSaml.saml11.noneYet',
-          { filtered: needle ? 'yes' : 'no' }))) +
-      '<h2>' + t.html('consoleSaml.saml11.hRegister') +
+          { filtered: needle ? 'yes' : 'no' })))) +
+      kit.frame('<h2>' + t.html('consoleSaml.saml11.hRegister') +
       '</h2><p class="sub">' + t.html('consoleSaml.saml11.registerIntro') +
       '</p><form method="post" action="/admin/saml11"><div ' +
       'class="formrow"><input type="hidden" name="action" ' +
@@ -735,7 +749,7 @@ class SamlPage {
       'placeholder="https://app.example.com/saml/acs"><button>' +
       t.html('consoleSaml.common.register') + '</button><span ' +
       'class="note">' + t.html('consoleSaml.saml11.registerNote') +
-      '</span></div></form>' +
+      '</span></div></form>') +
       (includeSettings
         ? SettingsForms.forms(json.settings, '/admin/saml11') : '') +
       kit.note(t.html('consoleSaml.saml11.shape') + '<a ' +
@@ -819,7 +833,10 @@ class SamlPage {
           : '') +
         '</td></tr>';
     }).join('');
-    return '<h2>' + t.html('consoleSaml.idpInitiated.heading') + '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's one
+    // section is one frame.
+    return kit.frame('<h2>' + t.html('consoleSaml.idpInitiated.heading') +
+      '</h2>' +
       '<p class="sub">' + t.html('consoleSaml.idpInitiated.lead') + '</p>' +
       state +
       (rows
@@ -833,7 +850,7 @@ class SamlPage {
           ? t.html('consoleSaml.idpInitiated.noneOn')
           : t.html('consoleSaml.idpInitiated.offEverywhere')) +
           (realmOn ? '' : howToTurnOn)) +
-      (rows && !realmOn ? howToTurnOn : '');
+      (rows && !realmOn ? howToTurnOn : ''));
   }
 
   /**
@@ -926,7 +943,9 @@ class SamlPage {
       (looksGuessed
         ? kit.note(t.html('consoleSaml.detail11.guessed'))
         : '') +
-      '<h2>' + t.html('consoleSaml.common.hEndpoints') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is a
+      // frame.
+      kit.frame('<h2>' + t.html('consoleSaml.common.hEndpoints') + '</h2>' +
       '<table><thead><tr><th>' + t.html('consoleSaml.common.thWhat') +
       '</th><th>' + t.html('consoleSaml.common.thWhere') +
       '</th><th></th></tr></thead>' +
@@ -939,7 +958,8 @@ class SamlPage {
         t.html('consoleSaml.detail11.slugDigest')) +
       t.html('consoleSaml.detail11.sameSlug') + '<a href="/admin/saml2">' +
       t.html('consoleSaml.detail11.linkSaml2Profile') + '</a>' +
-      t.html('consoleSaml.detail11.sameSlugAfter') + '</p><h2>' +
+      t.html('consoleSaml.detail11.sameSlugAfter') + '</p>') +
+      kit.frame('<h2>' +
       t.html('consoleSaml.common.hRecorded') + '</h2><table><tbody><tr><td>' +
       t.html('consoleSaml.detail11.acsSeen') + '</td><td>' +
         (acs.length ? kit.codeList(acs) : '<span class="sub">' +
@@ -963,9 +983,10 @@ class SamlPage {
       '</td></tr><tr><td>' + t.html('consoleSaml.detail11.assertionsIssued') +
       '</td><td>' +
       kit.esc(String(json.authentications || 0)) +
-        '</td></tr></tbody></table><h2>' +
+        '</td></tr></tbody></table>') +
+      kit.frame('<h2>' +
       t.html('consoleSaml.detail11.hNotHere') + '</h2><p ' +
-      'class="sub">' + t.html('consoleSaml.detail11.notHere') + '</p>';
+      'class="sub">' + t.html('consoleSaml.detail11.notHere') + '</p>');
 
     return inner;
   }

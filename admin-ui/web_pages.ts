@@ -1794,7 +1794,8 @@ class WebPages {
       acme: '',
       est: EstPage.labelFormNote(view.est, t),
       scep: ScepPage.sectionCapabilities(view.scep, t),
-      spiffe: SpiffePage.listenersSection(t, view)
+      // A frame inside SPIFFE's (`secframe`, rcbj 2026-11-16).
+      spiffe: WebKit.frame(SpiffePage.listenersSection(t, view))
     };
     const sections = families.map(function (key) {
       const rows = endpoints.filter(function (row) {
@@ -1802,10 +1803,12 @@ class WebPages {
       });
       // The heading is the tab's own label; the key is built in a variable
       // for `titleOf()`'s reason.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
+      // protocol's section, its heading inside.
       const label = 'console.nav.' + key;
-      return '<h2 id="cert-metadata-' + key + '">' +
+      return WebKit.frame('<h2 id="cert-metadata-' + key + '">' +
         WebKit.esc(t.text(label)) + '</h2>' +
-        WebPages.endpointTable(rows, t) + extras[key];
+        WebPages.endpointTable(rows, t) + extras[key]);
     });
     // A row no family's prefix claims is still listed, under the section
     // every Protocols page has.
@@ -2600,10 +2603,22 @@ class WebPages {
       return html;
     }
     t = t || WebKit.context().t;
-    const section = '<h2>' + t.html('consolePages.endpoints') + '</h2>' +
-                    WebPages.endpointTable(rows, t);
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16), and marked for
+    // Metadata, where `protocolTabs()` kept it when its heading was at the
+    // top level. A first heading that opens a frame is gone before by its
+    // frame, so the section is not drawn inside another one.
+    const section = WebKit.metadataFrame('<h2>' +
+      t.html('consolePages.endpoints') + '</h2>' +
+      WebPages.endpointTable(rows, t));
     const text = String(html || '');
-    const at = text.indexOf('<h2');
+    let at = text.indexOf('<h2');
+    while (at > 0) {
+      const opens = /<section class="secframe"[^>]*>$/.exec(text.slice(0, at));
+      if (!opens) {
+        break;
+      }
+      at = opens.index;
+    }
     return at < 0 ? text + section
                   : text.slice(0, at) + section + text.slice(at);
   }

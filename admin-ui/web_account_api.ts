@@ -198,8 +198,9 @@ class AccountApiPage {
       order.filter(function (tag) {
         return byTag[tag];
       }).map(function (tag) {
-        return '<div class="card"><h2>' + kit.esc(tag) + '</h2>' +
-          byTag[tag].join('') + '</div>';
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+        return '<div class="card">' + kit.frame('<h2>' + kit.esc(tag) +
+          '</h2>' + byTag[tag].join('')) + '</div>';
       }).join('');
   }
 }

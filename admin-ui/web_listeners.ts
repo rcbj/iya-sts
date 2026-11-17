@@ -130,8 +130,11 @@ class ListenersPage {
         return text;
       }
     };
-    return '<h2>' + (isDefault ? t.html('consoleListeners.headServiceCustom')
-                               : t.html('consoleListeners.headRealmOwn')) +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+    // its heading inside.
+    return kit.frame('<h2>' +
+      (isDefault ? t.html('consoleListeners.headServiceCustom')
+                 : t.html('consoleListeners.headRealmOwn')) +
       '</h2>' +
       kit.note('<p>' + t.html('consoleListeners.defArray') +
         ' <code>{ "id", "port", "publicBaseUrl", ' +
@@ -147,8 +150,8 @@ class ListenersPage {
       kit.esc(pretty(d.listeners || '')) + '</textarea></div>' +
       '<div class="formrow"><button>' +
       t.html('consoleListeners.saveListeners') + '</button></div>' +
-      '</form>' +
-      '<h2>' + (isDefault ? t.html('consoleListeners.headWhichOn')
+      '</form>') +
+      kit.frame('<h2>' + (isDefault ? t.html('consoleListeners.headWhichOn')
                           : t.html('consoleListeners.headRealmMapping')) +
       '</h2>' +
       kit.note('<p>' + t.html('consoleListeners.mapObject') +
@@ -168,7 +171,7 @@ class ListenersPage {
       'value="true"> ' + t.html('consoleListeners.confirmOff') +
       '</label></div>' +
       '<div class="formrow"><button>' +
-      t.html('consoleListeners.saveMapping') + '</button></div></form>';
+      t.html('consoleListeners.saveMapping') + '</button></div></form>');
   }
 
   // The page's words are its translator's (#539 phase 6); what the view
@@ -209,20 +212,24 @@ class ListenersPage {
         t.html('consoleListeners.clientCertAfter') +
         ' <a href="/admin/tls">TLS / mutual TLS</a>. ' +
         t.html('consoleListeners.appliedNext') + '</p>',
-        t.text('consoleListeners.builtInLabel')) + head +
+        t.text('consoleListeners.builtInLabel')) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content after its lead note.
+      kit.frame(head +
       json.listeners.map(function (row: Json): string {
         return '<tr id="listener-' + kit.esc(row.id) + '"><th>' +
           kit.esc(row.name) + '<br><small>' + kit.esc(row.what) +
           '</small></th><td>' + kit.esc(String(row.port)) +
           '<br><small><code>' + kit.esc(row.setting) + '</code></small>' +
           '</td>' + self.policyCells(row.policy, t) + '</tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
     const customPanel = kit.note('<p>' +
         t.html('consoleListeners.customText') + '</p>',
         t.text('consoleListeners.customLabel')) +
-      (custom.length ? head + custom.map(function (one: Json): string {
-        return self.customRow(one, t);
-      }).join('') + '</tbody></table>'
+      kit.frame(custom.length ? head + custom.map(
+        function (one: Json): string {
+          return self.customRow(one, t);
+        }).join('') + '</tbody></table>'
         : '<p><em>' + t.html('consoleListeners.customNone') + '</em></p>') +
       self.forms(json, t);
     const onOff = function (on: boolean): string {
@@ -300,13 +307,13 @@ class ListenersPage {
           : t.text('consoleListeners.no')],
         [t.text('consoleListeners.rowHttp2Streams'),
          String(pooling.http2MaxConcurrentStreams)]] : []);
-      return '<h2>' + t.html('consoleListeners.headInForce') +
+      return kit.frame('<h2>' + t.html('consoleListeners.headInForce') +
         '</h2><table class="grid"><tbody>' +
         tlsRows.concat(httpRows).map(function (row) {
           return '<tr><th>' + kit.esc(row[0]) + '</th><td><code>' +
             kit.esc(String(row[1])) + '</code></td></tr>';
         }).join('') + '</tbody></table>' +
-        kit.note(t.html('consoleListeners.inForceNote'));
+        kit.note(t.html('consoleListeners.inForceNote')));
     };
     // METADATA FIRST (2026-10-12): the tiles and what is wrong or worth
     // knowing, ahead of the listeners, as on every page drawn as tabs.
@@ -322,7 +329,7 @@ class ListenersPage {
         label: t.text('consoleListeners.tabApplications'),
         html: kit.note('<p>' + t.html('consoleListeners.applicationsText') +
           '</p>', t.text('consoleListeners.headWhichOn')) +
-          self.mappingTable(json.applications || [], t) +
+          kit.frame(self.mappingTable(json.applications || [], t)) +
           settings(['Custom listeners']) },
       { id: 'tab-defaults', label: t.text('consoleListeners.tabDefaults'),
         html: kit.note(t.html('consoleListeners.defaultsNote')) +

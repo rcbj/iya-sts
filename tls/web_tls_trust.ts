@@ -125,8 +125,11 @@ class TlsTrustPage {
                  { file: json.anchorsFile,
                    n: String(json.loadedFromFile) })
         : t.html('consoleTlsTrust.fileUnset')) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content after its heading, which stays at the top level for the
+      // tab splitter; the unmarked section after them stays on Metadata.
       '<h2 data-tab="anchors">' + t.html('consoleTlsTrust.anchors') +
-      '</h2>' + nav.head +
+      '</h2>' + kit.frame(nav.head +
       '<table><tr><th>' + t.html('consoleTlsTrust.thSubject') + '</th><th>' +
       t.html('consoleTlsTrust.thIssuer') + '</th><th>' +
       t.html('consoleTlsTrust.thSerial') + '</th>' +
@@ -135,12 +138,12 @@ class TlsTrustPage {
       '<th>' + t.html('consoleTlsTrust.thSource') + '</th><th></th></tr>' +
       rows + '</table>' + nav.foot +
       kit.perPageForm('/admin/tls/trust', 'page', '1', json.perPage,
-                      undefined, undefined, t) +
+                      undefined, undefined, t)) +
 
       (mayChange
         ? '<h2 data-tab="add">' + t.html('consoleTlsTrust.addAnchors') +
           '</h2>' +
-          kit.note(t.html('consoleTlsTrust.addNote')) +
+          kit.frame(kit.note(t.html('consoleTlsTrust.addNote')) +
           '<form method="post" action="/admin/tls/trust">' +
           '<input type="hidden" name="action" value="add">' +
           '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
@@ -148,10 +151,10 @@ class TlsTrustPage {
           'placeholder="-----BEGIN CERTIFICATE-----"></textarea>' +
           '<div class="formrow"><button type="submit">' +
           t.html('consoleTlsTrust.trustThese') + '</button>' +
-          '</div></form>'
+          '</div></form>')
         : kit.note(t.html('consoleTlsTrust.needsWrite'))) +
-      '<h2>' + t.html('consoleTlsTrust.noButton') + '</h2>' +
-      kit.note(t.html('consoleTlsTrust.noClear')) +
+      kit.metadataFrame('<h2>' + t.html('consoleTlsTrust.noButton') +
+      '</h2>' + kit.note(t.html('consoleTlsTrust.noClear'))) +
       // A row of links: the words are messages, the anchors are code.
       kit.note('<a href="/admin/tls/trust?format=json">' +
       t.html('consoleTlsTrust.linkJson') + '</a> &middot; ' +

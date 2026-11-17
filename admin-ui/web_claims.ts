@@ -93,10 +93,13 @@ class ClaimsPage {
       t.html('consoleClaims.linkAssertionAttribute') + '</a>' +
       t.html('consoleClaims.jwtAdditiveC')) +
 
-      '<h2>' + t.html('consoleClaims.jwtSetsHeading') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a section a
+      // frame, each set a frame inside it.
+      kit.frame('<h2>' + t.html('consoleClaims.jwtSetsHeading') + '</h2>' +
       json.sets.map(function (set) {
-        return ClaimsPage.claimSetSection(set.id, json, pageUrl, t);
-      }).join('') +
+        return kit.frame(ClaimsPage.claimSetSection(set.id, json, pageUrl,
+                                                    t));
+      }).join('')) +
 
       ClaimsPage.groupClaimSection(json.groups, json.preview.user, t) +
 
@@ -554,7 +557,9 @@ class ClaimsPage {
 
     // The "not arriving" branch is a problem banner built from the view's
     // own sentence, and stays English with it (#539).
-    return '<h2>' + t.html('consoleClaims.groupsHeading') + '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2>' + t.html('consoleClaims.groupsHeading') +
+      '</h2>' +
       kit.note(t.html('consoleClaims.groupsNoteA') +
       '<a href="/admin/groups">' +
       t.html('consoleClaims.linkEmbeddedDirectory') + '</a>' +
@@ -584,7 +589,8 @@ class ClaimsPage {
 
       kit.note(t.html('consoleClaims.typedWins')) +
 
-      '<h3>' + t.html('consoleClaims.wouldGet', { user: previewUser }) +
+      kit.frame('<h3>' +
+      t.html('consoleClaims.wouldGet', { user: previewUser }) +
       '</h3>' +
       values +
       (answer.groups.length
@@ -595,7 +601,7 @@ class ClaimsPage {
         : kit.note(t.html('consoleClaims.noGroup',
                           { user: previewUser,
                             found: answer.entryFound ? 'yes' : 'no',
-                            dn: answer.dn })));
+                            dn: answer.dn })))));
   }
 
   /**
@@ -631,7 +637,9 @@ class ClaimsPage {
     // on (#539): the words are the catalog's.
     const otherPage = (OTHER_PAGES[family] || OTHER_PAGES.jwt)
       .join(t.html('consoleClaims.and'));
-    return '<h2>' + t.html('consoleClaims.catalogueHeading') + '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2>' + t.html('consoleClaims.catalogueHeading') +
+      '</h2>' +
       kit.note(t.html('consoleClaims.catalogueA', { family: family }) +
       otherPage + t.html('consoleClaims.and') + '<a href="/admin/vc">' +
       t.html('consoleClaims.linkCredentialClaims') + '</a>' +
@@ -652,7 +660,7 @@ class ClaimsPage {
         : kit.note(t.html('consoleClaims.protocolWinsJwt'))) +
       kit.note(t.html('consoleClaims.notVerified') +
       '<a href="/admin/groups">' + t.html('consoleClaims.linkGroupsPage') +
-      '</a>.');
+      '</a>.'));
   }
 
   /**
@@ -670,7 +678,9 @@ class ClaimsPage {
     // the code between two messages (#539).
     const ph = { ph: '${placeholders}', username: '${username}',
                  email: '${email}', subject: '${subject}', dept: '${dept}' };
-    return '<h2>' + t.html('consoleClaims.valuesHeading') + '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2>' + t.html('consoleClaims.valuesHeading') +
+      '</h2>' +
       kit.note(t.html('consoleClaims.valuesA',
                       { ph: ph.ph, family: family }) +
       (saml
@@ -691,7 +701,7 @@ class ClaimsPage {
         : kit.note(t.html('consoleClaims.jwtTypedA', { family: family }) +
           '<a href="/admin/saml-attributes">' +
           t.html('consoleClaims.linkSamlValues') + '</a>' +
-          t.html('consoleClaims.jwtTypedB')));
+          t.html('consoleClaims.jwtTypedB'))));
   }
 
   // The "replace a whole set" form, which is the one a test wants: POST the
@@ -715,7 +725,9 @@ class ClaimsPage {
       return '<option value="' + kit.esc(one.id) + '">' +
              kit.esc(one.label) + '</option>';
     }).join('');
-    return '<h2>' + t.html('consoleClaims.replaceHeading') + '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2>' + t.html('consoleClaims.replaceHeading') +
+      '</h2>' +
       kit.note(t.html('consoleClaims.replaceNote', { family: family })) +
       '<form method="post" action="' + kit.esc(pageUrl) + '">' +
         '<input type="hidden" name="action" value="replace">' +
@@ -726,7 +738,7 @@ class ClaimsPage {
         '"engineering"}, {"name": "on_behalf_of", "value": ' +
         '"${username}"}]</textarea><div ' +
         'class="formrow"><button>' + t.html('consoleClaims.replace') +
-        '</button></div></form>';
+        '</button></div></form>');
   }
 
   /**
@@ -766,10 +778,13 @@ class ClaimsPage {
       '<a href="/admin/claims">' + t.html('consoleClaims.linkClaimsPage') +
       '</a>' + t.html('consoleClaims.samlAdditiveB')) +
 
-      '<h2>' + t.html('consoleClaims.samlSetsHeading') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a section a
+      // frame, each set a frame inside it.
+      kit.frame('<h2>' + t.html('consoleClaims.samlSetsHeading') + '</h2>' +
       json.sets.map(function (set) {
-        return ClaimsPage.claimSetSection(set.id, json, pageUrl, t);
-      }).join('') +
+        return kit.frame(ClaimsPage.claimSetSection(set.id, json, pageUrl,
+                                                    t));
+      }).join('')) +
 
       ClaimsPage.groupClaimSection(json.groups, json.preview.user, t) +
 
@@ -777,9 +792,9 @@ class ClaimsPage {
 
       ClaimsPage.claimValueNotes('saml', json.placeholders, t) +
 
-      '<h2>' + t.html('consoleClaims.samlNsHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleClaims.samlNsHeading') + '</h2>' +
       kit.note(t.html('consoleClaims.samlNs',
-                      { ns: json.defaultSaml11Namespace })) +
+                      { ns: json.defaultSaml11Namespace }))) +
 
       ClaimsPage.replaceSetForm(json.sets, pageUrl, 'saml', t);
 
@@ -832,14 +847,17 @@ class ClaimsPage {
       t.html('consoleClaims.linkSamlPage') + '</a>' +
       t.html('consoleClaims.uiAdditiveD')) +
 
-      '<h2>' + t.html('consoleClaims.uiSetHeading') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a section a
+      // frame, each block a frame inside it.
+      kit.frame('<h2>' + t.html('consoleClaims.uiSetHeading') + '</h2>' +
       json.sets.map(function (set) {
-        return ClaimsPage.claimSetSection(set.id, json, pageUrl, t);
-      }).join('') +
+        return kit.frame(ClaimsPage.claimSetSection(set.id, json, pageUrl,
+                                                    t));
+      }).join('')) +
 
       ClaimsPage.groupClaimSection(json.groups, json.preview.user, t) +
 
-      '<h2>' + t.html('consoleClaims.uiAskHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleClaims.uiAskHeading') + '</h2>' +
       kit.note(t.html('consoleClaims.uiOneSetA') + '<a ' +
       'href="/.well-known/openid-configuration">' +
       t.html('consoleClaims.linkDiscovery') + '</a>' +
@@ -848,9 +866,9 @@ class ClaimsPage {
       kit.note(t.html('consoleClaims.uiLayersA') + '{"email":null}' +
       t.html('consoleClaims.uiLayersB', { email: json.inventedEmail })) +
 
-      ClaimsPage.requestableClaimsSection(json.claimsRequest, t) +
+      kit.frame(ClaimsPage.requestableClaimsSection(json.claimsRequest, t)) +
 
-      '<h3>' + t.html('consoleClaims.uiTryHeading') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleClaims.uiTryHeading') + '</h3>' +
       ClaimsPage.claimsRequestSection(json.preview.user, raw,
                                 json.claimsRequest, t) +
 
@@ -858,7 +876,7 @@ class ClaimsPage {
       '{"userinfo":{"birthdate":null}}' +
       t.html('consoleClaims.uiNonSpecB')) +
 
-      kit.warn(t.html('consoleClaims.uiEssential')) +
+      kit.warn(t.html('consoleClaims.uiEssential')))) +
 
       ClaimsPage.attributeCatalogueNotes('userinfo', t) +
 
@@ -1067,7 +1085,9 @@ class ClaimsPage {
         t.html('consoleClaims.linkKerberosSettings') + '</a>.')) +
       kit.note(t.html('consoleClaims.pacNoteA') +
         kit.esc(json.precedence) + t.html('consoleClaims.pacNoteB')) +
-      '<h2>' + kit.esc(set.label) + ' <code>' + kit.esc(setId) + '</code>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame('<h2>' + kit.esc(set.label) + ' <code>' + kit.esc(setId) +
+      '</code>' +
       '</h2><table><tr><th>' + t.html('consoleClaims.colNameAndId') +
       '</th><th>' + t.html('consoleClaims.colType') + '</th><th>' +
       t.html('consoleClaims.colValue') +
@@ -1118,18 +1138,18 @@ class ClaimsPage {
         : '') +
       kit.note(t.html('consoleClaims.pacPlaceholdersA') +
         kit.codeList(json.placeholders) +
-        t.html('consoleClaims.pacPlaceholdersB')) +
-      '<h2>' + t.html('consoleClaims.dirAttrsHeading') + '</h2>' +
+        t.html('consoleClaims.pacPlaceholdersB'))) +
+      kit.frame('<h2>' + t.html('consoleClaims.dirAttrsHeading') + '</h2>' +
       kit.note(t.html('consoleClaims.pacTick')) +
-      ClaimsPage.claimAttributeSection(setId, json, pageUrl, t) +
-      '<h2>' + t.html('consoleClaims.tgtHeading') + '</h2>' +
+      ClaimsPage.claimAttributeSection(setId, json, pageUrl, t)) +
+      kit.frame('<h2>' + t.html('consoleClaims.tgtHeading') + '</h2>' +
       '<form method="get" action="/admin/kerberos/claims"><div ' +
       'class="formrow"><label for="kuser">' + t.html('consoleClaims.for') +
       '</label><input type="text" ' +
       'id="kuser" name="user" size="20" value="' +
       kit.esc(json.preview.user) + '"><button class="secondary">' +
       t.html('consoleClaims.show') + '</button></div></form>' + preview +
-      kit.note(t.html('consoleClaims.tgtNote'));
+      kit.note(t.html('consoleClaims.tgtNote')));
   }
 }
 

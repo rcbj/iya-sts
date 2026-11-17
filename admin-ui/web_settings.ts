@@ -581,6 +581,11 @@ class SettingsForms {
     const inner = '<h2 data-tab="settings">' +
       t.html('consoleSettings.forms.heading') + '</h2>' +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): what follows
+      // the heading is one frame, each group's form a frame inside it. The
+      // heading stays outside: `WebPages.protocolTabs()` cuts at it only at
+      // the page's top level.
+      kit.frame(
       kit.note(t.html('consoleSettings.forms.lead1') +
       '<a href="/admin/config">' + t.html('consoleSettings.configuration') +
       '</a>' + t.html('consoleSettings.forms.lead2') +
@@ -643,12 +648,12 @@ class SettingsForms {
         : '') +
 
       groups.map(function (group) {
-        return SettingsForms.section(group, path, context, t);
+        return kit.frame(SettingsForms.section(group, path, context, t));
       }).join('') +
 
       kit.note('<a href="/admin/config">' +
       t.html('consoleSettings.configuration') + '</a>' +
-      t.html('consoleSettings.forms.tail', { path: path }));
+      t.html('consoleSettings.forms.tail', { path: path })));
 
     return inner;
   }
