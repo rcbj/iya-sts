@@ -1794,6 +1794,27 @@ class Authn {
     if (!out.accountSetId && other.accountSetId) {
       out.accountSetId = other.accountSetId;
     }
+    // THE HELD PRESENTATION (2026-11-17): the copy whose flag changed last
+    // wins it, by `presentationHeldAt` — see markPresentationHeld(). A tie
+    // between two stamped copies (two nodes changing it in one millisecond
+    // from the same starting stamp) is SPENT, so the answer does not depend
+    // on which node merges: a reported presentation the consent trip should
+    // have held is the cheaper mistake than a real one swallowed. Two
+    // copies with no stamp — rows from before it — keep the base's.
+    const mineHeldAt = Number(mine.presentationHeldAt) || 0;
+    const theirsHeldAt = Number(theirs.presentationHeldAt) || 0;
+    if (mineHeldAt || theirsHeldAt) {
+      if (mineHeldAt === theirsHeldAt) {
+        out.firstPresentationIsTheSignIn =
+          !!(mine.firstPresentationIsTheSignIn &&
+             theirs.firstPresentationIsTheSignIn);
+      } else {
+        out.firstPresentationIsTheSignIn = !!(mineHeldAt > theirsHeldAt
+          ? mine.firstPresentationIsTheSignIn
+          : theirs.firstPresentationIsTheSignIn);
+      }
+      out.presentationHeldAt = Math.max(mineHeldAt, theirsHeldAt);
+    }
     // THE OPENID CONNECT LAUNCHES (#426, #713; run 43936849276). `/launch/
     // {app}` records `launches[clientId]` on the session and the
     // authorization request answers a client whose own start is off only
@@ -4133,7 +4154,7 @@ class Authn {
               (session.derivedFrom || 'the sign-on session') + '.'
       }
     });
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.notifySession('established', session,
                        { via: 'OAuth 2.0 / OIDC',
                          req: (spec.res && spec.res.req) || null });
@@ -4293,7 +4314,7 @@ class Authn {
               source.id + ', and this session ends when that one does.'
       }
     });
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.notifySession('established', session,
                        { via: spec.label || spec.surface,
                          req: spec.req || null });
@@ -5916,7 +5937,7 @@ class Authn {
       return false;
     }
     if (session.firstPresentationIsTheSignIn) {
-      session.firstPresentationIsTheSignIn = false;
+      this.markPresentationHeld(session, false);
       // SPENT IN THE STORE TOO (2026-09-14, #46), or a node whose copy still
       // says true swallows the next real presentation's event as well.
       this.noteSessionChanged(session);
@@ -5955,6 +5976,47 @@ class Authn {
   }
 
   // ---------------------------------------------------------------------------
+  // THE HELD PRESENTATION CARRIES ITS OWN ORDERING STAMP (2026-11-17, from the
+  // cluster mode's `sts_caep_oauth_grants`, runs #412 and 44025839154).
+  //
+  // `firstPresentationIsTheSignIn` moves BOTH ways — startSession() and
+  // holdPresentation() arm it, notePresented() spends it — so neither "true
+  // wins" nor "false wins" is a merge rule for it. Until this stamp the merge
+  // took it from whichever copy was the base, and two copies of one sign-in
+  // rank equal, so the base was the merging node's own: node A spent the flag
+  // on the sign-in's return trip, node B still held its copy from before
+  // that, and B's merge of A's row put `true` back. B then swallowed the next
+  // REAL presentation — the CIBA approval's — and its CAEP
+  // `session-presented` event was never sent.
+  //
+  // Every write of the flag now goes through here and stamps
+  // `presentationHeldAt`, a per-row Lamport clock: the wall clock, but always
+  // past the stamp the copy being changed already carried, so a change made
+  // on a copy that SAW another change is ordered after it whatever the two
+  // nodes' clocks say. mergeSessionRows() takes the flag from the copy with
+  // the later stamp. A row written before the stamp existed has none (0),
+  // and loses to any copy that has one, which was written later by
+  // definition; two copies with none keep the base's, the rule they always
+  // had.
+  // ---------------------------------------------------------------------------
+  /**
+   * Arms or spends a session's free presentation, stamping the change so a
+   * merge of two nodes' copies keeps the later one.
+   *
+   * @param session - the session
+   * @param held - true to arm (the next presentation is the sign-in's own
+   *   return trip), false to spend
+   */
+  markPresentationHeld(session, held) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.markPresentationHeld().");
+    session.firstPresentationIsTheSignIn = !!held;
+    session.presentationHeldAt = Math.max(Date.now(),
+        (Number(session.presentationHeldAt) || 0) + 1);
+    log.debug("Leaving Authn.markPresentationHeld().");
+  }
+
+  // ---------------------------------------------------------------------------
   // A PRESENTATION CONTINUED THROUGH THE CONSENT SCREEN (2026-10-26).
   //
   // An authorization request that needs consent reaches the endpoint twice:
@@ -5987,7 +6049,7 @@ class Authn {
       log.debug("Leaving Authn.holdPresentation(). No session.");
       return;
     }
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     // In the store as well, for notePresented()'s reason (#46).
     this.noteSessionChanged(session);
     log.debug("Leaving Authn.holdPresentation().");
@@ -6616,7 +6678,7 @@ class Authn {
     session.authTime = event.at;
     session.via = event.via;
     session.lastSeenAt = Date.now();
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.bindPartnerSession(session, extra);
     const cookieValue = this.mintSessionHandle(session);
     sessions.set(session.id, session);
@@ -9027,7 +9089,7 @@ class Authn {
     // cookie are this service's own record of the sign-in and must not depend
     // on a transmitter, and the observer is handed a session that is already
     // complete.
-    session.firstPresentationIsTheSignIn = true;
+    this.markPresentationHeld(session, true);
     this.notifySession('established', session, { via: via || 'OAuth 2.0 / OIDC',
       // `res.req` is express's own back-reference and is the only request this
       // function is given. See the note in dropSession() for why the observer
@@ -20375,6 +20437,7 @@ export = {
   // the store is reached through the persistence layer, so the rule itself is
   // asserted here directly.
   mergeSessionRows: slot.forward('mergeSessionRows'),
+  markPresentationHeld: slot.forward('markPresentationHeld'),
   noteSessionChanged: slot.forward('noteSessionChanged'),
   LOGIN_PATH: LOGIN_PATH,
   MFA_SETUP_PATH: MFA_SETUP_PATH,

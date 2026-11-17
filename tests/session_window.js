@@ -1063,6 +1063,85 @@ async function launchMergeCase(t) {
   log.debug("Leaving launchMergeCase().");
 }
 
+// THE CLUSTER MODE'S `sts_caep_oauth_grants` (runs #412 and 44025839154,
+// 2026-11-17). Node A spent the sign-in's free presentation; node B, which
+// held a copy from before that, merged A's row into its own (same sign-in, so
+// B's was the base) and put `firstPresentationIsTheSignIn: true` back — and
+// swallowed the CIBA approval's real presentation, so its CAEP
+// `session-presented` event was never sent. The flag is taken from the copy
+// whose `presentationHeldAt` is later, in either merge order.
+async function presentationMergeCase(t) {
+  log.debug("Entering presentationMergeCase().");
+  t.log.info('on: a spent presentation stays spent when a stale copy that ' +
+             'still holds it is merged, and a re-armed one stays armed');
+  const armed = sessionBody('held-merge', { firstPresentationIsTheSignIn: true,
+    presentationHeldAt: 1000 });
+  const spent = sessionBody('held-merge', { lastSeenAt: 2000,
+    firstPresentationIsTheSignIn: false, presentationHeldAt: 2000 });
+  const one = authn.mergeSessionRows(armed, spent);
+  const other = authn.mergeSessionRows(spent, armed);
+  t.equal(String(one.firstPresentationIsTheSignIn) + ' ' +
+          String(other.firstPresentationIsTheSignIn), 'false false',
+          'THE SPENT FLAG IS KEPT whichever copy is the base');
+  t.equal(one.presentationHeldAt + ' ' + other.presentationHeldAt,
+          '2000 2000', 'and the merged row carries the later stamp');
+  const rearmed = sessionBody('held-merge', { lastSeenAt: 3000,
+    firstPresentationIsTheSignIn: true, presentationHeldAt: 3000 });
+  t.equal(String(authn.mergeSessionRows(spent, rearmed)
+    .firstPresentationIsTheSignIn) + ' ' + String(authn.mergeSessionRows(
+    rearmed, spent).firstPresentationIsTheSignIn), 'true true',
+          'a hold armed AFTER the spend (the consent trip) is kept too');
+  const tieArmed = sessionBody('held-merge', {
+    firstPresentationIsTheSignIn: true, presentationHeldAt: 4000 });
+  const tieSpent = sessionBody('held-merge', {
+    firstPresentationIsTheSignIn: false, presentationHeldAt: 4000 });
+  t.equal(String(authn.mergeSessionRows(tieArmed, tieSpent)
+    .firstPresentationIsTheSignIn) + ' ' + String(authn.mergeSessionRows(
+    tieSpent, tieArmed).firstPresentationIsTheSignIn), 'false false',
+          'a tie is spent in either order, so two nodes converge');
+
+  // Backwards compatibility: a row stored before the stamp existed.
+  const legacyArmed = sessionBody('held-merge', {
+    firstPresentationIsTheSignIn: true });
+  t.equal(String(authn.mergeSessionRows(legacyArmed, spent)
+    .firstPresentationIsTheSignIn) + ' ' + String(authn.mergeSessionRows(
+    spent, legacyArmed).firstPresentationIsTheSignIn), 'false false',
+          'AN UNSTAMPED (OLDER) ROW loses to a stamped one in either order');
+  const legacySpent = sessionBody('held-merge', { lastSeenAt: 2000,
+    firstPresentationIsTheSignIn: false });
+  const legacy = authn.mergeSessionRows(legacyArmed, legacySpent);
+  t.check(legacy.firstPresentationIsTheSignIn === true &&
+          !('presentationHeldAt' in legacy),
+          'two unstamped rows keep the base\'s flag, as they always did, ' +
+          'and gain no stamp', JSON.stringify(legacy));
+
+  // The writer: every change advances the stamp past the one it saw, even
+  // when the copy carries a stamp from a node whose clock is ahead.
+  const ahead = { id: 'held-writer',
+    presentationHeldAt: Date.now() + 60 * 60 * 1000 };
+  authn.markPresentationHeld(ahead, false);
+  t.check(ahead.firstPresentationIsTheSignIn === false &&
+          ahead.presentationHeldAt > Date.now() + 59 * 60 * 1000,
+          'markPresentationHeld() orders a change after the stamp it saw',
+          JSON.stringify(ahead));
+
+  // The window's own path: a held copy still armed takes another node's
+  // spent row.
+  freshWindow();
+  const held = sessionBody('held-window', { firstPresentationIsTheSignIn: true,
+    presentationHeldAt: 1000 });
+  authn.sessions.set(held.id, held);
+  await minted.flush();
+  answer.read = { body: sealSession(sessionBody('held-window', {
+    lastSeenAt: 2000, firstPresentationIsTheSignIn: false,
+    presentationHeldAt: 2000 })) };
+  await minted.applyChange({ key: changeKey(held.id), realm: REALM });
+  const read = sessionWindow.get(REALM, held.id);
+  t.equal(read.ok && read.session.firstPresentationIsTheSignIn, false,
+          'A HELD COPY STILL ARMED TAKES THE SPEND another node recorded');
+  log.debug("Leaving presentationMergeCase().");
+}
+
 async function restoreCase(t) {
   log.debug("Entering restoreCase().");
   t.log.info('on: restore does not load session bodies');
@@ -1561,6 +1640,7 @@ async function onHalf(t) {
   await upgradedElsewhereCase(t);
   await staleAfterCommitCase(t);
   await launchMergeCase(t);
+  await presentationMergeCase(t);
   await restoreCase(t);
   upgradeCase(t);
   partialWalkCase(t);
