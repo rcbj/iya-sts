@@ -46,7 +46,14 @@
 // `WS_WIRE_PRINT=1 node tests/ws_model_wire.js` prints the snapshot
 // instead of comparing it; that is how the file was written, from the image
 // of the tree before the switch, and how it is rewritten when the wire is
-// MEANT to change.
+// MEANT to change. It was rewritten once, on 2026-11-17: the record held a
+// RACE. Each realm's keys are made by its first request, `GET /sts`, and
+// certified a moment later, so `GET /sts/cert` just after it answered the
+// self-signed XML certificate the key was born with (`CN=ws-trust-sts-xml`,
+// CRLF line ends, recorded as "<pem>\r\n") rather than the one the realm's
+// XML Signing CA issued. A request now waits for its realm's new keys to be
+// certified (`helpers.js`, `certifyLater()`), so it answers the certified
+// one, every time, and the record says so ("<pem>").
 //
 // A CHILD PROCESS, as tests/saml_model_wire.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.
