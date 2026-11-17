@@ -19,7 +19,7 @@ and `index.md`, the landing page that lists the versions.
   machinery above. It is not edited, regenerated or checked: a fix to
   1.0.0's documentation is not something this repository makes after the
   release. `_data/navigation/v1-0-0.yml` is main's `navigation.yml` from
-  the same commit, with only the `unversioned` marker added.
+  the same commit, with only its header comment changed.
 * **EVERY GENERATOR AND EVERY TEST TOUCHES THE LATEST FOLDER ONLY**
   (rcbj, 2026-11-17: deliberately simple, to be made cleverer later).
   `common/error_codes.js --docs`, `tests/tools/regenerate-openapi-pages.sh`,
@@ -36,14 +36,20 @@ and `index.md`, the landing page that lists the versions.
   `_includes/sidebar.html` draws that version's
   `_data/navigation/<nav>.yml` with every `url` prefixed by the folder, so
   a url in a navigation file is the page's address INSIDE its version
-  (`/configuration.html`); an item marked `unversioned: true` (the API
-  reference at `/api/`, which `pages.yml` adds after Jekyll and which is
-  not versioned) is drawn as written. The data file is named `v1-1-0.yml`,
+  (`/configuration.html`), the API reference's `/api/` included. The data file is named `v1-1-0.yml`,
   not `v1.1.0.yml`, because Jekyll drops the dots from a data file's name
   when it makes the key. The header carries the switcher: the version
   read, and each other one linked to the same page when it has it and to
   its overview when it does not. A page of an older version opens with a
   line naming the latest (`_layouts/default.html`).
+
+* **THE API REFERENCE IS PER VERSION TOO** (rcbj, 2026-11-17). TypeDoc
+  is not committed: `pages.yml`'s `jsdoc` job generates one reference per
+  row of `_data/versions.yml`, the latest from the commit being deployed
+  and every other from its row's `ref` (a release tag, `v1.0.0`), each
+  with THAT tree's own `run-jsdoc.sh`, and the build copies each to
+  `/<folder>/api/`. `api/index.html` here is a redirect to the latest
+  version's reference, so the address 1.0.0 published still answers.
 
 **Making the next release's snapshot** (when 1.1.0 ships and develop moves
 on): copy `v1.1.0/` to the new release's folder — or, if `v1.1.0/` is

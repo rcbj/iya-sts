@@ -2,8 +2,7 @@
   The left-hand navigation. A page inside a version folder draws that
   version's _data/navigation/<nav>.yml (its _data/versions.yml row's
   `nav`), every url prefixed with the folder, so a link never leaves the
-  version the reader is in; an item
-  marked `unversioned` (the API reference at /api/) is drawn as written.
+  version the reader is in, the API reference (/<folder>/api/) included.
   A page outside every version, the landing page, lists the versions.
   No script: on a narrow screen the checkbox below is toggled by the
   header's menu button and CSS shows or hides the list, which is the
@@ -22,7 +21,7 @@
     <p class="sidebar-heading">{{ group.section | escape }}</p>
     <ul>
       {%- for item in group.items %}
-      {%- if item.unversioned %}{% assign item_url = item.url %}{% else %}{% assign item_url = doc_prefix | append: item.url %}{% endif %}
+      {%- assign item_url = doc_prefix | append: item.url %}
       <li><a href="{{ item_url | relative_url }}"{% if page.url == item_url %} class="current" aria-current="page"{% endif %}>{{ item.title | escape }}</a></li>
       {%- endfor %}
     </ul>
@@ -39,9 +38,12 @@
     </ul>
   </div>
   <div class="sidebar-section">
-    <p class="sidebar-heading">Generated</p>
+    <p class="sidebar-heading">API reference (from the source)</p>
     <ul>
-      <li><a href="{{ "/api/" | relative_url }}">API reference (from the source)</a></li>
+      {%- for v in site.data.versions %}
+      {%- assign api_url = "/" | append: v.folder | append: "/api/" %}
+      <li><a href="{{ api_url | relative_url }}">{{ v.label | escape }}</a></li>
+      {%- endfor %}
     </ul>
   </div>
   {%- endif %}

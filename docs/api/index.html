@@ -1,0 +1,28 @@
+---
+layout: null
+permalink: /api/
+---
+{%- comment -%}
+  SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+  SPDX-License-Identifier: BUSL-1.1
+
+  /api/ was the one API reference until the site was versioned (rcbj,
+  2026-11-17). Each version now has its own at /<folder>/api/
+  (.github/workflows/pages.yml); this page sends the old address to the
+  latest version's. No script: a meta refresh and a link.
+{%- endcomment -%}
+{%- assign latest = site.data.versions | first -%}
+{%- assign target = "/" | append: latest.folder | append: "/api/" | relative_url -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>API reference</title>
+<meta http-equiv="refresh" content="0; url={{ target }}">
+<link rel="canonical" href="{{ target }}">
+</head>
+<body>
+<p>The API reference is kept per version. The latest is at
+<a href="{{ target }}">{{ target }}</a>.</p>
+</body>
+</html>

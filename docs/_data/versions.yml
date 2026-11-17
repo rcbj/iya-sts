@@ -9,7 +9,12 @@
 # switcher marks it, every other version's pages say a newer one exists, and
 # the landing page (docs/index.md) lists them in this order.
 #
+# `ref` is the git tag the version's API reference (TypeDoc, /<folder>/api/)
+# is generated from, by .github/workflows/pages.yml (rcbj, 2026-11-17: the
+# API reference is tied to the documentation version). The latest has none:
+# its reference is generated from the commit being deployed.
+#
 # A release snapshot adds a row here and a navigation file; docs/CLAUDE.md,
 # *The versioned site*, is the recipe.
 - { folder: v1.1.0, nav: v1-1-0, label: "1.1.0", note: "latest" }
-- { folder: v1.0.0, nav: v1-0-0, label: "1.0.0", note: "release" }
+- { folder: v1.0.0, nav: v1-0-0, label: "1.0.0", note: "release", ref: v1.0.0 }

@@ -11,8 +11,8 @@
 # picks this file by the page's first path segment and puts `/v1.1.0` in
 # front of every `url`, so a url here is the page's address INSIDE its
 # version folder: `v1.1.0/foo.md` is served as `/v1.1.0/foo.html` and listed
-# as `/foo.html`. `unversioned: true` marks the one item that is not in
-# a version folder: the API reference, which pages.yml adds at /api/.
+# as `/foo.html`. The API reference is the version's too: pages.yml adds it
+# at /<folder>/api/, generated from the version's own source.
 - section: Start here
   items:
     - { title: Overview, url: / }
@@ -47,7 +47,7 @@
     - { title: Token samples, url: /token-samples.html }
     - { title: Error codes, url: /error-codes.html }
     - { title: OpenAPI reference, url: /openapi/ }
-    - { title: API reference (generated from the source), url: /api/, unversioned: true }
+    - { title: API reference (generated from the source), url: /api/ }
 
 - section: OAuth 2.0 and OpenID Connect
   items:

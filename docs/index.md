@@ -18,5 +18,5 @@ and every page of a version links only inside that version.
 | [1.1.0](v1.1.0/index.md) | **The latest.** The documentation of the current development line. |
 | [1.0.0](v1.0.0/index.md) | The 1.0.0 release, as it was published. It is not changed after the release. |
 
-The [API reference](api/), generated from the source's comments, is not
-kept per version: it describes the latest build of `main`.
+Each version carries its own API reference, generated from that release's
+source comments: [1.1.0](v1.1.0/api/) and [1.0.0](v1.0.0/api/).
