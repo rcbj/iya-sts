@@ -8812,8 +8812,8 @@
     "text": "Tomar la huella del navegador al iniciar sesión"
   },
   "risk.fingerprinting|description": {
-    "en": "fb95d41998827b2a",
-    "text": "DESACTIVADO POR DEFECTO (#62 P6). Activado, la pantalla de inicio de sesión ejecuta un script, FingerprintJS (MIT; no envía nada a ninguna parte), que calcula un identificador a partir de lo que expone el navegador y lo pone en el formulario; el servicio conserva solo un resumen con clave, y un navegador desde el que esta persona nunca ha iniciado sesión es la señal new-device (x2). Una huella de navegador es un dato personal: complete la evaluación de impacto en la privacidad de docs/risk-scoring.md, e informe a las personas que inician sesión, antes de activarlo. Por dominio, como todo ajuste."
+    "en": "452ca90f0592fe8b",
+    "text": "DESACTIVADO POR DEFECTO (#62 P6). Activado, la pantalla de inicio de sesión ejecuta un script, FingerprintJS (MIT; no envía nada a ninguna parte), que calcula un identificador a partir de lo que expone el navegador y lo pone en el formulario; el servicio conserva solo un resumen con clave, y un navegador desde el que esta persona nunca ha iniciado sesión es la señal new-device (x2). Una huella de navegador es un dato personal: complete la evaluación de impacto en la privacidad de docs/v1.1.0/risk-scoring.md, e informe a las personas que inician sesión, antes de activarlo. Por dominio, como todo ajuste."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11232,8 +11232,8 @@
     "text": "Dirección del remitente"
   },
   "mail.from|description": {
-    "en": "33efdb50c1bacbc3",
-    "text": "La dirección desde la que se envía cada mensaje. Vacío significa `no-reply@` el dominio DNS del dominio. El proveedor debe permitir enviar con ella: una identidad verificada en SES, una dirección MailFrom de un dominio conectado en Azure, el buzón suplantado (o uno de sus alias de envío) para Gmail — y SPF, DKIM y DMARC para su dominio son el tema de docs/mail.md."
+    "en": "b1da52c40fbad767",
+    "text": "La dirección desde la que se envía cada mensaje. Vacío significa `no-reply@` el dominio DNS del dominio. El proveedor debe permitir enviar con ella: una identidad verificada en SES, una dirección MailFrom de un dominio conectado en Azure, el buzón suplantado (o uno de sus alias de envío) para Gmail — y SPF, DKIM y DMARC para su dominio son el tema de docs/v1.1.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11368,8 +11368,8 @@
     "text": "Algoritmo DKIM"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "b319eebbac62f962",
-    "text": "`rsa-sha256` (RFC 6376; una clave de 2048 bits o más, según RFC 8301) o `ed25519-sha256` (RFC 8463). Muchos receptores todavía solo verifican RSA, así que un dominio que pasa a Ed25519 publica ambas y firma dos veces en otros sitios. DKIM aún no tiene ningún algoritmo poscuántico registrado; docs/mail.md lo indica."
+    "en": "62ed500aeff2bc8a",
+    "text": "`rsa-sha256` (RFC 6376; una clave de 2048 bits o más, según RFC 8301) o `ed25519-sha256` (RFC 8463). Muchos receptores todavía solo verifican RSA, así que un dominio que pasa a Ed25519 publica ambas y firma dos veces en otros sitios. DKIM aún no tiene ningún algoritmo poscuántico registrado; docs/v1.1.0/mail.md lo indica."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11592,16 +11592,16 @@
     "text": "El restablecimiento de autoservicio requiere una dirección verificada"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "76e079f6e1b23b98",
-    "text": "Envía un enlace de restablecimiento de autoservicio solo a una dirección que la persona haya VERIFICADO (un enlace que siguió desde ella). Activado por defecto, porque el enlace es la cuenta: una dirección que escribió una importación o una fuente de aprovisionamiento, y que nadie demostró nunca, no es un lugar al que enviarlo. **Desactivarlo es un ajuste más débil**, para un directorio cuyas direcciones se consideran fiables tal como están escritas; docs/mail.md incluye la advertencia."
+    "en": "81dfbb5f1c67cc3c",
+    "text": "Envía un enlace de restablecimiento de autoservicio solo a una dirección que la persona haya VERIFICADO (un enlace que siguió desde ella). Activado por defecto, porque el enlace es la cuenta: una dirección que escribió una importación o una fuente de aprovisionamiento, y que nadie demostró nunca, no es un lugar al que enviarlo. **Desactivarlo es un ajuste más débil**, para un directorio cuyas direcciones se consideran fiables tal como están escritas; docs/v1.1.0/mail.md incluye la advertencia."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "El restablecimiento de autoservicio requiere un código de recuperación"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "d2884302ae8d8475",
-    "text": "El formulario de contraseña olvidada pide el NOMBRE DE USUARIO, la DIRECCIÓN verificada de la cuenta y uno de los CÓDIGOS DE RECUPERACIÓN de la persona, y envía un enlace de restablecimiento solo cuando los tres son correctos — en ese momento el código se consume. Cada combinación se responde con la misma frase. **Desactivarlo es un ajuste más débil**: el formulario vuelve a tener un solo campo (un nombre de usuario o la dirección), y un restablecimiento es entonces tan fuerte como el buzón al que va — lo que NIST SP 800-63B-4 permite para la recuperación y sobre lo que advierte docs/mail.md. Una persona que no tiene códigos de recuperación no puede restablecer su contraseña por sí misma mientras esto esté activado; un administrador sí puede."
+    "en": "2d8885388b97eb61",
+    "text": "El formulario de contraseña olvidada pide el NOMBRE DE USUARIO, la DIRECCIÓN verificada de la cuenta y uno de los CÓDIGOS DE RECUPERACIÓN de la persona, y envía un enlace de restablecimiento solo cuando los tres son correctos — en ese momento el código se consume. Cada combinación se responde con la misma frase. **Desactivarlo es un ajuste más débil**: el formulario vuelve a tener un solo campo (un nombre de usuario o la dirección), y un restablecimiento es entonces tan fuerte como el buzón al que va — lo que NIST SP 800-63B-4 permite para la recuperación y sobre lo que advierte docs/v1.1.0/mail.md. Una persona que no tiene códigos de recuperación no puede restablecer su contraseña por sí misma mientras esto esté activado; un administrador sí puede."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",

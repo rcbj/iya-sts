@@ -1,0 +1,1029 @@
+---
+title: SPIFFE
+---
+
+# SPIFFE
+
+iya-sts is a **SPIFFE issuing authority** in all three of its server-side
+shapes: the **bundle endpoint** over HTTPS, the **SPIFFE Workload API** over
+gRPC, and the **SPIRE Server API** over gRPC. It issues X509-SVIDs and JWT-SVIDs
+per the [SPIFFE specifications](https://github.com/spiffe/spiffe/tree/main/standards)
+(SPIFFE ID, Trust Domain and Bundle, X509-SVID, JWT-SVID, Workload API), and its
+server API is SPIRE's own
+[`spire-api-sdk`](https://github.com/spiffe/spire-api-sdk) protocol. **Every
+[trust realm](trust-realms.md) can be a trust domain of its own**, with its own
+authority and its own sockets on an address of its own.
+
+| Surface | Transport | Who talks to it |
+|---|---|---|
+| The bundle endpoint | HTTPS, `GET /spiffe/bundle` | a federation partner, or anybody verifying an SVID |
+| The Workload API | gRPC on a Unix socket, and on TCP | a workload, to be given an identity |
+| The SPIRE Server API | gRPC on TCP (mutual TLS), and optionally a Unix socket | an operator and an agent: entries, attestation, bundles, minting |
+
+The three have almost nothing in common with each other. The bundle endpoint is
+one GET returning a JWK Set, and it is the whole of the SPIFFE federation
+protocol's server half. The two gRPC surfaces are authenticated in opposite ways,
+because their specifications demand opposite things (see
+[Authentication on the two gRPC surfaces](#authentication-on-the-two-grpc-surfaces)).
+
+## Features
+
+### Trust domains and the authority
+
+A realm's trust domain is the authority part of every SPIFFE ID it mints. The
+default realm's is `spiffe.trustDomain` (`example.org`). **A realm created at
+runtime gets its own DNS domain as its trust domain**, for example `iyasec.io`,
+and may name another one outright. Two realms never share a trust domain by
+default, because two authorities claiming one name make every SVID either one
+mints ambiguous.
+
+The trust domain is fixed when the realm's authorities are built. A later change
+is reported as drift on `GET /spiffe` and `/admin/cert-issuance#cert-spiffe-overview`, not acted on. To
+change it, turn the realm's SPIFFE off and on again, which discards the old
+authorities.
+
+**A realm gets sockets of its own, and it is told apart by ADDRESS.** Every other
+family here learns its realm from a segment at the front of the path; gRPC's
+path is the METHOD name, fixed by the Workload API specification, so there is
+nowhere in the protocol to put one. A realm is created with `spiffe.enabled`
+**off**. Turning it on builds that realm's authorities and binds a Workload API
+and a SPIRE Server API of its own, on the address `spiffe.grpcHost` names for
+that realm and on the same ports. That is also what a real deployment looks
+like — one SPIRE server is one trust domain — and it is why
+`docker-compose.yml` gives the container four addresses rather than one. Join
+tokens are per realm for the same reason: a join token is a credential for
+joining a trust domain.
+
+The X.509 authority is the realm's **SPIFFE Issuing CA** in the service's
+[certificate hierarchy](pki.md):
+
+```
+Root CA (the service's)          <- what the bundle publishes
+└── Intermediate CA (this realm)
+     └── SPIFFE Issuing CA       <- signs X509-SVIDs
+          ├── X509-SVID
+          └── downstream CA      (NewDownstreamX509CA)
+```
+
+This is the arrangement SPIRE has with an `UpstreamAuthority` configured. **A
+rotation of the Issuing CA leaves the bundle unchanged**, because the bundle is
+the Root. Where no hierarchy exists (`pki.autoBuild` off, or a Root that could
+not be built), the realm falls back to a self-signed X.509 authority. That
+authority's rotations keep `spiffe.retainedAuthorities` authorities in the
+bundle. The JWT authority is always the realm's own key.
+
+**The SPIFFE authority is not the TLS certificate.** The certificate LDAPS 636,
+the embedded debugger's listener and (under `global.https`) the main port share
+is a leaf with `CA:FALSE` and `extKeyUsage serverAuth`; it cannot sign anything,
+and a trust domain's CA and a host's TLS identity are two unrelated trust
+decisions. They share an **anchor** — the service Root — and not a tree: the
+SPIFFE Issuing CA is a *sibling* of the TLS one, with its own key under its own
+Intermediate, so trust narrowed to SPIFFE alone is still sayable by pinning the
+SPIFFE Issuing CA instead of the Root. It is the one Issuing CA in the hierarchy
+with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a
+CA and not a leaf, and the realm Intermediate above it is widened to `2` to
+match.
+
+The bundle publishes the Root, which is what SPIRE publishes with an
+`UpstreamAuthority` plugin, and an X509-SVID carries its Issuing CA and the
+realm's Intermediate in its own chain. The authority is per realm and the anchor
+is not, so every realm's X.509 bundle is the same document.
+
+**Rotation is two different acts.** Under the Root, rotating re-issues the
+SPIFFE Issuing CA and leaves the anchor alone: the bundle does not change,
+nothing has to be re-fetched, and SVIDs minted under the old authority go on
+verifying, because their chain still reaches the same Root. On the
+**self-signed fallback** (which `/admin/cert-issuance#cert-spiffe-overview` and `GET /spiffe` report, and
+which `pki.autoBuild: false` reaches deliberately) a rotation **prepends and
+never replaces**: the new authority signs everything from then on, and the old
+one stays published, because an SVID minted a minute ago has to go on
+verifying — dropping it is the difference between a rotation and an outage.
+Past `spiffe.retainedAuthorities` the oldest is dropped, which does invalidate
+whatever it signed, and the page says so.
+
+Both authorities rotate automatically, in both modes. A scheduler job runs every
+hour. It rotates the X.509 authority once it is past half its lifetime, and the
+JWT authority once it is older than half `spiffe.caTtl`. **Rotate** on
+`/admin/cert-issuance#cert-spiffe-overview` rotates either or both by hand. On a cluster, a realm's
+authorities are made once and adopted by every node.
+
+X509-SVIDs use EC P-256 by default (`spiffe.x509KeyType`), which is what SPIRE
+issues. JWT-SVIDs are signed ES256 by default (`spiffe.jwtKeyType`). Ed25519 is
+offered for X.509 only.
+
+### The bundle endpoint
+
+`GET /spiffe/bundle` (`spiffe.bundlePath`) returns the realm's trust bundle as a
+JWK Set, with `spiffe_sequence` (which changes only when the bundle changes) and
+`spiffe_refresh_hint` (`spiffe.refreshHint`). Every key carries a `use` of
+`x509-svid` (with the certificate in `x5c`) or `jwt-svid`. It is served
+`no-store`. A real federation partner refuses a plain-HTTP bundle endpoint, so
+set `global.https`.
+
+`GET /spiffe/federated/{trustDomain}` shows a foreign trust domain's bundle
+exactly as this realm holds it, so that "the bundle I pushed" and "the bundle
+workloads are given" can be compared.
+
+### The Workload API
+
+The gRPC service `SpiffeWorkloadAPI`, on:
+
+* a **Unix socket** at `spiffe.workloadSocket`, SPIRE's own default path
+  `/tmp/spire-agent/public/api.sock`, so `SPIFFE_ENDPOINT_SOCKET` needs no
+  change for a client that was pointed at a SPIRE agent;
+* **TCP** at `spiffe.workloadPort` (8092), for a caller in another container.
+  **In product mode only where the network authenticates source addresses**:
+  see *A caller over TCP* below. An AWS cluster does not publish this port.
+  A workload there runs the agent in
+  [A workload agent beside the workload](#a-workload-agent-beside-the-workload).
+
+Five of the specification's seven methods are implemented:
+
+* `FetchX509SVID`: X509-SVIDs with their private keys and the bundle;
+* `FetchX509Bundles` and `FetchJWTBundles`;
+* `FetchJWTSVID`: a JWT-SVID for an audience, which is required;
+* `ValidateJWTSVID`: a real verification, returning the claims.
+
+The two WIT methods are not implemented. No specification defines the token
+format yet, and inventing one would work here and interoperate with nothing.
+
+**The streams stay open.** `FetchX509SVID` and the bundle streams are held for
+the life of the connection and **re-sent at half the shortest SVID lifetime**,
+so a client's rotation path runs without an hour's wait. A Workload API that
+writes once and ends the stream looks completely correct on the first fetch and
+puts `go-spiffe` into a reconnect loop, and a client's rotation handling is the
+part most worth exercising. A call without the
+metadata header `workload.spiffe.io: true` is refused, because the specification
+requires it (section 3, a hardening measure against server-side request
+forgery). `spiffe.requireSecurityHeader` off serves such a call in development
+mode only (#181); product ignores it and refuses turning it off.
+
+**Which entries answer a caller.** A caller is given the registration entries
+whose selectors are a **subset** of the caller's selectors, as SPIRE matches
+them (`spiffe.attestWorkloads`; turning it off, which hands every caller every
+entry, is development only). The entry's selectors must be a **subset** of the
+caller's — not equal to them, and not merely intersecting. A caller that matches
+no entry is refused **`PERMISSION_DENIED`** at `FetchX509SVID`,
+`FetchX509Bundles`, `FetchJWTSVID` and `FetchJWTBundles`, as the Workload API
+(sections 5.2.1, 5.2.2, 6.2.1 and 6.2.2) says and a real agent answers ("no
+identity issued"). So is a `FetchJWTSVID` naming a `spiffe_id` the caller is not
+entitled to, and a stream whose caller loses every entry ends with that status.
+It is the only way to exercise a client's "I have no identity" path — one most
+client libraries have and almost nobody runs. In
+development, `spiffe.autoCreateEntries` instead creates an entry for the caller
+and issues it an SVID. The invented entry carries the caller's *stable*
+selectors — transport and endpoint, never the peer, whose port is ephemeral — so
+the next caller of the same shape matches it instead of inventing another.
+
+**Sample entries.** A development start seeds three registration entries —
+`/workload`, `/ns/default/sa/web` (with DNS names and a `hint`) and
+`/ns/default/sa/db` (with a different hint) — for the same reason the directory
+seeds three people: a Workload API that answers an empty list teaches a client
+author nothing, and the first thing they will do is assume they have
+misconfigured something. The two hints exist so that "more than one SVID came
+back" is a path a client can actually be driven down. Delete them and they stay
+deleted until a restart.
+
+### Authentication on the two gRPC surfaces
+
+This looks like an inconsistency and is not: it is two documents making two
+different demands, and getting either the other way round breaks a real client.
+
+**The Workload API must not authenticate anybody.** The SPIFFE Workload Endpoint
+specification says the endpoint "MUST NOT require any direct authentication of
+its clients", and that "Transport Layer Security MUST NOT be required". The
+reason is bootstrapping: a workload has no secret and no root of trust until
+this very call gives it one, so there is nothing it could present. A server that
+demanded a credential here would refuse every conforming client, which is why
+the mutual TLS of the other surface deliberately does not reach it. What the
+Workload API does instead is **attest** (below).
+
+**The SPIRE Server API is mutual TLS with an X509-SVID.** A real `spire-server`
+binds a TCP port whose callers present an SVID from the trust domain, takes the
+caller's SPIFFE ID off the certificate, and authorizes every method against
+*what that caller is*; its private Unix socket is trusted outright, which is how
+the `spire-server` CLI works. This service does the same: the SPIFFE ID comes
+from the **URI subjectAltName**, never from the subject, and the method is
+checked against SPIRE's own table. **It is not a setting and cannot be turned
+off**; the socket is bound as mutual TLS on every start.
+
+The bootstrapping case is handled the way SPIRE handles it: the port asks for a
+client certificate and does not require one, because `AttestAgent` is open to a
+caller that has no SVID yet. Fetch the bundle from the bundle endpoint, verify
+this server against it, attest, and come back with what you were issued.
+
+### Workload attestation on the Unix socket
+
+The Workload API **authenticates nobody**, because its specification says it
+MUST NOT: a workload has no credential until this call gives it one. What it
+does is **attest**, as a SPIRE agent does. When a connection is accepted on the Unix
+socket, the kernel names the connecting process (`SO_PEERCRED` and a pidfd, read
+by a small native module built into the image). The workload attestors in
+`spiffe.workloadAttestors` then turn that process into SPIRE's selectors:
+
+* `unix`: `uid:`, `user:`, `gid:`, `group:` and the supplementary groups; with
+  `spiffe.unixDiscoverWorkloadPath`, also the executable's `path:` and
+  `sha256:`.
+* `docker`: the container's `label:`, `env:`, `image_id:` and
+  `image_config_digest:`, asked of the Docker Engine at
+  `spiffe.dockerSocketPath`.
+* `k8s`: the pod's `sa:`, `ns:`, `pod-name:`, `pod-label:`, `pod-owner:`,
+  `container-name:`, `container-image:` and the rest of SPIRE's list, read from
+  the kubelet.
+* `systemd`: the unit's `id:` and `fragment_path:`, asked of systemd over
+  D-Bus. Install the optional package `dbus-next` in the image
+  (`STS_CLOUD_SDKS=dbus-next` at build time); without it, a realm naming
+  `systemd` refuses every connection and says which package is missing.
+
+**Podman.** The `docker` attestor asks Podman's Docker-compatible API instead of
+the Engine when the container's cgroup says `libpod`: the rootful socket
+(`spiffe.dockerPodmanSocketPath`), or a rootless user's socket
+(`spiffe.dockerPodmanSocketPathTemplate`) — the rootless one only with
+`spiffe.dockerUseRootlessPodman` on, because that socket belongs to the caller.
+The selectors are still `docker:`.
+
+**Signed images.** With `spiffe.dockerSigstoreEnabled`, a docker workload's
+image must carry a cosign signature that verifies, and the attestation adds
+SPIRE's `image-signature:verified`, `image-attestations:verified` and
+`image-signature-subject:`, `-issuer:`, `-value:`, `-log-id:`, `-log-index:`,
+`-integrated-time:` and `-signed-entry-timestamp:` selectors. Configure:
+
+1. what a signature may verify under — cosign public key FILES
+   (`spiffe.dockerSigstorePublicKeyFiles`), and for keyless signatures the
+   sigstore trust root: through TUF (`spiffe.dockerSigstoreTufRootFile`, the
+   `root.json` you trust, refreshed by the scheduler job
+   `spiffe.sigstore-tuf-refresh`), or pinned
+   (`spiffe.dockerSigstoreTrustedRootFile`);
+2. for keyless signatures, the signers you accept
+   (`spiffe.dockerSigstoreAllowedIdentities`, `issuer=subject`);
+3. the registries the signatures may be fetched from
+   (`spiffe.dockerSigstoreAllowedRegistries`) — Docker Hub is
+   `index.docker.io`, and list its token host `auth.docker.io` and blob host
+   too.
+
+Every signature must carry its Rekor transparency-log bundle, and a keyless
+certificate an embedded SCT. **A signature that does not verify refuses the
+connection** (`UNAVAILABLE`); it never merely leaves out a selector.
+
+A connection is attested once, when it is accepted. **Every call on it checks
+that the process is still the one attested.** A process that has exited, a
+reused pid or an `exec` of another program is refused `PERMISSION_DENIED`. An
+attestor that fails refuses every call on the connection with `UNAVAILABLE`. A
+peer in a pid namespace this service cannot see is attested on its kernel uid
+and gid alone.
+
+### A caller over TCP
+
+**A caller over TCP is not attested**, because there is no peer process to ask.
+It is identified by the selectors `transport:`, `endpoint:` and `peer:` — the
+transport it arrived on, the endpoint it reached and its peer address — and by
+nothing else. These are deliberately spelt unlike any attestor's, and never
+`unix:` or `k8s:`: writing `unix:uid:1000` for a uid nothing read would be
+inventing an attested fact, the same offence as minting a credential format
+nobody specified. In development, any caller that can reach the TCP port gets an
+identity, and what comes out is a credential another service will believe.
+
+**Asserted selectors.** In development, with `spiffe.acceptAssertedSelectors`
+on, a caller may also assert its own selectors in an `x-sts-workload-selector`
+metadata header. They are passed through verbatim, because they are the
+caller's claim rather than this service's invention, and **nothing verifies
+them**. The setting is off by default and refused in product. It exists because
+selector matching is the interesting behaviour of a Workload API, and without
+it a TCP client's "these matched and those did not" path could not be run here
+at all.
+
+The Workload Endpoint specification allows TCP only where "the underlying
+network allows the Workload Endpoint server to strongly authenticate the
+workload based on source IP address" (section 3), and forbids the other fixes:
+TLS must not be required and a client must not be asked to authenticate. The
+source address is therefore the only identity a TCP caller carries, and whether
+the network guarantees it is something this service cannot see. So, in
+**product mode** (#166):
+
+* **The TCP port is not bound** (`STS-SPIFFE-0120`) unless
+  `spiffe.workloadTcpSourceAuthenticated` is on. Turning it on declares the
+  section 3 condition: a pod network with anti-spoofing, a host-only bridge.
+  **Warning**: every host that reaches the port from an address an entry
+  selects is issued that entry's SVIDs, so an address that can be spoofed,
+  shared behind a NAT or reassigned hands the identity to whoever holds it.
+* **With it on, a wildcard `spiffe.grpcHost`** (`0.0.0.0`, `::`) **is still
+  refused** (`STS-SPIFFE-0121`). Name the address on the network you vouch for.
+* **A realm switched to product** with the port already bound keeps the socket
+  and refuses every call on it (`UNAVAILABLE`).
+* **An entry must select something that identifies its workload**: never only
+  `transport:` and `endpoint:`, which every caller of the port carries, and
+  never nothing (`STS-SPIFFE-0122`). The console, `/admin-api` and the SPIRE
+  Server API (`INVALID_ARGUMENT` per item) all refuse it. For a TCP caller that
+  is `peer:<address>`, matched **exactly**: `peer:10.0.0.0/24` is a selector no
+  caller carries, as in SPIRE. An entry written in development answers nobody
+  once the realm is in product (`STS-SPIFFE-0123`).
+
+`GET /spiffe`, `/admin/cert-issuance#cert-spiffe-overview` and `GET /admin-api/spiffe` report the realm's
+state under `workloadAttestation.tcp`: `served (development, not attested)`,
+`not served (product, source not declared authenticated)`, `not served
+(product, wildcard bind address)` or `served (product, source declared
+authenticated)`, with whether the port is listening.
+
+### A workload agent beside the workload
+
+Some networks cannot make the declaration above honestly. An AWS load
+balancer is one: a task has one address, every realm binds `0.0.0.0`, and
+the SPIFFE listeners do not read PROXY protocol, so the node would see the
+load balancer as every caller. Publishing 8092 there left its target group
+unhealthy. The cluster publishes the SPIRE Server API (8181) and does not
+publish 8092. GCP and Azure still publish 8092; only AWS has been applied.
+
+A workload on that cluster runs `spiffe/workload_agent.js` in its own task.
+The agent spends one join token at the Server API, which is mutual TLS and
+is served, and then serves the Workload API on a Unix socket beside the
+workload. Point `SPIFFE_ENDPOINT_SOCKET` at that socket. The kernel tells
+the agent the caller's uid and gid, which is the identity a registration
+entry selects (`unix:uid`, `unix:gid`, and `unix:user` / `unix:group` when
+the name files have them). The agent does not bind a TCP port.
+
+Mint the token on **Cert issuance → SPIFFE → Agents**, or with
+`POST /admin-api/spiffe/agents/join-token`. The body may carry `ttl` (seconds;
+omit it to use `spiffe.joinTokenTtl`) and `agentId` (an optional alias, the
+same alias `CreateJoinToken` registers). The token is in the answer once, in
+`token` and in `message`, and is not stored. `agentSpiffeId` is the identity
+the token will attest; parent that agent's workload entries on it. Give the
+token to the agent as `STS_SPIFFE_JOIN_TOKEN` or as the file named by
+`--join-token-file`. Do not put it on the command line.
+
+### The SPIFFE Broker API
+
+A **broker** — a node proxy, a service mesh's per-node component — can ask for
+the SVIDs of a workload it acts for, by naming the workload rather than being
+it. This is the SPIFFE Broker API (Incubating), on a mutual-TLS listener of its
+own:
+
+1. Set `spiffe.brokerPort` on the realm (and `spiffe.grpcHost` where the realm
+   needs an address of its own), then turn the realm's SPIFFE on.
+2. Authorize the broker on **Cert issuance → SPIFFE → Brokers**
+   (`/admin/cert-issuance#cert-spiffe-brokers`) or
+   `POST /admin-api/spiffe/brokers/set` with its SPIFFE ID and the references
+   it may use: `pid`, `k8s` or `*`. A broker from another trust domain needs
+   that domain's bundle federated first.
+3. The broker connects with its X509-SVID, verifies this server as
+   `spiffe://<trust domain>/spire/server` against the bundle, and sends
+   `broker.spiffe.io: true` on every call.
+
+It calls `SubscribeToX509SVID`, `SubscribeToX509Bundles`, `FetchJWTSVID` and
+`SubscribeToJWTBundles`, each with a **workload reference**:
+
+* a `WorkloadPIDReference` — a process on this host, attested by the workload
+  attestors exactly as a Workload API caller is. The endpoint is TCP, so allow
+  `pid` only to a broker running on this host;
+* a `KubernetesObjectReference` to a **pod** (`pods`, group `core`), by UID or
+  by namespace and name — found in this node's kubelet pod list and attested
+  by the `k8s` attestor's pod selectors. Other Kubernetes objects are refused.
+
+The workload gets the entries its selectors match, never an admin or downstream
+entry. A refusal follows the specification's table — `INVALID_ARGUMENT` for a
+missing header or a bad reference, `UNAUTHENTICATED` for no SVID,
+`PERMISSION_DENIED` for a caller that is not a broker, a reference type it may
+not use or a workload with no entry, `NOT_FOUND` for a workload that does not
+exist — with a `google.rpc.ErrorInfo` in the `spiffe.io` domain. A stream ends
+`NOT_FOUND` when its workload stops.
+
+### The SPIRE Server API
+
+SPIRE's six services, Entry, Agent, Bundle, SVID, TrustDomain and Debug, with
+forty-two methods, on TCP `spiffe.serverPort` (8181, because SPIRE's own 8081 is
+this service's HTTP port). They are also on a Unix socket at
+`spiffe.serverSocket` when `spiffe.serverSocketEnabled` is on. Thirty-six
+methods are implemented. **`GET /spiffe` lists every method, with a reason for
+each of the six that are not.**
+
+**The TCP port is mutual TLS, in every mode.** The server presents its own SVID
+(`spiffe://<trust domain>/spire/server`). A caller presents an X509-SVID, which
+is verified against the bundle, its validity window (with `spiffe.clockSkew`)
+and the revocation register. Revoking the SPIFFE Issuing CA on `/admin/pki`
+therefore refuses every SVID under it. The caller's SPIFFE ID is taken from the
+URI subjectAltName. The port **asks for** a certificate without requiring one,
+so that `AttestAgent` and `GetBundle` stay open to an agent that has no SVID
+yet.
+
+Each method is authorized against **SPIRE's own per-method table**, copied row
+for row from `policy_data.json`. A caller is one or more of these entities, and
+the check asks whether it is *any* of the ones a method allows — the
+`spire-server` CLI on this host is `local`, and an agent that also holds an
+entry marked `admin` is both:
+
+| Entity | What it means |
+|---|---|
+| `local` | the call came in on the Unix socket while `spiffe.trustLocalSocket` is on — trusted outright in development; in product only when the socket is verified 0600 in a private directory and the caller's kernel uid is the service's own |
+| `agent` | an attested, unbanned agent's SVID |
+| `admin` | a SPIFFE ID in `spiffe.adminIds`, or one with a registration entry marked `admin` |
+| `downstream` | a SPIFFE ID with a registration entry marked `downstream` (a nested SPIRE server) |
+| anonymous | nothing verified |
+
+Where a row looks surprising, that is SPIRE's own answer. For example,
+`Debug.GetInfo` is local-only, so an admin SVID over TCP is refused it. After
+SPIRE's table has allowed a call, the [XACML](xacml.md) access gate is asked. It
+permits by default. An authenticated caller gets a [session](sessions.md) keyed
+on its SPIFFE ID.
+
+A method the caller is not allowed is refused `UNAUTHENTICATED` when nothing was
+presented and `PERMISSION_DENIED` when something was and it was not enough.
+Those are different instructions to a client — "authenticate" and "you may
+not" — and SPIRE distinguishes them; collapsing them sends a client that needs a
+credential looking for a permission it will never get.
+
+**The `admin` and `downstream` flags on a registration entry are read on every
+call, and nothing caches them**, so an `ldapmodify` of `spiffeAdmin` under
+`ou=spiffe` — or the form on `/admin/cert-issuance#cert-spiffe-entries` — changes what that
+identity may do on the next call.
+
+`RenewAgent` renews the agent **on the connection**, never an agent named in the
+request: renewing whichever agent the caller named would be a way for anybody to
+obtain any agent's identity.
+
+### Node attestation
+
+`Agent.AttestAgent` accepts only an attestation type that the realm lists in
+`spiffe.nodeAttestors` **and** that this server can verify. Anything else is
+refused `FAILED_PRECONDITION`, as SPIRE refuses an attestor it has no plugin
+for. There is no fallback. All nine of SPIRE's server node attestors are
+implemented, step for step:
+
+| Type | What is verified | Configured by |
+|---|---|---|
+| `join_token` | a single-use token from `CreateJoinToken`, per realm, spent once across every node | `spiffe.joinTokenTtl`, `spiffe.maxJoinTokens` |
+| `x509pop` | a certificate chaining to a configured bundle (or to the realm's SPIFFE bundle), and a signature over a fresh challenge. RSA, ECDSA and, beyond SPIRE, post-quantum keys | `spiffe.x509pop*` |
+| `sshpop` | an SSH host certificate from a configured authority, and a signature by its host key | `spiffe.sshpop*` |
+| `tpm_devid` | a DevID key resident in a TPM whose endorsement key a configured manufacturer certified, proved by credential activation | `spiffe.tpm*` |
+| `k8s_psat` | a projected service account token that the cluster's own TokenReview authenticates | `spiffe.k8sPsatClusters` |
+| `http_challenge` | a nonce served over HTTP from a host name the realm allows | `spiffe.httpChallenge*` |
+| `aws_iid` | the EC2 instance identity document, with EC2 and IAM asked for selectors | `spiffe.awsIid*` |
+| `gcp_iit` | the Compute Engine instance identity token | `spiffe.gcpIit*` |
+| `azure_imds` | the attested document from Azure IMDS, minted for this server's nonce | `spiffe.azureImds*` |
+
+**An attestor returns only selectors it verified.** A trust anchor is PEM text
+in a setting, not a file path, so the console and `/admin-api` can set it. **No
+credential is ever a setting.** Where SPIRE takes an access key, an app secret
+or a kubeconfig, this server takes a file path or uses the cloud SDK's own
+credential chain. The cloud SDKs are optional packages: a realm that enables
+`aws_iid`, `gcp_iit` or `azure_imds` without the SDK installed is refused, and
+the refusal names the missing package.
+
+Evidence that cannot be re-attested, namely a join token and the
+trust-on-first-use cloud documents (and `http_challenge` with `spiffe.httpChallengeTofu`), attests
+**once**. Attesting the same agent again is refused until an operator deletes
+the agent. Evidence is spent only after the agent's SVID exists, so a refused
+attestation spends nothing. A challenge is a conversation on the same stream;
+with no answer inside `spiffe.attestationChallengeTimeout`, the call fails
+`DEADLINE_EXCEEDED`.
+
+**`http_challenge` is the one place this server dials an address a caller
+named.** The host name must match `spiffe.httpChallengeAllowedDnsPatterns`
+before it is looked up. That list is empty by default, which refuses every
+agent; this is stricter than SPIRE, whose empty list allows any name. In product
+mode internal addresses are refused, and in every mode the request follows no
+redirect and reads at most 64 bytes.
+
+### The registry is the directory
+
+Registration entries live in the [LDAP directory](ldap.md) under
+`ou=entries,ou=spiffe` and attested agents under `ou=agents,ou=spiffe`.
+**Nothing caches them.** A form on `/admin/cert-issuance#cert-spiffe-entries`, an `ldapmodify` and
+`BatchCreateEntry` / `BatchUpdateEntry` / `BatchDeleteEntry` are three doors to
+one store, all calling the same functions, and the next SVID reflects the
+change — an `ldapmodify` of `spiffeX509SvidTtl` changes the lifetime of the
+*next* SVID the Workload API hands out.
+
+The two containers hold different *kinds* of thing. An entry is
+**configuration** deciding what will be issued; an agent is a **record** of
+something that happened, so nothing on it is editable, and ban and delete are
+the only controls. What may be changed on an entry is declared rather than
+derived: the SPIFFE ID, the parent, the selectors, the lifetimes and the flags
+are editable on the forms and the API, and the revision number and the SVID
+counter are not — a form that could rewrite a counter would make the page lie
+about this service's own behaviour. `ldapmodify` still reaches everything.
+
+`GET /admin/ldap/spiffe` publishes the whole schema, because the directory is
+schemaless and roughly thirty of these attribute names are this service's own
+inventions: no registered LDAP schema has a SPIFFE ID or a selector on it.
+
+### A workload identity's directory entry
+
+**An accepted SPIFFE credential is an identity**, and it reaches the same
+authentication record every other protocol family feeds, so its holder appears
+on `/admin/users` and gets a directory entry. Three acceptances count:
+
+| What was presented | Recorded as | Verified |
+|---|---|---|
+| an X509-SVID over mutual TLS at the SPIRE Server API | `X509-SVID (mTLS)`, **once per connection** — the credential was accepted at the handshake, so six RPCs on one connection are one authentication | signature against the trust bundle, validity window, trust-domain match |
+| an agent attesting | `agent attestation (<type>)`, for example `agent attestation (join token)` | by the node attestor for that type; an unverifiable type is refused, not recorded |
+| a JWT-SVID at `ValidateJWTSVID` | `JWT-SVID (validated)`, once per call, because each is a fresh presentation of a bearer credential | signature, `exp`, audience, trust domain |
+
+Being **issued** an SVID is not one of them: receiving a credential is not
+presenting one. A Workload API caller appears on `/admin/users` with *never* in
+the authentication column, counted under "seen only as a subject" — but it does
+get a directory entry.
+
+The entry is `uid=spiffe-<12 hex>,ou=users`, named by a digest because a SPIFFE
+ID is neither a name nor a DN, with the identifier whole on the entry as a
+multi-valued `spiffeSubject` and `spiffeTrustDomain` / `spiffePath` beside it.
+**It is found by `spiffeSubject`, never by rebuilding the digest**, which is
+what makes the same identity arriving every way one entry rather than several.
+It deliberately does *not* fold onto a person of a similar name: the last
+segment of a SPIFFE path is exactly the kind of short common word (`db`, `web`,
+`api`) that collides with a username, and a workload called `db` is not the DBA.
+
+**Every X509-SVID this trust domain mints is written onto that entry too**, so
+"which identities hold a certificate, what is the current one, and can this one
+still get another" is answered by an `ldapsearch`. The certificate is read back
+off itself at the moment it is issued, and the entry carries the same `x509*`
+attributes a verified TLS client certificate writes, in the same strings:
+
+| Attribute | On a SPIFFE identity's entry |
+|---|---|
+| `x509subject` | the SVID's subject, RFC 4514 — `O=SPIRE,C=US` by default (`spiffe.svidSubject`), the same for every SVID in the domain |
+| `x509issuer` | this trust domain's X.509 authority |
+| `x509serialNumber` | the **current** SVID's serial |
+| `x509notBefore` / `x509notAfter` | its validity window |
+| `x509fingerprint256` | its SHA-256 fingerprint |
+| `x509svidsIssued` | how many have been minted for this identity |
+| `x509firstIssued` / `x509lastIssued` | when the first and the most recent were |
+
+* **A rotation lands on the same object**, because the entry is found by the
+  SPIFFE ID and by nothing about the certificate: the fiftieth SVID for
+  `spiffe://…/sa/db` updates the entry the first one created.
+* **The attributes are REPLACED here, where a TLS client certificate APPENDS
+  them.** A renewed client certificate is rare and seeing both serials is the
+  point; an SVID is minted afresh at half its lifetime for as long as the
+  workload runs, so appending would add values every hour for ever. The three
+  counters are what is kept of the history, and the individual serials are all
+  on `/admin/metrics`.
+* **The identity is the SPIFFE ID, not the subject DN.** Filing an SVID by its
+  subject, as a client certificate is filed, would fold every workload in the
+  trust domain onto one entry called `O=SPIRE`. The certificate is a *fact
+  about* the identity here, not the identity.
+
+### `spiffeCredentialStatus` is not a revocation
+
+**SPIFFE has no revocation.** There is no CRL, no OCSP and no serial list; the
+answer is a short lifetime and rotation, the `crl` field in the Workload API's
+responses is empty because empty is the *conforming* value, and an SVID already
+in a workload's hands verifies against the bundle until it expires. Nothing
+reads this attribute back, and no certificate is ever refused because of it.
+
+What it records is the three things in the registry that end an identity's
+ability to obtain a **new** credential here, on the entry of the identity they
+happened to:
+
+| What happened | Status written |
+|---|---|
+| its **last** registration entry was deleted — several entries may name one SPIFFE ID, and deleting one of them ends nothing | `revoked`, with the entry id in the reason |
+| its **agent was banned**: `AttestAgent` and `RenewAgent` both refuse it | `revoked` |
+| its **agent was deleted**, so `RenewAgent` refuses it until it attests again | `revoked` |
+| a registration entry naming it was created, its agent was unbanned, its agent attested, or an SVID was minted for it anyway | `active` |
+
+`spiffeCredentialStatusReason` is a sentence rather than a code, because it is
+the only thing that explains a status a reader did not expect. `spiffeRevokedAt`
+is when it was **last** revoked and is never cleared — the history the
+current-state flag deliberately does not keep.
+
+**The entry is never removed.** An identity this trust domain used to issue
+certificates to is exactly what somebody points an LDAP client at the directory
+to find, and deleting it would answer "was there ever a workload called `db`?"
+with silence.
+
+### Federation
+
+**A foreign bundle is pushed in and never fetched.** Set it with
+`POST /admin-api/spiffe/federation-set`, the form on `/admin/cert-issuance#cert-spiffe-overview`, or
+`BatchSetFederatedBundle`. `RefreshBundle` refuses, naming the URL it will not
+follow. Federated bundles belong to a realm. None may be named after a trust
+domain that any realm of this service serves, and every JWK in one must carry a
+`use`.
+
+The federation specification puts a bundle endpoint URL in the relationship,
+and a real implementation polls it. This one **records the URL and refuses to
+follow it**: fetching a URL somebody registered, in order to obtain a key that
+will then verify credentials, is a server-side request forgery with a
+specification citation attached. It is the same refusal this service gives
+WS-Federation's `wreqptr`.
+
+### What is refused
+
+The list is short, and not empty — a server that said yes to everything would be
+useless to the only people who call some of these methods:
+
+* **A Workload API call with no `workload.spiffe.io: true` metadata header.**
+  The Workload Endpoint specification requires it and requires a server to
+  refuse without it (section 3). It is a hardening measure against server-side
+  request forgery rather than an authentication — anybody can send a header, but
+  a request an attacker merely causes a workload to make rarely carries it.
+  **A client that omits it has a bug, and this is the only thing that will ever
+  tell them**: every real implementation will refuse them, and a server that
+  accepted it would let somebody ship code that works here and nowhere else.
+  `spiffe.requireSecurityHeader` turns it off in development only.
+* **`FetchJWTSVID` and `MintJWTSVID` with no audience.** A JWT-SVID is a bearer
+  credential; the audience is what stops one issued for service A being replayed
+  against service B, which is why the specification puts it in the request
+  rather than in configuration.
+* **`ValidateJWTSVID` on anything that does not really verify** — the signature
+  against the trust domain's JWT authorities, `exp` with no leeway, the audience,
+  and that the `sub` belongs to the trust domain whose key verified it. The
+  point of the call is to be told no.
+* **A registration entry** whose SPIFFE ID is invalid, belongs to another trust
+  domain, or sits under the reserved `/spire` path.
+* **`AttestAgent` for a banned agent**, and a **join token** this server did not
+  mint, one that has expired, one presented twice, or one minted for a named
+  agent and presented by another. A ban that did not refuse would make the
+  button on `/admin/cert-issuance#cert-spiffe-agents` a lie, and accepting a join token this server
+  never minted would be accepting a forgery of its own credential.
+* **Every method the caller's entity is not allowed**, `UNAUTHENTICATED` or
+  `PERMISSION_DENIED` as above.
+* **An X509-SVID** that no authority in this trust domain or a federated one
+  signed; one outside its validity window (`spiffe.clockSkew`); one with no URI
+  subjectAltName, or with several — an SVID has exactly one, and choosing
+  between two would be deciding which identity you have; and one whose SPIFFE ID
+  names a different trust domain from the authority that signed it, which is
+  precisely the cross-domain confusion a bundle exists to prevent.
+* **A federated bundle whose JWKs have no `use` member.** A consumer *MUST
+  IGNORE* a JWK whose `use` is missing or unknown, so a bundle full of them would
+  be stored happily and then verify nothing, with no error anywhere pointing
+  back at the bundle. Refusing it is the only way that failure ever gets
+  diagnosed.
+
+### The SPIFFE ID grammar is stricter than a URL parser
+
+A SPIFFE ID is checked as **raw text**, never with a URL parser, because a URL
+parser gets four things wrong here, each producing an identifier that looks
+right in a log:
+
+* **A trust domain is lower-case.** `spiffe://Example.org/x` is not a valid
+  SPIFFE ID, and it is not another spelling of `spiffe://example.org/x` either.
+  A URL parser lower-cases the host for you, which *hides* the defect: the
+  client that sent the wrong form gets an SVID naming the right one and never
+  learns.
+* **The path is not a URL path.** No percent-encoding, no empty segment (so no
+  trailing slash and no `//`), no `.` or `..`. A URL parser accepts all of those
+  and normalises three of them away.
+* **No port, no userinfo, no query, no fragment.** Each is a way of writing an
+  identifier that a naive prefix test treats as belonging to a trust domain it
+  does not — an authorization bug in anything that federates. Membership here is
+  a comparison of the *parsed* trust domain, never a prefix test.
+* **`/spire` is reserved** for the server and the agents it attests, so a
+  registration entry there is refused: it would be an identifier this service
+  also mints on its own account.
+
+### Not implemented
+
+* Six SPIRE Server API methods (listed with reasons on `GET /spiffe`) and the
+  two Workload API WIT methods. `Bundle.AppendBundle` and
+  `Bundle.PublishJWTAuthority` would add an authority to this trust domain's
+  bundle that this server holds no private key for, so every workload would
+  trust an authority that can issue nothing — rotate instead.
+  `TrustDomain.RefreshBundle` would fetch a URL somebody registered. The WIT
+  methods (`FetchWITSVID`, `FetchWITBundles`, `SVID.MintWITSVID`,
+  `SVID.BatchNewWITSVID`, `Bundle.PublishWITAuthority`) are in the current
+  protos, but the Workload Identity Token's own format is not settled in a
+  document this service could implement against; minting something JWS-shaped
+  and calling it a WIT-SVID would be inventing a credential format.
+* Revocation of an SVID. The answer is a short lifetime and rotation, and the
+  bundle's `crl` field stays empty.
+* Workload attestation of a TCP caller, which has no process to attest (so
+  product mode serves TCP only on a declared network).
+* In an image signature: the online Rekor lookup for a signature with no
+  bundle (it is refused), the new sigstore bundle format and RFC 3161
+  timestamps.
+* In the Broker API: references to Kubernetes objects other than pods, SPIRE's
+  cluster pod-reference scope, a Unix socket endpoint and gRPC server
+  reflection.
+* An interop run against a real `spire-agent`.
+
+## Development and product mode
+
+| | Product | Development |
+|---|---|---|
+| Unmatched Workload API caller | Refused `PERMISSION_DENIED` (`STS-SPIFFE-0146`) | An entry is created and an SVID issued while `spiffe.autoCreateEntries` is on; refused `PERMISSION_DENIED` with it off |
+| Asserted selectors (`x-sts-workload-selector`) | Never believed, and `spiffe.acceptAssertedSelectors` cannot be turned on | Believed when `spiffe.acceptAssertedSelectors` is on |
+| `spiffe.attestWorkloads` off | Ignored (logged once, `STS-CORE-0106`): a caller gets only the entries its selectors match. Turning it off is refused (`STS-CORE-0103`) | Every caller is answered with every entry |
+| A caller on the SPIRE Server API's Unix socket | `local` only when the socket was made 0600 in a directory with no group or other bits (`STS-SPIFFE-0117`) and `SO_PEERCRED` says it runs as the service's own uid (`STS-SPIFFE-0118`; `STS-SPIFFE-0119` without the native module). Anybody else needs an administrator's X509-SVID on the TCP port | `local` on the socket's existence, while `spiffe.trustLocalSocket` is on |
+| Workload API Unix socket without the native module | **Not bound** (`STS-SPIFFE-0113`) | Served unattested, and `GET /spiffe` says so |
+| Workload API over TCP | **Not bound** (`STS-SPIFFE-0120`) unless `spiffe.workloadTcpSourceAuthenticated` declares the network authenticates source addresses, and never on a wildcard `spiffe.grpcHost` (`STS-SPIFFE-0121`) | Served on `spiffe.grpcHost`, the wildcard included |
+| A registration entry selecting only `transport:` and `endpoint:`, or nothing | Refused at every door (`STS-SPIFFE-0122`); one already stored answers nobody (`STS-SPIFFE-0123`) | Accepted, and issued to every caller of that transport |
+| Sample registration entries | None | Three, one of them selecting `unix:uid:1000` |
+| `http_challenge` host | Internal addresses refused, and the resolved address pinned | Any address the allowed patterns admit |
+
+These are the same in both modes: mutual TLS on the SPIRE Server API, SPIRE's
+method table, node attestation, workload attestation where the native module is
+present, and automatic authority rotation. See
+[what is not checked](what-is-not-checked.md).
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a presented SVID must carry the extendedKeyUsage X509-SVID section 4.3 recommends. A federated authority must be an in-date certificate authority when it is accepted, and a federated SVID is exempt from revocation because its authority publishes nothing this service may dial. A node attestor's certificate is held to its fields, and to revocation where its chain names a source. AWS's pinned certificates are asked only for their validity window, and an RSA-1024 signature from a region this service has no certificate for is refused, because the fallback certificate expired on 2024-06-05 and AWS publishes per-region certificates only, and Sigstore's certificate is read at its notBefore, as that specification says. `pki.paranoidSpiffeSvid` and `pki.paranoidSpiffeAttestation` turn these rows off.
+
+## Configuration
+
+SPIFFE has about a hundred settings, grouped below. Every runtime setting can be
+set per trust realm. The **restart** settings are fixed for the process at
+startup. On a realm, the socket settings take effect when that realm's sockets
+are reconciled, which happens whenever one of the realm's settings changes.
+
+### The surface and the trust domain
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.enabled` | `STS_SPIFFE_ENABLED` | `true` | yes | Whether the three surfaces answer. On a realm (created off), it builds that realm's authorities and binds its sockets. |
+| `spiffe.trustDomain` | `STS_SPIFFE_TRUST_DOMAIN` | `example.org` | restart (per realm) | The trust domain; lower-case letters, digits, dots, dashes and underscores. A realm defaults to its DNS domain. |
+| `spiffe.bundlePath` | `STS_SPIFFE_BUNDLE_PATH` | `/spiffe/bundle` | restart | Where the trust bundle is published. |
+| `spiffe.refreshHint` | `STS_SPIFFE_REFRESH_HINT` | `300` | yes | The `spiffe_refresh_hint` in the bundle, in seconds. |
+| `spiffe.maxFederatedBundles` | `STS_SPIFFE_MAX_FEDERATED_BUNDLES` | `32` | yes | How many foreign trust domains' bundles a realm holds. |
+
+### Authorities, keys and lifetimes
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.x509KeyType` | `STS_SPIFFE_X509_KEY_TYPE` | `ec-p256` | restart | The key type of every X509-SVID, and of the self-signed fallback authority. |
+| `spiffe.jwtKeyType` | `STS_SPIFFE_JWT_KEY_TYPE` | `ec-p256` | restart | The JWT authority's key, which sets every JWT-SVID's `alg` (ES256, ES384, ES512 or RS256). |
+| `spiffe.caTtl` | `STS_SPIFFE_CA_TTL` | `86400` | restart | How long the X.509 authority's certificate is valid; no SVID outlives it. |
+| `spiffe.svidTtl` | `STS_SPIFFE_SVID_TTL` | `3600` | yes | The default X509-SVID lifetime; an entry's own `x509SvidTtl` wins. |
+| `spiffe.jwtSvidTtl` | `STS_SPIFFE_JWT_SVID_TTL` | `300` | yes | The default JWT-SVID lifetime. |
+| `spiffe.agentSvidTtl` | `STS_SPIFFE_AGENT_SVID_TTL` | `0` | yes | The lifetime of an agent's SVID from AttestAgent and RenewAgent; 0 means `spiffe.svidTtl`. |
+| `spiffe.svidSubject` | `STS_SPIFFE_SVID_SUBJECT` | `C=US,O=SPIRE` | yes | The X.501 subject of every X509-SVID, SPIRE's own by default; it cannot be empty. |
+| `spiffe.caSubject` | `STS_SPIFFE_CA_SUBJECT` | `CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts` | yes | The subject of the self-signed fallback authority and of every downstream CA. |
+| `spiffe.retainedAuthorities` | `STS_SPIFFE_RETAINED_AUTHORITIES` | `4` | yes | How many self-signed X.509 and JWT authorities a rotation keeps in the bundle (at least 2). |
+| `spiffe.clockSkew` | `STS_SPIFFE_CLOCK_SKEW` | `60` | yes | How far out a caller's clock may be when its X509-SVID's validity is checked. |
+
+### Sockets
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.workloadSocketEnabled` | `STS_SPIFFE_WORKLOAD_SOCKET_ENABLED` | `true` | restart | Whether the Workload API is served on a Unix socket. |
+| `spiffe.workloadSocket` | `STS_SPIFFE_WORKLOAD_SOCKET` | `/tmp/spire-agent/public/api.sock` | restart | The Workload API's socket path, SPIRE's own default. |
+| `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` | `8092` | restart | The Workload API over TCP; 0 turns it off. A new realm is seeded with 0. Not bound in product mode without the next row. |
+| `spiffe.workloadTcpSourceAuthenticated` | `STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED` | `false` | restart | Product mode only: declares that the network authenticates source addresses, so the Workload API is served over TCP, on a named `spiffe.grpcHost`. **Warning**: whoever holds an address an entry selects is issued its SVIDs. |
+| `spiffe.serverPort` | `STS_SPIFFE_SERVER_PORT` | `8181` | restart | The SPIRE Server API over TCP (mutual TLS); 0 turns it off. A new realm is seeded with 0. |
+| `spiffe.serverSocketEnabled` | `STS_SPIFFE_SERVER_SOCKET_ENABLED` | `false` | restart | Whether the SPIRE Server API is also served on a Unix socket. |
+| `spiffe.serverSocket` | `STS_SPIFFE_SERVER_SOCKET` | `/tmp/spire-server/private/api.sock` | restart | That socket's path, SPIRE's own default. |
+| `spiffe.brokerPort` | `STS_SPIFFE_BROKER_PORT` | `0` | restart | The SPIFFE Broker API over TCP (mutual TLS); 0, the default and a new realm's seed, binds nothing. |
+| `spiffe.brokers` | `STS_SPIFFE_BROKERS` | (empty) | yes | The brokers, `<SPIFFE ID>=<types>` separated by spaces, the types from `pid`, `k8s` and `*`; managed on `/admin/cert-issuance#cert-spiffe-brokers`. **Warning**: allow `pid` only to a broker on this host. |
+| `spiffe.grpcHost` | `STS_SPIFFE_GRPC_HOST` | `0.0.0.0` | restart | The address every TCP gRPC listener binds; each realm needs an address of its own. |
+
+### The Workload API
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | Refuse a call without `workload.spiffe.io: true`, as the specification requires. Off is development mode only: product always requires the header and refuses turning it off (#181). |
+| `spiffe.attestWorkloads` | `STS_SPIFFE_ATTEST_WORKLOADS` | `true` | yes | Answer a caller only with the entries its selectors match; off answers every caller with every entry, in development only. |
+| `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | In development, create an entry for a caller that matches none; off refuses it `PERMISSION_DENIED`. |
+| `spiffe.acceptAssertedSelectors` | `STS_SPIFFE_ACCEPT_ASSERTED_SELECTORS` | `false` | yes | In development, believe selectors a caller sends in `x-sts-workload-selector`. Nothing verifies them. Refused in product. |
+| `spiffe.maxEntries` | `STS_SPIFFE_MAX_ENTRIES` | `500` | yes | How many registration entries may live under `ou=spiffe`; past it a new one is refused. |
+
+### Workload attestors
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.workloadAttestors` | `STS_SPIFFE_WORKLOAD_ATTESTORS` | `unix` | yes | Which of `unix`, `docker`, `k8s` and `systemd` run for a Unix-socket connection and a Broker API process reference. `systemd` needs the optional package `dbus-next`. |
+| `spiffe.workloadProcRoot` | `STS_SPIFFE_WORKLOAD_PROC_ROOT` | `/proc` | yes | Where a caller's process is read from. |
+| `spiffe.unixDiscoverWorkloadPath` | `STS_SPIFFE_UNIX_DISCOVER_WORKLOAD_PATH` | `false` | yes | Add `path:` and `sha256:` selectors for the caller's executable. |
+| `spiffe.unixWorkloadSizeLimit` | `STS_SPIFFE_UNIX_WORKLOAD_SIZE_LIMIT` | `0` | yes | 0 hashes any size, a positive value refuses a larger executable, and -1 emits no `sha256:`. |
+| `spiffe.dockerSocketPath` | `STS_SPIFFE_DOCKER_SOCKET_PATH` | `unix:///var/run/docker.sock` | yes | The Docker Engine asked about the caller's container. |
+| `spiffe.dockerApiVersion` | `STS_SPIFFE_DOCKER_API_VERSION` | (empty) | yes | The Engine API version; empty uses the Engine's default. |
+| `spiffe.dockerPodmanSocketPath` | `STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH` | `unix:///run/podman/podman.sock` | yes | docker: the rootful Podman API socket, asked when a container's cgroup says `libpod` (#170). |
+| `spiffe.dockerPodmanSocketPathTemplate` | `STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH_TEMPLATE` | `unix:///run/user/%d/podman/podman.sock` | yes | docker: the rootless Podman socket; `%d` is the uid of the container's `user-<uid>.slice`, exactly once. |
+| `spiffe.dockerUseRootlessPodman` | `STS_SPIFFE_DOCKER_USE_ROOTLESS_PODMAN` | `false` | yes | docker: attest rootless Podman containers. **WARNING**: that socket is in the caller's own runtime directory and answers what the caller likes; pair its entries with `unix:uid` or `unix:user`. Off, a rootless container gets no docker selectors. |
+| `spiffe.dockerSigstoreEnabled` | `STS_SPIFFE_DOCKER_SIGSTORE_ENABLED` | `false` | yes | docker: require a cosign image signature that verifies, with its Rekor bundle, and add SPIRE's `image-signature…` selectors. A signature that does not verify refuses the connection (#170). |
+| `spiffe.dockerSigstorePublicKeyFiles` | `STS_SPIFFE_DOCKER_SIGSTORE_PUBLIC_KEY_FILES` | (empty) | yes | docker sigstore: cosign public key FILES (ECDSA, RSA, Ed25519, ML-DSA, SLH-DSA, composite). |
+| `spiffe.dockerSigstoreTrustedRootFile` | `STS_SPIFFE_DOCKER_SIGSTORE_TRUSTED_ROOT_FILE` | (empty) | yes | docker sigstore: a pinned sigstore `trusted_root.json` FILE — Fulcio CAs, Rekor and CT log keys — used while TUF is off. |
+| `spiffe.dockerSigstoreAllowedIdentities` | `STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_IDENTITIES` | (empty) | yes | docker sigstore: `issuer=subject` pairs a keyless signer must match (regular expressions where they hold one of SPIRE's characters, unanchored as cosign's). Empty admits no keyless signer. |
+| `spiffe.dockerSigstoreSkippedImages` | `STS_SPIFFE_DOCKER_SIGSTORE_SKIPPED_IMAGES` | (empty) | yes | docker sigstore: repository digests attested without verification. |
+| `spiffe.dockerSigstoreAllowedRegistries` | `STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_REGISTRIES` | (empty) | yes | docker sigstore: the registry hosts (and token realms, and blob redirect hosts) signatures are fetched from; the image names the registry, so none other is dialled. Empty refuses every registry. Docker Hub is `index.docker.io`. |
+| `spiffe.dockerSigstoreRegistryAuthFile` | `STS_SPIFFE_DOCKER_SIGSTORE_REGISTRY_AUTH_FILE` | (empty) | yes | docker sigstore: a Docker `config.json` FILE of registry credentials; empty is anonymous. |
+| `spiffe.dockerSigstoreSkipTlog` | `STS_SPIFFE_DOCKER_SIGSTORE_SKIP_TLOG` | `false` | yes | docker sigstore: skip the Rekor transparency log. **WARNING**: a signature never logged — a stolen key's, or a keyless one past its certificate — then verifies. |
+| `spiffe.dockerSigstoreIgnoreSct` | `STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_SCT` | `false` | yes | docker sigstore: do not require the keyless certificate's embedded SCT. **WARNING**: a Fulcio certificate never logged is then accepted. |
+| `spiffe.dockerSigstoreIgnoreAttestations` | `STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_ATTESTATIONS` | `false` | yes | docker sigstore: do not require in-toto attestations; off (SPIRE's default) refuses an image that has none. |
+| `spiffe.dockerSigstoreTufUrl` | `STS_SPIFFE_DOCKER_SIGSTORE_TUF_URL` | `https://tuf-repo-cdn.sigstore.dev` | yes (per process) | docker sigstore: the TUF repository the trust root is refreshed from. |
+| `spiffe.dockerSigstoreTufRootFile` | `STS_SPIFFE_DOCKER_SIGSTORE_TUF_ROOT_FILE` | (empty) | yes (per process) | docker sigstore: the TUF `root.json` FILE first trusted; empty turns TUF off. A refresh that fails keeps the last verified set. |
+| `spiffe.dockerSigstoreTufRefreshS` | `STS_SPIFFE_DOCKER_SIGSTORE_TUF_REFRESH_S` | `86400` | yes (per process) | docker sigstore: how often the scheduler job `spiffe.sigstore-tuf-refresh` runs; 0 is off. |
+| `spiffe.k8sKubeletReadOnlyPort` | `STS_SPIFFE_K8S_KUBELET_READ_ONLY_PORT` | `0` | yes | Above 0, read the pod list over plain HTTP on loopback instead of the secure port. |
+| `spiffe.k8sKubeletSecurePort` | `STS_SPIFFE_K8S_KUBELET_SECURE_PORT` | `0` | yes | The kubelet's secure port to dial; 0 is 10250. |
+| `spiffe.k8sNodeName` | `STS_SPIFFE_K8S_NODE_NAME` | (empty) | yes | The kubelet host; empty reads the variable named by the next setting. |
+| `spiffe.k8sNodeNameEnv` | `STS_SPIFFE_K8S_NODE_NAME_ENV` | `MY_NODE_NAME` | yes | The environment variable holding the node name. |
+| `spiffe.k8sCertificateFile` | `STS_SPIFFE_K8S_CERTIFICATE_FILE` | (empty) | yes | A client certificate file for the kubelet; empty uses a token. |
+| `spiffe.k8sPrivateKeyFile` | `STS_SPIFFE_K8S_PRIVATE_KEY_FILE` | (empty) | yes | That certificate's private key file. |
+| `spiffe.k8sUseAnonymousAuthentication` | `STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION` | `false` | yes | Present no token and no certificate on the secure port. |
+| `spiffe.k8sTokenFile` | `STS_SPIFFE_K8S_TOKEN_FILE` | (empty) | yes | The token file; empty is the in-cluster service account's. |
+| `spiffe.k8sSkipKubeletVerification` | `STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION` | `false` | yes | Do not verify the kubelet's certificate. **Development only** (#171): ignored in product mode, and refused on write there. |
+| `spiffe.k8sKubeletCaFile` | `STS_SPIFFE_K8S_KUBELET_CA_FILE` | (empty) | yes | The kubelet's CA file; empty is the service account's `ca.crt`. |
+| `spiffe.k8sMaxPollAttempts` | `STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS` | `60` | yes | How often the pod list is read before a missing container fails attestation. |
+| `spiffe.k8sPollRetryIntervalMs` | `STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS` | `500` | yes | The wait between pod list reads. |
+| `spiffe.k8sDisableContainerSelectors` | `STS_SPIFFE_K8S_DISABLE_CONTAINER_SELECTORS` | `false` | yes | Omit the container selectors. |
+| `spiffe.k8sEnableNamespaceLabels` | `STS_SPIFFE_K8S_ENABLE_NAMESPACE_LABELS` | `false` | yes | Add `ns-label:` selectors, read from the API server. |
+
+### The SPIRE Server API
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.trustLocalSocket` | `STS_SPIFFE_TRUST_LOCAL_SOCKET` | `true` | yes | Trust the server's Unix socket as the `local` entity — in product only for a caller running as the service's uid on a socket verified private; off demands an X509-SVID there too. |
+| `spiffe.adminIds` | `STS_SPIFFE_ADMIN_IDS` | (empty) | yes | SPIFFE IDs that are administrators, SPIRE's `admin_ids`; no entry is needed. Empty on a new realm. |
+| `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every `List*` method. |
+| `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes | How many connections are remembered so that an SVID is one authentication per connection. |
+| `spiffe.maxAgents` | `STS_SPIFFE_MAX_AGENTS` | `200` | yes | How many attested agents are held; past it the oldest is dropped. |
+
+### Node attestation: common settings
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.nodeAttestors` | `STS_SPIFFE_NODE_ATTESTORS` | `join_token` | yes | The attestation types AttestAgent accepts in this realm. |
+| `spiffe.attestationChallengeTimeout` | `STS_SPIFFE_ATTESTATION_CHALLENGE_TIMEOUT` | `30` | yes | How long AttestAgent waits for a challenge response. |
+| `spiffe.joinTokenTtl` | `STS_SPIFFE_JOIN_TOKEN_TTL` | `600` | yes | A join token's lifetime when the request names none. |
+| `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | How many unspent join tokens a realm holds; at the cap a new one is refused `RESOURCE_EXHAUSTED`. |
+
+### x509pop, sshpop and tpm_devid
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.x509popMode` | `STS_SPIFFE_X509POP_MODE` | `external_pki` | yes | Verify against `spiffe.x509popCaBundle`, or (`spiffe`) against the realm's own SPIFFE bundle. |
+| `spiffe.x509popCaBundle` | `STS_SPIFFE_X509POP_CA_BUNDLE` | (empty) | yes | PEM anchors an agent's certificate must chain to; empty refuses every x509pop agent. |
+| `spiffe.x509popSpiffePrefix` | `STS_SPIFFE_X509POP_SPIFFE_PREFIX` | `/spire-exchange/` | yes | In `spiffe` mode, the path prefix the agent's SVID must carry. |
+| `spiffe.x509popAgentPathTemplate` | `STS_SPIFFE_X509POP_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's `agent_path_template`; empty is SPIRE's default for the mode. |
+| `spiffe.x509popMaxIntermediates` | `STS_SPIFFE_X509POP_MAX_INTERMEDIATES` | `4` | yes | The most intermediate certificates an attestation may carry. |
+| `spiffe.x509popMaxRsaKeySize` | `STS_SPIFFE_X509POP_MAX_RSA_KEY_SIZE` | `8192` | yes | The largest RSA key accepted on any presented certificate. |
+| `spiffe.x509popVerifyClientIp` | `STS_SPIFFE_X509POP_VERIFY_CLIENT_IP` | `false` | yes | Require the agent's address to be one of the leaf's IP subjectAltNames. |
+| `spiffe.x509popGroupTemplate` | `STS_SPIFFE_X509POP_GROUP_TEMPLATE` | (empty) | yes | SPIRE's `group_template`, producing an `x509pop:group:` selector. |
+| `spiffe.x509popAllowedGroups` | `STS_SPIFFE_X509POP_ALLOWED_GROUPS` | (empty) | yes | The only values the group template may produce a selector for. |
+| `spiffe.sshpopCertAuthorities` | `STS_SPIFFE_SSHPOP_CERT_AUTHORITIES` | (empty) | yes | SSH CA public keys, one per line; empty refuses every sshpop agent. |
+| `spiffe.sshpopCanonicalDomain` | `STS_SPIFFE_SSHPOP_CANONICAL_DOMAIN` | (empty) | yes | The domain the host certificate's first principal must end in. |
+| `spiffe.sshpopAgentPathTemplate` | `STS_SPIFFE_SSHPOP_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's `agent_path_template` for sshpop. |
+| `spiffe.sshpopVerifyClientIp` | `STS_SPIFFE_SSHPOP_VERIFY_CLIENT_IP` | `false` | yes | Require a `source-address` option naming the agent's address. |
+| `spiffe.tpmDevidCaBundle` | `STS_SPIFFE_TPM_DEVID_CA_BUNDLE` | (empty) | yes | PEM anchors for DevID certificates; empty refuses every tpm_devid agent. |
+| `spiffe.tpmEndorsementCaBundle` | `STS_SPIFFE_TPM_ENDORSEMENT_CA_BUNDLE` | (empty) | yes | PEM certificates of trusted TPM manufacturers; empty refuses every tpm_devid agent. |
+
+### k8s_psat and http_challenge
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.k8sPsatClusters` | `STS_SPIFFE_K8S_PSAT_CLUSTERS` | (empty) | yes | SPIRE's `clusters`, as JSON from cluster name to its allow list, audience and API server; empty refuses every k8s_psat agent. |
+| `spiffe.httpChallengeAllowedDnsPatterns` | `STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS` | (empty) | yes | Regular expressions an agent's host name must match before it is dialled; empty refuses every agent. |
+| `spiffe.httpChallengeRequiredPort` | `STS_SPIFFE_HTTP_CHALLENGE_REQUIRED_PORT` | `0` | yes | The port the challenge must be served on; 0 allows any. |
+| `spiffe.httpChallengeAllowNonRootPorts` | `STS_SPIFFE_HTTP_CHALLENGE_ALLOW_NON_ROOT_PORTS` | `true` | yes | Off accepts only a privileged port. |
+| `spiffe.httpChallengeTofu` | `STS_SPIFFE_HTTP_CHALLENGE_TOFU` | `true` | yes | A host name attests once until its agent is deleted. |
+| `spiffe.httpChallengeVerifyClientIp` | `STS_SPIFFE_HTTP_CHALLENGE_VERIFY_CLIENT_IP` | `false` | yes | Require the agent's address to be one its host name resolves to. |
+
+### aws_iid
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.awsIidPartition` | `STS_SPIFFE_AWS_IID_PARTITION` | `aws` | yes | The partition used to build the assume-role ARN. |
+| `spiffe.awsIidAssumeRole` | `STS_SPIFFE_AWS_IID_ASSUME_ROLE` | (empty) | yes | A role name assumed in each node's account; empty uses the SDK credential chain. |
+| `spiffe.awsIidSkipBlockDevice` | `STS_SPIFFE_AWS_IID_SKIP_BLOCK_DEVICE` | `false` | yes | Skip the check that the root volume and first interface were attached together. |
+| `spiffe.awsIidDisableInstanceProfileSelectors` | `STS_SPIFFE_AWS_IID_DISABLE_INSTANCE_PROFILE_SELECTORS` | `false` | yes | Emit no `iamrole:` selectors and make no IAM call. |
+| `spiffe.awsIidLocalValidAccountIds` | `STS_SPIFFE_AWS_IID_LOCAL_VALID_ACCOUNT_IDS` | (empty) | yes | SPIRE's `account_ids_for_local_validation`. |
+| `spiffe.awsIidAgentPathTemplate` | `STS_SPIFFE_AWS_IID_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's `agent_path_template` for aws_iid. |
+| `spiffe.awsIidVerifyOrganization` | `STS_SPIFFE_AWS_IID_VERIFY_ORGANIZATION` | (empty) | yes | JSON requiring the node's account to be an active member of an AWS Organization or a list. |
+| `spiffe.awsIidEksClusterNames` | `STS_SPIFFE_AWS_IID_EKS_CLUSTER_NAMES` | (empty) | yes | EKS clusters one of whose node groups the instance must be in. |
+| `spiffe.awsIidEndpoint` | `STS_SPIFFE_AWS_IID_ENDPOINT` | (empty) | yes | An endpoint every AWS client is pointed at instead of the public one. |
+
+### gcp_iit
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.gcpIitProjectIdAllowList` | `STS_SPIFFE_GCP_IIT_PROJECT_ID_ALLOW_LIST` | (empty) | yes | The projects whose tokens are accepted; empty refuses every gcp_iit agent. |
+| `spiffe.gcpIitAgentPathTemplate` | `STS_SPIFFE_GCP_IIT_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's `agent_path_template` for gcp_iit. |
+| `spiffe.gcpIitUseInstanceMetadata` | `STS_SPIFFE_GCP_IIT_USE_INSTANCE_METADATA` | `false` | yes | Read the instance from the Compute Engine API for `tag:`, `label:` and `metadata:` selectors. |
+| `spiffe.gcpIitAllowedLabelKeys` | `STS_SPIFFE_GCP_IIT_ALLOWED_LABEL_KEYS` | (empty) | yes | SPIRE's `allowed_label_keys`. |
+| `spiffe.gcpIitAllowedMetadataKeys` | `STS_SPIFFE_GCP_IIT_ALLOWED_METADATA_KEYS` | (empty) | yes | SPIRE's `allowed_metadata_keys`. |
+| `spiffe.gcpIitMaxMetadataValueSize` | `STS_SPIFFE_GCP_IIT_MAX_METADATA_VALUE_SIZE` | `128` | yes | A longer allowed metadata value refuses the attestation. |
+| `spiffe.gcpIitServiceAccountFile` | `STS_SPIFFE_GCP_IIT_SERVICE_ACCOUNT_FILE` | (empty) | yes | A service account file; empty uses application default credentials. |
+| `spiffe.gcpIitCertsUrl` | `STS_SPIFFE_GCP_IIT_CERTS_URL` | `https://www.googleapis.com/oauth2/v1/certs` | yes | Where Google publishes the token signing certificates. |
+
+### azure_imds
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `spiffe.azureImdsTenants` | `STS_SPIFFE_AZURE_IMDS_TENANTS` | (empty) | yes | SPIRE's `tenants`, as JSON from tenant domain to its settings; empty refuses every azure_imds agent. |
+| `spiffe.azureImdsAgentPathTemplate` | `STS_SPIFFE_AZURE_IMDS_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's `agent_path_template` for azure_imds. |
+| `spiffe.azureImdsAllowedMetadataDomains` | `STS_SPIFFE_AZURE_IMDS_ALLOWED_METADATA_DOMAINS` | `metadata.azure.com` | yes | Domains the attested document's signing certificate must name. |
+| `spiffe.azureImdsTrustBundle` | `STS_SPIFFE_AZURE_IMDS_TRUST_BUNDLE` | (empty) | yes | Extra CA certificates trusted beside the embedded DigiCert roots. |
+| `spiffe.azureImdsIntermediateHost` | `STS_SPIFFE_AZURE_IMDS_INTERMEDIATE_HOST` | `www.microsoft.com` | yes | The only host the signing certificate's CA Issuers URL may name. |
+| `spiffe.azureImdsDiscoveryUrl` | `STS_SPIFFE_AZURE_IMDS_DISCOVERY_URL` | `https://login.microsoftonline.com` | yes | Where a tenant domain's ID is looked up. |
+
+These tables are a copy of the rows in the service's settings table. The live
+source is **Protocols → Cert issuance → SPIFFE → Trust domain**
+(`/admin/cert-issuance#cert-spiffe-overview`), where every setting is drawn, and `GET /admin-api/config`. `POST /admin-api/config/set` changes one.
+See [Configuration](configuration.md) for how a value is resolved.
+
+## Design decisions
+
+* **A realm is told apart by address, not by path.** gRPC's path is the method
+  name, fixed by the specifications, so a realm segment would be a method no
+  client calls. A real deployment is the same: one SPIRE server is one trust
+  domain.
+* **A realm starts with SPIFFE off.** Turning SPIFFE on binds sockets and
+  creates an authority. Creating a realm should not open ports or start issuing
+  credentials nobody asked for.
+* **A new realm gets no TCP gRPC ports and no administrators.** The inherited
+  ports and address are already the default realm's. The network-reachable API
+  that mints credentials is opened only by somebody who sets an address and
+  ports on the realm.
+* **The two gRPC surfaces are authenticated differently because their
+  specifications say opposite things.** The Workload API must not authenticate
+  its caller. A SPIRE server authorizes every method against what the caller is.
+  Neither half is a setting.
+* **SPIRE's authorization table is copied, not reasoned out.** A table derived
+  from what each method "obviously" needs would differ from SPIRE in a few
+  places, and a client author could not tell which end was wrong.
+* **Attestation is not authentication.** The Unix socket attests the connecting
+  process as an agent does. A TCP caller, which cannot be attested, is
+  identified by selectors spelt so they cannot pass for attested facts.
+* **Node attestation refuses what it cannot verify, in every mode.** A real
+  agent pointed at a server that accepted any attestation type could join a
+  trust domain with an invented one.
+* **No credential is a setting.** Settings are shown on the console, returned
+  by the management API and persisted. Cloud keys and tokens come from files or
+  from the SDK's own credential chain.
+* **A foreign bundle is pushed, never fetched.** Fetching a URL somebody
+  registered, to obtain a key that will verify credentials, is a server-side
+  request forgery. `http_challenge` is the one exception, and its allow list is
+  empty by default.
+* **Federated bundles belong to a realm, and none may shadow a served domain.**
+  Otherwise one realm could register a bundle under another realm's trust domain
+  and mint SVIDs that the other realm would accept.
+* **The registry is the directory.** Entries are configuration an `ldapmodify`
+  can change, with no cache to go stale. Agents are records, so they are not
+  editable.
+* **SPIFFE has no revocation, and nothing here pretends to.**
+  `spiffeCredentialStatus` records who can no longer be issued an SVID. Short
+  lifetimes and rotation are the mechanism. The streams re-send at half the
+  lifetime, so clients exercise rotation.
+* **An unregistered workload is refused `PERMISSION_DENIED`** in product mode,
+  and in development with `spiffe.autoCreateEntries` off, as the Workload API
+  says and a real agent answers. It is the only way to test a client's "I have
+  no identity" path.
+* **A join token is stored only as a digest**, and its selector is
+  `token-sha256:`, so neither the store nor the directory holds a usable token.
+* **X.509 is EC P-256 by default**, which is what SPIRE issues and what the
+  X509-SVID specification recommends. The certificate code that makes it is
+  shared, byte-identical, with the OAuth2/OIDC Debugger (`node-forge`, used
+  elsewhere here, cannot sign with an EC key at all), and it comes with that
+  project's test, which builds about 240 certificates — every key algorithm
+  against every signature algorithm, every extension, a four-deep chain — and
+  checks each with **OpenSSL** rather than by reading back what the same code
+  wrote.
+* **gRPC is `@grpc/grpc-js`, not a hand-rolled codec.** A protobuf codec and a
+  gRPC server over node's `http2` would have been about 900 lines and no
+  dependency, but this service exists to be talked to by **real clients** —
+  `go-spiffe`, `spiffe-helper`, a SPIRE agent, the `spire-server` CLI — and an
+  interoperability bug in a hand-rolled HTTP/2 framer appears as a client that
+  hangs or reports a truncated message, with no way for the client author to
+  tell whose fault it is. About thirty packages buy the wire being right. Two
+  traps in it: the loader's `keepCase: true` does not reach the well-known
+  types, so a `google.protobuf.Struct` has to be built with `stringValue`
+  (`string_value` serialises to nothing, silently); and protobufjs converts only
+  `Any`, so a plain object assigned to a `Struct` field becomes an empty Struct.
+
+## In the running service
+
+SPIFFE is the SPIFFE tab of **Protocols → Cert issuance**
+(`/admin/cert-issuance`), whose sub-tabs were four pages until 2026-10-12.
+
+* **Trust domain** (`#cert-spiffe-overview`): the trust domain, the X.509
+  and JWT authorities and the trust anchors, whether each of the four sockets
+  actually bound, how Workload API callers are identified and attested, the
+  federated bundles, and every `spiffe.*` setting. It has
+  **Rotate** (X.509, JWT or both) and a form to set or remove a federated
+  bundle.
+* **Registration entries** (`#cert-spiffe-entries`): which
+  workload gets which SPIFFE ID and what an SVID from each entry carries:
+  parent, selectors, DNS names, federates-with, the two lifetimes, hint,
+  expiry, and the `admin`, `downstream` and `storeSvid` flags. Create, edit and
+  delete are here. A change takes effect on the next SVID.
+* **Agents** (`#cert-spiffe-agents`): every agent that has
+  attested, what it was given and when. **Ban**, **unban** and **delete** are
+  the controls on an agent that exists. **Create join token** mints the
+  single-use token a workload agent spends, shown once and not recorded.
+  Deleting an agent lets trust-on-first-use evidence attest again.
+* **Directory → SPIFFE entries** (`/admin/ldap/spiffe`): both containers as the
+  directory holds them, with their attribute schema.
+* `GET /spiffe` (add `?format=json`): all three surfaces, the state of every
+  socket, every SPIRE method with its authorization row, the six unimplemented
+  methods with their reasons, the node attestors this build verifies, and
+  whether the Workload API socket is attested.
+* The management API: `GET /admin-api/spiffe`,
+  `POST /admin-api/spiffe/{action}` (`rotate`, `federation-set`,
+  `federation-remove`), `/admin-api/spiffe/entries` and
+  `/admin-api/spiffe/agents` with their actions, including
+  `join-token` (`createSpiffeJoinToken`).
+
+`GET /admin/sts-metadata` cannot list the gRPC sockets, because they register no
+HTTP route. `GET /spiffe` and `/admin/cert-issuance#cert-spiffe-overview` report them. Every SPIFFE failure
+is recorded under an `STS-SPIFFE-NNNN` code on the audit row and the log line,
+and never sent to a client. See [error codes](error-codes.md).
+
+## Related
+
+* [PKI](pki.md): the Root, the realm Intermediate and the SPIFFE Issuing CA
+* [LDAP](ldap.md): the registry under `ou=spiffe` and the workload entries under
+  `ou=users`
+* [Trust realms](trust-realms.md)
+* [TLS and mutual TLS](tls.md)
+* [XACML](xacml.md): the access gate after SPIRE's table
+* [Sessions](sessions.md)
+* [What is not checked](what-is-not-checked.md), especially *The Workload API is
+  the opposite case*
+* [Configuration](configuration.md)

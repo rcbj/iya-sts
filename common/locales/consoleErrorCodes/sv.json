@@ -32,5 +32,5 @@
   "th.whatFailed": "Vad som misslyckades",
   "th.clientSees": "Klienten ser",
   "codes.none": "Inget matchar.",
-  "note.table": "Tabellen är <code>common/error_codes.js</code> och den här sidan har inga kontroller: en kod numreras aldrig om och återanvänds aldrig, eftersom den hamnar i larmregler och sparade sökningar, och ett tillstånd som upphör behåller sin rad markerad som avvecklad. Samma tabell publiceras som <code>docs/error-codes.md</code>, genererad från källkoden, och den här listan finns på <code>GET /admin-api/error-codes</code> med samma parametrar. Sidindelning sker med <code>?page=</code> och <code>?per=</code> (högst {max} rader per sida)."
+  "note.table": "Tabellen är <code>common/error_codes.js</code> och den här sidan har inga kontroller: en kod numreras aldrig om och återanvänds aldrig, eftersom den hamnar i larmregler och sparade sökningar, och ett tillstånd som upphör behåller sin rad markerad som avvecklad. Samma tabell publiceras som <code>docs/v1.1.0/error-codes.md</code>, genererad från källkoden, och den här listan finns på <code>GET /admin-api/error-codes</code> med samma parametrar. Sidindelning sker med <code>?page=</code> och <code>?per=</code> (högst {max} rader per sida)."
 }

@@ -104,8 +104,12 @@ jobs:
   jsdoc:
     runs-on: ubuntu-latest
     steps:
+      # Every tag, because each documentation version's API reference is
+      # generated from its own release tag (docs/_data/versions.yml's `ref`).
       - name: Check out
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -113,8 +117,10 @@ jobs:
           # 24.22.1 is the 21 October 2026 security release (CVE-2026-111497).
           node-version: '24.22.1'
 
-      - name: Generate the API reference
-        run: ./run-jsdoc.sh --no-docker --out=apidocs
+      # One reference per documentation version (rcbj, 2026-11-17):
+      # apidocs/<folder>/, each from that version's own source and tools.
+      - name: Generate the API references
+        run: .github/scripts/api-references.sh apidocs
 
       - name: Upload the API reference
         uses: actions/upload-artifact@v7
@@ -168,15 +174,25 @@ jobs:
           name: api-reference
           path: apidocs
 
-      - name: Add the API reference to the site
+      # Each version's reference at /<folder>/api/; /api/ itself is
+      # docs/api/index.html, a redirect to the latest version's.
+      - name: Add the API references to the site
         run: |
-          sudo mkdir -p _site/api
-          sudo cp -r apidocs/. _site/api/
-          if [ ! -f _site/api/index.html ]; then
-            echo "_site/api/index.html is missing." >&2
-            exit 1
-          fi
-          echo "API reference: $(find _site/api -name '*.html' | wc -l) page(s)."
+          for dir in apidocs/*/; do
+            folder="$(basename "${dir}")"
+            if [ ! -d "_site/${folder}" ]; then
+              echo "apidocs/${folder} has no documentation version." >&2
+              exit 1
+            fi
+            sudo mkdir -p "_site/${folder}/api"
+            sudo cp -r "${dir}." "_site/${folder}/api/"
+            if [ ! -f "_site/${folder}/api/index.html" ]; then
+              echo "_site/${folder}/api/index.html is missing." >&2
+              exit 1
+            fi
+            echo "API reference ${folder}:" \
+                 "$(find "_site/${folder}/api" -name '*.html' | wc -l) page(s)."
+          done
 
       - name: Check the site is not empty
         run: |

@@ -959,10 +959,13 @@ class ModelEmit {
     const persistence = path.join(root, 'models', 'persistence');
     fs.mkdirSync(dir, { recursive: true });
     fs.mkdirSync(persistence, { recursive: true });
-    fs.writeFileSync(path.join(root, 'docs', 'data-model-directory.md'),
+    // The latest documentation version's folder only; a frozen release's
+    // pages are never rewritten (docs/CLAUDE.md, *The versioned site*).
+    const docs = path.join(root, 'docs', 'v1.1.0');
+    fs.writeFileSync(path.join(docs, 'data-model-directory.md'),
       ModelEmit.directoryDocs(catalog));
     fs.writeFileSync(
-      path.join(root, 'docs', 'data-model-persistence.md'),
+      path.join(docs, 'data-model-persistence.md'),
       ModelEmit.persistenceDocs(pg));
     log.debug("Leaving ModelEmit.writeReadingFiles().");
   }
@@ -1027,9 +1030,9 @@ class ModelEmit {
       problems.push('directory collect is not stable');
     }
     const pg = PostgresImport.read(root);
-    ModelEmit.expectText(root, 'docs/data-model-directory.md',
+    ModelEmit.expectText(root, 'docs/v1.1.0/data-model-directory.md',
       ModelEmit.directoryDocs(first), problems);
-    ModelEmit.expectText(root, 'docs/data-model-persistence.md',
+    ModelEmit.expectText(root, 'docs/v1.1.0/data-model-persistence.md',
       ModelEmit.persistenceDocs(pg), problems);
     log.debug("Leaving ModelEmit.check().");
     return problems;

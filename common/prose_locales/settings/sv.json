@@ -8812,8 +8812,8 @@
     "text": "Ta fingeravtryck av webbläsaren vid inloggning"
   },
   "risk.fingerprinting|description": {
-    "en": "fb95d41998827b2a",
-    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
+    "en": "452ca90f0592fe8b",
+    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/v1.1.0/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11232,8 +11232,8 @@
     "text": "Avsändaradress"
   },
   "mail.from|description": {
-    "en": "33efdb50c1bacbc3",
-    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/mail.md."
+    "en": "b1da52c40fbad767",
+    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/v1.1.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11368,8 +11368,8 @@
     "text": "DKIM-algoritm"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "b319eebbac62f962",
-    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/mail.md säger det."
+    "en": "62ed500aeff2bc8a",
+    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/v1.1.0/mail.md säger det."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11592,16 +11592,16 @@
     "text": "Självbetjäningsåterställning kräver en verifierad adress"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "76e079f6e1b23b98",
-    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/mail.md innehåller varningen."
+    "en": "81dfbb5f1c67cc3c",
+    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/v1.1.0/mail.md innehåller varningen."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "Självbetjäningsåterställning kräver en återställningskod"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "d2884302ae8d8475",
-    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
+    "en": "2d8885388b97eb61",
+    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/v1.1.0/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",

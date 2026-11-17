@@ -97,7 +97,9 @@ function documentationNumber(t, catalog, register) {
   t.check(ModelEmit.directoryDocs(placeholderCatalog).indexOf(
     'An OID that begins `' + DOCUMENTATION_ROOT + '` is a placeholder') >= 0,
     'a placeholder root would still be said to be one');
-  const docs = path.join(ROOT, 'docs');
+  // The latest documentation version only: a frozen release's pages are
+  // never regenerated or checked (docs/CLAUDE.md, *The versioned site*).
+  const docs = path.join(ROOT, 'docs', 'v1.1.0');
   const published = [];
   const walk = function (dir) {
     fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
@@ -386,7 +388,7 @@ function run(t) {
     'pwdHistory is on the person class');
 
   sameText(t, ModelEmit.directoryDocs(first),
-    fs.readFileSync(path.join(ROOT, 'docs',
+    fs.readFileSync(path.join(ROOT, 'docs', 'v1.1.0',
       'data-model-directory.md'), 'utf8'),
     'the directory reading page matches the model');
   const problems = ModelEmit.check(ROOT);

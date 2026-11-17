@@ -21,15 +21,15 @@
 // an env/ directory mounted over the image's, say — cannot stop a newer image
 // over a setting it does not carry. The start says so instead (STS-CORE-0177
 // for a setting this file lacks, STS-CORE-0178 for one whose value here is
-// not the image's default), and docs/configuration.md says what to do.
+// not the image's default), and docs/v1.1.0/configuration.md says what to do.
 //
 // THE VALUES HERE ARE THE `dflt` COLUMN OF config.js's TABLE, and this file is
 // GENERATED from it — do not hand-edit a value. Changing a default means
 // changing the table, which is the one place that also carries the reasoning
 // for what the default is; a value edited only here would disagree with what
 // /admin/config reports as the default, with the OpenAPI document's `default`
-// property, and with docs/configuration.md's table, all three of which read
-// the table.
+// property, and with docs/v1.1.0/configuration.md's table, all three of which
+// read the table.
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
 // krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
@@ -39,8 +39,9 @@
 // this file was written, so they resolve through their neighbour instead and
 // are exempt from the startup refusal for that reason.
 //
-// See common/CLAUDE.md, and docs/configuration.md's *Every setting*, which
-// lists every setting, its environment variable and its default in one table.
+// See common/CLAUDE.md, and docs/v1.1.0/configuration.md's *Every setting*,
+// which lists every setting, its environment variable and its default in one
+// table.
 // ---------------------------------------------------------------------------
 var config = {
   // --- The log level ---------------------------------------------------

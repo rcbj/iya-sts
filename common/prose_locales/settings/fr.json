@@ -8812,8 +8812,8 @@
     "text": "Empreinte du navigateur à la connexion"
   },
   "risk.fingerprinting|description": {
-    "en": "fb95d41998827b2a",
-    "text": "DÉSACTIVÉ PAR DÉFAUT (#62 P6). Activé, l’écran de connexion exécute un script, FingerprintJS (MIT ; il n’envoie rien nulle part), qui calcule un identifiant à partir de ce qu’expose le navigateur et le place dans le formulaire ; le service ne conserve qu’un condensat à clé, et un navigateur depuis lequel cette personne ne s’est jamais connectée constitue le signal new-device (x2). Une empreinte de navigateur est une donnée personnelle : réalisez l’analyse d’impact relative à la protection des données décrite dans docs/risk-scoring.md, et informez les personnes qui se connectent, avant de l’activer. Par domaine, comme chaque paramètre."
+    "en": "452ca90f0592fe8b",
+    "text": "DÉSACTIVÉ PAR DÉFAUT (#62 P6). Activé, l’écran de connexion exécute un script, FingerprintJS (MIT ; il n’envoie rien nulle part), qui calcule un identifiant à partir de ce qu’expose le navigateur et le place dans le formulaire ; le service ne conserve qu’un condensat à clé, et un navigateur depuis lequel cette personne ne s’est jamais connectée constitue le signal new-device (x2). Une empreinte de navigateur est une donnée personnelle : réalisez l’analyse d’impact relative à la protection des données décrite dans docs/v1.1.0/risk-scoring.md, et informez les personnes qui se connectent, avant de l’activer. Par domaine, comme chaque paramètre."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11232,8 +11232,8 @@
     "text": "Adresse d’expédition"
   },
   "mail.from|description": {
-    "en": "33efdb50c1bacbc3",
-    "text": "L’adresse depuis laquelle chaque message est envoyé. Vide signifie `no-reply@` suivi du domaine DNS du domaine. Le fournisseur doit être autorisé à envoyer en son nom : une identité vérifiée dans SES, une adresse MailFrom d’un domaine connecté dans Azure, la boîte aux lettres usurpée par délégation (ou l’un de ses alias d’envoi) pour Gmail — et SPF, DKIM et DMARC pour son domaine sont le sujet de docs/mail.md."
+    "en": "b1da52c40fbad767",
+    "text": "L’adresse depuis laquelle chaque message est envoyé. Vide signifie `no-reply@` suivi du domaine DNS du domaine. Le fournisseur doit être autorisé à envoyer en son nom : une identité vérifiée dans SES, une adresse MailFrom d’un domaine connecté dans Azure, la boîte aux lettres usurpée par délégation (ou l’un de ses alias d’envoi) pour Gmail — et SPF, DKIM et DMARC pour son domaine sont le sujet de docs/v1.1.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11368,8 +11368,8 @@
     "text": "Algorithme DKIM"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "b319eebbac62f962",
-    "text": "`rsa-sha256` (RFC 6376 ; une clé de 2048 bits ou plus, selon le RFC 8301) ou `ed25519-sha256` (RFC 8463). De nombreux destinataires ne vérifient encore que RSA ; un domaine qui passe à Ed25519 publie donc les deux et signe deux fois ailleurs. DKIM n’a encore aucun algorithme post-quantique enregistré ; docs/mail.md le signale."
+    "en": "62ed500aeff2bc8a",
+    "text": "`rsa-sha256` (RFC 6376 ; une clé de 2048 bits ou plus, selon le RFC 8301) ou `ed25519-sha256` (RFC 8463). De nombreux destinataires ne vérifient encore que RSA ; un domaine qui passe à Ed25519 publie donc les deux et signe deux fois ailleurs. DKIM n’a encore aucun algorithme post-quantique enregistré ; docs/v1.1.0/mail.md le signale."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11592,16 +11592,16 @@
     "text": "La réinitialisation en libre-service exige une adresse vérifiée"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "76e079f6e1b23b98",
-    "text": "N’envoyer un lien de réinitialisation en libre-service qu’à une adresse que la personne a VÉRIFIÉE (par un lien qu’elle a suivi depuis celle-ci). Activé par défaut, car le lien donne le compte : une adresse écrite par une importation ou un flux de provisionnement, et que personne n’a jamais prouvée, n’est pas un endroit où l’envoyer. **Le désactiver est un réglage plus faible**, pour un annuaire dont les adresses sont considérées comme fiables telles qu’écrites ; docs/mail.md porte l’avertissement."
+    "en": "81dfbb5f1c67cc3c",
+    "text": "N’envoyer un lien de réinitialisation en libre-service qu’à une adresse que la personne a VÉRIFIÉE (par un lien qu’elle a suivi depuis celle-ci). Activé par défaut, car le lien donne le compte : une adresse écrite par une importation ou un flux de provisionnement, et que personne n’a jamais prouvée, n’est pas un endroit où l’envoyer. **Le désactiver est un réglage plus faible**, pour un annuaire dont les adresses sont considérées comme fiables telles qu’écrites ; docs/v1.1.0/mail.md porte l’avertissement."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "La réinitialisation en libre-service exige un code de récupération"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "d2884302ae8d8475",
-    "text": "Le formulaire de mot de passe oublié demande le NOM D’UTILISATEUR, l’ADRESSE vérifiée du compte et l’un des CODES DE RÉCUPÉRATION de la personne, et n’envoie un lien de réinitialisation que si les trois sont corrects — le code est alors consommé. Chaque combinaison reçoit la même phrase en réponse. **Le désactiver est un réglage plus faible** : le formulaire revient à un seul champ (un nom d’utilisateur ou l’adresse), et une réinitialisation est alors aussi forte que la boîte aux lettres à laquelle elle est envoyée — ce que NIST SP 800-63B-4 autorise pour la récupération, et contre quoi docs/mail.md met en garde. Une personne qui ne détient aucun code de récupération ne peut pas réinitialiser elle-même son mot de passe tant que ce paramètre est activé ; un administrateur le peut."
+    "en": "2d8885388b97eb61",
+    "text": "Le formulaire de mot de passe oublié demande le NOM D’UTILISATEUR, l’ADRESSE vérifiée du compte et l’un des CODES DE RÉCUPÉRATION de la personne, et n’envoie un lien de réinitialisation que si les trois sont corrects — le code est alors consommé. Chaque combinaison reçoit la même phrase en réponse. **Le désactiver est un réglage plus faible** : le formulaire revient à un seul champ (un nom d’utilisateur ou l’adresse), et une réinitialisation est alors aussi forte que la boîte aux lettres à laquelle elle est envoyée — ce que NIST SP 800-63B-4 autorise pour la récupération, et contre quoi docs/v1.1.0/mail.md met en garde. Une personne qui ne détient aucun code de récupération ne peut pas réinitialiser elle-même son mot de passe tant que ce paramètre est activé ; un administrateur le peut."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",

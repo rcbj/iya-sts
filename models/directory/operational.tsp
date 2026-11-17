@@ -17,7 +17,7 @@ namespace IyaSts.Directory;
   container: "",
   ownContainer: true,
   authored: true,
-  section: "docs/ldap-schema.md Operational attributes",
+  section: "docs/v1.1.0/ldap-schema.md Operational attributes",
   note: "Returned or computed for an entry. Not a container.",
   objectClasses: #[]
 })

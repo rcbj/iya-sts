@@ -17,7 +17,7 @@ the driver, because a change of key is a step between two versions.
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
 | **`directory_merge.js`** | **One directory entry written by two nodes** (2026-09-14, #46 section 3): the three-way merge (base = the shadow, mine = live, theirs = the row under `FOR UPDATE`) the postgres driver writes a directory upsert through, and `persistence.js` applies again to a write that raced the flush or a replicated row. A LEAF with no requires. See *Several nodes writing one row* below. |
 | **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
-| **`bulk_import.js`**, **`ldif_stream.js`** | **The bulk directory import** (#629, 2026-10-14): people from an LDIF file straight into `sts_ldap_entries`, offline, thousands a second. A TOOL — no route, nothing requires it. See *THE BULK IMPORT* below; `docs/bulk-import.md` is the operator's page. |
+| **`bulk_import.js`**, **`ldif_stream.js`** | **The bulk directory import** (#629, 2026-10-14): people from an LDIF file straight into `sts_ldap_entries`, offline, thousands a second. A TOOL — no route, nothing requires it. See *THE BULK IMPORT* below; `docs/v1.1.0/bulk-import.md` is the operator's page. |
 
 ## THE METRICS SURFACE, AND THE PROCESS EXIT IT EXPOSED (2026-09-11)
 
@@ -2216,7 +2216,7 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   overlap. **Mixing builds is NOT safe**: an older import takes the table
   lock, does not take this one, and checks before it inserts, so it and a
   new one over overlapping files could both admit a name.
-  `docs/bulk-import.md` (*Several imports at once*) is the operator's half.
+  `docs/v1.1.0/bulk-import.md` (*Several imports at once*) is the operator's half.
 * **WHAT ELSE SEVERAL IMPORTS SHARE, AND WHY EACH IS SAFE** (read for #637):
   `sts_change_readers` — an import never reports there (only
   `persistence_replication.js` does, and the import does not start it), so
@@ -4017,7 +4017,7 @@ is underneath: LUKS or an encrypted ZFS dataset under `PGDATA`, a cloud disk
 with a customer-managed key, or one of the forks that has TDE — community
 PostgreSQL has none.
 
-`docs/encryption-at-rest.md` is the whole argument, including what column-level
+`docs/v1.1.0/encryption-at-rest.md` is the whole argument, including what column-level
 encryption misses that block-level does not (the WAL, spilled sorts, `pg_dump`
 output, replicas, query logs) and why a key-encryption key kept in a file
 must not sit on the same unencrypted disk as the database (the compose stack

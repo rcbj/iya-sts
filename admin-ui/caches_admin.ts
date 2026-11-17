@@ -10,8 +10,8 @@
 // FULL IT IS, HOW MUCH OF IT IS STILL GOOD, AND HOW OFTEN IT WAS WORTH HAVING.
 //
 // `GET /admin/caches` lists every store `common/cache_registry.js` knows, in
-// the two tables `docs/caches.md` has — the caches, then the replay caches
-// and nonces — and for each one
+// the two tables `docs/v1.1.0/caches.md` has — the caches, then the replay
+// caches and nonces — and for each one
 // gives its name, what it is for, the file that owns it, whether it is one per
 // process or one per trust realm, its size against its bound, how many of its
 // entries are still valid and how many have expired without being evicted
@@ -23,8 +23,8 @@
 // caches exist is said by the modules that own them, beside their
 // declarations; nothing here names one, so a cache added tomorrow appears
 // here the day it registers and a cache removed goes with it. What is NOT
-// registered — the three things `docs/caches.md` or this page could be read
-// as naming that this process does not hold between requests — is the one
+// registered — the three things `docs/v1.1.0/caches.md` or this page could be
+// read as naming that this process does not hold between requests — is the one
 // list this file keeps (`NOT_LISTED`), for `encryption_admin.ts`'s reason:
 // the interesting question about a page like this is often *is X on it*, and
 // a page that lists only the yeses answers it by silence. It listed four
@@ -93,15 +93,15 @@ type Json = any;
 
 const PAGE = '/admin/caches';
 
-// What is NOT registered: three things this page or `docs/caches.md` could
-// be read as naming that this process does not hold between requests. Named
-// here so their absence is a decision a reader can see. (The four
+// What is NOT registered: three things this page or `docs/v1.1.0/caches.md`
+// could be read as naming that this process does not hold between requests.
+// Named here so their absence is a decision a reader can see. (The four
 // single-value memos that were on this list until 2026-09-18 are registered
 // caches now.)
 /**
- * What is deliberately not registered: things this page or `docs/caches.md`
- * could be read as naming that the process does not hold between requests, each
- * with the reason.
+ * What is deliberately not registered: things this page or
+ * `docs/v1.1.0/caches.md` could be read as naming that the process does not
+ * hold between requests, each with the reason.
  */
 const NOT_LISTED = [
   { what: 'SAML service provider metadata',

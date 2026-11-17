@@ -58,7 +58,7 @@ resource objects). The machine caller is `sts-api-client`, seeded a member
 of REPORT_USE (`common/roles.js`) and declaring `report:use`; as an
 application it reaches only what it defined (`ownerKind`, below), and its
 `client_credentials` token is unbound, so it arrives as `Bearer`.
-`docs/reporting.md`'s *From another program* is the operator's half.
+`docs/v1.1.0/reporting.md`'s *From another program* is the operator's half.
 With `authn.multipleAccounts` on, the account control is the console's
 menu: the summary is the account this tab is, and the panel lists the
 browser's other signed-in accounts as switch buttons, plus a sign-in as
@@ -69,8 +69,8 @@ tab leaves stays signed in. Off, the control is not drawn.
 The shell's policy is `script-src 'self'`, `style-src 'self'`, and
 `connect-src` the origins of the authorization server and the sign-in
 screen, through `app.contentSecurityPolicy()`. The front door links to it
-(`home/home.ts`). `docs/reporting.md` is the operator's page. The caps are the Reporting group in `common/config.js`
-and `docs/configuration.md`.
+(`home/home.ts`). `docs/v1.1.0/reporting.md` is the operator's page. The caps are the Reporting group in `common/config.js`
+and `docs/v1.1.0/configuration.md`.
 
 | File | What it is |
 |---|---|
@@ -525,7 +525,7 @@ under 100 ms. Six things were wrong, and each is fixed where it lives:
   `mechanism` alone, filtered on nothing but mechanisms
   (`reportOnlyMechanisms()`), takes the password's row from
   `holderCountAsync()`'s counter through `Rows.takeCounted()` and reads the
-  other mechanisms as before. `docs/reporting.md` had promised it since
+  other mechanisms as before. `docs/v1.1.0/reporting.md` had promised it since
   #1019 and nothing did it.
 * **A first page answers a read that wants any rows.** A lookup at
   `CANDIDATE_CAP` hands back its first page when the plan has no order and
@@ -1292,4 +1292,4 @@ the register. It does not run SQL and it does not read the remote table.
 Connection details and secrets are not fields. `serviceMetrics` is one level of
 numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`. It is not a
 time series, and it is not the per-route or per-kind tables. `/admin/metrics`
-and `/admin-api/metrics` stay. `docs/reporting.md` is the migration note.
+and `/admin-api/metrics` stay. `docs/v1.1.0/reporting.md` is the migration note.

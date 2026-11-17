@@ -131,9 +131,9 @@ const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 // access token from being accepted as an ID Token, an RFC 9068 access token or
 // a logout token, and the reverse. RFC 9767 registers no media type for a JWT
 // access token, so `gnap-at+jwt` is a PRIVATE one, built the way RFC 9068
-// built `at+jwt`, and `docs/gnap.md` says it is unregistered. Until #157 the
-// header said `JWT`, the docs said it said `GNAP`, and verification read the
-// payload.
+// built `at+jwt`, and `docs/v1.1.0/gnap.md` says it is unregistered. Until #157
+// the header said `JWT`, the docs said it said `GNAP`, and verification read
+// the payload.
 const JWT_TYP = 'GNAP';
 const JWT_HEADER_TYP = 'gnap-at+jwt';
 const JWT_HEADER_MEDIA_TYPE = 'application/gnap-at+jwt';

@@ -83,7 +83,7 @@
 //      is not an HTTP response, or `errorCodes.tag('STS-…')` at the front of a
 //      log message for a failure no audit row can hold;
 //   3. `node common/error_codes.js --docs`, which regenerates
-//      `docs/error-codes.md`.
+//      `docs/v1.1.0/error-codes.md`.
 //
 // `tests/error_codes.js` fails on a code used and not registered, a code
 // registered and used nowhere, a documentation page that is stale, and a
@@ -92,7 +92,7 @@
 // property of the build rather than of anybody remembering.
 //
 // Run directly:
-//   node common/error_codes.js --docs     regenerate docs/error-codes.md
+//   node common/error_codes.js --docs     regenerate docs/v1.1.0/error-codes.md
 //   node common/error_codes.js --check    non-zero if the page is stale
 //   node common/error_codes.js --json     the table
 // ===========================================================================
@@ -29947,7 +29947,7 @@ function escapeCell(text) {
 }
 
 /**
- * Generates `docs/error-codes.md` from the table.
+ * Generates `docs/v1.1.0/error-codes.md` from the table.
  *
  * @returns the page's Markdown
  */
@@ -30080,7 +30080,8 @@ function markdown() {
 }
 
 /**
- * Returns the path of the generated documentation page, `docs/error-codes.md`.
+ * Returns the path of the generated documentation page,
+ * `docs/v1.1.0/error-codes.md`.
  *
  * @returns the absolute path
  */
@@ -30088,7 +30089,9 @@ function docsPath() {
   log.debug("Entering docsPath().");
   const path = require('path');
   log.debug("Leaving docsPath().");
-  return path.join(__dirname, '..', 'docs', 'error-codes.md');
+  // The latest documentation version's folder; the frozen releases beside
+  // it are never regenerated (docs/CLAUDE.md, *The versioned site*).
+  return path.join(__dirname, '..', 'docs', 'v1.1.0', 'error-codes.md');
 }
 
 /**
@@ -30135,12 +30138,12 @@ if (require.main === module) {
       current = '';
     }
     if (current !== markdown()) {
-      console.error('[error_codes] docs/error-codes.md is stale. Run: ' +
+      console.error('[error_codes] docs/v1.1.0/error-codes.md is stale. Run: ' +
                     'node common/error_codes.js --docs');
       process.exit(1);
     }
-    console.log('docs/error-codes.md matches the table (' + CODES.length + ' ' +
-        'codes)');
+    console.log('docs/v1.1.0/error-codes.md matches the table (' +
+        CODES.length + ' codes)');
   } else {
     console.log(JSON.stringify({ subsystems: SUBSYSTEMS, codes: CODES }, null,
                                2));

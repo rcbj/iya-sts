@@ -160,7 +160,7 @@ const delegation = require('../common/delegation');
 //
 // (History: when it was added, this require owed the parent project's `sts/`
 // COPY set a line, `COPY sts/common/issuance_gate.js ./sts/common/`. Nothing
-// is owed since #1280; `docs/parent-project-migration.md` records it.)
+// is owed since #1280; `docs/v1.1.0/parent-project-migration.md` records it.)
 const gate = require('../common/issuance_gate');
 // THE MODE. A LEAF (rule 3) requiring only `config`, and already loaded:
 // `common/helpers.js` requires it, and `krb5_principals.js` below does too.
@@ -5910,10 +5910,10 @@ async function answerTgsReq(request, state) {
 //
 // Only with `logout.kerberosSignOut` on, and only in active-active: nothing
 // else reads replicated state here, and a single node is exactly as it was.
-// The requires are LAZY and guarded, because the parent project loaded this
-// file in-process from a COPY set (an obligation until #1280; the
-// arrangement stands); both modules are already loaded through
-// common/app.js.
+// The requires are LAZY and guarded, so a process that loads this file on
+// its own (an in-process test, say) needs neither module; both are already
+// loaded through common/app.js. (They were made lazy for the parent
+// project's COPY set, an obligation until #1280 and history now.)
 // ---------------------------------------------------------------------------
 // **AND WITH REQUEST WORKERS, ON ONE NODE TOO (2026-09-23).** A password
 // set, a principal created, an authenticator enrolled or a sign-out stamped is
@@ -6211,9 +6211,9 @@ async function handleMessage(bytes, options) {
 // which MIT's and Heimdal's clients read as "this KDC did not answer" and
 // retry, against the next KDC in their list or this one again.
 //
-// The require of the pool is LAZY and guarded (for the parent project's COPY
-// set, until #1280; the arrangement stands): a process without it answers
-// here, as before.
+// The require of the pool is LAZY and guarded: a process without it answers
+// here, as before. (It was made lazy for the parent project's COPY set, an
+// obligation until #1280 and history now.)
 // ---------------------------------------------------------------------------
 const MESSAGE_OPERATION = 'krb5.message';
 
@@ -6368,11 +6368,13 @@ async function answerSocketMessage(bytes, transport, address, port) {
 // here: a placement that failed must not leave a client waiting for a reply
 // that never comes, and the KDC's own answer is what it got before this seam.
 //
-// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file was in the parent
-// project's tests-image COPY closure, so it required nothing new (an
-// obligation until #1280; the arrangement stands): `krb5_home.ts` installs
-// the router from outside (`common/protocol_stack.ts`, right after requiring
-// this file), and only in a service deployed as cells. With no router — single-cell mode, and every
+// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. Placement is a concern of
+// cells and this file knows nothing of them, so it requires nothing new:
+// `krb5_home.ts` installs the router from outside
+// (`common/protocol_stack.ts`, right after requiring this file), and only in
+// a service deployed as cells. (Requiring nothing new was first an
+// obligation to the parent project's tests-image COPY closure, until #1280;
+// that is history now.) With no router — single-cell mode, and every
 // in-process loader of this file — `answerFromSocket()` calls
 // `answerSocketMessage()` and nothing else, byte for byte what the sockets
 // did before. No realm is passed, because the sockets have none: `routeOf()`

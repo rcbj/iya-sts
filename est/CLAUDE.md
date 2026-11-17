@@ -2,7 +2,7 @@
 
 **Enrollment over Secure Transport** (RFC 7030, with RFC 8951's clarifications),
 added 2026-09-13 as one of the three certificate-enrollment families beside
-`acme/` and `scep/`. `docs/est.md` is the user-facing half; this is why it is
+`acme/` and `scep/`. `docs/v1.1.0/est.md` is the user-facing half; this is why it is
 built the way it is.
 
 **EVERYTHING THAT IS NOT A WIRE FORMAT IS `common/cert_enrollment.ts`'s.** Who

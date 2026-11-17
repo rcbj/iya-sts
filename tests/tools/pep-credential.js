@@ -238,11 +238,12 @@ const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=iya-sts';
 //
 // **THE DOCUMENTATION MOVED RATHER THAN THIS FUNCTION**, which is worth saying
 // because the other repair is four lines and looks obviously kinder. Nothing
-// calls this file the space way — both launchers pass `=`, `docs/remote-pep.md`
-// passes `=`, and the tests that want a certificate `require()` this file for
-// `mint()` and never reach a command line at all — so accepting the space
-// form would have been a behaviour change made to rescue a comment, in the one
-// directory whose rule is that it takes no dependency and stays small.
+// calls this file the space way — both launchers pass `=`,
+// `docs/v1.1.0/remote-pep.md` passes `=`, and the tests that want a certificate
+// `require()` this file for `mint()` and never reach a command line at all — so
+// accepting the space form would have been a behaviour change made to rescue a
+// comment, in the one directory whose rule is that it takes no dependency and
+// stays small.
 function parseArgs(argv) {
   log.debug("Entering parseArgs().");
   const opts = { url: '', out: '', subject: DEFAULT_SUBJECT, years: 1,

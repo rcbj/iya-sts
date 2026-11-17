@@ -19,14 +19,14 @@
 // it; the reply is piped back untouched. This is §5's "Kerberos AS-REQ …
 // forwarded the same way" — the request travels, the person's data does not.
 //
-// **`krb5_kdc.js` WAS IN THE PARENT'S COPY SET** (this repository's own, but
-// the parent's tests image copied it and its requires; an obligation until
-// #1280, and the arrangement stands), so rather than grow its closure this
-// is a route of its own, registered on
+// **PLACEMENT IS NOT THE KDC'S CONCERN**, so rather than teach `krb5_kdc.js`
+// about cells this is a route of its own, registered on
 // `POST /KdcProxy` JUST BEFORE the KDC's (`common/protocol_stack.ts`), that
 // decodes just enough to find the client and either relays the request or
 // calls `next()` — after which the KDC's own handler runs exactly as it
-// always did. It REQUIRES the vendored codec
+// always did. (It was first placed here because the parent project's tests
+// image copied `krb5_kdc.js` and its requires, an obligation until #1280;
+// that is history now.) It REQUIRES the codec
 // (`krb5_messages`, `krb5_asn1`, `krb5_primitives`, `krb5_crypto`) and the
 // principal database; it edits none of them, and none of them requires it.
 //
@@ -96,8 +96,8 @@ import msgsModule = require('./krb5_messages');
 import primModule = require('./krb5_primitives');
 import kcryptoModule = require('./krb5_crypto');
 
-// `any` for the checker: the vendored codec is untyped JavaScript and is not
-// this repository's to annotate.
+// `any` for the checker: the codec is untyped JavaScript (this repository's
+// own since #1280, and not annotated yet).
 const asn1: any = asn1Module;
 const msgs: any = msgsModule;
 const prim: any = primModule;
@@ -503,7 +503,7 @@ const home = new Krb5Home();
  * Where a Kerberos request over MS-KKDCP or TCP and UDP 88 is answered in a
  * service deployed as cells (#98, #588): its client's home cell. One route,
  * registered ahead of the KDC's, and the KDC's message router, installed
- * from outside, so the KDC's require closure is unchanged.
+ * from outside, so the KDC itself knows nothing of cells.
  * @namespace
  */
 export = {

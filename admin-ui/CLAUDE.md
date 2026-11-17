@@ -5709,7 +5709,7 @@ with the setting's short label as the summary; that fold is gone.
 
 What pays for it is that a setting's description has **three other doors** —
 `/admin/config?format=json`, `GET /admin-api/config`, and
-`docs/configuration.md`'s table — so the text is reachable without a mouse even though this page no longer draws
+`docs/v1.1.0/configuration.md`'s table — so the text is reachable without a mouse even though this page no longer draws
 it. Both were checked rather than assumed. **A field whose prose has NO other
 door does not get this treatment**, which is why the derived tooltips above add
 a title and remove nothing.
@@ -6726,7 +6726,7 @@ generic field rows.
 ## `/admin/error-codes`: THE ERROR CODE TABLE, UNDER MONITORING (2026-09-12)
 
 The table is `common/error_codes.js` (rule 3ac in `common/CLAUDE.md`) and
-`docs/error-codes.md` is generated from it, so this page is not a third copy of
+`docs/v1.1.0/error-codes.md` is generated from it, so this page is not a third copy of
 the catalogue: it is the table FILTERED and PAGED with the one column a
 document cannot have — how many rows in this realm's held audit log carry each
 code, each count a link to `/admin/audit?code=`. **That column is why it is
@@ -7264,7 +7264,7 @@ the value stored, the value in force and whether it is ignored (a warning box
 lists the ignored ones, which is exactly where a realm was switched to product
 with a development-only value still stored); and NOT_YET. The prose — this
 file's section on the mode, `mode.js`, `global.mode`'s description and
-`docs/what-is-not-checked.md` — cited this page and `GET /admin-api/mode` for
+`docs/v1.1.0/what-is-not-checked.md` — cited this page and `GET /admin-api/mode` for
 two weeks before either was registered.
 
 Three decisions:
@@ -7377,7 +7377,7 @@ while the API documented `page`. It is the default name now.
 
 Monitoring → Caches, drawn by `caches_admin.ts` from
 `common/cache_registry.js` (`common/CLAUDE.md`, 3ap). It has two tables, in
-`docs/caches.md`'s order: the caches, then the replay caches and nonces. Each
+`docs/v1.1.0/caches.md`'s order: the caches, then the replay caches and nonces. Each
 store shows:
 - its name, description, lifetime, scope, owner and settings;
 - its current size, valid and expired entries, and maximum size;
@@ -8893,7 +8893,7 @@ names the page. Write controls are drawn when the shell says the reader can
 write (`c.write`); a reader with `admin:read` sees the figures. The lead
 says the figures are this process, and that a token and a secret header are
 sealed and absent afterwards. A test posts `test`. Each tab draws the
-documentation link to `docs/audit-export.md` (`common/web_doc_links.ts`,
+documentation link to `docs/v1.1.0/audit-export.md` (`common/web_doc_links.ts`,
 `audit-export.html`). A refused add or update is
 drawn again in place (`WebAnswers.redraw()`, `state.auditExportDraft`):
 the add form, or that destination's update form, open, with every posted
@@ -8902,7 +8902,7 @@ stored destination still draws both empty. A success stays a notice.
 Body template, Headers and Secret headers are labels beside their
 textareas, each with its own tooltip. A textarea inside the label took
 the hover, so the name's tooltip never appeared. Those sentences are
-also the management API's field descriptions and `docs/audit-export.md`.
+also the management API's field descriptions and `docs/v1.1.0/audit-export.md`.
 The delivery, the cursor and the twenty-first outbound exception are
 `common/CLAUDE.md` (3da). The operations are `mgmt-api/CLAUDE.md`.
 

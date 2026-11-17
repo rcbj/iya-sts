@@ -57,9 +57,9 @@
 // So the row's `dflt` is the floor beneath every layer. It is not "a constant
 // buried in a module" — the thing the refusal was written against — because
 // it is the same `dflt` /admin/config, GET /admin-api/config, the OpenAPI
-// document and docs/configuration.md already publish as the default, and a
-// value taken from it is reported with `source: 'default'`, by name, on every
-// one of those surfaces. What the floor costs is reported too:
+// document and docs/v1.1.0/configuration.md already publish as the default,
+// and a value taken from it is reported with `source: 'default'`, by name,
+// on every one of those surfaces. What the floor costs is reported too:
 //
 //   * STS-CORE-0177, a WARNING at startup, names every setting that came from
 //     the floor and the defaults file that lacked it, so the operator learns
@@ -394,7 +394,8 @@ try {
       '— the defaults file ' + DEFAULTS_FILE + ' is there and could not be ' +
       'loaded: ' + ((err && err.message) || err) + '\nRemove it to run on ' +
       'this image\'s own defaults, or replace it with the one the image ' +
-      'ships (see docs/configuration.md, *Upgrading with a mounted env/*).\n');
+      'ships (see docs/v1.1.0/configuration.md, *Upgrading with a ' +
+      'mounted env/*).\n');
     process.exit(1);
   }
   defaultsProblem = 'it is not there';
@@ -1088,8 +1089,8 @@ const SETTINGS = [
   // what a caller reaches BEFORE it trusts anything. The certificate is generated at every start (and certified under
   // this service's Root, which a caller does not hold yet either), so the first
   // fetch has to be made without verification (`curl -k`), which is the
-  // ordinary bootstrap for a mock and is stated in docs/tls.md rather than
-  // left to be discovered.
+  // ordinary bootstrap for a mock and is stated in docs/v1.1.0/tls.md rather
+  // than left to be discovered.
   { key: 'global.https', group: 'Global', label: 'HTTPS on the main port',
     env: 'STS_HTTPS', type: 'bool', derived: true,
     // processValue() and not value(): a realm may carry `oauth2.rfc9700`, and
@@ -11886,7 +11887,7 @@ const SETTINGS = [
   // section 5.2.2 asks exactly this of a server, and it is the default for
   // every listener rather than a FAPI switch, because a cipher suite is a
   // property of the SOCKET and a profile is a property of a realm. A weaker
-  // list stays settable; docs/tls.md says what that costs.
+  // list stays settable; docs/v1.1.0/tls.md says what that costs.
   { key: 'tls.ciphers', group: 'TLS', label: 'TLS 1.2 cipher list',
     env: 'STS_TLS_CIPHERS', type: 'string',
     dflt: 'ECDHE-ECDSA-AES128-GCM-SHA256:' +
@@ -14322,10 +14323,10 @@ const SETTINGS = [
   // off the one thing this setting does control.
   //
   // What it cost is worth recording, because it was invisible from every
-  // direction: ldap_server.js's own header, docs/ldap.md, docs/mock-sts.md and
-  // tests/api_ldap.js all said "on by default", so a directory that stayed
-  // empty after somebody signed in read as a broken hook rather than as a
-  // setting doing exactly what it was set to.
+  // direction: ldap_server.js's own header, docs/v1.1.0/ldap.md,
+  // docs/mock-sts.md and tests/api_ldap.js all said "on by default", so a
+  // directory that stayed empty after somebody signed in read as a broken hook
+  // rather than as a setting doing exactly what it was set to.
   { key: 'ldap.autocreateUsers', group: 'LDAP', label: 'Auto-create users',
     env: 'LDAP_AUTOCREATE_USERS', type: 'bool', dflt: true, runtime: true,
     description: 'When on, an entry appears at uid=<name>,ou=users,<base> ' +
@@ -15005,8 +15006,8 @@ const SETTINGS = [
   // which (a SAML entityID, a WS-Trust AppliesTo, a Kerberos SPN, this
   // service's own seeded ones) never declare an access type and never get
   // a policy. So this stays an ordinary row — in env/defaults.js, on the
-  // console, in docs/configuration.md as the value it is — rather than a
-  // fifth exemption from the refusal of a row with no value. An operator
+  // console, in docs/v1.1.0/configuration.md as the value it is — rather
+  // than a fifth exemption from the refusal of a row with no value. An operator
   // who raises applications.max raises this beside it when those
   // applications will enforce fine-grained authorization; the refusal
   // (STS-FGA-0024) names both settings and their values.
@@ -16766,7 +16767,8 @@ const SETTINGS = [
                  'digest, and a browser this person has never signed in ' +
                  'from is the signal new-device (x2). A browser fingerprint ' +
                  'is personal data: complete the privacy impact assessment ' +
-                 'in docs/risk-scoring.md, and tell the people who sign in, ' +
+                 'in docs/v1.1.0/risk-scoring.md, and tell the people who ' +
+                 'sign in, ' +
                  'before turning it on. Per realm, like every setting.' },
 
   { key: 'risk.breachCheck', group: 'Risk',
@@ -20513,7 +20515,7 @@ const SETTINGS = [
                  'MailFrom address of a connected domain in Azure, the ' +
                  'impersonated mailbox (or one of its send-as aliases) for ' +
                  'Gmail — and SPF, DKIM and DMARC for its domain are ' +
-                 'docs/mail.md\'s subject.' },
+                 'docs/v1.1.0/mail.md\'s subject.' },
   { key: 'mail.fromName', group: 'Mail', label: 'From display name',
     env: 'STS_MAIL_FROM_NAME', type: 'string', dflt: '', runtime: true,
     description: 'The display name beside the From address. Empty means ' +
@@ -20644,7 +20646,7 @@ const SETTINGS = [
                  '8301) or `ed25519-sha256` (RFC 8463). Many receivers still ' +
                  'verify only RSA, so a domain moving to Ed25519 publishes ' +
                  'both and signs twice elsewhere. DKIM has no post-quantum ' +
-                 'algorithm registered yet; docs/mail.md says so.' },
+                 'algorithm registered yet; docs/v1.1.0/mail.md says so.' },
   { key: 'mail.dkimKeyProvider', group: 'Mail',
     label: 'Where the DKIM private key is read from',
     env: 'STS_MAIL_DKIM_KEY_PROVIDER', type: 'enum',
@@ -20837,7 +20839,8 @@ const SETTINGS = [
                  'import or a provisioning feed wrote, and nobody ever ' +
                  'proved, is not somewhere to send it. **Turning it off is a ' +
                  'weaker setting**, for a directory whose addresses are ' +
-                 'trusted as written; docs/mail.md carries the warning.' },
+                 'trusted as written; docs/v1.1.0/mail.md carries the ' +
+                 'warning.' },
   // #64: THE RECOVERY CODE A SELF-SERVICE RESET ASKS FOR, beside the
   // username and the address. On by default (rcbj's D4).
   { key: 'mail.resetRequiresBackupCode', group: 'Mail',
@@ -20852,7 +20855,8 @@ const SETTINGS = [
                  'weaker setting**: the form goes back to one field (a ' +
                  'username or the address), and a reset is then as strong ' +
                  'as the mailbox it goes to — which NIST SP 800-63B-4 allows ' +
-                 'for recovery, and which docs/mail.md warns about. A person ' +
+                 'for recovery, and which docs/v1.1.0/mail.md warns about. ' +
+                 'A person ' +
                  'who holds no recovery codes cannot reset their password ' +
                  'themselves while it is on; an administrator can.' },
   { key: 'mail.verificationTtlMinutes', group: 'Mail',

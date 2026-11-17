@@ -397,7 +397,7 @@ ticket-granting ticket.
 Kerberos policed delegation from msDS-* fields on its own principal table; it
 now asks the issuance policy that decides WS-Trust and RFC 8693 too, over the
 common controls on the directory's entries (`../common/CLAUDE.md` rule 3az,
-`../docs/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
+`../docs/v1.1.0/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
 decides nothing: it names the parties (a service is the application entry
 whose identifier is its `SPN@REALM`, a person their entry), asks
 `delegation_policy.ts`, and holds the two pieces of machinery that are not
@@ -423,7 +423,7 @@ policy. rcbj's decisions on #186, each load-bearing:
   than a mismatch — an S4U2Proxy ticket carries the chain in its PAC
   (S4U_DELEGATION_INFO), and an exchanged token with no `act` carries none —
   and the console's Kerberos rows say it under their mode
-  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/delegation.md` and
+  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/v1.1.0/delegation.md` and
   the chain jobs' headers do.
 * **FORWARDABLE EVIDENCE FOR BOTH ROUTES, AND THE REPLY'S FLAG (#492).**
   [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence for classic delegation
@@ -663,8 +663,9 @@ null could not win the merge below — but writes `signOutClearedAt`, an instant
 that beats every stamp not later than itself.
 
 **#111 ADDED NO REQUIRE** to `krb5_kdc.js` or `krb5_principals.js` — the wait, the
-boundary, the horizon and the merge are functions in files the parent's four
-in-process jobs already load — so the `sts/` COPY set is unchanged. Its tests are
+boundary, the horizon and the merge are functions in files the KDC already
+loads. (That kept the parent project's `sts/` COPY set unchanged, an
+obligation until #1280; history now.) Its tests are
 `tests/kerberos_signout_instant.js` (in process: the arithmetic, the merge, and
 the exchanges in one second and under a clock offset, with its mutants) and
 `tests/protocol/sts_kerberos_signout.js` (over TCP 88, both modes).
@@ -2331,7 +2332,7 @@ keeps its password-derived development krbtgt exactly as before.
 **PQC.** No post-quantum Kerberos enctype is standardised; the strongest registered are
 aes256-cts-hmac-sha384-192 (20) and aes256-cts-hmac-sha1-96 (18), and Grover leaves
 AES-256 at about 128 bits, so the rotation needs no new enctype. PKINIT's public-key key
-agreement is the quantum-exposed part and is #179. `docs/kerberos.md` says so.
+agreement is the quantum-exposed part and is #179. `docs/v1.1.0/kerberos.md` says so.
 
 **TESTS.** `tests/kerberos_krbtgt_rotation.js` (three children: product first start —
 creation, a TGT across a rotation, the timing, FAST armor and cookie across one, the
@@ -2458,9 +2459,13 @@ registered just before `krb5_kdc.js` is required (require order 14c): it
 unframes the KDC-PROXY-MESSAGE, finds the client, relays the whole request to
 its home over the inter-cell channel, and calls `next()` for everything else —
 after which the KDC's own handler runs unchanged. It sits IN FRONT of the KDC
-rather than inside `krb5_kdc.js` so that the KDC's require closure, which the
-parent's tests image copies, does not grow. It requires the codec
-and `krb5_principals.js` and edits none of them; nothing in the COPY closure requires it, so **the closure is unchanged**.
+rather than inside `krb5_kdc.js` so that placement stays a concern of cells
+and the KDC knows nothing of them: a single-cell service and every in-process
+loader of the KDC run exactly the code they ran before. It requires the codec
+and `krb5_principals.js` and edits none of them, and none of them requires it.
+(It was first placed here to keep the KDC's require closure, which the parent
+project's tests image copied, from growing; that was owed until #1280 and is
+history now.)
 
 * **AS-REQ**: the body's `cname`, one component, in the realm's own Kerberos
   realm. A FAST-armored AS-REQ is routed by its OUTER body — the inner cannot be
@@ -2483,8 +2488,9 @@ port 88 and whose packets reached a visiting cell was answered THERE — an
 unknown principal in product (their keys are at home), a freshly made one in
 development. #317 on the parent project asked for the seam while the KDC was
 believed to be the parent's; #585 corrected that reading, and the work moved
-here as #588, **which supersedes rcbj/id-proto-debugger#317** (rcbj closes it
-there). The seam is two exports of `krb5_kdc.js` and nothing else in it:
+here as #588, **which supersedes rcbj/id-proto-debugger#317** (closed
+there on 2026-11-17). The seam is two exports of `krb5_kdc.js` and nothing
+else in it:
 
 * **`setMessageRouter(fn)`.** `startTcp()` and `startUdp()` call
   `answerFromSocket()`, which awaits `fn(bytes, { transport: 'tcp' | 'udp',
@@ -2527,9 +2533,10 @@ home that cannot be reached, or answers nothing, is `KDC_ERR_SVC_UNAVAILABLE`
 (29, `STS-KRB-0207`), fail-closed as a relayed MS-KKDCP request is 503 —
 answering it here instead would be the exception this closed.
 
-**The parent project's COPY closure is unchanged**: `krb5_kdc.js` gained two
-exports (and exports `errorReply` and `answerFromSocket` beside them) and no
-require. The parent's four in-process Kerberos jobs set no router.
+**`krb5_kdc.js` gained two exports** (and exports `errorReply` and
+`answerFromSocket` beside them) **and no require**: the router is
+`krb5_home.ts`'s, so a loader that installs none — the parent project's
+in-process Kerberos jobs among them — gets the sockets exactly as before.
 
 Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`
 — MS-KKDCP, and since #588 the real TCP and UDP listeners on an ephemeral port
@@ -2547,7 +2554,7 @@ two-cell stack, `tests/protocol/sts_cells_kerberos.js` (`--modes=cells`, TCP).
 are the sixth claim set of `common/admin_stats.js`, `kerberos-pac`, with a
 per-application override applied to SERVICE tickets; claim ids are
 `ad://ext/<name>:<hex>`; roles go as claims and never as extraSids; a claims
-set is never compressed. `docs/kerberos.md`, *PAC claims*, is the user's half.
+set is never compressed. `docs/v1.1.0/kerberos.md`, *PAC claims*, is the user's half.
 
 **THE CODEC IS THE PARENT'S, AS EVER.** The NDR encoder and decoder for
 `CLAIMS_SET_METADATA` / `CLAIMS_SET` and the XPRESS Huffman decompressor are in
@@ -2720,8 +2727,9 @@ every requirement under both names to get round it.
   of the armor TGT ... against the AllowedToAuthenticateTo"), is AD's own
   mechanism, and neither document says which "user" that is under S4U. If
   a reader wants to argue a default from it, the words "the PAC of the
-  user" lean toward `user`, the default rcbj chose. No require was added (`config` was already
-  required), so the parent's COPY closure is unchanged.
+  user" lean toward `user`, the default rcbj chose. No require was added
+  (`config` was already required); that kept the parent's COPY closure
+  unchanged, which was owed until #1280 and is history now.
 * `tests/kerberos_service_roles.js` holds all of it: the `SPN@REALM` entry
   refused and issued, the bare entry unchanged and preferred, another
   realm's entry not applying, the AS, and K5 — S4U2Self, classic and RBCD
@@ -2928,9 +2936,10 @@ WS-Trust (7) and `oauth2` (9) are required before it (15).
 * **`factorsFor()` MOVED HERE** from `spnego_authn.ts`, which now asks it: a
   Kerberos token's `amr` / `acr` is read exactly as a SPNEGO ticket's.
 
-**THE PARENT PROJECT'S COPY CLOSURE IS UNCHANGED.** `krb5_kdc.js` and
-`krb5_service.js` gained code and no require; `krb5_tokens.ts` is reached
-only from WS-Trust and the token endpoint, neither in the closure.
+**`krb5_kdc.js` and `krb5_service.js` gained code and no require**;
+`krb5_tokens.ts` is reached only from WS-Trust and the token endpoint. (That
+kept the parent project's COPY closure unchanged, an obligation until #1280;
+history now.)
 
 `tests/kerberos_tokens.js` holds it in process (W, D, O, X, S, R), and
 `tests/protocol/sts_kerberos_tokens.js` over TCP 88. The interop jobs (MIT

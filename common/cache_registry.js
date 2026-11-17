@@ -10,9 +10,9 @@
 // THE CACHE REGISTRY: ONE PLACE WHERE EVERY CACHE THIS SERVICE HOLDS SAYS
 // WHAT IT IS, HOW BIG IT IS, AND HOW OFTEN IT WAS USEFUL (#74, rule 3ap).
 //
-// TWO KINDS, and `docs/caches.md` is the list of both — a store it names is a
-// store registered here, and the page is how an operator checks the document
-// against the running process:
+// TWO KINDS, and `docs/v1.1.0/caches.md` is the list of both — a store it names
+// is a store registered here, and the page is how an operator checks the
+// document against the running process:
 //
 //   * `cache` — something held in memory that could be REBUILT from
 //     somewhere else (a fetch, a parse, the directory, the key store) and is

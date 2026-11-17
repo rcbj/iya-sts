@@ -158,7 +158,7 @@
 //     Native SSO secret created, re-issued, revoked or deleted, and RISC
 //     `credential-compromise` and `sessions-revoked` when a person's device
 //     is compromised or removed. `ssf/CLAUDE.md` argues each event's shape
-//     and subject; `docs/devices.md` lists them.
+//     and subject; `docs/v1.1.0/devices.md` lists them.
 //   * **A COMPROMISED DEVICE LOSES EVERYTHING IT WAS TRUSTED WITH**: every
 //     sign-on session one of its keys authenticated is ended (each a CAEP
 //     session-revoked and its back-channel Logout Tokens, through

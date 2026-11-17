@@ -476,8 +476,8 @@ function dropSettledWaiter() {
 // * **WHAT THE FRONT PROCESS WRITES ITSELF IS EVERYBODY'S** (frontGeneration):
 //   those writes carry no ticket and so no key, and they are rare.
 //
-// What is given up, and `docs/configuration.md` says so: a request does not
-// wait for ANOTHER BROWSER's write; a console page reads another session's
+// What is given up, and `docs/v1.1.0/configuration.md` says so: a request does
+// not wait for ANOTHER BROWSER's write; a console page reads another session's
 // writes only once the workers converge, half a second to a second. A
 // request that carried no key — a back channel, SCIM, an API call, a
 // dispatched LDAP operation — is everybody's write (SHARED_KEY, below), so
@@ -3141,11 +3141,11 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
 // own block on that says what it then cost.
 //
 // **WHAT THE PATH IS DOCUMENTED TO MEAN DECIDES WHERE IT IS ANSWERED.**
-// `sts_metadata.ts` and `docs/docker-compose.md` both say *liveness only*: it
-// answers 200 with a JSON message and reads no state. A question that reads no
-// state has nothing to be stale about, so it needs neither barrier, and the
-// process that answers it should be the one a restart would replace — the
-// one holding the listener. That is this process. So it is never dispatched
+// `sts_metadata.ts` and `docs/v1.1.0/docker-compose.md` both say *liveness
+// only*: it answers 200 with a JSON message and reads no state. A question that
+// reads no state has nothing to be stale about, so it needs neither barrier,
+// and the process that answers it should be the one a restart would replace —
+// the one holding the listener. That is this process. So it is never dispatched
 // (dispatched() below) and, kept here, it skips the catch-up every other kept
 // request runs (middleware()). What it still proves is that this process
 // accepts a connection and its event loop turns, which is what liveness is.

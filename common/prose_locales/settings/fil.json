@@ -8812,8 +8812,8 @@
     "text": "I-fingerprint ang browser sa sign-in"
   },
   "risk.fingerprinting|description": {
-    "en": "fb95d41998827b2a",
-    "text": "NAKA-OFF BILANG DEFAULT (#62 P6). Kapag naka-on, nagpapatakbo ang sign-in screen ng isang script, ang FingerprintJS (MIT; wala itong ipinapadala kahit saan), na kumakalkula ng identifier mula sa inilalantad ng browser at inilalagay ito sa form; keyed digest lang ang iniingatan ng serbisyo, at ang browser na hindi pa kailanman pinag-sign in-an ng taong ito ay ang signal na new-device (x2). Personal data ang browser fingerprint: kumpletuhin ang privacy impact assessment sa docs/risk-scoring.md, at sabihan ang mga taong nagsa-sign in, bago ito i-on. Kada realm, gaya ng bawat setting."
+    "en": "452ca90f0592fe8b",
+    "text": "NAKA-OFF BILANG DEFAULT (#62 P6). Kapag naka-on, nagpapatakbo ang sign-in screen ng isang script, ang FingerprintJS (MIT; wala itong ipinapadala kahit saan), na kumakalkula ng identifier mula sa inilalantad ng browser at inilalagay ito sa form; keyed digest lang ang iniingatan ng serbisyo, at ang browser na hindi pa kailanman pinag-sign in-an ng taong ito ay ang signal na new-device (x2). Personal data ang browser fingerprint: kumpletuhin ang privacy impact assessment sa docs/v1.1.0/risk-scoring.md, at sabihan ang mga taong nagsa-sign in, bago ito i-on. Kada realm, gaya ng bawat setting."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11232,8 +11232,8 @@
     "text": "From address"
   },
   "mail.from|description": {
-    "en": "33efdb50c1bacbc3",
-    "text": "Ang address na pinagpapadalhan ng bawat mensahe. Ang walang laman ay nangangahulugang `no-reply@` ang DNS domain ng realm. Dapat payagan ang provider na magpadala bilang ito: isang verified identity sa SES, isang MailFrom address ng nakakonektang domain sa Azure, ang ini-impersonate na mailbox (o isa sa mga send-as alias nito) para sa Gmail — at ang SPF, DKIM at DMARC para sa domain nito ay paksa ng docs/mail.md."
+    "en": "b1da52c40fbad767",
+    "text": "Ang address na pinagpapadalhan ng bawat mensahe. Ang walang laman ay nangangahulugang `no-reply@` ang DNS domain ng realm. Dapat payagan ang provider na magpadala bilang ito: isang verified identity sa SES, isang MailFrom address ng nakakonektang domain sa Azure, ang ini-impersonate na mailbox (o isa sa mga send-as alias nito) para sa Gmail — at ang SPF, DKIM at DMARC para sa domain nito ay paksa ng docs/v1.1.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11368,8 +11368,8 @@
     "text": "DKIM algorithm"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "b319eebbac62f962",
-    "text": "`rsa-sha256` (RFC 6376; isang 2048-bit na key o mas malaki, ayon sa RFC 8301) o `ed25519-sha256` (RFC 8463). Marami pang receiver ang RSA lang ang vine-verify, kaya ang domain na lumilipat sa Ed25519 ay naglalathala ng dalawa at pumipirma nang dalawang beses sa ibang lugar. Wala pang nakarehistrong post-quantum algorithm ang DKIM; sinasabi iyon ng docs/mail.md."
+    "en": "62ed500aeff2bc8a",
+    "text": "`rsa-sha256` (RFC 6376; isang 2048-bit na key o mas malaki, ayon sa RFC 8301) o `ed25519-sha256` (RFC 8463). Marami pang receiver ang RSA lang ang vine-verify, kaya ang domain na lumilipat sa Ed25519 ay naglalathala ng dalawa at pumipirma nang dalawang beses sa ibang lugar. Wala pang nakarehistrong post-quantum algorithm ang DKIM; sinasabi iyon ng docs/v1.1.0/mail.md."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11592,16 +11592,16 @@
     "text": "Kailangan ng self-service reset ang verified address"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "76e079f6e1b23b98",
-    "text": "Ipadala lang ang self-service reset link sa address na VERIFIED na ng tao (isang link na sinundan niya mula rito). Naka-on bilang default, dahil ang link ay ang account mismo: ang address na isinulat ng isang import o provisioning feed, at hindi kailanman napatunayan ninuman, ay hindi lugar na pagpapadalhan nito. **Mas mahinang setting ang pag-off dito**, para sa directory na pinagkakatiwalaan ang mga address kung paano isinulat; dala ng docs/mail.md ang babala."
+    "en": "81dfbb5f1c67cc3c",
+    "text": "Ipadala lang ang self-service reset link sa address na VERIFIED na ng tao (isang link na sinundan niya mula rito). Naka-on bilang default, dahil ang link ay ang account mismo: ang address na isinulat ng isang import o provisioning feed, at hindi kailanman napatunayan ninuman, ay hindi lugar na pagpapadalhan nito. **Mas mahinang setting ang pag-off dito**, para sa directory na pinagkakatiwalaan ang mga address kung paano isinulat; dala ng docs/v1.1.0/mail.md ang babala."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "Kailangan ng self-service reset ang recovery code"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "d2884302ae8d8475",
-    "text": "Hinihingi ng forgot-password form ang USERNAME, ang verified na ADDRESS sa account at isa sa mga RECOVERY CODE ng tao, at nagpapadala lang ng reset link kapag tama ang tatlo — saka nagagamit ang code. Sinasagot ang bawat kombinasyon ng parehong pangungusap. **Mas mahinang setting ang pag-off dito**: bumabalik ang form sa iisang field (isang username o ang address), at ang reset ay kasinlakas lang ng mailbox na pinupuntahan nito — na pinapayagan ng NIST SP 800-63B-4 para sa recovery, at binababalaan ng docs/mail.md. Ang taong walang hawak na recovery code ay hindi makakapag-reset ng sariling password habang naka-on ito; kaya ito ng administrator."
+    "en": "2d8885388b97eb61",
+    "text": "Hinihingi ng forgot-password form ang USERNAME, ang verified na ADDRESS sa account at isa sa mga RECOVERY CODE ng tao, at nagpapadala lang ng reset link kapag tama ang tatlo — saka nagagamit ang code. Sinasagot ang bawat kombinasyon ng parehong pangungusap. **Mas mahinang setting ang pag-off dito**: bumabalik ang form sa iisang field (isang username o ang address), at ang reset ay kasinlakas lang ng mailbox na pinupuntahan nito — na pinapayagan ng NIST SP 800-63B-4 para sa recovery, at binababalaan ng docs/v1.1.0/mail.md. Ang taong walang hawak na recovery code ay hindi makakapag-reset ng sariling password habang naka-on ito; kaya ito ng administrator."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",

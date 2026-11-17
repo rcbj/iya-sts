@@ -23,8 +23,13 @@ const log = require('bunyan').createLogger({ name: 'doc_links',
   level: process.env.LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
-const DOCS = path.join(ROOT, 'docs');
-const ORIGIN = 'https://rcbj.github.io/iya-sts/';
+// The latest documentation version: its pages, and its sidebar in
+// docs/_data/navigation/. A frozen release is never checked (docs/CLAUDE.md,
+// *The versioned site*).
+const DOCS = path.join(ROOT, 'docs', 'v1.1.0');
+const NAVIGATION = path.join(ROOT, 'docs', '_data', 'navigation',
+                             'v1-1-0.yml');
+const ORIGIN = 'https://rcbj.github.io/iya-sts/v1.1.0/';
 
 const SKIP_IDS = { 'logout-signout': true, 'logout-details': true };
 
@@ -109,8 +114,7 @@ function quotedTargets(problems, cache) {
 // output, not markdown, so neither is a target here.
 function navigationTargets(problems, cache) {
   log.debug("Entering navigationTargets().");
-  const nav = fs.readFileSync(path.join(DOCS, '_data', 'navigation.yml'),
-                              'utf8');
+  const nav = fs.readFileSync(NAVIGATION, 'utf8');
   const re = /url:\s*"?([^"}\s]+)"?/g;
   let found;
   while ((found = re.exec(nav)) !== null) {

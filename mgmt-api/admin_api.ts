@@ -9132,7 +9132,8 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'The FRONT of an error code: a whole code is one ' +
                          'failure condition and `STS-OAUTH` every failure in ' +
-                         'that subsystem. docs/error-codes.md lists them. ' +
+                         'that subsystem. docs/v1.1.0/error-codes.md lists ' +
+                         'them. ' +
                          'Every refused or failed request ' +
                          'carries a code; no code is ' +
                          'ever sent to the client that made the request.' },

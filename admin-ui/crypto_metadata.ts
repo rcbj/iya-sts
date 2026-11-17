@@ -513,7 +513,7 @@ const STANDARDS = [
     // AND NO PATH LONGER THAN ONE, until 2026-09-17 (#70)** — six days after
     // `common/pki.js` made every key pair a leaf of one service Root
     // (`common/CLAUDE.md` 3w) and `pki/pki_service.ts` began publishing a CRL
-    // and an OCSP responder per CA (`docs/pki.md`).
+    // and an OCSP responder per CA (`docs/v1.1.0/pki.md`).
     coverage: 'partial: one Root for the service, an Intermediate per trust ' +
               'realm (and one for the process) and an Issuing CA per use ' +
               'case, so a leaf path is four certificates long and an SVID ' +
@@ -2598,7 +2598,8 @@ class CryptoMetadata {
       // 2026-09-11 every one is a leaf of the service Root (`common/pki.js`,
       // `tls/CLAUDE.md`), and a verified client certificate has been a sign-in
       // since 2026-09-05 — at `GET /tls/sign-in` since 2026-09-16. LDAPS 636
-      // asks for no client certificate (`docs/pki.md`), so it left `verifies`.
+      // asks for no client certificate (`docs/v1.1.0/pki.md`), so it left
+      // `verifies`.
       { name: 'PKI / X.509',
         signs: 'Nothing itself — the certificates this service PRESENTS are ' +
                'issued by `common/pki.js` (the PKI row above) over keys made ' +

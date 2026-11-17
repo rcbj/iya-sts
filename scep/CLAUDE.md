@@ -289,7 +289,7 @@ certificate in product is an EST one.
   `scep-submit` passes `-R` (its CA file) to GetCACaps and GetCACert, and its
   PKIOperation request to `cm_submit_h_init()` with none (0.79.21, `scep.c`),
   so libcurl uses the system trust store and fails error 60. Over the plain
-  listener it enrolls, renews and rekeys; `docs/scep.md` tells an operator.
+  listener it enrolls, renews and rekeys; `docs/v1.1.0/scep.md` tells an operator.
 * **jscep needed nothing else.** It negotiates AES and SHA-512 from GetCACaps,
   renews with a PKCSReq signed by the old certificate, polls, gets
   certificates and CRLs, refuses to ask GetNextCACert because it is not

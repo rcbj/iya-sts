@@ -51,7 +51,11 @@ defaults:
 plugins:
   - jekyll-relative-links
 
-# The navigation is the sidebar, drawn from _data/navigation.yml by
-# _layouts/default.html and _includes/sidebar.html (overrides of minima's own).
+# The navigation is the sidebar, drawn by _layouts/default.html and
+# _includes/sidebar.html (overrides of minima's own) from the page's own
+# version's _data/navigation/<nav>.yml. THE SITE IS VERSIONED: each
+# release's pages are a folder (v1.1.0/, v1.0.0/), _data/versions.yml lists
+# them, and index.md here is the landing page that chooses one
+# (docs/CLAUDE.md, *The versioned site*).
 # There is no `header_pages`: at twenty-six pages a row across the top was not
 # navigation, so the header carries only the title.

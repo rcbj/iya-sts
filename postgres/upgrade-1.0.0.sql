@@ -330,8 +330,8 @@ INSERT INTO sts_schema (version) VALUES (32) ON CONFLICT (version) DO NOTHING;
 -- upgrade. So every realm that has registered at least one remote PEP is
 -- given `either` as its own stored value — the certificate keeps working
 -- beside the token — and the operator moves it to `token` once each PEP runs
--- on its key (docs/remote-pep.md, "Upgrading a deployment whose PEPs use a
--- certificate"). A realm with no PEP, and a new install, gets the default.
+-- on its key (docs/v1.1.0/remote-pep.md, "Upgrading a deployment whose PEPs use
+-- a certificate"). A realm with no PEP, and a new install, gets the default.
 --
 -- WHAT IS READ. A registered PEP is an entry directly under the realm's
 -- ou=peps: a row of sts_ldap_entries whose parent_key starts `ou=peps,` —

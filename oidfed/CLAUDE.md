@@ -88,7 +88,7 @@ resolves anything.
   `helpers.makeFederationKey()`, which uses the curve and post-quantum recipes
   a signing unit's next key uses. Signing is `crypto.js`'s.
 - **Not a PKI leaf**, by nature. A federation trusts a key through the
-  statements above it (`docs/pki.md`'s "every key pair is a leaf" has this
+  statements above it (`docs/v1.1.0/pki.md`'s "every key pair is a leaf" has this
   exception, with the BBS key and SPIFFE's JWT authority).
 
 **Row states:** `next` → `current` → `retired`.
