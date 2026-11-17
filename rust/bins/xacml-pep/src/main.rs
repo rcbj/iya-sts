@@ -279,6 +279,7 @@ async fn serve_https(
 
 #[tracing::instrument(level = "debug", skip_all)]
 async fn start(options: Options, info: version::VersionInfo) {
+    crate::service::remember_process_runtime();
     tracing::info!(
         "xacml-pep: version {} ({}built {}{}, {}). The release is the \
          service's own; the build number is this image's.",

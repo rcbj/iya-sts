@@ -23,7 +23,7 @@
 //! through the one builder, the bias as this PEP's option (`PEP_BIAS`), and
 //! section 7.2's obligation rule (`enforce.rs`).
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::body::Body;
 use axum::http::{header, HeaderValue, Method, Request, Response, StatusCode};
@@ -37,6 +37,40 @@ use sts_xacml::model::{attribute, category, types, Decision};
 use sts_xacml::pdp::{AttributeResolver, EvaluationOptions, Pdp};
 use sts_xacml::policy::PolicyNode;
 use sts_xacml::request::{ResolvedObligation, Status};
+
+/// THE PROCESS RUNTIME, for work a request starts and must outlive it
+/// (2026-11-16). A listener worker owns a current-thread runtime and polls
+/// it only while it serves a connection (`listener_pool.rs`), so a task
+/// `tokio::spawn`ed from a handler there is frozen the moment that
+/// connection's job returns. The nudge's pull was: `POST /notify` was
+/// answered 204, the pull it spawned never ran to its end, and
+/// `lastNudgeAt` stayed empty while the polls went on
+/// (`sts_xacml_remote_pep.js` section 6, the first local run of that day).
+/// Set once by `main.rs` from inside the process runtime.
+static PROCESS_RUNTIME: OnceLock<tokio::runtime::Handle> = OnceLock::new();
+
+/// Records the runtime this is called on as the process's own. Called once,
+/// first thing in `start()`.
+pub fn remember_process_runtime() {
+    let _ = PROCESS_RUNTIME.set(tokio::runtime::Handle::current());
+}
+
+/// Spawns `work` on the process runtime, which is always driven, rather
+/// than on whichever listener worker's runtime the caller is on; with none
+/// remembered (a unit test) on the current one.
+fn spawn_on_process<F>(work: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    match PROCESS_RUNTIME.get() {
+        Some(handle) => {
+            handle.spawn(work);
+        }
+        None => {
+            tokio::spawn(work);
+        }
+    }
+}
 
 use crate::audit::{self, Audit, Record};
 use crate::authzen::{self, Reply};
@@ -371,7 +405,7 @@ impl Pep {
                 self.options.now().poll_interval_ms
             );
             let sync = self.sync.clone();
-            tokio::spawn(async move {
+            spawn_on_process(async move {
                 let pulled = if full {
                     sync.pull_full("nudge").await
                 } else {
