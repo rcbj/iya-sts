@@ -5569,7 +5569,42 @@ async function createTheRealm() {
     "launcher owns the PEP container. Restart the stack, or remove " + REALM +
     " by hand once you have finished reading it.");
   log.info("Created the throwaway realm " + REALM + ".");
+  await theRealmsCertificateAuthority();
   log.debug("Leaving createTheRealm().");
+}
+
+// THE REALM'S CERTIFICATE AUTHORITY IS BUILT BEHIND THE CREATE (2026-11-16).
+// `realms/create` answers once the realm exists, and its branch under the
+// service Root — the Intermediate and the Issuing CAs, the PEP-assertion
+// one among them — is built just after: on the first local memory run the
+// create answered at 03:21:57, issue-pep-credential was refused at 03:21:58
+// with "no certificate authority yet" (STS-PKI-0008), and the branch was
+// logged built at 03:22:00. Since phase 4 the PEP's key is registered
+// straight after the create, so this waits for the chain to be readable on
+// the realm's `GET /admin-api/pki` rather than meeting that race.
+async function theRealmsCertificateAuthority() {
+  log.debug("Entering theRealmsCertificateAuthority().");
+  const deadline = Date.now() + 60000;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await get(api("/pki"));
+    const tiers = (last.body && last.body.chain && last.body.chain.tiers) ||
+                  [];
+    if (last.status === 200 && tiers.some(function (t) {
+      return t && t.tier === "intermediate";
+    })) {
+      log.debug("Leaving theRealmsCertificateAuthority(). " + tiers.length +
+                " tier(s).");
+      return;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 500);
+    });
+  }
+  log.debug("Leaving theRealmsCertificateAuthority(). Timed out.");
+  assert.fail("the realm " + REALM + " had no certificate authority 60 s " +
+              "after it was created (GET /admin-api/pki answered " +
+              (last && last.status) + "), so nothing can be issued in it");
 }
 
 // THE TWO PEOPLE THE RBAC POLICY DECIDES ABOUT, created in this run's realm
