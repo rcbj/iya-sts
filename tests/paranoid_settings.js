@@ -266,8 +266,14 @@ module.exports = {
     t.log.info('F. the log line');
     await withSettings({ 'global.mode': 'product' }, async () => {
       const said = [];
-      const warn = require('../common/helpers').log.warn;
       const log0 = require('../common/helpers').log;
+      // Put back exactly what was there. The logger's `warn` is bunyan's
+      // PROTOTYPE method, and assigning it back as an own property would
+      // shadow the prototype for good — every later test that catches the
+      // service's warn lines at the prototype (service_account_orphan_owner,
+      // minted_persistence, cache_registry) then caught none of `sts`'s.
+      const hadOwn = Object.prototype.hasOwnProperty.call(log0, 'warn');
+      const warn = log0.warn;
       log0.warn = function (line) {
         said.push(String(line));
       };
@@ -278,7 +284,11 @@ module.exports = {
         trust.applies('cell-peer');
         trust.applies('cell-peer');
       } finally {
-        log0.warn = warn;
+        if (hadOwn) {
+          log0.warn = warn;
+        } else {
+          delete log0.warn;
+        }
         config.clearOverride('pki.paranoidCellPeer');
       }
       const lines = said.filter(function (line) {
