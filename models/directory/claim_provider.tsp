@@ -17,7 +17,7 @@ namespace IyaSts.Directory;
   container: "ou=claimproviders",
   ownContainer: true,
   authored: true,
-  section: "docs/ldap-schema.md Claims providers",
+  section: "docs/v1.1.0/ldap-schema.md Claims providers",
   note: "The record is one JSON value, stsClaimProviderData.",
   objectClasses: #[
     #{

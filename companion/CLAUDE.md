@@ -10,7 +10,7 @@ directory from its copy of the tree (`rm -rf … ./companion`), and the
 companion is built from this directory alone (`context: ./companion`), so
 nothing crosses in either direction.
 
-`docs/docker-compose.md` (*The companion*) is how a user starts it; this file
+`docs/v1.1.0/docker-compose.md` (*The companion*) is how a user starts it; this file
 is why it is shaped the way it is.
 
 ## What it is
@@ -183,7 +183,7 @@ customer's**:
 * **TWO SERVICES, ONE HOST NAME, IS THE ONE THING TO WATCH.** A browser on the
   laptop reaches both the service and the companion at `localhost`, and
   Kerberos names a service by host, not port: both would be
-  `HTTP/localhost`. `docs/docker-compose.md` tells a user to give the
+  `HTTP/localhost`. `docs/v1.1.0/docker-compose.md` tells a user to give the
   companion a host of its own.
 
 ## Dummy social identity providers (#1689)
@@ -195,7 +195,7 @@ and none is kept. `social_idps.js` serves a dummy of each named one at
 that profile asks for. Steam's OpenID 2.0 check, DiscourseConnect and
 Bluesky's DPoP push are the three that are not a code grant. The two
 generic profiles are not served. The document each dummy follows is
-`docs/federation-consumer-providers.md` (*The companion dummy of each
+`docs/v1.1.0/federation-consumer-providers.md` (*The companion dummy of each
 provider*): the profile's recorded document, and the extra protocol
 page where that document is not the whole answer.
 

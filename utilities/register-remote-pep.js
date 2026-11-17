@@ -10,8 +10,8 @@
 // register a new remote pep").
 //
 // Every step is a management API call an operator could make by hand, in
-// the order docs/remote-pep.md's *Registering a new remote PEP, step by
-// step* gives them, and nothing here is a door of its own:
+// the order docs/v1.1.0/remote-pep.md's *Registering a new remote PEP, step
+// by step* gives them, and nothing here is a door of its own:
 //
 //   1. the PEP's entry, a person whose username is PEP_NAME
 //      (POST /admin-api/users/create);
@@ -401,7 +401,7 @@ async function findToken(opts, origin, prefix, tlsOptions) {
       'there is no STS_ADMIN_API_TOKEN and no client secret',
       'Set STS_ADMIN_API_TOKEN to an admin:read admin:write token for ' +
       origin + '/admin-api, or ADMIN_API_CLIENT_SECRET(_FILE) for --client ' +
-      '(docs/management-api.md, Getting a token).');
+      '(docs/v1.1.0/management-api.md, Getting a token).');
   }
   const base = origin + (opts.realmClient ? prefix : '');
   const client = opts.client || 'sts-api-client';
@@ -426,7 +426,8 @@ async function findToken(opts, origin, prefix, tlsOptions) {
     throw new StepError('Getting a management API token',
       'the token endpoint refused ' + client + ': ' + refusalOf(answer),
       'Check the client and its secret, and that it holds ADMIN_READ and ' +
-      'ADMIN_WRITE (docs/management-api.md, An application of your own).');
+      'ADMIN_WRITE (docs/v1.1.0/management-api.md, An application of your ' +
+      'own).');
   }
   log.debug("Leaving findToken(). Minted.");
   return answer.body.access_token;
@@ -595,7 +596,7 @@ async function preflight(api, opts, where) {
     throw new StepError(step, refusalOf(peps), 'Give a management API ' +
       'token carrying admin:read and admin:write, audienced to ' +
       where.origin + '/admin-api (a default-realm token works under every ' +
-      'realm\'s prefix): docs/management-api.md, Getting a token.');
+      'realm\'s prefix): docs/v1.1.0/management-api.md, Getting a token.');
   }
   if (peps.status === 404) {
     log.debug("Leaving preflight(). No such realm.");

@@ -160,7 +160,7 @@ HELP_TEXT_BY_ROUTE = {
 }
 
 # The account API's OpenAPI document as the console's page holds it: its
-# descriptions, which docs/openapi/ publishes as well.
+# descriptions, which docs/v1.1.0/openapi/ publishes as well.
 _DOCUMENT_ROUTE = "/admin-api/account-api"
 _DOCUMENT_PREFIX = ".document.paths."
 

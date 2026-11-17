@@ -1052,8 +1052,8 @@ function signatureForIssuer(parent, preferred, subjectKeyAlg) {
 // encoder writing what it is handed is defensible; handing it a time with
 // milliseconds in it is what this module was doing wrong. The parent project
 // should still drop fractional seconds on the way out — that is its bug to
-// fix, and `docs/parent-project-migration.md` is where this repository records
-// what it owes that one.
+// fix, and `docs/v1.1.0/parent-project-migration.md` is where this repository
+// records what it owes that one.
 // ---------------------------------------------------------------------------
 function certificateInstant(at) {
   log.debug("Entering certificateInstant().");

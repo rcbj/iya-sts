@@ -224,7 +224,7 @@ volume. rcbj's four decisions, and what each became:
   24 hours); after that the operator makes an application of their own with
   ADMIN_READ and ADMIN_WRITE and a client secret, on client credentials — in
   the default realm for every realm, in a realm for that realm.
-  `docs/management-api.md` is the procedure.
+  `docs/v1.1.0/management-api.md` is the procedure.
 * **The root token is revoked after seeding.** The initialising run uses it in
   memory and revokes it last; a volume from before #254 that kept
   `seed/root.token` has it used once and revoked, and the file deleted. The

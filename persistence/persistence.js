@@ -38,7 +38,7 @@
 // and since 2026-09-13 the used-assertion history persists in every store and
 // both modes (`common/used_assertions.js`). `persistence/CLAUDE.md`'s *The
 // sentence this directory reverses* is the exact current wording, and
-// `docs/persistence.md` the operator's.
+// `docs/v1.1.0/persistence.md` the operator's.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS NOT A node-ldapjs FEATURE, WHICH IS THE FIRST QUESTION ANYBODY

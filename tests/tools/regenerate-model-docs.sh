@@ -14,8 +14,8 @@
 #   types/domain.generated.d.ts
 #   types/api.generated.d.ts
 #   common/domain_classes.ts
-#   docs/data-model-directory.md
-#   docs/data-model-persistence.md
+#   docs/v1.1.0/data-model-directory.md
+#   docs/v1.1.0/data-model-persistence.md
 #
 set -euo pipefail
 
@@ -26,16 +26,20 @@ tests/tools/corpora-preflight.sh
 # shellcheck disable=SC2046
 docker build -q $(tests/tools/mirror-contexts.sh) -f tests/Dockerfile \
   -t "${TAG}" . > /dev/null
-mkdir -p docs postgres mariadb
+# The latest documentation version's folder only: a frozen release's pages
+# are never regenerated (docs/CLAUDE.md, *The versioned site*).
+DOCS_LATEST=docs/v1.1.0
+mkdir -p "${DOCS_LATEST}" postgres mariadb
 docker run --rm --label com.docker.compose.project=none \
-  -v "${PWD}/docs:/out/docs" \
+  -v "${PWD}/${DOCS_LATEST}:/out/docs" \
   -v "${PWD}/postgres:/out/postgres" \
   -v "${PWD}/mariadb:/out/mariadb" \
   -v "${PWD}/types:/out/types" \
   -v "${PWD}/common:/out/common" \
   "${TAG}" bash -c \
   "node common/model_emit.js --docs && \
-   cp docs/data-model-directory.md docs/data-model-persistence.md /out/docs/ && \
+   cp docs/v1.1.0/data-model-directory.md \
+     docs/v1.1.0/data-model-persistence.md /out/docs/ && \
    cp models/generated/schema.sql /out/postgres/schema.sql && \
    cp models/generated/mariadb.schema.sql /out/mariadb/schema.sql && \
    cp models/generated/domain.d.ts /out/types/domain.generated.d.ts && \

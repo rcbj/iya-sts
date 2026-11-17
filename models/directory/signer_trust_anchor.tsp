@@ -17,7 +17,7 @@ namespace IyaSts.Directory;
   container: "ou=signerTrustAnchors",
   ownContainer: true,
   authored: true,
-  section: "docs/ldap-schema.md Trust anchors",
+  section: "docs/v1.1.0/ldap-schema.md Trust anchors",
   note: "One entry per signer truststore anchor.",
   objectClasses: #[
     #{

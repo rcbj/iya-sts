@@ -4,7 +4,7 @@
 databases a realm reads people's attributes from. The values are written onto
 each person's directory entry, where an attribute claim (#94 part A,
 `common/CLAUDE.md` rule 3d) or the catalogue carries them into tokens and
-assertions. `docs/attribute-sources.md` is the user's guide; this file is why
+assertions. `docs/v1.1.0/attribute-sources.md` is the user's guide; this file is why
 the code is the way it is.
 
 | File | What it is |

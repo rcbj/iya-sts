@@ -32,5 +32,5 @@
   "th.whatFailed": "失敗內容",
   "th.clientSees": "用戶端看到的內容",
   "codes.none": "沒有相符項目。",
-  "note.table": "該表是 <code>common/error_codes.js</code>，此頁面沒有任何控制項：代碼永遠不會重新編號或重複使用，因為它會進入警示規則與儲存的搜尋中；不再存在的情況會保留其列並標示為已停用。同一張表發布為 <code>docs/error-codes.md</code>，由原始碼產生，此清單也可透過 <code>GET /admin-api/error-codes</code> 以相同參數取得。分頁使用 <code>?page=</code> 與 <code>?per=</code>（每頁最多 {max} 列）。"
+  "note.table": "該表是 <code>common/error_codes.js</code>，此頁面沒有任何控制項：代碼永遠不會重新編號或重複使用，因為它會進入警示規則與儲存的搜尋中；不再存在的情況會保留其列並標示為已停用。同一張表發布為 <code>docs/v1.1.0/error-codes.md</code>，由原始碼產生，此清單也可透過 <code>GET /admin-api/error-codes</code> 以相同參數取得。分頁使用 <code>?page=</code> 與 <code>?per=</code>（每頁最多 {max} 列）。"
 }

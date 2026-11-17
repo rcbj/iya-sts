@@ -10,12 +10,12 @@
 // THE OPENAPI DOCUMENTS AS PAGES SOMEBODY CAN READ (rcbj, 2026-11-06).
 //
 // `pagesOf(documents)` turns the documents each published API answers into the
-// markdown under `docs/openapi/`: every operation, its parameters, its request
-// body and each status's response, with every member of a model on a line of
-// its own at its dotted path. A pure function of the documents, with no service
-// loaded, so `tests/openapi_pages.js` can hold the committed pages to what the
-// running code's documents produce. `tests/tools/regenerate-openapi-pages.sh`
-// writes them.
+// markdown under `docs/v1.1.0/openapi/`: every operation, its parameters, its
+// request body and each status's response, with every member of a model on a
+// line of its own at its dotted path. A pure function of the documents, with no
+// service loaded, so `tests/openapi_pages.js` can hold the committed pages to
+// what the running code's documents produce.
+// `tests/tools/regenerate-openapi-pages.sh` writes them.
 //
 // The volatile parts of a document are not drawn: `servers` is whatever address
 // answered, and `info.version` carries the build instant.
@@ -444,7 +444,7 @@ const CLOSED = 'Every answer is checked against the model shown here before ' +
  * The pages for the documents.
  *
  * @param documents - `{ admin, console, account, authn, report }`
- * @returns a map of a file name under `docs/openapi/` to its text
+ * @returns a map of a file name under `docs/v1.1.0/openapi/` to its text
  */
 function pagesOf(documents) {
   log.debug("Entering pagesOf().");

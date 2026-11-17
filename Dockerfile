@@ -168,7 +168,7 @@ RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
 # rest of `.github` is still excluded and nothing here reads any of it.
 #
 # **AND `docs` AND `docker-compose-run-tests.yml` ON 2026-09-14**, for the same
-# reason again: tests/error_codes.js reads docs/error-codes.md and
+# reason again: tests/error_codes.js reads docs/v1.1.0/error-codes.md and
 # docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
 # read the test compose file. Excluded from the context, all three failed with
 # ENOENT in the first ./run-tests.sh run that reached them.
@@ -584,7 +584,7 @@ EXPOSE 8181
 EXPOSE 8444
 # The inter-cell channel (cells.port), bound only when the service is deployed
 # as cells (#98). A private address between cells; never publish it. See
-# docs/cells.md.
+# docs/v1.1.0/cells.md.
 EXPOSE 8446
 # ---------------------------------------------------------------------------
 # THE SERVICE RUNS AS `sts`, UID AND GID 10001, AND NOT AS ROOT (#254,

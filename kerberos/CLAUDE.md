@@ -397,7 +397,7 @@ ticket-granting ticket.
 Kerberos policed delegation from msDS-* fields on its own principal table; it
 now asks the issuance policy that decides WS-Trust and RFC 8693 too, over the
 common controls on the directory's entries (`../common/CLAUDE.md` rule 3az,
-`../docs/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
+`../docs/v1.1.0/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
 decides nothing: it names the parties (a service is the application entry
 whose identifier is its `SPN@REALM`, a person their entry), asks
 `delegation_policy.ts`, and holds the two pieces of machinery that are not
@@ -423,7 +423,7 @@ policy. rcbj's decisions on #186, each load-bearing:
   than a mismatch — an S4U2Proxy ticket carries the chain in its PAC
   (S4U_DELEGATION_INFO), and an exchanged token with no `act` carries none —
   and the console's Kerberos rows say it under their mode
-  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/delegation.md` and
+  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/v1.1.0/delegation.md` and
   the chain jobs' headers do.
 * **FORWARDABLE EVIDENCE FOR BOTH ROUTES, AND THE REPLY'S FLAG (#492).**
   [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence for classic delegation
@@ -2332,7 +2332,7 @@ keeps its password-derived development krbtgt exactly as before.
 **PQC.** No post-quantum Kerberos enctype is standardised; the strongest registered are
 aes256-cts-hmac-sha384-192 (20) and aes256-cts-hmac-sha1-96 (18), and Grover leaves
 AES-256 at about 128 bits, so the rotation needs no new enctype. PKINIT's public-key key
-agreement is the quantum-exposed part and is #179. `docs/kerberos.md` says so.
+agreement is the quantum-exposed part and is #179. `docs/v1.1.0/kerberos.md` says so.
 
 **TESTS.** `tests/kerberos_krbtgt_rotation.js` (three children: product first start —
 creation, a TGT across a rotation, the timing, FAST armor and cookie across one, the
@@ -2554,7 +2554,7 @@ two-cell stack, `tests/protocol/sts_cells_kerberos.js` (`--modes=cells`, TCP).
 are the sixth claim set of `common/admin_stats.js`, `kerberos-pac`, with a
 per-application override applied to SERVICE tickets; claim ids are
 `ad://ext/<name>:<hex>`; roles go as claims and never as extraSids; a claims
-set is never compressed. `docs/kerberos.md`, *PAC claims*, is the user's half.
+set is never compressed. `docs/v1.1.0/kerberos.md`, *PAC claims*, is the user's half.
 
 **THE CODEC IS THE PARENT'S, AS EVER.** The NDR encoder and decoder for
 `CLAIMS_SET_METADATA` / `CLAIMS_SET` and the XPRESS Huffman decompressor are in

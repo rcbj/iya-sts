@@ -9,7 +9,7 @@ UMA adds that nothing here had is a POLICY A PERSON WRITES: the resource
 owner's own document, authored by a form. Everything it DECIDES is already a
 question this service puts to the XACML PDP, so this family is built as #432
 and #564 were: a protocol module that gathers facts and enforces verdicts,
-with no decision in code. `docs/uma.md` is the user-facing half; this file is
+with no decision in code. `docs/v1.1.0/uma.md` is the user-facing half; this file is
 why the code is the way it is.
 
 rcbj's design is the *Design* comment of 2026-10-30 on #1168, and his eight

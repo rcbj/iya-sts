@@ -1,0 +1,23 @@
+{%- comment -%}
+  Works out which documentation version the page belongs to, from the first
+  segment of its url (/v1.1.0/foo.html is in v1.1.0), and leaves it in
+  `doc_version` (a row of _data/versions.yml, or nil for a page outside every
+  version: the landing page) and `doc_prefix` ("/v1.1.0", or ""). The
+  header, the sidebar and the layout include it, so the three agree.
+{%- endcomment -%}
+{%- assign doc_segments = page.url | split: "/" -%}
+{%- assign doc_folder = doc_segments[1] -%}
+{%- comment -%}
+  `where` with a nil value matches every row, so the landing page ("/",
+  which splits to nothing) must not reach it.
+{%- endcomment -%}
+{%- assign doc_version = nil -%}
+{%- if doc_folder -%}
+  {%- assign doc_version = site.data.versions | where: "folder", doc_folder | first -%}
+{%- endif -%}
+{%- assign doc_latest = site.data.versions | first -%}
+{%- if doc_version -%}
+  {%- assign doc_prefix = "/" | append: doc_version.folder -%}
+{%- else -%}
+  {%- assign doc_prefix = "" -%}
+{%- endif -%}

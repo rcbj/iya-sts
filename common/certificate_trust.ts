@@ -112,8 +112,9 @@ function leaf(keyUsage: string[], oids?: string[], required?: boolean): Json {
            mayBeCa: false };
 }
 
-// THE PURPOSE TABLE. One row per use case; `docs/pki-use-cases.md` is written
-// from it, and `tests/paranoid_settings.js` holds it to `common/config.js`.
+// THE PURPOSE TABLE. One row per use case; `docs/v1.1.0/pki-use-cases.md` is
+// written from it, and `tests/paranoid_settings.js` holds it to
+// `common/config.js`.
 const PURPOSES: Purpose[] = [
   { id: 'tls-client', setting: 'pki.paranoidTlsClient',
     title: 'A client certificate at a TLS handshake',
@@ -2604,7 +2605,7 @@ class CertificateTrust {
    * The published table of use cases, generated from the purpose table so the
    * documentation and the code cannot disagree.
    *
-   * @returns the whole of `docs/pki-use-cases.md`
+   * @returns the whole of `docs/v1.1.0/pki-use-cases.md`
    */
   static docsPage(): string {
     helpers.log.debug("Entering CertificateTrust.docsPage().");
@@ -2657,7 +2658,9 @@ class CertificateTrust {
   static docsPath(): string {
     helpers.log.debug("Entering CertificateTrust.docsPath().");
     helpers.log.debug("Leaving CertificateTrust.docsPath().");
-    return path.join(__dirname, '..', 'docs', 'pki-use-cases.md');
+    // The latest documentation version's folder; the frozen releases
+    // beside it are never regenerated (docs/CLAUDE.md).
+    return path.join(__dirname, '..', 'docs', 'v1.1.0', 'pki-use-cases.md');
   }
 }
 

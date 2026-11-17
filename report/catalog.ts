@@ -424,7 +424,8 @@ function passkeyHistorySource(): SourceSpec {
   });
   // THE PREDEFINED QUERIES (#1109), in #1110's `presets` shape: each one
   // filter leaf on `scope`, one order on `day`, so the form draws it and
-  // a save keeps it. Their longer descriptions are in `docs/reporting.md`.
+  // a save keeps it. Their longer descriptions are in
+  // `docs/v1.1.0/reporting.md`.
   const presets: PresetSpec[] = [{
     id: 'post-quantum-adoption-by-day',
     name: 'Post-quantum adoption by day',
@@ -828,7 +829,7 @@ function passkeyCeremonySource(): SourceSpec {
   });
   // THE PREDEFINED QUERIES (#1107), in #1110's `presets` shape: what an
   // operator moving a realm to ML-DSA passkeys asks first. Their longer
-  // descriptions are in `docs/reporting.md`.
+  // descriptions are in `docs/v1.1.0/reporting.md`.
   const presets: PresetSpec[] = [{
     // Registrations that offered ML-DSA and did not complete, per client;
     // group by clientError instead to see how they failed.

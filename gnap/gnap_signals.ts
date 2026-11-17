@@ -22,15 +22,15 @@
 //      `streamCoversSubject()` — the single function every CAEP, RISC and
 //      by-hand delivery already asks — and this file fills it.
 //   3. **Grant and token revocation emit CAEP.** This REVERSES a documented
-//      rule — docs/caep-events.md said revoking a token emits nothing — for
-//      GNAP only, and the reason it is not a contradiction is the shape of a
-//      GNAP grant: it is a DELEGATED SESSION between a client instance and a
+//      rule — docs/v1.1.0/caep-events.md said revoking a token emits nothing —
+//      for GNAP only, and the reason it is not a contradiction is the shape of
+//      a GNAP grant: it is a DELEGATED SESSION between a client instance and a
 //      resource owner (RFC 9767 section 2.1.13 calls it the grant's current
 //      state), with a lifetime, a continuation and a revocation of its own. So
 //      a grant revoked is a `session-revoked` whose session is the GRANT, a
 //      token revoked is a `session-revoked` whose session is that token, and a
-//      grant modified onto different rights is a `token-claims-change`
-//      carrying the new `access`.
+//      grant modified onto different rights is a `token-claims-change` carrying
+//      the new `access`.
 //   4. ~~NOT: signals revoking grants.~~ REVERSED 2026-10-03 (#432, rcbj's
 //      decision 1): a federation partner's verified CAEP or RISC event about
 //      a person may end their grants, as the `signal-response` policy's

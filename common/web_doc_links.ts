@@ -8,13 +8,16 @@
 // ---------------------------------------------------------------------------
 // A LINK TO THE PUBLIC DOCUMENTATION, ON EVERY CONSOLE AND PORTAL PAGE (#895).
 //
-// The pages are https://rcbj.github.io/iya-sts/ (the front door already
-// names that origin). A link is absolute so it works from any deployment.
-// Pages are published from main; a heading that exists only on develop
-// still opens the page, and the fragment resolves once that heading is
-// published. The fragment is a kramdown id of the local markdown: lower
-// case, anything but a letter, a digit, a space or a hyphen removed, spaces
-// turned into hyphens, repeated hyphens kept.
+// The pages are https://rcbj.github.io/iya-sts/v1.1.0/: the site is
+// versioned, and a build links to its OWN version's folder, not the
+// landing page or the latest (docs/CLAUDE.md, *The versioned site*; the
+// front door and the footer name the same folder). A link is absolute so
+// it works from any deployment. Pages are published from main; a heading
+// that exists only on develop still opens the page, and the fragment
+// resolves once that heading is published. The fragment is a kramdown id
+// of the local markdown: lower case, anything but a letter, a digit, a
+// space or a hyphen removed, spaces turned into hyphens, repeated hyphens
+// kept.
 //
 // WHERE IT IS DRAWN. A tabbed page holds one link at the top of each leaf
 // panel, so the tab the reader is in names the page that explains it. A
@@ -427,9 +430,10 @@ Object.keys(CONSOLE).forEach(function (consolePath) {
  */
 class WebDocLinks {
   /**
-   * The published documentation site, with its trailing slash.
+   * This version's folder of the published documentation site, with its
+   * trailing slash.
    */
-  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/';
+  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/v1.1.0/';
 
   /**
    * Turns a site-relative page into an absolute URL. An absolute URL is

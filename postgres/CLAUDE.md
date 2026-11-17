@@ -74,12 +74,12 @@ them all.
 
 **From measuring 8081 under the LDAP bulk load** (`load-users/dbperf/` on
 the host). `docker-compose.yml` passes them after `max_connections`; it
-carries no comments, so the reasons are here. `docs/docker-compose.md`
+carries no comments, so the reasons are here. `docs/v1.1.0/docker-compose.md`
 lists them for a user.
 
 **THE SAME LIST IS IN `docker-compose-quick.yml` AND
 `docker-compose-run-tests.yml` (#633)**, and in the copy of the quick file
-that `docs/getting-started.md` prints. #630 changed only the first file, so
+that `docs/v1.1.0/getting-started.md` prints. #630 changed only the first file, so
 the quick start and the suite ran the defaults it had measured against, the
 quick start with 100 connections. `tests/postgres_schema.js` now holds all
 four to one list, name and value, so a setting changes in every file or the

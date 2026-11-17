@@ -444,7 +444,7 @@ by side. **Keep it that way across #820's status-list change**: from
 2026-10-21 a process leases blocks of access-token status indexes, and an
 older build claims single indexes that a block's owner cannot see — a mixed
 cluster could give two live tokens one index, and a revocation of one would
-then show the other INVALID in the status list. `docs/aws-cluster.md` tells
+then show the other INVALID in the status list. `docs/v1.1.0/aws-cluster.md` tells
 an operator the same.
 
 ## The key-encryption key: a key in KMS that never leaves it (#391, 2026-10-01)

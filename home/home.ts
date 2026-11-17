@@ -29,7 +29,7 @@
 // hand-written list of highlights here would be a second, unchecked copy of it
 // — wrong within a month, on the page most likely to be read first and least
 // likely to be re-read. The documentation site makes the same argument in
-// `docs/endpoints.md` and this page holds to it: LINK to the thing that
+// `docs/v1.1.0/endpoints.md` and this page holds to it: LINK to the thing that
 // generates the list.
 //
 // ---------------------------------------------------------------------------
@@ -193,13 +193,14 @@ const BUILD_INFO = version.buildInfo(APP_VERSION);
 // repository: `docs/` is built and deployed by `.github/workflows/pages.yml`,
 // and `docs/_config.yml` sets `baseurl: /iya-sts`, so the site is served under
 // the repository name. Change the repository and all three of these change
-// together — and so does that baseurl.
+// together — and so does that baseurl. The site is versioned and the link
+// names this build's own version's folder (docs/CLAUDE.md).
 // ---------------------------------------------------------------------------
 const REPO_URL = 'https://github.com/rcbj/iya-sts';
 
 const ISSUES_URL = REPO_URL + '/issues';
 
-const DOCS_URL = 'https://rcbj.github.io/iya-sts/';
+const DOCS_URL = 'https://rcbj.github.io/iya-sts/v1.1.0/';
 
 // Relative on purpose. This service is reached as localhost, as `sts` on a
 // compose network and through a published port, and `baseUrlOf()` exists
