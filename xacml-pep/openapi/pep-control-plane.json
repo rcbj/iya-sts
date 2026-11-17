@@ -2556,6 +2556,16 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "501": {
             "description": "XACML or remote PEPs off.",
             "content": {
@@ -2667,6 +2677,16 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "501": {
             "description": "XACML or remote PEPs off.",
             "content": {
@@ -2756,6 +2776,16 @@
             "description": "Unchanged. ETag.",
             "headers": {
               "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",
+            "content": {
+              "text/plain": {
                 "schema": {
                   "type": "string"
                 }
@@ -2852,6 +2882,16 @@
             "description": "Unchanged. ETag.",
             "headers": {
               "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",
+            "content": {
+              "text/plain": {
                 "schema": {
                   "type": "string"
                 }
@@ -2964,6 +3004,16 @@
               }
             }
           },
+          "400": {
+            "description": "A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "401": {
             "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
             "headers": {
@@ -3070,6 +3120,16 @@
               }
             }
           },
+          "400": {
+            "description": "A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "401": {
             "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
             "headers": {
@@ -3170,6 +3230,16 @@
             "description": "Unchanged. ETag.",
             "headers": {
               "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",
+            "content": {
+              "text/plain": {
                 "schema": {
                   "type": "string"
                 }
@@ -3298,6 +3368,16 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Issuance failed (STS-XACML-0255).",
             "content": {
@@ -3385,6 +3465,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -3497,6 +3587,16 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After.",
             "headers": {
@@ -3601,6 +3701,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -3713,6 +3823,16 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "429": {
             "description": "The limiter (STS-XACML-0215).",
             "headers": {
@@ -3817,6 +3937,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

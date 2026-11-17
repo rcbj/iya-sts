@@ -117,6 +117,7 @@ namespace IyaSts.Pep.ControlPlane {
     `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client; or the token door refused the credential (see the dpop scheme), with a DPoP challenge.",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
     `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",`content`:#{`application/json`:#{`schema`:null}}},
     `507`:#{`description`:"The directory refused the entry: ou=peps holds xacml.maxPeps, or the directory its entry cap (STS-XACML-0027): server_error, until an operator makes room.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -290,6 +291,7 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
     `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error.",`content`:#{`application/json`:#{`schema`:null}}},
     `507`:#{`description`:"The directory refused the write (STS-XACML-0027): server_error.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -339,6 +341,7 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   ],
   `responses`:#{
     `200`:#{`description`:"The policies. ETag: \"<syncToken>\".",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",`content`:#{`text/plain`:#{`schema`:#{`type`:"string"}}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -392,6 +395,7 @@ op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
   ],
   `responses`:#{
     `200`:#{`description`:"The catalogue. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",`content`:#{`text/plain`:#{`schema`:#{`type`:"string"}}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -448,6 +452,7 @@ op `getAuthzenCatalogue`(`responses/200/content/application~1json/schema`: `Auth
   ],
   `responses`:#{
     `200`:#{`description`:"The callers. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",`content`:#{`text/plain`:#{`schema`:#{`type`:"string"}}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -567,6 +572,7 @@ op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `Authze
   ],
   `responses`:#{
     `200`:#{`description`:"The configuration. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",`content`:#{`text/plain`:#{`schema`:#{`type`:"string"}}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -679,6 +685,7 @@ op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
   ],
   `responses`:#{
     `200`:#{`description`:"The settings. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"A control character in a query value, refused before any endpoint sees it (common/app.js), in text: what the fuzz test of 2026-11-16 found every pull answering and no pull declaring.",`content`:#{`text/plain`:#{`schema`:#{`type`:"string"}}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -721,6 +728,7 @@ op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0253).",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `500`:#{`description`:"Issuance failed (STS-XACML-0255).",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -840,6 +848,7 @@ op `postListenerCertificate`(`requestBody/content/application~1json/schema`: `Li
     `400`:#{`description`:"No token, or too long (STS-XACML-0207).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -864,6 +873,7 @@ op `postIntrospect`(`requestBody/content/application~1json/schema`: `IntrospectR
     `400`:#{`description`:"Malformed (STS-XACML-0204).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `429`:#{`description`:"Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -888,6 +898,7 @@ op `postBasic`(`requestBody/content/application~1json/schema`: `BasicRequest`,
     `400`:#{`description`:"Malformed (STS-XACML-0208).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -912,6 +923,7 @@ op `postSaml`(`requestBody/content/application~1json/schema`: `SamlRequest`,
     `400`:#{`description`:"Malformed (STS-XACML-0214).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -936,6 +948,7 @@ op `postSession`(`requestBody/content/application~1json/schema`: `SessionRequest
     `400`:#{`description`:"Malformed, or claims the route does not name (STS-XACML-0229).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate; not one of this PEP's non-public routes (STS-XACML-0230); the evidence invalid or not for the application (0231); the ticket unknown, expired or another PEP's (0232); the issuance policy refused (0234).",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the JSON parser's 5 MB, refused before any endpoint sees it (STS-HTTP-0004), as Express's own HTML page: a string within the schema's length reaches it when its characters are sent as JSON escapes (the fuzz test of 2026-11-16, at POST /xacml/pep/saml).",`content`:#{`text/html`:#{`schema`:#{`type`:"string"}}}},
     `422`:#{`description`:"The route not usable, no SAML entity ID or no directory entry (STS-XACML-0233); issuance failed (0235).",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
