@@ -497,13 +497,26 @@ function checkTheJobTimeoutIsAboveOurs(t) {
     !/STS_TEST_CONFORMANCE_MODES:\s*""/.test(modeJob);
   const modePeers = /STS_TEST_SAML_PEERS_MODES:\s*""/.test(modeJob)
     ? '' : peersModes;
+  // The rows are YAML, or (since 2026-11-17, when the fuzz mode moved to a
+  // merge into main or a dispatch that asks for it) JSON objects inside the
+  // event-dependent fromJSON() the matrix is now; a mode listed under two
+  // events is one entry.
   const entries = [];
-  const entryRe = /-\s*mode:\s*([a-z-]+)\s*\n\s*minutes:\s*(\d+)\s*\n\s*bound:\s*(\d+)/g;
-  let m;
-  while ((m = entryRe.exec(modeJob)) !== null) {
-    entries.push({ mode: m[1], minutes: Number(m[2]),
-                   bound: Number(m[3]) });
-  }
+  const entryRes = [
+    /-\s*mode:\s*([a-z-]+)\s*\n\s*minutes:\s*(\d+)\s*\n\s*bound:\s*(\d+)/g,
+    /\{\s*"mode":\s*"([a-z-]+)",\s*"minutes":\s*(\d+),\s*"bound":\s*(\d+)\s*\}/g
+  ];
+  entryRes.forEach(function (entryRe) {
+    let m;
+    while ((m = entryRe.exec(modeJob)) !== null) {
+      const mode = m[1];
+      if (entries.some(function (e) { return e.mode === mode; })) {
+        continue;
+      }
+      entries.push({ mode: mode, minutes: Number(m[2]),
+                     bound: Number(m[3]) });
+    }
+  });
   const covered = entries.map(function (e) { return e.mode; });
   t.check(allModes.length > 0 && allModes.every(function (mode) {
     return covered.indexOf(mode) >= 0;
