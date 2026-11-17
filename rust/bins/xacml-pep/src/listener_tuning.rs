@@ -88,7 +88,9 @@ impl Tuning {
             trust_issued_client_certificates: https && purpose == "api",
             ask_client_certificate: https,
             require_client_certificate: false,
-            session_timeout_s: 300,
+            // OpenSSL's own lifetime, which is what a session lives: an
+            // older service's pull without `tuning` is not warned about.
+            session_timeout_s: crate::listener::OPENSSL_SESSION_TIMEOUT_S,
             session_cache_size: 2048,
             keep_alive_timeout_s: 60,
             headers_timeout_s: 0,

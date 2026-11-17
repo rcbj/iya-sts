@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5714** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5715** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 136
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5159,7 +5159,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0278` | A remote PEP cluster's managed settings carried a notify URL, which is a member's address and is set on the member (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0279` | The directory refused a write or a removal of a remote PEP cluster's entry under ou=pepClusters (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0280` | The members stored on a remote PEP cluster's entry do not validate (an ldapmodify, say); the cluster is read with none, so no PEP pulls its configuration until an administrator corrects it (#1760). | none — a warning in the log |
-| `STS-XACML-0281` | A remote PEP listener's tuning — the TLS policy, the TLS session cache, HTTP pooling, HTTP/2, the client-certificate questions or the thread pool — does not fit: a value outside its range, a cipher suite this service does not name, a post-quantum-only choice with nothing post-quantum left, or a thread-pool maximum below its minimum (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0281` | A remote PEP listener's tuning — the TLS policy, the TLS session cache, HTTP pooling, HTTP/2, the client-certificate questions or the thread pool — does not fit: a value outside its range, a cipher suite this service does not name, a post-quantum-only choice with nothing post-quantum left, a thread-pool maximum below its minimum (#1760), or requireClientCertificate with no trust source to verify a certificate against — no trustAnchorsFile, and on an API listener trustIssuedClientCertificates off (2026-11-16). | HTTP 400 on /admin-api |
 | `STS-XACML-0282` | A remote PEP's Sync was refused before anything was sent: remote PEPs (xacml.remotePeps) or nudging (xacml.pepNotify) is off in this realm. The PEP converges on its own poll. | HTTP 400 on /admin-api |
 | `STS-XACML-0283` *(retired)* | A remote PEP's Sync was refused because nudging is stopped for that PEP (disable-pep). Retired the day it was added: Sync dials a PEP whose change nudges are stopped (rcbj, 2026-11-16). | HTTP 400 on /admin-api |
 | `STS-XACML-0284` | A remote PEP's Sync was refused because the PEP has no notify URL, or its notify URL cannot be dialled (not https, or outside xacml.pepNotifyAllowedHosts). | HTTP 400 on /admin-api |
@@ -5308,7 +5308,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0116` | A request on a remote PEP proxy route whose methods list is empty (deny-all) was refused after the route's policy was asked, whatever it decided; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0117` | A remote PEP proxy route names a policy (authorization.policy) this PEP does not hold — never pulled, disabled, withheld or failed to load — so its request was refused whatever the bias; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0118` | The remote PEP's reverse proxy has received no configuration since it started — its first pull has not succeeded yet — so every path, its own /.iya-pep/* included, is answered "try again later" rather than "not found". Logged when first met, then as a count at most once a minute, and once more when the first configuration arrives; a configuration received empty or switched off is STS-XPEP-0065 (#1760). | HTTP 503, temporarily_unavailable, with Retry-After (the poll interval in seconds, at least 1) |
-| `STS-XPEP-0119` | A remote PEP could not apply one part of a listener's tuning. A TLS knob the library refused keeps the acceptor already served, or serves the certificate without that knob when none is served yet. sessionTimeoutS other than 300 is left at 300 seconds and the other settings are applied. A thread-pool worker that does not start leaves the workers already running (#1760). | none — an error in the PEP's log |
+| `STS-XPEP-0119` | A remote PEP could not apply one part of a listener's tuning. A TLS knob the library refused keeps the acceptor already served, or serves the certificate without that knob when none is served yet. sessionTimeoutS is not applied (the PEP's TLS library has no safe session-lifetime call), so a session lives OpenSSL's 7200 seconds; any other value is logged once per value, as a warning, and the other settings are applied. A thread-pool worker that does not start leaves the workers already running (#1760). | none — an error in the PEP's log (a warning for sessionTimeoutS) |
 | `STS-XPEP-0120` | A remote PEP was nudged with `full` within a poll interval of its last full pull, so it pulled as usual: a full pull is honoured at most once a poll interval, because POST /notify is not authenticated (2026-11-16). | none — an info line in the PEP's log |
 | `STS-XPEP-0121` | A job on a remote PEP listener's thread pool panicked. Its connection is lost; the worker catches the panic and takes the next job (2026-11-16). | none — an error in the PEP's log |
 | `STS-XPEP-0122` | The remote PEP's queue of decision records waiting for the service was full, so the oldest record was dropped to make room (#1827). Enforcement goes on; the dropped decision is still on the PEP's own log. Logged at the first drop and then sparingly, with the count. | none; the PEP keeps enforcing |
@@ -5326,6 +5326,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0134` | A request on a remote PEP reverse proxy named a path under /.iya-pep/ that is none of the proxy's own pages. The prefix is the proxy's whole, so the path never reaches the route table and is never forwarded upstream (#1830). | HTTP 404, not_found |
 | `STS-XPEP-0135` | PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside PEP_ASSERTION_KEY, and the remote PEP no longer presents a client certificate to the service: it authenticates every call with a DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, certified by issue-pep-credential). The variable is ignored for that; PEP_TLS_KEY alone is still read as the fallback assertion key (STS-XPEP-0127). Logged once at start. | none — a warning in the PEP's log |
 | `STS-XPEP-0136` | The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of the client certificate the PEP no longer presents (phase 4 of #1827's follow-up). PEP_CRL_HTTP=true binds it. Logged once at start. | none — a notice in the PEP's log |
+| `STS-XPEP-0137` | A remote PEP HTTPS listener requires a client certificate (requireClientCertificate) and has no authority to verify one against: no readable trustAnchorsFile, and trustIssuedClientCertificates off or PEP_AUTHZEN_CLIENT_CA not set (a reverse-proxy listener has only the anchors file). The listener is refused, fail-closed: a listener the service defined is not bound and is reported failed (reason other); one of the environment's keeps its socket and closes every connection unanswered, reported failed, with the sentence as GET /'s https.problem. Until 2026-11-16 the API listener asked nobody and admitted everybody. A tuning with a trust source, or without the requirement, serves again. | none — an error in the PEP's log; the listener serves nothing |
 
 ## STS-AUTHZEN
 

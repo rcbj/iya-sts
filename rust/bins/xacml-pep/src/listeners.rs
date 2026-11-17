@@ -598,13 +598,27 @@ impl ListenerSet {
                     }
                     Err((reason, why)) => {
                         self.note(&mut entry, "STS-XPEP-0104", &why);
-                        if https.current().is_none() {
+                        if https.current().is_none()
+                            && https.refusal().is_none()
+                        {
                             entry.state = "waiting";
                             entry.reason = reason;
                             return entry;
                         }
                     }
                 }
+            }
+            // REQUIRED WITH NO TRUST SOURCE (STS-XPEP-0137, logged by the
+            // listener): not bound, so a client meets a closed port rather
+            // than a handshake that admits it. The certificate is kept, and
+            // the next pull that lifts the refusal binds it again.
+            if https.refusal().is_some() {
+                if let Some(task) = entry.task.take() {
+                    task.abort();
+                }
+                entry.state = "failed";
+                entry.reason = "other";
+                return entry;
             }
         }
         let alive = entry.task.as_ref().is_some_and(|t| !t.is_finished());
@@ -1312,5 +1326,218 @@ mod tests {
         // A CRL listener that failed to bind is still a CRL listener.
         status.set("failed", "other");
         assert_eq!(listeners.report()["listeners"][0]["purpose"], "crl");
+    }
+
+    /// A definition with `tuning` laid over the small test pool.
+    fn tuned(id: &str, https: bool, port: u16, tuning: Value) -> Def {
+        let mut one = def(id, https, false, port);
+        let mut raw = json!({"threadPoolMin": 1, "threadPoolMax": 2});
+        if let (Some(raw), Some(more)) =
+            (raw.as_object_mut(), tuning.as_object())
+        {
+            for (k, v) in more {
+                raw.insert(k.clone(), v.clone());
+            }
+        }
+        one.tuning = Tuning::overlay(&raw, "api", https);
+        one
+    }
+
+    /// How long until the server closes a connection that sent `first`
+    /// and then nothing, up to `hold`; `None` when it was still open.
+    async fn closed_after(
+        port: u16,
+        first: &[u8],
+        hold: std::time::Duration,
+    ) -> Option<std::time::Duration> {
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        stream.write_all(first).await.unwrap();
+        let started = std::time::Instant::now();
+        let mut sink = [0u8; 256];
+        let read = tokio::time::timeout(hold, async {
+            loop {
+                match stream.read(&mut sink).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        })
+        .await;
+        read.ok().map(|_| started.elapsed())
+    }
+
+    /// `headersTimeoutS` IS APPLIED (2026-11-16): a request whose head never
+    /// finishes is closed `headersTimeoutS` after its first byte, though
+    /// the keep-alive is a minute; with 0 it is still open; and a kept-alive
+    /// connection IDLE between requests is not a head, so it outlives the
+    /// header deadline and answers its next request.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_slow_header_client_is_closed_after_headers_timeout() {
+        let listeners = set(refusing(), false);
+        let (slow, unset) = (free_port(), free_port());
+        listeners
+            .reconcile(vec![
+                tuned(
+                    "slow",
+                    false,
+                    slow,
+                    json!({"headersTimeoutS": 1, "keepAliveTimeoutS": 60}),
+                ),
+                tuned("unset", false, unset, json!({"keepAliveTimeoutS": 60})),
+            ])
+            .await;
+        let partial = b"GET / HTTP/1.1\r\nHost: x\r\nX-Slow: ";
+        let hold = std::time::Duration::from_millis(3500);
+        let closed = closed_after(slow, partial, hold).await;
+        let after = closed.expect("closed within headersTimeoutS");
+        assert!(
+            after >= std::time::Duration::from_millis(900)
+                && after < std::time::Duration::from_millis(2600),
+            "closed after {:?}",
+            after
+        );
+        assert_eq!(
+            closed_after(
+                unset,
+                partial,
+                std::time::Duration::from_millis(2500)
+            )
+            .await,
+            None,
+            "0 is no deadline of its own: the keep-alive's"
+        );
+        // Idle between two requests for longer than the deadline.
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", slow))
+            .await
+            .unwrap();
+        let ask = b"GET / HTTP/1.1\r\nHost: x\r\n\r\n";
+        for round in 0..2 {
+            stream.write_all(ask).await.unwrap();
+            let mut got = Vec::new();
+            let mut buf = [0u8; 512];
+            while !got.ends_with(b"api") {
+                let n = tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    stream.read(&mut buf),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert!(n > 0, "round {}: closed while idle", round);
+                got.extend_from_slice(&buf[..n]);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+        }
+    }
+
+    /// ALPN SELECTS h2 END TO END (2026-11-16): a client offering h2 and
+    /// http/1.1 to a defined HTTPS listener negotiates h2 and the
+    /// connection is counted HTTP/2; with `http2` off, http/1.1.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn alpn_offering_h2_negotiates_h2() {
+        let (certify, ca, _) = authority();
+        let listeners = set(certify, false);
+        let (on, off) = (free_port(), free_port());
+        listeners
+            .reconcile(vec![
+                tuned("h2", true, on, json!({})),
+                tuned("h1", true, off, json!({"http2": false})),
+            ])
+            .await;
+        let chosen = |port: u16| {
+            let ca = ca.clone();
+            async move {
+                let mut connector =
+                    SslConnector::builder(SslMethod::tls()).unwrap();
+                connector.cert_store_mut().add_cert(ca).unwrap();
+                connector.set_verify(SslVerifyMode::PEER);
+                connector.set_alpn_protos(b"\x02h2\x08http/1.1").unwrap();
+                let ssl = connector
+                    .build()
+                    .configure()
+                    .unwrap()
+                    .into_ssl("localhost")
+                    .unwrap();
+                let tcp = tokio::net::TcpStream::connect(("127.0.0.1", port))
+                    .await
+                    .unwrap();
+                let mut tls = tokio_openssl::SslStream::new(ssl, tcp).unwrap();
+                Pin::new(&mut tls).connect().await.unwrap();
+                let alpn =
+                    tls.ssl().selected_alpn_protocol().map(<[u8]>::to_vec);
+                // An HTTP/2 preface and SETTINGS frame, so the server
+                // starts serving and counts the connection.
+                tls.write_all(
+                    b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\0\0\0\x04\0\0\0\0\0",
+                )
+                .await
+                .unwrap();
+                let mut buf = [0u8; 64];
+                let read = tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    tls.read(&mut buf),
+                )
+                .await;
+                assert!(read.is_ok(), "the server answered the preface");
+                alpn
+            }
+        };
+        assert_eq!(chosen(on).await.as_deref(), Some(&b"h2"[..]));
+        assert_eq!(chosen(off).await.as_deref(), Some(&b"http/1.1"[..]));
+        let report = listeners.report();
+        let rows = report["listeners"].as_array().unwrap();
+        let h2 = rows.iter().find(|r| r["id"] == "h2").unwrap();
+        assert_eq!(h2["stats"]["http2"], 1, "{}", h2);
+    }
+
+    /// REQUIRED WITH NO TRUST SOURCE IS NOT BOUND (STS-XPEP-0137): the
+    /// defined API listener is `failed`, its port refuses, and a trust
+    /// anchors file binds it again — a client without a certificate is
+    /// then refused at the handshake.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn require_without_trust_is_refused_and_unbound() {
+        let (certify, ca, asked) = authority();
+        let listeners = set(certify, false);
+        let port = free_port();
+        listeners
+            .reconcile(vec![tuned(
+                "mtls",
+                true,
+                port,
+                json!({"requireClientCertificate": true}),
+            )])
+            .await;
+        assert_eq!(
+            listeners.states(),
+            vec![("mtls".to_string(), "failed", "other")]
+        );
+        assert!(get_tls(port, &ca).await.is_none(), "not bound");
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "the certificate is held");
+        let anchors = std::env::temp_dir()
+            .join(format!("pep-listeners-anchors-{}", std::process::id()));
+        std::fs::write(&anchors, ca.to_pem().unwrap()).unwrap();
+        listeners
+            .reconcile(vec![tuned(
+                "mtls",
+                true,
+                port,
+                json!({"requireClientCertificate": true,
+                       "trustAnchorsFile": anchors.to_str().unwrap()}),
+            )])
+            .await;
+        assert_eq!(
+            listeners.states(),
+            vec![("mtls".to_string(), "listening", "none")]
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "not asked again");
+        assert!(
+            get_tls(port, &ca)
+                .await
+                .is_none_or(|(body, _)| body.is_empty()),
+            "no client certificate, no answer"
+        );
+        std::fs::remove_file(&anchors).unwrap();
     }
 }

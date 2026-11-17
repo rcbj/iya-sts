@@ -254,7 +254,7 @@ shim) are in git history.
 | Rust module (`rust/bins/xacml-pep/src/`) | What it is (the Node file it replaces) |
 |---|---|
 | `options.rs` | The environment, read once (`pep.js`'s `options`). |
-| `pdp_client.rs` | ONE HTTP client for every call to the PDP (`sync.js`'s `call()`): `call_authorized` puts the credential's DPoP-bound token and proof on every call to the service, and the client certificate goes on too while `PEP_TLS_CERT` is set. |
+| `pdp_client.rs` | ONE HTTP client for every call to the PDP (`sync.js`'s `call()`): `call_authorized` puts the credential's DPoP-bound token and proof on every call to the service, and the client certificate goes on too while `PEP_TLS_CERT` is set. **One connection pool per THREAD** (2026-11-16): the cause of the intermittent 5 s `STS-XPEP-0075` after an idle spell was the proxy upstream client's (`proxy.rs`, `UPSTREAM_CLIENT`) — a pooled connection parked on a listener worker's runtime, which nobody polls between connections, checked out by another worker, its request handed to a task nobody drove. Idle connections are dropped after 4 s (`POOL_IDLE`, below node's 5 s and the service's 60 s keep-alive), and a call meeting a dead connection (reset, closed before an answer, hyper's canceled) is sent once more on a new one (`stale()`); never a timeout. `pdp_client::tests::a_call_after_an_idle_spell_does_not_wait_out_the_timeout` reproduces the hang (it fails with the shared client) beside a stale-on-one-worker and a closed-before-answer test. |
 | `credential.rs` | The PEP's one credential to the service (#1827 follow-up): the assertion key, the RFC 7523 self-assertion, the DPoP proofs, one token per audience. See *THE PEP'S CREDENTIAL TO THE SERVICE*. |
 | `sync.rs` | Register, pull, heartbeat; what is held (`sync.js`) — and the two AuthZEN pulls, the catalogue (#1179) and the callers (#1189), with the caller list's strict grammar. |
 | `pip.rs` | The walk, the batched `POST /xacml/pip`, the resolver (`pip.js`). |
@@ -2496,11 +2496,65 @@ configuration->Listeners", the HTTPS listener there now as the default, and
   and does not start workers. Defaults: the decision API starts 4 workers
   and may grow to 32; a reverse proxy starts 16 and may grow to 128, the
   highest. `api-http` uses the API defaults even when the process serves
-  only CRLs. `sessionTimeoutS` other than 300 is logged (`STS-XPEP-0119`)
-  and left at OpenSSL's 300 seconds, because this crate forbids the unsafe
-  call that would set it; the listener's other settings are still applied.
-  A knob the library refuses is the same code. When a pair is already
-  served, that refusal keeps the previous acceptor.
+  only CRLs. A knob the library refuses is `STS-XPEP-0119`. When a pair
+  is already served, that refusal keeps the previous acceptor.
+* **WHAT EACH KNOB DOES, AND THE ONES THAT DID NOT (2026-11-16).** The
+  cluster job's listener table (`tests/protocol/sts_xacml_pep_proxy_cluster.js`)
+  observes every knob on the wire and found some held and not applied:
+  * **`headersTimeoutS`** — `listener_pool.rs`'s `drive()` keeps it as a
+    deadline of its own (`HeadClock`): from the first byte of a request head
+    to hyper handing the request on, checked every 250 ms when it is under
+    4 s. hyper's `header_read_timeout` cannot be it, because hyper starts
+    that timer when the connection begins WAITING for a head — the
+    keep-alive idle — so it is armed at `headers_timeout_s()`, past the
+    keep-alive, and with `headersTimeoutS` below the keep-alive a slow-loris
+    head was closed by the 60 s keep-alive watchdog. An overdue head is
+    dropped, not shut down gracefully (that waits for the head). HTTP/2
+    (the first bytes are the preface) is held from its first byte to its
+    first request and never re-armed: a later PING is not a head.
+    `listeners::tests::a_slow_header_client_is_closed_after_headers_timeout`.
+  * **`requireClientCertificate` with no trust source** — the API listener
+    without `PEP_AUTHZEN_CLIENT_CA` or a readable `trustAnchorsFile` asked
+    nobody and ADMITTED EVERYBODY; the proxy's asked everybody and admitted
+    nobody. `apply_client_auth()` now sets `Built::refusal`, and the
+    listener serves NOTHING (`STS-XPEP-0137`, logged once per sentence):
+    the acceptor is dropped even when a permissive one was served (a strict
+    rebuild's knob fault does not keep it), a defined listener's accept
+    loop is aborted and reported `failed`/`other`, and an environment
+    listener keeps its socket, closes every connection at accept, and
+    reports `failed`/`other` with the sentence as `GET /`'s
+    `https.problem`. The certificate is kept, so a later tuning with a
+    source serves at once without a new request. The service refuses the
+    half it can see at save (`xacml/CLAUDE.md`, `STS-XACML-0281`).
+    `listener::tests::required_without_a_trust_source_serves_nothing`,
+    `listeners::tests::require_without_trust_is_refused_and_unbound`.
+  * **ALPN** — `listener.rs` called `set_alpn_protos`, the CLIENT's offer,
+    so no handshake ever selected `h2` and only a prior-knowledge client
+    spoke HTTP/2. It is `set_alpn_select_callback` with `select_next_proto`
+    over the server's order (`h2`, `http/1.1` with `http2` on; `http/1.1`
+    alone off); no overlap is `NOACK`, no ALPN. Prior knowledge still works
+    while `http2` is on (hyper's auto builder answers the preface).
+    `listener::tests::alpn_selects_h2_when_the_listener_offers_it`,
+    `listeners::tests::alpn_offering_h2_negotiates_h2`.
+  * **`sessionTimeoutS` — STILL NOT APPLIED, and the reason is the only
+    one left.** The `openssl` crate (0.10.82, the newest) binds no
+    `SSL_CTX_set_timeout`, and the workspace forbids unsafe code here. That
+    one value is both the TLS 1.2 cache's lifetime and a TLS 1.3 ticket's,
+    so neither part can be set. OpenSSL's default for the TLS methods is
+    **7200 s, not the 300 s this file used to say** (a session's own
+    `timeout()` says so), so every value but 7200 is logged once per
+    value as a warning (`STS-XPEP-0119`). **The default is 7200** — the
+    service's (`xacml_pep_listener_tuning.ts`, the console form in
+    `web_xacml.ts`) and this binary's own when a pull carries no tuning —
+    because it was 300 and so warned at every start of every untouched PEP,
+    and a warning that always fires is one people learn to ignore. Nothing
+    behaves differently, the value never having been applied; a stored 300
+    still warns, which is right. It is not `tls.sessionTimeoutS`, which the
+    service's own listeners do apply. The binding exists on #444's branch
+    (`sts_crypto::pq::set_session_timeout`, the one place unsafe code is
+    allowed); when `sts-crypto` reaches develop the PEP calls it in
+    `apply_tls_knobs()` and the warning goes.
+    `listener::tests::the_session_lifetime_is_openssls_whatever_is_asked`.
 * **THE HEARTBEAT'S `listeners` IS THE WHOLE REPORT.** `report()` is
   `{ listeners, memory?, paths? }`, and that object is what the heartbeat
   assigns to `listeners`. Each listener carries `stats`: accepted, open,

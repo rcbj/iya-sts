@@ -190,7 +190,11 @@ class PepListenerTuning {
       trustIssuedClientCertificates: https === true && purpose === 'api',
       askClientCertificate: ask,
       requireClientCertificate: false,
-      sessionTimeoutS: 300,
+      // OpenSSL's own TLS session lifetime (2026-11-16): the PEP cannot set
+      // it (`xacml-pep/CLAUDE.md`, STS-XPEP-0119), so the default says what
+      // a session really lives, and an untouched listener is not warned.
+      // Not `tls.sessionTimeoutS`, which this service's own listeners apply.
+      sessionTimeoutS: 7200,
       sessionCacheSize: 2048,
       keepAliveTimeoutS: 60,
       headersTimeoutS: 0,
@@ -424,6 +428,26 @@ class PepListenerTuning {
       return PepListenerTuning.refuse(where + ': `threadPoolMax` is at ' +
                                       'least `threadPoolMin` (' +
                                       nums.threadPoolMin + ').');
+    }
+    // REQUIRED WITH NOTHING TO VERIFY AGAINST (2026-11-16): a certificate
+    // the listener cannot verify is no requirement at all. The PEP's API
+    // listener asked nobody and admitted everybody while it reported the
+    // requirement; its reverse-proxy listener asked everybody and admitted
+    // nobody. A trust source is a trust anchors file, or — on an API
+    // listener — the certificates this realm issues
+    // (trustIssuedClientCertificates, PEP_AUTHZEN_CLIENT_CA on the PEP).
+    // The PEP cannot be seen from here, so it refuses the listener itself
+    // when that variable is not set (STS-XPEP-0137): both ends fail closed.
+    if (https && requireCert === true && !String(anchors) &&
+        !(purpose === 'api' && trustIssued === true)) {
+      log.debug("Leaving PepListenerTuning.parse(). No trust source.");
+      return PepListenerTuning.refuse(where + ': `requireClientCertificate` ' +
+                                      'needs a trust source to verify a ' +
+                                      'client certificate against: ' +
+                                      '`trustAnchorsFile`' +
+                                      (purpose === 'api'
+                                        ? ', or `trustIssuedClientCertificates`'
+                                        : '') + '.');
     }
     const tls12Off = disableTls12 === true || pqcOnly === true;
     const tuning: Tuning = {

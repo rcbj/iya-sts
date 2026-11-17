@@ -22,7 +22,31 @@
 //! **A call never fails**: it answers an [`Answer`] whose `error` says what
 //! went wrong, because every caller wants to RECORD what happened and carry
 //! on.
+//!
+//! **ONE CONNECTION POOL PER THREAD, NOT ONE FOR THE PROCESS (2026-11-16).**
+//! A member's first call to `/xacml/pep/basic` or `/xacml/pep/session`
+//! after an idle spell sometimes waited out the whole timeout
+//! (`STS-XPEP-0075`, a 502 to the user), now and then twice in a row, and
+//! the next call took milliseconds. The proxy's upstream client met the
+//! same thing first (`proxy.rs`, `UPSTREAM_CLIENT`): every listener worker
+//! owns a current-thread runtime and polls it only while it serves a
+//! connection, and reqwest parks an idle connection on the runtime that
+//! opened it. One client shared by every worker checked that connection
+//! out on another worker, whose request was handed to a connection task
+//! nobody was driving — so it was not sent, nothing failed, and the call
+//! waited for its timeout. Each thread now has its own client built from
+//! the same recipe (the same anchors, the same verification), so a pooled
+//! connection is only ever used by the runtime that drives it.
+//!
+//! **AN IDLE CONNECTION IS DROPPED BEFORE THE SERVICE DROPS IT**: after
+//! [`POOL_IDLE`], below node's own 5 s keep-alive and far below this
+//! service's 60 s (`http.keepAliveTimeoutS`), so a forwarder or a balancer
+//! with a shorter one in between is not the one closing it. A connection
+//! that dies anyway — a reset, or closed before an answer — is a failure at
+//! once, not a hang, and the call is made ONCE more on a new connection
+//! ([`stale`]); a timeout is never retried.
 
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -84,12 +108,65 @@ impl Answer {
     }
 }
 
+/// How long a pooled connection to the service may stay idle: below
+/// node's default keep-alive (5 s) and this service's (60 s).
+const POOL_IDLE: Duration = Duration::from_secs(4);
+
+/// The clients a thread holds, one per [`PdpClient`] recipe. A handful:
+/// a process makes one `PdpClient` (tests make more).
+const CLIENTS_PER_THREAD: usize = 8;
+
+thread_local! {
+    static PDP_CLIENTS: RefCell<Vec<(u64, Client)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// Every `PdpClient::new` gets its own recipe id.
+static RECIPES: AtomicU64 = AtomicU64::new(1);
+
+/// What a thread's client is built from: everything `PdpClient::new` was
+/// given, so every thread's verifies the service the same way.
+struct Recipe {
+    id: u64,
+    timeout: Duration,
+    user_agent: String,
+    insecure: bool,
+    anchors: Vec<Certificate>,
+}
+
+impl Recipe {
+    fn build(&self) -> Result<Client, String> {
+        let mut builder = Client::builder()
+            .timeout(self.timeout)
+            .pool_idle_timeout(POOL_IDLE)
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent(self.user_agent.clone());
+        if self.insecure {
+            // The ordinary setting against a development-mode PDP, whose
+            // Root is regenerated on every start; logged on every start.
+            builder = builder
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true);
+        }
+        for anchor in &self.anchors {
+            builder = builder.add_root_certificate(anchor.clone());
+        }
+        builder
+            .build()
+            .map_err(|e| format!("the HTTP client would not build: {}", e))
+    }
+}
+
 /// The client. Built once at start from the options; its timeout and its
 /// answer bound follow the settings the service sets (#1760,
-/// `set_limits()`), shared by every clone.
+/// `set_limits()`), shared by every clone. The connections are not: each
+/// thread has its own pool (see the module header).
 #[derive(Clone)]
 pub struct PdpClient {
-    http: Client,
+    recipe: Arc<Recipe>,
+    /// The client the recipe built at start, for a thread whose own will
+    /// not build (it built once, so it will not fail; never a panic).
+    fallback: Client,
     base: String,
     limits: Arc<Limits>,
     credential: Arc<Credential>,
@@ -104,30 +181,23 @@ struct Limits {
 impl PdpClient {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(options: &Options) -> Result<PdpClient, String> {
-        let mut builder = Client::builder()
-            .timeout(Duration::from_millis(options.timeout_ms))
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(format!("sts/{} (xacml-pep)", options.version));
-        if options.insecure {
-            // The ordinary setting against a development-mode PDP, whose
-            // Root is regenerated on every start; logged on every start.
-            builder = builder
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true);
-        }
-        if let Some(ca) = &options.pdp_ca {
-            let anchors = Certificate::from_pem_bundle(ca)
-                .map_err(|e| format!("PEP_TLS_CA would not load: {}", e))?;
-            for anchor in anchors {
-                builder = builder.add_root_certificate(anchor);
-            }
-        }
-        let http = builder
-            .build()
-            .map_err(|e| format!("the HTTP client would not build: {}", e))?;
+        let anchors = match &options.pdp_ca {
+            Some(ca) => Certificate::from_pem_bundle(ca)
+                .map_err(|e| format!("PEP_TLS_CA would not load: {}", e))?,
+            None => Vec::new(),
+        };
+        let recipe = Recipe {
+            id: RECIPES.fetch_add(1, Ordering::Relaxed),
+            timeout: Duration::from_millis(options.timeout_ms),
+            user_agent: format!("sts/{} (xacml-pep)", options.version),
+            insecure: options.insecure,
+            anchors,
+        };
+        let fallback = recipe.build()?;
         let base = options.pdp_url.trim_end_matches('/').to_string();
         Ok(PdpClient {
-            http,
+            recipe: Arc::new(recipe),
+            fallback,
             base,
             credential: Arc::new(Credential::new(options)),
             limits: Arc::new(Limits {
@@ -140,6 +210,35 @@ impl PdpClient {
     /// The credential every clone shares.
     pub fn credential(&self) -> &Arc<Credential> {
         &self.credential
+    }
+
+    /// This thread's client: its pool's connections are driven by the
+    /// runtime this thread runs, and no other. Hot path: no Entering or
+    /// Leaving line, every call to the service passes here.
+    fn http(&self) -> Client {
+        let id = self.recipe.id;
+        PDP_CLIENTS.with(|slot| {
+            let mut held = slot.borrow_mut();
+            if let Some((_, client)) = held.iter().find(|(i, _)| *i == id) {
+                return client.clone();
+            }
+            let client = match self.recipe.build() {
+                Ok(client) => client,
+                Err(why) => {
+                    tracing::debug!(
+                        "xacml-pep: this thread's client to the service \
+                         would not build ({}); the process's is used.",
+                        why
+                    );
+                    return self.fallback.clone();
+                }
+            };
+            if held.len() >= CLIENTS_PER_THREAD {
+                held.remove(0);
+            }
+            held.push((id, client.clone()));
+            client
+        })
     }
 
     /// [`PdpClient::call_authorized_url`] for `path` under the PDP URL's own
@@ -317,6 +416,44 @@ impl PdpClient {
         headers: &[(&str, String)],
         timeout: Option<Duration>,
     ) -> Answer {
+        match self
+            .send_once(method.clone(), url, body.clone(), headers, timeout)
+            .await
+        {
+            Ok(answer) => answer,
+            Err(error) if stale(&error) => {
+                // A pooled connection the far end had already closed, or
+                // reset under the request: once more, on a new connection
+                // (the pool has dropped the dead one). Nothing about the
+                // request was answered, so nothing is doubled that the
+                // service told this PEP about.
+                tracing::debug!(
+                    "xacml-pep: {} {} met a closed connection ({}); sent \
+                     once more on a new one.",
+                    method,
+                    crate::credential::htu(url),
+                    describe(&error)
+                );
+                match self.send_once(method, url, body, headers, timeout).await
+                {
+                    Ok(answer) => answer,
+                    Err(error) => Answer::failed_by(&error),
+                }
+            }
+            Err(error) => Answer::failed_by(&error),
+        }
+    }
+
+    /// One attempt of [`PdpClient::call_url`]: the answer, or the
+    /// transport's error for the caller to judge.
+    async fn send_once(
+        &self,
+        method: Method,
+        url: &str,
+        body: Option<Body>,
+        headers: &[(&str, String)],
+        timeout: Option<Duration>,
+    ) -> Result<Answer, reqwest::Error> {
         // ACCEPT FOLLOWS THE BODY (#1830): the one XML call is the PIP's,
         // `POST /xacml/pip`, whose answers are XACML's XML, so it asks for
         // XML; every other call is to a JSON endpoint. A caller's own Accept
@@ -331,7 +468,7 @@ impl PdpClient {
         } else {
             Some("application/json")
         };
-        let mut request = self.http.request(method, url);
+        let mut request = self.http().request(method, url);
         if let Some(accept) = accept {
             request = request.header("Accept", accept);
         }
@@ -359,10 +496,7 @@ impl PdpClient {
             }
             None => {}
         }
-        let mut response = match request.send().await {
-            Ok(response) => response,
-            Err(error) => return Answer::failed_by(&error),
-        };
+        let mut response = request.send().await?;
         let status = response.status().as_u16();
         let header = |name: &str| {
             response
@@ -381,21 +515,22 @@ impl PdpClient {
                 Ok(Some(chunk)) => {
                     bytes.extend_from_slice(&chunk);
                     if bytes.len() > max_body_bytes {
-                        return Answer::failed(format!(
+                        return Ok(Answer::failed(format!(
                             "the PDP's answer was larger than {} bytes",
                             max_body_bytes
-                        ));
+                        )));
                     }
                 }
                 Ok(None) => break,
-                Err(error) => return Answer::failed_by(&error),
+                // The answer had begun: never sent again.
+                Err(error) => return Ok(Answer::failed_by(&error)),
             }
         }
         let text = String::from_utf8_lossy(&bytes).into_owned();
         // Not JSON is fine: the raw text is what gets reported, which is what
         // a PDP answering an HTML error page or a proxy's message looks like.
         let json = serde_json::from_str(&text).ok();
-        Answer {
+        Ok(Answer {
             status,
             text,
             json,
@@ -406,8 +541,40 @@ impl PdpClient {
             www_authenticate,
             dpop_nonce,
             no_token: None,
-        }
+        })
     }
+}
+
+/// A connection that was dead when the request went on it: reset, closed
+/// before any answer, or a pooled one hyper found closed. Never a timeout
+/// (the service may still be working on it) and never a refused connect
+/// (a new connection would be refused as well).
+fn stale(error: &reqwest::Error) -> bool {
+    if error.is_timeout() || error.is_connect() {
+        return false;
+    }
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        if let Some(h) = cause.downcast_ref::<hyper::Error>() {
+            if h.is_incomplete_message() || h.is_canceled() || h.is_closed() {
+                return true;
+            }
+        }
+        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            if matches!(
+                io.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::UnexpectedEof
+                    | std::io::ErrorKind::NotConnected
+            ) {
+                return true;
+            }
+        }
+        source = cause.source();
+    }
+    false
 }
 
 /// A request body. Cloned for a call made once more (`call_authorized`).
@@ -867,5 +1034,179 @@ mod tests {
                 "text/plain".to_string()
             ]
         );
+    }
+
+    /// A keep-alive HTTP/1.1 server on plain threads (no runtime of its
+    /// own to park anything): it answers `ok` and closes a connection idle
+    /// for `idle`, as the service, a forwarder or a balancer does. With
+    /// `drop_first`, the first connection's first request is read and the
+    /// connection closed without an answer. Answers its port and the
+    /// number of connections it accepted.
+    fn idle_closing_server(
+        idle: Duration,
+        drop_first: bool,
+    ) -> (u16, Arc<AtomicUsize>) {
+        use std::io::{Read, Write};
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let count = accepted.clone();
+        std::thread::spawn(move || {
+            for stream in server.incoming() {
+                let Ok(mut stream) = stream else {
+                    continue;
+                };
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                std::thread::spawn(move || {
+                    stream.set_read_timeout(Some(idle)).unwrap();
+                    let mut seen = Vec::new();
+                    let mut buf = [0u8; 4096];
+                    loop {
+                        // One request: its head, then Content-Length bytes.
+                        let end = loop {
+                            if let Some(at) =
+                                seen.windows(4).position(|w| w == b"\r\n\r\n")
+                            {
+                                break at + 4;
+                            }
+                            match stream.read(&mut buf) {
+                                Ok(0) | Err(_) => return,
+                                Ok(k) => seen.extend_from_slice(&buf[..k]),
+                            }
+                        };
+                        let head = String::from_utf8_lossy(&seen[..end])
+                            .to_ascii_lowercase();
+                        let length = head
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|v| v.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        while seen.len() < end + length {
+                            match stream.read(&mut buf) {
+                                Ok(0) | Err(_) => return,
+                                Ok(k) => seen.extend_from_slice(&buf[..k]),
+                            }
+                        }
+                        seen.drain(..end + length);
+                        if drop_first && n == 0 {
+                            return;
+                        }
+                        if stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\
+                                  Connection: keep-alive\r\n\r\nok",
+                            )
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        (port, accepted)
+    }
+
+    fn plain_client(port: u16, timeout_ms: u64) -> PdpClient {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = format!("http://127.0.0.1:{}", port);
+        options.timeout_ms = timeout_ms;
+        PdpClient::new(&options).unwrap()
+    }
+
+    /// One call on a current-thread runtime, as a listener worker makes it.
+    fn ask_basic(
+        rt: &tokio::runtime::Runtime,
+        c: &PdpClient,
+        port: u16,
+    ) -> Answer {
+        rt.block_on(c.call_url(
+            Method::POST,
+            &format!("http://127.0.0.1:{}/xacml/pep/basic", port),
+            Some(Body::Json(json!({}))),
+            &[],
+            None,
+        ))
+    }
+
+    fn current_thread() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// THE INTERMITTENT 5 s TIMEOUT (STS-XPEP-0075, 2026-11-16),
+    /// reproduced: worker A calls the service and goes idle — its runtime
+    /// is not polled, as a listener worker's is not between connections —
+    /// while the server closes the idle connection; then worker B calls.
+    /// With one pool for the process, B was handed A's connection, whose
+    /// task nobody drove, and waited out the whole timeout. Each thread has
+    /// its own pool now, so B answers at once.
+    #[test]
+    fn a_call_after_an_idle_spell_does_not_wait_out_the_timeout() {
+        let (port, accepted) =
+            idle_closing_server(Duration::from_millis(200), false);
+        let c = plain_client(port, 5000);
+        let (park_tx, park_rx) = std::sync::mpsc::channel::<()>();
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<u16>();
+        let a = c.clone();
+        let worker_a = std::thread::spawn(move || {
+            let rt = current_thread();
+            done_tx.send(ask_basic(&rt, &a, port).status).unwrap();
+            // Idle, the runtime kept and not driven.
+            park_rx.recv().unwrap();
+            drop(rt);
+        });
+        assert_eq!(done_rx.recv().unwrap(), 200);
+        std::thread::sleep(Duration::from_millis(600));
+        let b = c.clone();
+        let worker_b = std::thread::spawn(move || {
+            let rt = current_thread();
+            let started = std::time::Instant::now();
+            let answer = ask_basic(&rt, &b, port);
+            (answer.status, answer.error, started.elapsed())
+        });
+        let (status, error, took) = worker_b.join().unwrap();
+        park_tx.send(()).unwrap();
+        worker_a.join().unwrap();
+        assert_eq!(status, 200, "{:?}", error);
+        assert!(took < Duration::from_secs(1), "took {:?}", took);
+        assert_eq!(accepted.load(Ordering::SeqCst), 2, "B opened its own");
+    }
+
+    /// A STALE CONNECTION ON ONE WORKER: the worker's runtime sleeps past
+    /// the server's idle close (it is not polled, so the close is unseen),
+    /// then calls again on the connection it pooled. That fails at once
+    /// rather than hanging, and the call is made once more on a new
+    /// connection.
+    #[test]
+    fn a_stale_pooled_connection_is_replaced_without_a_hang() {
+        let (port, accepted) =
+            idle_closing_server(Duration::from_millis(200), false);
+        let c = plain_client(port, 5000);
+        let rt = current_thread();
+        assert_eq!(ask_basic(&rt, &c, port).status, 200);
+        std::thread::sleep(Duration::from_millis(600));
+        let started = std::time::Instant::now();
+        let answer = ask_basic(&rt, &c, port);
+        assert_eq!(answer.status, 200, "{:?}", answer.error);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(accepted.load(Ordering::SeqCst) >= 2);
+    }
+
+    /// A CONNECTION CLOSED UNDER THE REQUEST, before any answer: sent once
+    /// more on a new one, answered, and a timeout is still a timeout.
+    #[test]
+    fn a_connection_closed_before_the_answer_is_sent_once_more() {
+        let (port, accepted) =
+            idle_closing_server(Duration::from_secs(5), true);
+        let c = plain_client(port, 5000);
+        let rt = current_thread();
+        let started = std::time::Instant::now();
+        let answer = ask_basic(&rt, &c, port);
+        assert_eq!(answer.status, 200, "{:?}", answer.error);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(accepted.load(Ordering::SeqCst), 2);
     }
 }

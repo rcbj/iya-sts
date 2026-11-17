@@ -1783,7 +1783,7 @@ class XacmlPage {
       trustIssuedClientCertificates: https && purpose === 'api',
       askClientCertificate: https,
       requireClientCertificate: false,
-      sessionTimeoutS: 300,
+      sessionTimeoutS: 7200,
       sessionCacheSize: 2048,
       keepAliveTimeoutS: 60,
       headersTimeoutS: 0,

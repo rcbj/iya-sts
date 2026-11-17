@@ -1955,6 +1955,43 @@ in the clear it is right only behind something that terminates TLS.
 * **A port that will not bind** is reported `failed` and tried again after
   the next pull (`STS-XPEP-0103`); the others are unaffected.
 
+#### What each setting does on the wire
+
+Every listener, the environment's four and the ones defined here, applies
+its settings as follows (since 1.1.0):
+
+* **`headersTimeoutS`**: a request whose headers have started arriving and
+  have not finished within this many seconds is closed, however slowly the
+  client keeps sending bytes. It counts from the first byte of each
+  request's headers, so a kept-alive connection waiting between requests is
+  not affected; that wait is `keepAliveTimeoutS`. `0` (the default) sets no
+  limit of its own, and a request's headers then have the keep-alive plus
+  one second. Over HTTP/2 it bounds the time from the connection's first
+  byte to its first request.
+* **`keepAliveTimeoutS`**: a connection with no bytes in either direction
+  for this many seconds is closed.
+* **`http2`**: an HTTPS listener with it on selects `h2` when the client
+  offers it in ALPN, as every browser does, and `http/1.1` otherwise; with
+  it off, only `http/1.1`. A client that speaks HTTP/2 without asking (prior
+  knowledge) is answered too while it is on. Plain HTTP never offers it.
+* **`requireClientCertificate`** needs something to verify the certificate
+  against: a `trustAnchorsFile`, or, on a decision-API listener,
+  `trustIssuedClientCertificates` with `PEP_AUTHZEN_CLIENT_CA` set in the
+  PEP's environment. A save with neither is refused (`STS-XACML-0281`).
+  What this service cannot see from here, `PEP_AUTHZEN_CLIENT_CA` unset or
+  an anchors file the PEP cannot read, the PEP refuses itself: the listener
+  serves no connection and is reported `failed`, a listener defined here is
+  not bound at all, and the PEP logs why (`STS-XPEP-0137`, also `GET /`'s
+  `https.problem` for the environment's). Until 1.1.0 such an API listener
+  asked nobody for a certificate and admitted everybody.
+* **`sessionCacheSize`** is applied to the TLS session cache.
+* **`sessionTimeoutS` is not applied.** The PEP's TLS library binding has
+  no safe call to set a session's lifetime, so a TLS session (and a TLS 1.3
+  session ticket) lives OpenSSL's own 7200 seconds whatever the value, and
+  7200 is the default. The PEP logs each other value once
+  (`STS-XPEP-0119`), a listener saved with the earlier default of 300
+  included; the listener's other settings are still applied.
+
 ### A listener's own page
 
 **Click a listener's id** in the Configured Listeners table to open
@@ -1993,10 +2030,10 @@ grow to 32. `api-http` uses those API defaults even when the process
 serves only CRLs; saving 1 and 4 is how that port is given the smaller
 pool. An empty field is the built-in default. TLS 1.2 is off unless the
 form turns it on, so the minimum version is TLS 1.3. `sessionTimeoutS` is
-stored with the listener. This PEP's TLS library has no session-lifetime
-call, so a value other than 300 is logged (`STS-XPEP-0119`) and a session
-lives OpenSSL's 300 seconds, which is also this service's default. The
-listener's other settings are still applied. A post-quantum-only listener
+stored with the listener and not applied: a session lives OpenSSL's 7200
+seconds ([What each setting does on the
+wire](#what-each-setting-does-on-the-wire)). The listener's other settings
+are still applied. A post-quantum-only listener
 whose cipher, group or signature list has nothing post-quantum is refused
 on save (`STS-XACML-0281`).
 
@@ -2469,7 +2506,7 @@ environment's, then the default.
 
 | Variable | Default | |
 |---|---|---|
-| `PEP_PDP_URL` | `https://localhost:8081` | the service. Append `/realm/<id>` for a trust realm |
+| `PEP_PDP_URL` | `https://localhost:8081` | the service. Append `/realm/<id>` for a trust realm. A connection to it idle for 4 seconds is closed by the PEP, below any keep-alive the service or a balancer in between keeps, and a call that meets a connection already closed is sent once more on a new one rather than waiting out its timeout |
 | `PEP_NAME` | `pep-1` | **the PEP's directory username**: the token's subject, and the name of its row |
 | `PEP_ASSERTION_KEY` | `PEP_TLS_KEY` | a path: the private key (RSA or EC P-256) the PEP signs its token requests and DPoP proofs with, read again every `httpsReloadIntervalMs` |
 | `PEP_CLIENT_ID` | `sts-remote-pep` | the client the PEP gets its tokens through. `PEP_AUDIT_CLIENT_ID` is still read when it is unset |
