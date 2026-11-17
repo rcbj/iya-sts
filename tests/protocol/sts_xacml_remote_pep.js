@@ -4074,15 +4074,17 @@ async function itTakesItsSettingsFromTheService() {
   check("the PEP's page answers that row alone, with the catalogue",
         function () {
           // SETTINGS in xacml/xacml_pep_settings.ts, description through
-          // proxyStripCookies. proxyMaxAccounts and proxyStripCookies are
-          // the two past the old count of 23.
+          // auditBuffer. proxyMaxAccounts and proxyStripCookies are the two
+          // past the old count of 23, and auditEnabled, auditIntervalMs,
+          // auditBatch and auditBuffer (#1827's decision records) the four
+          // past 25.
           const catalogue = page.body.settingsCatalogue;
           const n = catalogue && catalogue.settings
             ? catalogue.settings.length : 0;
           assert.ok(page.status === 200 && page.body.peps &&
-            page.body.peps.length === 1 && n === 25,
+            page.body.peps.length === 1 && n === 29,
             "GET /admin-api/xacml/peps?pep= should answer one row and the " +
-            "catalogue of 25 settings; it answered " + page.status +
+            "catalogue of 29 settings; it answered " + page.status +
             " with " + ((page.body.peps && page.body.peps.length) || 0) +
             " row(s) and " + n + " settings");
         });
