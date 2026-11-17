@@ -99,9 +99,10 @@ class MailOutboxPage {
             '</button></form>' : '') +
         '</td></tr>';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
     return tiles + kit.note(t.html('consoleMailOutbox.note.what'),
                             t.text('consoleMailOutbox.note.whatLabel')) +
-      filters + nav.head + '<table class="grid"><thead><tr><th>' +
+      kit.frame(filters + nav.head + '<table class="grid"><thead><tr><th>' +
       t.html('consoleMailOutbox.th.queued') + '</th><th>' +
       t.html('consoleMailOutbox.th.message') + '</th><th>' +
       t.html('consoleMailOutbox.th.to') + '</th><th>' +
@@ -109,7 +110,7 @@ class MailOutboxPage {
       '</th><th></th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="5">' +
        t.html('consoleMailOutbox.empty') + '</td>' +
-       '</tr>') + '</tbody></table>' + nav.foot;
+       '</tr>') + '</tbody></table>' + nav.foot);
   }
 
   // The facts' names are the row's own member names and stay as they are;
@@ -121,16 +122,20 @@ class MailOutboxPage {
                    'generation', 'errorCode', 'why', 'providerId',
                    'messageId', 'via', 'actor', 'queuedAt', 'lastAttemptAt',
                    'finishedAt'];
-    return '<table class="grid"><tbody>' + facts.map(function (k) {
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the facts, and
+    // the captured body with each of its two parts a frame inside it.
+    return kit.frame('<table class="grid"><tbody>' + facts.map(function (k) {
       return '<tr><th>' + k + '</th><td>' + esc(String(m[k] === undefined
         ? '' : m[k])) + '</td></tr>';
-    }).join('') + '</tbody></table>' + (m.text !== undefined
-      ? '<h2>' + t.html('consoleMailOutbox.captured.heading') + '</h2>' +
-        kit.note(t.html('consoleMailOutbox.captured.note')) + '<h3>' +
+    }).join('') + '</tbody></table>') + (m.text !== undefined
+      ? kit.frame('<h2>' + t.html('consoleMailOutbox.captured.heading') +
+        '</h2>' +
+        kit.note(t.html('consoleMailOutbox.captured.note')) +
+        kit.frame('<h3>' +
         t.html('consoleMailOutbox.captured.text') + '</h3><pre>' +
-        esc(m.text) + '</pre>' +
-        '<h3>' + t.html('consoleMailOutbox.captured.html') + '</h3><pre>' +
-        esc(m.html) + '</pre>'
+        esc(m.text) + '</pre>') +
+        kit.frame('<h3>' + t.html('consoleMailOutbox.captured.html') +
+        '</h3><pre>' + esc(m.html) + '</pre>'))
       : kit.note(t.html('consoleMailOutbox.noBody')));
   }
 

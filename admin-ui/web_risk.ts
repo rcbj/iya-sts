@@ -375,24 +375,26 @@ class RiskPage {
       // FOUR TABS (2026-10-12; `WebPages.protocolTabs()`), each opened by a
       // marked `<h2>` named for its first chart, the charts after it `<h3>`s
       // inside it; the note, the window and the tiles are Metadata.
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level, its content one frame.
       '<h2 data-tab="assessments">' + t.html('consoleRisk.metrics.overTime') +
       '</h2>' +
-      this.timeline(m, t) +
-      '<h3>' + t.html('consoleRisk.metrics.byLevel') + '</h3>' +
+      kit.frame(this.timeline(m, t) +
+      kit.frame('<h3>' + t.html('consoleRisk.metrics.byLevel') + '</h3>' +
       this.bars(t, 'risk-by-level', t.text('consoleRisk.th.level'),
                 a.byLevel, a.total, level, undefined, LEVELS) +
       '<p><small>' + t.html('consoleRisk.metrics.thresholds', {
         medium: m.thresholds.medium, high: m.thresholds.high }) + ' ' +
       (m.enforced ? t.html('consoleRisk.metrics.enforced')
-        : t.html('consoleRisk.metrics.observed')) + '</small></p>' +
-      '<h3>' + t.html('consoleRisk.metrics.scores') + '</h3>' +
+        : t.html('consoleRisk.metrics.observed')) + '</small></p>') +
+      kit.frame('<h3>' + t.html('consoleRisk.metrics.scores') + '</h3>' +
       this.bars(t, 'risk-by-band', t.text('consoleRisk.th.score'), a.byBand,
-                a.total, undefined, undefined, m.bands) +
-      '<h3>' + t.html('consoleRisk.standings.heading') + '</h3>' +
+                a.total, undefined, undefined, m.bands)) +
+      kit.frame('<h3>' + t.html('consoleRisk.standings.heading') + '</h3>' +
       this.bars(t, 'risk-standings', t.text('consoleRisk.th.level'),
-                m.standings, people, level, undefined, LEVELS) +
+                m.standings, people, level, undefined, LEVELS))) +
       '<h2 data-tab="signals">' + t.html('consoleRisk.metrics.signals') +
-      '</h2><p>' +
+      '</h2>' + kit.frame('<p>' +
       t.html('consoleRisk.metrics.signalsNote') + '</p>' +
       '<table class="grid" id="risk-signals"><thead><tr><th>' +
       t.html('consoleRisk.th.signal') + '</th>' +
@@ -401,27 +403,29 @@ class RiskPage {
       t.html('consoleRisk.th.fired') + '</th><th>' +
       t.html('consoleRisk.th.ofAssessments') + '</th>' +
       '</tr></thead><tbody>' + signals + '</tbody></table>' +
-      this.calibrationHtml(m, t) +
+      kit.frame(this.calibrationHtml(m, t))) +
       '<h2 data-tab="decisions">' + t.html('consoleRisk.metrics.decisions') +
       '</h2>' +
-      this.bars(t, 'risk-by-decision', t.text('consoleRisk.th.decision'),
-                a.byDecision, a.total) +
-      '<h3>' + t.html('consoleRisk.metrics.doors') + '</h3>' +
+      kit.frame(this.bars(t, 'risk-by-decision',
+                          t.text('consoleRisk.th.decision'),
+                          a.byDecision, a.total) +
+      kit.frame('<h3>' + t.html('consoleRisk.metrics.doors') + '</h3>' +
       this.bars(t, 'risk-by-door', t.text('consoleRisk.th.door'), a.byDoor,
-                a.total) +
-      '<h3>' + t.html('consoleRisk.metrics.whenAssessed') + '</h3>' +
+                a.total)) +
+      kit.frame('<h3>' + t.html('consoleRisk.metrics.whenAssessed') +
+      '</h3>' +
       this.bars(t, 'risk-by-phase', t.text('consoleRisk.th.phase'),
-                a.byPhase, a.total) +
-      '<h3>' + t.html('consoleRisk.metrics.countries') + '</h3>' +
+                a.byPhase, a.total)) +
+      kit.frame('<h3>' + t.html('consoleRisk.metrics.countries') + '</h3>' +
       this.bars(t, 'risk-by-country', t.text('consoleRisk.th.country'),
-                a.byCountry, a.total, undefined, 15) +
-      '<h3>' + t.html('consoleRisk.metrics.said') + '</h3>' +
+                a.byCountry, a.total, undefined, 15)) +
+      kit.frame('<h3>' + t.html('consoleRisk.metrics.said') + '</h3>' +
       '<p id="risk-feedback">' + t.html('consoleRisk.metrics.saidText', {
         confirmed: a.feedback.confirmed, denied: a.feedback.denied }) +
-      '</p>' +
+      '</p>')) +
       (!p ? '' : '<h2 data-tab="process">' +
       t.html('consoleRisk.process.heading') + '</h2>' +
-      '<table class="grid" id="risk-process"><tbody>' +
+      kit.frame('<table class="grid" id="risk-process"><tbody>' +
       '<tr><th>' + t.html('consoleRisk.process.since') + '</th><td>' +
       esc(this.when(p.since)) + '</td></tr>' +
       '<tr><th>' + t.html('consoleRisk.process.assessed') + '</th><td>' +
@@ -451,7 +455,7 @@ class RiskPage {
           breached: breach.breached, unanswered: breach.unanswered,
           cache: breach.fromCache })
         : t.html('consoleRisk.process.breachNotLoaded')) + '</td></tr>' +
-      '</tbody></table>');
+      '</tbody></table>'));
   }
 
   // ONE DROP-DOWN OF THE PAIRS THAT GO TOGETHER (#219). A dataset is read
@@ -606,8 +610,10 @@ class RiskPage {
       }).join('');
       // An `<h4>` since 2026-10-12: the datasets are one tab, opened by
       // `datasetsHeading` below, and the splitter never cuts at an `<h4>`.
-      return '<h4>' + esc(d.title) + ' <small><code>' + esc(d.dataset) +
-        '</code>' + (d.perRealm
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a dataset is
+      // a frame inside its tab's.
+      return kit.frame('<h4>' + esc(d.title) + ' <small><code>' +
+        esc(d.dataset) + '</code>' + (d.perRealm
           ? t.html('consoleRisk.dataset.inRealm', { realm: d.realm }) : '') +
         '</small></h4><p>' + esc(d.what) + '</p><p><strong>' +
         esc(d.state) + '</strong>' +
@@ -632,7 +638,7 @@ class RiskPage {
                     t.html('consoleRisk.th.source') + '</th>' +
                     '<th>' + t.html('consoleRisk.th.when') +
                     '</th><th></th></tr></thead><tbody>' + versions +
-                    '</tbody></table>' : '');
+                    '</tbody></table>' : ''));
     }).join('');
     const lookupForm = '<form method="get" action="' + LOOKUP_ACTION + '">' +
       '<input type="hidden" name="realm" value="' + esc(view.realm) + '">' +
@@ -655,10 +661,11 @@ class RiskPage {
     // and the fields before it writes a byte of the file.
     // THE TWO DOORS ARE ONE TAB (2026-10-12), opened by `import.heading`;
     // each door's own heading is an `<h4>` inside it.
-    const uploadForm = !canWrite ? '' :
+    const uploadHead = !canWrite ? '' :
       '<h3 data-tab="import">' + t.html('consoleRisk.import.heading') +
-      '</h3>' + self.pairGuide(view, t) +
-      '<h4>' + t.html('consoleRisk.upload.heading') +
+      '</h3>';
+    const uploadForm = !canWrite ? '' : self.pairGuide(view, t) +
+      kit.frame('<h4>' + t.html('consoleRisk.upload.heading') +
       '</h4><form method="post" action="' + UPLOAD +
       '" enctype="multipart/form-data" id="risk-upload-form">' +
       self.pairSelect(view, 'risk-upload-pair', t) + ' ' + (view.realmOnly
@@ -686,9 +693,9 @@ class RiskPage {
       '<label>' + t.html('consoleRisk.upload.file') +
       ' <input type="file" name="file" id="risk-upload-file" ' +
       'required></label><br><button type="submit" id="risk-upload">' +
-      t.html('consoleRisk.upload.button') + '</button></form>';
+      t.html('consoleRisk.upload.button') + '</button></form>');
     const importForm = !canWrite ? '' :
-      '<h4>' + t.html('consoleRisk.paste.heading') +
+      kit.frame('<h4>' + t.html('consoleRisk.paste.heading') +
       '</h4><form method="post" action="' + PAGE + '">' +
       '<input type="hidden" name="action" value="import">' +
       self.pairSelect(view, 'risk-import-pair', t) + ' ' + (view.realmOnly
@@ -711,7 +718,10 @@ class RiskPage {
       '"></textarea>' +
       '<br><button type="submit" id="risk-import">' +
       t.html('consoleRisk.paste.button') +
-      '</button></form>';
+      '</button></form>');
+    // The import tab: its heading at the top level, where the splitter
+    // cuts, and the guide and the two doors one frame after it.
+    const importTab = uploadHead + kit.frame(uploadForm + importForm);
     const failureRows = view.failures.rows.map(function (f: Json): string {
       return '<tr><td><small>' + esc(self.when(f.at)) + '</small></td><td>' +
         (f.subject ? self.whoCell(f, t)
@@ -731,7 +741,7 @@ class RiskPage {
         realm: view.realm }) +
       ' <small>' + t.html('consoleRisk.failures.lastDays',
                           { days: view.failures.windowDays }) +
-      '</small></h3><p>' +
+      '</small></h3>' + kit.frame('<p>' +
       esc(view.failures.store.why) + '</p>' + failuresNav.head +
       '<table class="grid"><thead><tr>' +
       '<th>' + t.html('consoleRisk.th.when') + '</th><th>' +
@@ -742,10 +752,10 @@ class RiskPage {
       '</tr></thead><tbody>' +
       (failureRows || '<tr><td colspan="5">' +
        t.html('consoleRisk.failures.none') + '</td></tr>') +
-      '</tbody></table>' + failuresNav.foot;
+      '</tbody></table>' + failuresNav.foot);
     const providers = '<h3 data-tab="providers">' +
       t.html('consoleRisk.providers.heading') +
-      '</h3><p><strong>' +
+      '</h3>' + kit.frame('<p><strong>' +
       esc(view.redistribution) + '</strong> ' +
       t.html('consoleRisk.providers.note') +
       '</p><table class="grid"><thead><tr>' +
@@ -781,16 +791,19 @@ class RiskPage {
            esc(p.licence) + '</a>' : esc(p.licence)) + '</td><td><small>' +
           esc(p.terms) + '</small></td><td>' + acceptance + form +
           '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
     // EVERY PROVIDER WHOSE DATA AN ACTIVE DATASET HOLDS, credited under
     // everything on this page — the failures' networks and the assessments'
     // locations included — as CC BY 4.0 and CC BY-SA 4.0 ask.
+    // Framed, it would join the tab before it: `metadataFrame()` keeps it
+    // on Metadata, where its unmarked heading put it.
     const credits = view.attributions.length
-      ? '<h3>' + t.html('consoleRisk.credits.heading') + '</h3>' +
+      ? kit.metadataFrame('<h3>' + t.html('consoleRisk.credits.heading') +
+        '</h3>' +
         view.attributions.map(function (c: Json) {
           return '<p class="attribution"><small>' + self.credit(c, t) +
             '</small></p>';
-        }).join('') : '';
+        }).join('')) : '';
     const assessments = this.assessmentsHtml(ctx, view);
     // EACH SECTION A TAB (2026-10-12; `WebPages.protocolTabs()`): the tiles,
     // the note and the data credits are Metadata.
@@ -798,21 +811,23 @@ class RiskPage {
     // the heading names both and each form has its own.
     const lookup = '<h3 data-tab="lookup">' +
       t.html('consoleRisk.lookup.heading') + '</h3>' +
-      '<h4>' + t.html('consoleRisk.lookup.address.heading') + '</h4>' +
-      lookupForm +
-      '<h4>' + t.html('consoleRisk.authenticator.heading') + '</h4>' +
-      RiskPage.authenticatorHtml(view, t);
+      kit.frame(kit.frame('<h4>' +
+      t.html('consoleRisk.lookup.address.heading') + '</h4>' +
+      lookupForm) +
+      kit.frame('<h4>' + t.html('consoleRisk.authenticator.heading') +
+      '</h4>' +
+      RiskPage.authenticatorHtml(view, t)));
     const datasets = '<h3 data-tab="datasets">' +
-      t.html('consoleRisk.datasets.heading') + '</h3>' + rows;
+      t.html('consoleRisk.datasets.heading') + '</h3>' + kit.frame(rows);
     if (view.realmOnly) {
       return tiles + kit.note(t.html('consoleRisk.about.realmOnly',
                                      { realm: view.realm }),
                               t.text('consoleRisk.about.label')) +
         assessments + lookup + datasets +
-        uploadForm + importForm + failures + credits;
+        importTab + failures + credits;
     }
-    return tiles + about + assessments + lookup + datasets + uploadForm +
-      importForm + providers + failures + credits +
+    return tiles + about + assessments + lookup + datasets + importTab +
+      providers + failures + credits +
       '<h2 data-tab="settings">' + t.html('consoleRisk.settings.heading') +
       '</h2>' +
       SettingsForms.forms(view.settings, PAGE, undefined, t);
@@ -910,7 +925,10 @@ class RiskPage {
     });
     return '<h3 data-tab="assessments">' +
       t.html('consoleRisk.assessments.heading') + ' <small>' +
-      t.html('consoleRisk.assessments.sub') + '</small></h3><p>' +
+      t.html('consoleRisk.assessments.sub') + '</small></h3>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level, its content one frame.
+      kit.frame('<p>' +
       (view.assessmentsInDatabase
         ? t.html('consoleRisk.assessments.inDatabase')
         : t.html('consoleRisk.assessments.inProcess')) + ' ' +
@@ -928,10 +946,10 @@ class RiskPage {
       t.html('consoleRisk.th.decision') + '</th></tr>' +
       '</thead><tbody>' + (rows || '<tr><td colspan="8">' +
                            t.html('consoleRisk.noneYet') + '</td></tr>') +
-      '</tbody></table>' + assessmentsNav.foot + credit +
+      '</tbody></table>' + assessmentsNav.foot + credit) +
       '<h3 data-tab="standings">' + t.html('consoleRisk.standings.heading') +
       '</h3>' +
-      subjectsNav.head +
+      kit.frame(subjectsNav.head +
       '<table class="grid" id="risk-subjects"><thead><tr><th>' +
       t.html('consoleRisk.th.who') + '</th>' +
       '<th>' + t.html('consoleRisk.th.level') + '</th><th>' +
@@ -940,7 +958,8 @@ class RiskPage {
       t.html('consoleRisk.th.updated') + '</th></tr>' +
       '</thead><tbody>' + (people || '<tr><td colspan="5">' +
                           t.html('consoleRisk.noneYet') + '</td>' +
-                          '</tr>') + '</tbody></table>' + subjectsNav.foot;
+                          '</tr>') + '</tbody></table>' +
+      subjectsNav.foot);
   }
 
   // ---------------------------------------------------------------------------

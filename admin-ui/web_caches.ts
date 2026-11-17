@@ -186,16 +186,19 @@ class CachesPage {
     });
     // TABS (2026-10-12, `WebPages.protocolTabs()`): the caches, the replay
     // stores and the other nodes; what is not held here is Metadata.
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // content after its heading, and what is not listed on Metadata.
     const table = '<h3 data-tab="caches">' +
       t.html('consoleCaches.headCaches') + '</h3>' +
-      self.tableOf(caches, t) +
+      kit.frame(self.tableOf(caches, t)) +
       '<h3 data-tab="replay">' + t.html('consoleCaches.headReplay') +
       '</h3>' +
-      kit.note(t.html('consoleCaches.replayNote'),
-               t.text('consoleCaches.replayNoteLabel')) +
-      self.tableOf(replays, t);
+      kit.frame(kit.note(t.html('consoleCaches.replayNote'),
+                         t.text('consoleCaches.replayNoteLabel')) +
+                self.tableOf(replays, t));
     const others = self.otherProcessesHtml(json.otherProcesses, t);
-    const skipped = '<h3>' + t.html('consoleCaches.headNotListed') +
+    const skipped = kit.metadataFrame('<h3>' +
+      t.html('consoleCaches.headNotListed') +
       '</h3>' +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleCaches.thWhat') + '</th><th>' +
@@ -206,7 +209,7 @@ class CachesPage {
         return '<tr><td>' + kit.esc(n.what) + '</td><td><code>' +
           kit.esc(n.where) + '</code></td><td>' + kit.esc(n.why) +
           '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
     return tiles + what + table + others + skipped;
   }
 
@@ -220,10 +223,12 @@ class CachesPage {
     t = t || kit.context().t;
     const self = this;
     if (!list || !list.length) {
+      // FRAMED (`secframe`, rcbj 2026-11-16): the tab's content after its
+      // heading.
       return '<h3 data-tab="nodes">' +
         t.html('consoleCaches.headOtherNodes') + '</h3>' +
-        kit.note(t.html('consoleCaches.noOtherNodes'),
-                 t.text('consoleCaches.nothingToShow'));
+        kit.frame(kit.note(t.html('consoleCaches.noOtherNodes'),
+                           t.text('consoleCaches.nothingToShow')));
     }
     const sections = list.map(function (p: Json): string {
       const rows = p.caches.map(function (c: Json): string {
@@ -261,9 +266,9 @@ class CachesPage {
     }).join('');
     return '<h3 data-tab="nodes">' +
       t.html('consoleCaches.headOtherNodes') + '</h3>' +
-      kit.note(t.html('consoleCaches.otherNodesNote'),
-               t.text('consoleCaches.otherNodesNoteLabel')) +
-      sections;
+      kit.frame(kit.note(t.html('consoleCaches.otherNodesNote'),
+                         t.text('consoleCaches.otherNodesNoteLabel')) +
+                sections);
   }
 
   static detailHtml(json: Json, query: Json, t: Json): string {
@@ -283,7 +288,8 @@ class CachesPage {
                    t.text('consoleCaches.tileFullestRealm')) : '') +
       kit.tile(this.ratioText(c, t), t.text('consoleCaches.tileHitRatio')) +
       '</div>';
-    const about = '<table class="grid"><tbody>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    const about = kit.frame('<table class="grid"><tbody>' +
       '<tr><th>' + t.html('consoleCaches.thName') + '</th><td><code>' +
       kit.esc(c.name) + '</code></td></tr>' +
       '<tr><th>' + t.html('consoleCaches.thDescription') + '</th><td>' +
@@ -327,7 +333,7 @@ class CachesPage {
       this.settingsText(c) + '</td></tr>' +
       '</tbody></table>' +
       (c.problem ? kit.warn('Its entries could not be listed: ' +
-                              kit.esc(c.problem)) : '');
+                              kit.esc(c.problem)) : ''));
     const params = kit.pageParamsOf(query);
     const nav = kit.pageNavPair(PAGE, params, json.entriesPaging);
     const rows = json.entries.map(function (e: Json): string {
@@ -346,8 +352,9 @@ class CachesPage {
     // One store's page draws its entries as the tab after Metadata.
     const table = '<h3 data-tab="entries">' +
       t.html('consoleCaches.headEntries') + '</h3>' +
-      kit.perPageForm(PAGE, 'cache', c.name, json.entriesPaging.perPage,
-                        t.html('consoleCaches.entriesOrder')) +
+      kit.frame(kit.perPageForm(PAGE, 'cache', c.name,
+                                json.entriesPaging.perPage,
+                                t.html('consoleCaches.entriesOrder')) +
       nav.head +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleCaches.thRealm') + '</th><th>' +
@@ -358,7 +365,7 @@ class CachesPage {
       '</tr></thead><tbody>' +
       (rows || '<tr><td colspan="5">' +
        t.html('consoleCaches.holdsNothing') + '</td></tr>') +
-      '</tbody></table>' + nav.foot;
+      '</tbody></table>' + nav.foot);
     return tiles + about + table;
   }
 

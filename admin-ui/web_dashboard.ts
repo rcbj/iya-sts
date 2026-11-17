@@ -66,12 +66,15 @@ class DashboardPage {
         kit.tile(kit.durationText(json.uptimeMs),
                  t.text('consoleDashboard.tile.uptime')) +
       '</div>' +
-      '<h2>' + t.html('consoleDashboard.what.heading') + '</h2>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each section,
+      // its heading inside, and each of the guide's sections a frame inside
+      // that.
+      kit.frame('<h2>' + t.html('consoleDashboard.what.heading') + '</h2>' +
       kit.note(t.html('consoleDashboard.what.clients')) +
       kit.note(t.html('consoleDashboard.what.derived')) +
-      DashboardPage.consoleGuide('/admin', json.sections, t) +
-      DashboardPage.notDone(json, t) +
-      '<h2>' + t.html('consoleDashboard.test.heading') + '</h2>' +
+      DashboardPage.consoleGuide('/admin', json.sections, t)) +
+      kit.frame(DashboardPage.notDone(json, t)) +
+      kit.frame('<h2>' + t.html('consoleDashboard.test.heading') + '</h2>' +
       kit.note(t.html('consoleDashboard.test.noteA') + ' ' +
       link('/admin-api', '/admin-api') +
       t.html('consoleDashboard.test.noteB')) +
@@ -110,7 +113,7 @@ class DashboardPage {
       t.html('consoleDashboard.test.with') + ' ' +
       '<code>' +
       '{"set":"id_token","claims":[{"name":"dept",' +
-      '"value":"engineering"}]}</code></li></ul>';
+      '"value":"engineering"}]}</code></li></ul>');
     return inner;
   }
 
@@ -236,9 +239,9 @@ class DashboardPage {
       if (!items.length) {
         return;
       }
-      out.push('<h3>' + kit.esc(section.title) + '</h3>' +
+      out.push(kit.frame('<h3>' + kit.esc(section.title) + '</h3>' +
                kit.note(kit.esc(section.what)) +
-               '<ul>' + items.join('') + '</ul>');
+               '<ul>' + items.join('') + '</ul>'));
     });
     return '<div class="guide">' + out.join('') + '</div>';
   }

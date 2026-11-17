@@ -335,13 +335,17 @@ class DatabasePage {
         'The database could not be reached') + connection;
     }
 
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16). The ratios and
+    // the drift check come before the first tab and are Metadata; what
+    // could not be collected follows the tabs, and `metadataFrame()` keeps
+    // it on Metadata, where its unmarked heading put it.
     return tiles + what + connection + narrowed +
-           self.derivedBlock(json, t) +
-           self.driftBlock(json, t) +
+           kit.frame(self.derivedBlock(json, t)) +
+           kit.frame(self.driftBlock(json, t)) +
            SECTIONS.map(function (section) {
              return self.sectionBlock(section, json, t);
            }).join('') +
-           self.failureBlock(json, t);
+           kit.metadataFrame(self.failureBlock(json, t));
   }
 
   static derivedBlock(json: Json, t: Json): string {
@@ -432,12 +436,14 @@ class DatabasePage {
     // `server`, `activity`, `background`, `schema`, `configuration`. The
     // tiles, the notes, the computed ratios, the drift check and what could
     // not be collected are Metadata.
+    // The tab's heading stays at the top level, its content one frame and
+    // each probe a frame inside it.
     return '<h3 data-tab="' + kit.esc(section.group.toLowerCase()) + '">' +
       words.heading + '</h3>' +
-      kit.note(words.blurb) +
+      kit.frame(kit.note(words.blurb) +
       ids.map(function (id) {
         const probe = json.probes[id];
-        return '<h4>' + kit.esc(id) +
+        return kit.frame('<h4>' + kit.esc(id) +
           ' <span class="muted">' +
           (probe.shape === 'rows'
             ? t.html('consoleDatabase.rowsTook',
@@ -446,8 +452,8 @@ class DatabasePage {
           '</span></h4>' +
           '<p class="muted">' + kit.esc(probe.what) + '</p>' +
           (probe.shape === 'rows' ? self.rowsTable(probe, t)
-                                  : self.rowTable(probe, t));
-      }).join('');
+                                  : self.rowTable(probe, t)));
+      }).join(''));
   }
 
   static failureBlock(json: Json, t: Json): string {

@@ -1017,6 +1017,52 @@ async function staleAfterCommitCase(t) {
   log.debug("Leaving staleAfterCommitCase().");
 }
 
+// RUN 43936849276'S CLUSTER MODE (2026-11-16, `sts_idp_initiated_launch`).
+// `/launch/{app}` on node B recorded an OpenID Connect launch on the session;
+// node A, which held a clean copy of the same sign-in, merged B's row into
+// it and kept its own `launches` (none), so the client's authorization
+// request a second later was refused STS-OAUTH-0959. The merge keeps each
+// client's later launch and later take, and drops a launch its take spent.
+async function launchMergeCase(t) {
+  log.debug("Entering launchMergeCase().");
+  t.log.info('on: a launch recorded on another node survives the merge, ' +
+             'and a spent one is not brought back');
+  const plain = sessionBody('launch-merge');
+  const launched = sessionBody('launch-merge', { lastSeenAt: 2000,
+    launches: { rp: 5000 } });
+  const one = authn.mergeSessionRows(plain, launched);
+  const other = authn.mergeSessionRows(launched, plain);
+  t.equal((one.launches || {}).rp + ' ' + (other.launches || {}).rp,
+          '5000 5000',
+          'THE LAUNCH IS KEPT whichever copy is the base');
+  const spent = sessionBody('launch-merge', { lastSeenAt: 3000,
+    launches: {}, launchesTaken: { rp: 5000 } });
+  const back = authn.mergeSessionRows(launched, spent);
+  const backOther = authn.mergeSessionRows(spent, launched);
+  t.check(!(back.launches || {}).rp && !(backOther.launches || {}).rp &&
+          back.launchesTaken.rp === 5000,
+          'a launch its take spent is not brought back by a copy from ' +
+          'before the take, in either order',
+          JSON.stringify([back.launches, backOther.launches]));
+  const again = sessionBody('launch-merge', { lastSeenAt: 4000,
+    launches: { rp: 6000 }, launchesTaken: { rp: 5000 } });
+  t.equal((authn.mergeSessionRows(spent, again).launches || {}).rp, 6000,
+          'and a later launch of the same client counts again');
+
+  // The window's own path: a clean held copy takes another node's row.
+  freshWindow();
+  const held = sessionBody('launch-held');
+  authn.sessions.set(held.id, held);
+  await minted.flush();
+  answer.read = { body: sealSession(sessionBody('launch-held', {
+    lastSeenAt: 2000, launches: { rp: 5000 } })) };
+  await minted.applyChange({ key: changeKey(held.id), realm: REALM });
+  const read = sessionWindow.get(REALM, held.id);
+  t.equal(read.ok && (read.session.launches || {}).rp, 5000,
+          'A CLEAN HELD COPY TAKES THE LAUNCH another node recorded');
+  log.debug("Leaving launchMergeCase().");
+}
+
 async function restoreCase(t) {
   log.debug("Entering restoreCase().");
   t.log.info('on: restore does not load session bodies');
@@ -1514,6 +1560,7 @@ async function onHalf(t) {
   await dirtyClientCase(t);
   await upgradedElsewhereCase(t);
   await staleAfterCommitCase(t);
+  await launchMergeCase(t);
   await restoreCase(t);
   upgradeCase(t);
   partialWalkCase(t);

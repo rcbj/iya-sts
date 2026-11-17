@@ -152,12 +152,15 @@ class SessionsPage {
 
       // A TAB PER LIST (2026-10-12): the lead, the tiles and the kinds are
       // Metadata (`WebPages.protocolTabs()`).
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // heading stays at the top level, its content one frame.
       '<h2 data-tab="live">' + t.html('consoleSessions.hLive') + '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
       // result.
-      '<form method="get" action="/admin/sessions"><div class="formrow">' +
+      kit.frame('<form method="get" action="/admin/sessions">' +
+        '<div class="formrow">' +
         '<label for="q">' + t.html('consoleSessions.search') + '</label>' +
         '<input type="text" id="q" name="q" size="28" value="' +
         kit.esc((json.filter.q || '')) +
@@ -187,7 +190,7 @@ class SessionsPage {
             first: paging.firstRow, last: paging.lastRow,
             page: paging.page, pages: paging.pages })
         : '') +
-      t.html('consoleSessions.liveInTotal', { held: json.held })) +
+      t.html('consoleSessions.liveInTotal', { held: json.held }))) +
 
       // ---------------------------------------------------------------------
       // THE UNAUTHENTICATED SESSIONS (2026-09-05).
@@ -205,7 +208,7 @@ class SessionsPage {
       '<h2 data-tab="unauthenticated">' +
       t.html('consoleSessions.hUnauthenticated') + '</h2>' +
 
-      kit.note(t.html('consoleSessions.unauthLead')) +
+      kit.frame(kit.note(t.html('consoleSessions.unauthLead')) +
 
       kit.note(t.html('consoleSessions.rolesBefore') + '<a ' +
       'href="/admin/roles">' + t.html('consoleSessions.rolesLink') + '</a>' +
@@ -240,7 +243,7 @@ class SessionsPage {
           }).join('') + '</table>' + anonNav.foot +
           kit.note(t.html('consoleSessions.unauthCount', {
             n: json.unauthenticatedHeld, held: json.held }))
-        : kit.note(t.html('consoleSessions.unauthNone'))) +
+        : kit.note(t.html('consoleSessions.unauthNone')))) +
 
       SessionsPage.accountChoicesSection(t, json.accountChoices) +
 
@@ -392,15 +395,17 @@ class SessionsPage {
     if (!choices || (!choices.enabled && !any)) {
       return '';
     }
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level, its content one frame.
     return '<h2 data-tab="accounts">' + t.html('consoleSessions.hAccounts') +
       '</h2>' +
-      kit.note(t.html('consoleSessions.accountsLead')) +
+      kit.frame(kit.note(t.html('consoleSessions.accountsLead')) +
       (choices.enabled ? ''
                        : kit.warn(t.html('consoleSessions.accountsOff'))) +
       '<div class="tiles">' + kinds.map(function (kind) {
         return kit.tile(Number(c[kind]) || 0, labels[kind]);
       }).join('') + '</div>' +
-      kit.note(t.html('consoleSessions.accountsNote'));
+      kit.note(t.html('consoleSessions.accountsNote')));
   }
 
   // WHAT CAME OUT OF THIS SESSION, as a link into /admin/tokens.

@@ -141,10 +141,13 @@ class VcStatusPage {
         controls + '</td></tr>';
     }).join('');
     // THE CREDENTIALS ARE THE PAGE'S ONE TAB (#752); `list-page` is the
-    // anchor `kit.pageNavPair()` returns a page turn to.
-    return tiles + about + where + '<h2 id="list-page" ' +
+    // anchor `kit.pageNavPair()` returns a page turn to. FRAMED AS KEY
+    // PAIRS IS (`secframe`, rcbj 2026-11-16): where the lists are served,
+    // and the tab's content after its heading.
+    return tiles + about + kit.frame(where) + '<h2 id="list-page" ' +
       'data-tab="credentials">' +
-      t.html('consoleVcStatus.credentialsHeading') + '</h2>' + nav.head +
+      t.html('consoleVcStatus.credentialsHeading') + '</h2>' +
+      kit.frame(nav.head +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleVcStatus.thIndex') + '</th><th>' +
       t.html('consoleVcStatus.thFormat') + '</th>' +
@@ -153,7 +156,7 @@ class VcStatusPage {
       t.html('consoleVcStatus.thExpires') + '</th><th></th></tr>' +
       '</thead><tbody>' +
       (rows || '<tr><td colspan="6">' + t.html('consoleVcStatus.none') +
-       '</td></tr>') + '</tbody></table>' + nav.foot;
+       '</td></tr>') + '</tbody></table>' + nav.foot);
   }
 }
 

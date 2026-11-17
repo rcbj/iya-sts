@@ -128,8 +128,10 @@ class CaepRiscPage {
                t.text('consoleCaepRisc.tile.actsEmit')) +
       '</div>' +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the emit
+      // section and the folded catalogue are each a frame.
       (json.installed
-        ? '<h2>' + t.html('consoleCaepRisc.emitHeading') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleCaepRisc.emitHeading') + '</h2>' +
           kit.note(t.html('consoleCaepRisc.caep.emitNote')) +
           sessionChooser +
           (picked
@@ -177,7 +179,7 @@ class CaepRiscPage {
             : '') +
           (liveSessions.length
             ? ''
-            : kit.warn(t.html('consoleCaepRisc.caep.noLiveSessions')))
+            : kit.warn(t.html('consoleCaepRisc.caep.noLiveSessions'))))
         : '') +
 
       // THE CATALOGUE IS FOLDED AND STARTS CLOSED, which is the one place on
@@ -193,12 +195,12 @@ class CaepRiscPage {
       // one
       // level up.
       (json.installed
-        ? '<details class="fold section"><summary>' +
+        ? kit.frame('<details class="fold section"><summary>' +
           t.html('consoleCaepRisc.caep.eightTypes') +
           '</summary><div class="foldbody">' +
           kit.note(t.html('consoleCaepRisc.caep.catalogueNote')) +
           catalogue +
-          '</div></details>'
+          '</div></details>')
         : '') +
 
       SettingsForms.forms(json.settings, '/admin/caep', settingsGroups, t) +
@@ -419,8 +421,9 @@ class CaepRiscPage {
         ? kit.warn(t.html('consoleCaepRisc.risc.googleWarn'))
         : '') +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16), as CAEP's.
       (json.installed
-        ? '<h2>' + t.html('consoleCaepRisc.emitHeading') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleCaepRisc.emitHeading') + '</h2>' +
           kit.note(t.html('consoleCaepRisc.risc.emitNote')) +
           accountChooser +
           (picked
@@ -452,19 +455,19 @@ class CaepRiscPage {
           '</div>' +
           kit.note(t.html('consoleCaepRisc.risc.reasonNote')) +
           '<div class="formrow"><button>' +
-          t.html('consoleCaepRisc.form.emit') + '</button></div></form>'
+          t.html('consoleCaepRisc.form.emit') + '</button></div></form>')
         : '') +
 
       // Folded and closed by default, for the reason the CAEP catalogue is:
       // fourteen cards is seven screens of REFERENCE between the controls
       // above and the settings below.
       (json.installed
-        ? '<details class="fold section"><summary>' +
+        ? kit.frame('<details class="fold section"><summary>' +
           t.html('consoleCaepRisc.risc.fourteenTypes') +
           '</summary><div class="foldbody">' +
           kit.note(t.html('consoleCaepRisc.risc.catalogueNote')) +
           catalogue +
-          '</div></details>'
+          '</div></details>')
         : '') +
 
       SettingsForms.forms(json.settings, '/admin/risc', settingsGroups, t) +
@@ -696,10 +699,12 @@ class CaepRiscPage {
       '</div>' +
 
       // A TAB PER LIST (2026-10-12): the tiles above and the closing links
-      // are Metadata (`WebPages.protocolTabs()`).
+      // are Metadata (`WebPages.protocolTabs()`). FRAMED AS KEY PAIRS IS
+      // (`secframe`, rcbj 2026-11-16): a tab's heading stays at the top
+      // level, where the splitter cuts, and what follows it is the frame.
       '<h2 data-tab="sessions">' + t.html('consoleCaepRisc.sessions.heading') +
       '</h2>' +
-      kit.note(t.html('consoleCaepRisc.sessions.drillNote')) +
+      kit.frame(kit.note(t.html('consoleCaepRisc.sessions.drillNote')) +
       kit.sectionSearchForm({
         path: '/admin/caep-sessions', query: ctx.query,
         param: 'sessq', pageParam: 'sessionsPage',
@@ -720,11 +725,11 @@ class CaepRiscPage {
       t.html('consoleCaepRisc.th.risk') + '</th>' + headers +
       '<th>' + t.html('consoleCaepRisc.th.total') + '</th><th></th></tr>' +
       rows + '</table>' +
-      sessNav.foot +
+      sessNav.foot) +
 
       '<h2 data-tab="streams">' +
       t.html('consoleCaepRisc.sessions.whereHeading') + '</h2>' +
-      kit.note(t.html('consoleCaepRisc.sessions.zeroNote')) +
+      kit.frame(kit.note(t.html('consoleCaepRisc.sessions.zeroNote')) +
       streamNav.head +
       '<table><tr><th>' + t.html('consoleCaepRisc.th.stream') +
       '</th><th>aud</th><th>' + t.html('consoleCaepRisc.th.status') +
@@ -733,11 +738,11 @@ class CaepRiscPage {
       '<th>' + t.html('consoleCaepRisc.th.subjects') + '</th><th>' +
       t.html('consoleCaepRisc.th.caepTypes') + '</th></tr>' + streamRows +
       '</table>' +
-      streamNav.foot +
+      streamNav.foot) +
 
       '<h2 data-tab="applications">' +
       t.html('consoleCaepRisc.perAppHeading') + '</h2>' +
-      kit.note(t.html('consoleCaepRisc.sessions.perApp1')) +
+      kit.frame(kit.note(t.html('consoleCaepRisc.sessions.perApp1')) +
       kit.note(t.html('consoleCaepRisc.sessions.perApp2')) +
       kit.note(t.html('consoleCaepRisc.sessions.perApp3')) +
       kit.sectionSearchForm({
@@ -797,7 +802,7 @@ class CaepRiscPage {
           t.html('consoleCaepRisc.clearRegister') + '</button>' +
           '</div></form>' +
           kit.note(t.html('consoleCaepRisc.sessions.clearNote'))
-        : '') +
+        : '')) +
 
       '<div data-metadata>' + kit.note('<a href="/admin/caep">' +
       t.html('consoleCaepRisc.links.caepSettings') + '</a> &middot; ' +
@@ -1126,10 +1131,11 @@ class CaepRiscPage {
       '</div>' +
 
       // A TAB PER LIST (2026-10-12): the tiles above and the closing links
-      // are Metadata (`WebPages.protocolTabs()`).
+      // are Metadata (`WebPages.protocolTabs()`). FRAMED AS KEY PAIRS IS
+      // (`secframe`, rcbj 2026-11-16), as the CAEP sessions page's tabs.
       '<h2 data-tab="accounts">' + t.html('consoleCaepRisc.accounts.heading') +
       '</h2>' +
-      kit.note(t.html('consoleCaepRisc.accounts.drillNote')) +
+      kit.frame(kit.note(t.html('consoleCaepRisc.accounts.drillNote')) +
       kit.sectionSearchForm({
         path: '/admin/risc-accounts', query: ctx.query,
         param: 'acctq', pageParam: 'accountsPage',
@@ -1150,11 +1156,11 @@ class CaepRiscPage {
         '<th>' + t.html('consoleCaepRisc.th.total') + '</th><th>' +
         t.html('consoleCaepRisc.th.suppressed') + '</th><th></th></tr>' +
         rows + '</table>') +
-      acctNav.foot +
+      acctNav.foot) +
 
       '<h2 data-tab="streams">' +
       t.html('consoleCaepRisc.accounts.whereHeading') + '</h2>' +
-      kit.note(t.html('consoleCaepRisc.accounts.zeroNote')) +
+      kit.frame(kit.note(t.html('consoleCaepRisc.accounts.zeroNote')) +
       streamNav.head +
       '<table><tr><th>' + t.html('consoleCaepRisc.th.stream') +
       '</th><th>aud</th><th>' + t.html('consoleCaepRisc.th.status') +
@@ -1163,11 +1169,11 @@ class CaepRiscPage {
       '<th>' + t.html('consoleCaepRisc.th.subjects') + '</th><th>' +
       t.html('consoleCaepRisc.th.riscTypes') + '</th></tr>' + streamRows +
       '</table>' +
-      streamNav.foot +
+      streamNav.foot) +
 
       '<h2 data-tab="applications">' +
       t.html('consoleCaepRisc.perAppHeading') + '</h2>' +
-      kit.note(t.html('consoleCaepRisc.accounts.perApp')) +
+      kit.frame(kit.note(t.html('consoleCaepRisc.accounts.perApp')) +
       kit.sectionSearchForm({
         path: '/admin/risc-accounts', query: ctx.query,
         param: 'rappq', pageParam: 'rapplicationsPage',
@@ -1207,7 +1213,7 @@ class CaepRiscPage {
           t.html('consoleCaepRisc.clearRegister') + '</button>' +
           '</div></form>' +
           kit.note(t.html('consoleCaepRisc.accounts.clearNote'))
-        : '') +
+        : '')) +
 
       '<div data-metadata>' + kit.note('<a href="/admin/risc">' +
       t.html('consoleCaepRisc.links.caepSettings') + '</a> &middot; ' +
@@ -1471,10 +1477,12 @@ class CaepRiscPage {
 
       kit.note(t.html('consoleCaepRisc.session.intro')) +
 
-      '<h2>' + t.html('consoleCaepRisc.session.heading') + '</h2>' +
-      CaepRiscPage.caepSessionFacts(row, t) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is
+      // one frame.
+      kit.frame('<h2>' + t.html('consoleCaepRisc.session.heading') + '</h2>' +
+      CaepRiscPage.caepSessionFacts(row, t)) +
 
-      '<h2>' + t.html('consoleCaepRisc.saidHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleCaepRisc.saidHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.session.warningNote')) +
       kit.perPageForm('/admin/caep-sessions/session', 'id', json.id,
                        json.paging.events.perPage,
@@ -1485,13 +1493,14 @@ class CaepRiscPage {
       t.html('consoleCaepRisc.th.stream') + '</th>' +
       '<th>' + t.html('consoleCaepRisc.th.noticed') + '</th></tr>' +
       eventRows + '</table>' +
-      eventNav.foot +
+      eventNav.foot) +
 
-      '<h2>' + t.html('consoleCaepRisc.perTypeHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleCaepRisc.perTypeHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.session.perTypeNote')) +
-      CaepRiscPage.caepSessionCounts(row, json.eventTypes || [], t) +
+      CaepRiscPage.caepSessionCounts(row, json.eventTypes || [], t)) +
 
-      '<h2>' + t.html('consoleCaepRisc.session.resetHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleCaepRisc.session.resetHeading') +
+      '</h2>' +
       '<form method="post" action="/admin/caep">' +
       '<input type="hidden" name="action" value="reset-session">' +
       '<input type="hidden" name="session_id" value="' +
@@ -1504,7 +1513,7 @@ class CaepRiscPage {
       '<div class="formrow"><button class="secondary">' +
       t.html('consoleCaepRisc.reset') + '</button></div>' +
       '</form>' +
-      kit.note(t.html('consoleCaepRisc.session.resetNote')) +
+      kit.note(t.html('consoleCaepRisc.session.resetNote'))) +
 
       kit.note('<a href="/admin/caep-sessions">' +
       t.html('consoleCaepRisc.links.everySession') + '</a> &middot; ' +
@@ -1701,10 +1710,12 @@ class CaepRiscPage {
 
       kit.note(t.html('consoleCaepRisc.account.intro')) +
 
-      '<h2>' + t.html('consoleCaepRisc.account.heading') + '</h2>' +
-      CaepRiscPage.riscAccountFacts(row, t) +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is
+      // one frame.
+      kit.frame('<h2>' + t.html('consoleCaepRisc.account.heading') + '</h2>' +
+      CaepRiscPage.riscAccountFacts(row, t)) +
 
-      '<h2>' + t.html('consoleCaepRisc.saidHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleCaepRisc.saidHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.account.warningNote')) +
       kit.perPageForm('/admin/risc-accounts/account', 'id', json.id,
                        json.paging.events.perPage,
@@ -1715,13 +1726,14 @@ class CaepRiscPage {
       t.html('consoleCaepRisc.th.stream') + '</th>' +
       '<th>' + t.html('consoleCaepRisc.th.noticed') + '</th></tr>' +
       eventRows + '</table>' +
-      eventNav.foot +
+      eventNav.foot) +
 
-      '<h2>' + t.html('consoleCaepRisc.perTypeHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleCaepRisc.perTypeHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.account.perTypeNote')) +
-      CaepRiscPage.riscAccountCounts(row, json.eventTypes || [], t) +
+      CaepRiscPage.riscAccountCounts(row, json.eventTypes || [], t)) +
 
-      '<h2>' + t.html('consoleCaepRisc.account.resetHeading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleCaepRisc.account.resetHeading') +
+      '</h2>' +
       '<form method="post" action="/admin/risc">' +
       '<input type="hidden" name="action" value="reset-account">' +
       '<input type="hidden" name="account_id" value="' +
@@ -1732,7 +1744,7 @@ class CaepRiscPage {
       '<div class="formrow"><button class="secondary">' +
       t.html('consoleCaepRisc.reset') + '</button></div>' +
       '</form>' +
-      kit.note(t.html('consoleCaepRisc.account.resetNote')) +
+      kit.note(t.html('consoleCaepRisc.account.resetNote'))) +
 
       kit.note('<a href="/admin/risc-accounts">' +
       t.html('consoleCaepRisc.links.everyAccount') + '</a> &middot; ' +

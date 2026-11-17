@@ -349,6 +349,10 @@ class UsersPage {
       'SPIFFE</a>.') +
       kit.warn(t.html('consoleUsers.body.oneRow')) +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list has
+      // no heading, so everything below the tiles and their notes — the
+      // filter, the door to New user, the table and its totals — is one.
+      kit.frame(
       '<form method="get" action="/admin/users"><div class="formrow">' +
         '<label for="q"' + tips.q + '>' +
         t.html('consoleUsers.body.nameContains') + '</label>' +
@@ -497,7 +501,7 @@ class UsersPage {
           limit: String(json.scanLimit),
           people: String(json.directoryPeople) }))) +
       kit.note(t.html('consoleUsers.body.inMemory',
-                      { keeps: json.registryKeeps }));
+                      { keeps: json.registryKeeps })));
 
     return inner;
   }
@@ -675,9 +679,12 @@ class UsersPage {
     // about what it does.
     let inner;
     if (!json.directory) {
-      inner = kit.warn(t.html('consoleUsers.newUserBody.noDirBefore') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the page is
+      // this one warning, so the warning is its frame.
+      inner = kit.frame(
+        kit.warn(t.html('consoleUsers.newUserBody.noDirBefore') +
         '<a href="/admin/users">' + t.html('consoleUsers.newUserBody.users') +
-        '</a>' + t.html('consoleUsers.newUserBody.noDirAfter'));
+        '</a>' + t.html('consoleUsers.newUserBody.noDirAfter')));
     } else {
 
       inner = '<div class="tiles">' +
@@ -709,7 +716,10 @@ class UsersPage {
         t.html('consoleUsers.newUserBody.emptyAfter')) +
 
         '<form method="post" action="/admin/users/new" class="newapp"><input ' +
-        'type="hidden" name="action" value="create"><h2>' +
+        'type="hidden" name="action" value="create">' +
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+        // of the form is a frame inside it, the buttons in the last.
+        kit.frame('<h2>' +
         t.html('consoleUsers.newUserBody.whoHeading') + '</h2><div ' +
         'class="formrow"><label for="new-username">' +
         t.html('consoleUsers.newUserBody.username') + '</label><input ' +
@@ -721,9 +731,10 @@ class UsersPage {
         // NOT THE ONLY REQUIRED FIELD (#1066): the attribute policy requires
         // cn and sn as well, and the realm may add more, each outlined in
         // the grid below.
-        kit.note(t.html('consoleUsers.newUserBody.usernameRequired')) +
+        kit.note(t.html('consoleUsers.newUserBody.usernameRequired'))) +
 
-        '<h2>' + t.html('consoleUsers.newUserBody.howHeading') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleUsers.newUserBody.howHeading') +
+        '</h2>' +
         '<table><tr><th>' + t.html('consoleUsers.newUserBody.thChoose') +
         '</th><th>' + t.html('consoleUsers.newUserBody.thOption') +
         '</th><th>' + t.html('consoleUsers.newUserBody.thMeans') +
@@ -754,12 +765,13 @@ class UsersPage {
             t.html('consoleUsers.newUserBody.notChecked')) +
         t.html('consoleUsers.newUserBody.passwordRefused')) +
         kit.mailLinkBox(t.text('consoleUsers.newUserBody.activationLink'),
-                        json.mailAvailable, t) +
+                        json.mailAvailable, t)) +
 
         // A SERVICE ACCOUNT FROM THE START (#221): the box, its owner and its
         // push destination, checked before the person is created — so a
         // refused owner creates nobody.
-        '<h2>' + t.html('consoleUsers.newUserBody.saHeading') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleUsers.newUserBody.saHeading') +
+        '</h2>' +
         '<div class="formrow"><label><input type="checkbox" ' +
         'name="serviceAccount" value="true"' +
         (given.serviceAccount === 'true' || given.serviceAccount === true
@@ -792,7 +804,7 @@ class UsersPage {
         // own sentence, in the amber box, beside the box that makes one.
         '<div class="warn">' +
         t.html('consoleUsers.serviceAccountSection.permanentNote') +
-        '</div>' +
+        '</div>') +
 
         // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
         // same group headings, as a person's Attributes tab, drawn from
@@ -802,7 +814,7 @@ class UsersPage {
         // names and contact details somebody creating a person usually has; the
         // advanced view is every field. The switch, "+" and the bin are submit
         // buttons that redraw this form with everything typed kept.
-        '<h2>' + (view === 'advanced'
+        kit.frame('<h2>' + (view === 'advanced'
           ? t.html('consoleUsers.newUserBody.everythingHeading')
           : t.html('consoleUsers.newUserBody.whatHeading')) + '</h2>' +
         kit.note(t.html('consoleUsers.newUserBody.gridBefore') +
@@ -874,7 +886,7 @@ class UsersPage {
           : kit.warn(t.html('consoleUsers.newUserBody.productBefore') +
             '<a href="/admin/config">' +
             t.html('consoleUsers.newUserBody.configuration') + '</a>' +
-            t.html('consoleUsers.newUserBody.productAfter'))) +
+            t.html('consoleUsers.newUserBody.productAfter')))) +
 
         // THE INVENTION SWITCH, AND IT IS A HIDDEN FIELD RATHER THAN A CHOICE.
         // This page's whole promise is that nothing is made up unless the
@@ -5511,14 +5523,16 @@ class UsersPage {
    */
   static unknown(ctx, json) {
     const t = kitEscaping(ctx.t);
-    return kit.note(t.html('consoleUsers.unknown.note', {
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the page has no
+    // heading, so its two notes are one frame.
+    return kit.frame(kit.note(t.html('consoleUsers.unknown.note', {
       user: json.user, keeps: json.registryKeeps })) +
       // The same href the trail's section crumb carries, so the two ways
       // back off this page cannot land in different places.
       kit.note('<a href="' +
       kit.esc('/admin/users' +
               kit.queryWith(kit.listViewOf('/admin/users', ctx.query), {})) +
-      '">' + t.html('consoleUsers.unknown.back') + '</a>.');
+      '">' + t.html('consoleUsers.unknown.back') + '</a>.'));
   }
 }
 

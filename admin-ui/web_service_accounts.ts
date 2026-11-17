@@ -112,7 +112,8 @@ class ServiceAccountsPage {
         '<tr><td colspan="6"><span class="state-none">' +
         t.html('consoleServiceAccounts.noAccounts') +
         '</span></td></tr>') + '</table>';
-    return tiles + lead + filter + nav.head + table + nav.foot +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return tiles + lead + kit.frame(filter + nav.head + table + nav.foot) +
       kit.note(t.html('consoleServiceAccounts.footer'));
   }
 }

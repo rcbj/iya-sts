@@ -219,14 +219,17 @@ class SignalsPage {
       t.html('consoleSignals.link.riscAccounts') + '</a>' +
       t.html('consoleSignals.copy.rest')) +
 
-      '<h2>' + t.html('consoleSignals.stream.heading') + '</h2>' +
-      streamBlock +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): a tab's
+      // heading stays at the top level, where `protocolTabs()` cuts, and what
+      // follows it is the frame.
+      kit.frame('<h2>' + t.html('consoleSignals.stream.heading') + '</h2>' +
+      streamBlock) +
 
       // A TAB PER SECTION (2026-10-12): the lead and this console's own
       // stream, which is status, are Metadata (`WebPages.protocolTabs()`).
       '<h2 id="find-sigq" data-tab="events">' +
       t.html('consoleSignals.events.heading') + '</h2>' +
-      search +
+      kit.frame(search +
       nav.head +
       '<table><tr><th>' + t.html('consoleSignals.th.when') + '</th><th>' +
       t.html('consoleSignals.th.event') + '</th><th>' +
@@ -235,7 +238,7 @@ class SignalsPage {
       t.html('consoleSignals.th.identifiers') + '</th><th>' +
       t.html('consoleSignals.th.payload') + '</th></tr>' +
       rows + '</table>' +
-      nav.foot +
+      nav.foot) +
 
       // THE ONE CONTROL, and it is drawn only when there is something to
       // clear: a button that would drop nothing is a button somebody presses
@@ -245,7 +248,7 @@ class SignalsPage {
       (json.total
         ? '<h2 data-tab="clear">' + t.html('consoleSignals.clear.heading') +
           '</h2>' +
-          kit.note(t.html('consoleSignals.clear.before') + '<a ' +
+          kit.frame(kit.note(t.html('consoleSignals.clear.before') + '<a ' +
           'href="/admin/audit">' + t.html('consoleSignals.link.audit') +
           '</a>' + t.html('consoleSignals.clear.after')) +
           '<form method="post" action="/admin/signals">' +
@@ -260,7 +263,7 @@ class SignalsPage {
           kit.esc(t.text('consoleSignals.clear.tip',
                          { n: String(json.total) })) +
           '">' + t.html('consoleSignals.clear.button') +
-          '</button></div></form>'
+          '</button></div></form>')
         : '') +
 
       '<div data-metadata>' +

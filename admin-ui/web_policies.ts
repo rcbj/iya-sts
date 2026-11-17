@@ -77,17 +77,21 @@ class PoliciesPage {
       } else {
         html = PoliciesPage.genericPolicySection(view, kind, t, view.state);
       }
-      return { id: 'tab-' + kind.id, label: kind.label, html: html };
+      // EVERY SECTION OF EVERY TAB IS A FRAME (`secframe`, rcbj
+      // 2026-11-16), as Key pairs' are: the kind's `<h2>` section here, and
+      // each block under it a frame inside that, drawn by its section.
+      return { id: 'tab-' + kind.id, label: kind.label,
+               html: kit.frame(html) };
     });
     // EXPORT AND IMPORT (#1713): a tab of its own, beside the profile list,
     // since both act on every kind at once.
     panels.push({ id: 'tab-transfer',
       label: t.text('consolePolicies.transfer.tab'),
-      html: PoliciesPage.transferSection(view, t) });
+      html: kit.frame(PoliciesPage.transferSection(view, t)) });
     panels.push({ id: 'tab-profiles',
       label: t.text('consolePolicies.profiles.tab'),
-      html: '<h2 id="profiles">' + t.html('consolePolicies.profiles.heading') +
-      '</h2>' +
+      html: kit.frame('<h2 id="profiles">' +
+      t.html('consolePolicies.profiles.heading') + '</h2>' +
       kit.note(t.html('consolePolicies.profiles.note')) +
       listedNav.head +
       '<table><tr><th>' + t.html('consolePolicies.profiles.kind') +
@@ -116,7 +120,7 @@ class PoliciesPage {
       view.actions.map(function (action) {
         return '<code>POST /admin-api/policies/' + kit.esc(action) +
                '</code>';
-      }).join(', ') + '.') });
+      }).join(', ') + '.')) });
 
     // The links are markup a message cannot carry (#539): the words around
     // them are messages, spaces and punctuation included.
@@ -125,7 +129,7 @@ class PoliciesPage {
     // as tabs.
     const metadata = tiles +
 
-      kit.note(t.html('consolePolicies.lead') +
+      kit.frame(kit.note(t.html('consolePolicies.lead') +
       view.kinds.map(function (kind) {
         return '<a href="#' + kit.esc(kind.id) + '">' +
           kit.esc(kind.label) + '</a> (<code>' +
@@ -133,7 +137,7 @@ class PoliciesPage {
       }).join(', ') + t.html('consolePolicies.notXacml') +
       '<a href="/admin/xacml/policies">' +
       t.html('consolePolicies.notXacmlLink') + '</a>' +
-      t.html('consolePolicies.notXacmlEnd'));
+      t.html('consolePolicies.notXacmlEnd')));
 
     // NOT A SECURITY ADMINISTRATOR (#645): every policy is still drawn, and
     // the page says above every tab that a Save will be refused — the
@@ -180,7 +184,9 @@ class PoliciesPage {
       hidden('action', 'export') + exportList +
       '<p><button>' + t.html('consolePolicies.transfer.export') +
       '</button></p></form>';
-    const importForm = '<h3 id="transfer-import">' +
+    // EACH BLOCK UNDER THE TAB'S `<h2>` IS A FRAME (`secframe`, rcbj
+    // 2026-11-16); `body()` frames the section itself.
+    const importForm = kit.frame('<h3 id="transfer-import">' +
       t.html('consolePolicies.transfer.importHeading') + '</h3>' +
       kit.note(t.html('consolePolicies.transfer.importNote')) +
       '<form method="post" action="/admin/policies">' +
@@ -191,7 +197,7 @@ class PoliciesPage {
       'cols="80" spellcheck="false">' + kit.esc(pasted) + '</textarea></p>' +
       '<p><button>' + t.html('consolePolicies.transfer.inspect') +
       '</button> <button name="action" value="import" class="secondary">' +
-      t.html('consolePolicies.transfer.import') + '</button></p></form>';
+      t.html('consolePolicies.transfer.import') + '</button></p></form>');
     let result = '';
     if (seen && seen.chain) {
       const origin = String(seen.origin || '');
@@ -235,10 +241,10 @@ class PoliciesPage {
       // one leaves it out; with none ticked the whole document is written.
       const carried = Array.isArray(seen.profiles) ? seen.profiles : [];
       const checklist = carried.length
-        ? '<h4 id="transfer-profiles">' +
+        ? kit.frame('<h4 id="transfer-profiles">' +
           t.html('consolePolicies.transfer.profilesHeading') + '</h4>' +
           '<p>' + t.html('consolePolicies.transfer.importSelectNote') +
-          '</p>' + PoliciesPage.policyChecklist(carried, true, t)
+          '</p>' + PoliciesPage.policyChecklist(carried, true, t))
         : '';
       const answer = !verdict.ok ? ''
         : origin === 'foreign'
@@ -256,11 +262,11 @@ class PoliciesPage {
             checklist +
             '<p><button>' + t.html('consolePolicies.transfer.importTrusted') +
             '</button></p></form>';
-      result = '<h3 id="transfer-signer">' +
+      result = kit.frame('<h3 id="transfer-signer">' +
         t.html('consolePolicies.transfer.resultHeading') + '</h3>' +
         '<p>' + lead + '</p>' + facts +
-        '<h4>' + t.html('consolePolicies.transfer.chain') + '</h4>' + chain +
-        judged + answer;
+        kit.frame('<h4>' + t.html('consolePolicies.transfer.chain') +
+                  '</h4>' + chain + judged) + answer);
     }
     return '<h2 id="transfer">' + t.html('consolePolicies.transfer.heading') +
       '</h2>' + kit.note(t.html('consolePolicies.transfer.lead')) +
@@ -378,7 +384,7 @@ class PoliciesPage {
             kit.esc(one.addedBy || '') + '</td></tr>';
         }).join('') + '</table>'
       : kit.note(t.html('consolePolicies.transfer.view.noneTrusted'));
-    return '<h3 id="transfer-signer-own">' +
+    return kit.frame('<h3 id="transfer-signer-own">' +
       t.html('consolePolicies.transfer.view.signerHeading') + '</h3>' +
       '<table>' +
       '<tr><th>' + t.html('consolePolicies.transfer.view.algorithm') +
@@ -386,11 +392,11 @@ class PoliciesPage {
       '<tr><th>' + t.html('consolePolicies.transfer.view.paranoid') +
       '</th><td>' + yesNo(transfer.paranoidPolicySigner) + '</td></tr>' +
       '</table>' +
-      '<h4>' + t.html('consolePolicies.transfer.view.issuingCa') + '</h4>' +
-      caTable +
-      '<h3 id="transfer-trusted">' +
+      kit.frame('<h4>' + t.html('consolePolicies.transfer.view.issuingCa') +
+      '</h4>' + caTable)) +
+      kit.frame('<h3 id="transfer-trusted">' +
       t.html('consolePolicies.transfer.view.trustedHeading') + '</h3>' +
-      trustedTable;
+      trustedTable);
   }
 
   /**
@@ -443,7 +449,10 @@ class PoliciesPage {
       PoliciesPage.policyForms(kind, ap, 'ap-',
         kit.note(t.html('consolePolicies.authn.checked')), t) +
 
-      '<h3 id="authn-now">' + t.html('consolePolicies.authn.now') + '</h3>' +
+      // A FRAME EACH (`secframe`, rcbj 2026-11-16): a sub-tab's content,
+      // and each `<h3>` block; `body()` frames the kind's section.
+      kit.frame('<h3 id="authn-now">' + t.html('consolePolicies.authn.now') +
+      '</h3>' +
       '<ul>' + ap.rules.map(function (rule) {
         return '<li>' + kit.esc(rule) + '</li>';
       }).join('') + '</ul>' +
@@ -455,17 +464,21 @@ class PoliciesPage {
           yesNo(m.primary, m.active) + '</td><td>' +
           yesNo(m.secondFactor, m.active) + '</td></tr>';
       }).join('') + '</table>' +
-      kit.note(t.html('consolePolicies.authn.dash'));
+      kit.note(t.html('consolePolicies.authn.dash')));
     return out + kit.subTabbedPanels(kind.label, [
       { id: 'authn-sub-default',
-        label: t.text('consolePolicies.sub.default'), html: byDefault },
+        label: t.text('consolePolicies.sub.default'),
+        html: kit.frame(byDefault) },
       { id: 'authn-sub-named',
-        label: t.text('consolePolicies.sub.named'), html: named.list },
+        label: t.text('consolePolicies.sub.named'),
+        html: kit.frame(named.list) },
       { id: 'authn-sub-new',
-        label: t.text('consolePolicies.sub.new'), html: named.add }
+        label: t.text('consolePolicies.sub.new'),
+        html: kit.frame(named.add) }
     ]) +
-      '<h3 id="authn-schema">' + t.html('consolePolicies.schema') + '</h3>' +
-      PoliciesPage.policySchemaTables(ap.schema, t);
+      kit.frame('<h3 id="authn-schema">' + t.html('consolePolicies.schema') +
+      '</h3>' +
+      PoliciesPage.policySchemaTables(ap.schema, t));
   }
 
   // ---------------------------------------------------------------------------
@@ -860,7 +873,11 @@ class PoliciesPage {
       const value = (one.fields || []).filter(function (field) {
         return field.key === 'requiredAttributes';
       })[0];
-      return '<h4 id="attributes-profile-' + kit.esc(one.name) + '">' +
+      // A FRAME EACH (`secframe`, rcbj 2026-11-16): a named profile here,
+      // a sub-tab's content and each `<h3>` below; `body()` frames the
+      // kind's section.
+      return kit.frame('<h4 id="attributes-profile-' + kit.esc(one.name) +
+        '">' +
         kit.esc(one.name) + t.html('consolePolicies.named.precedenceOf',
                                    { n: String(one.precedence) }) +
         '</h4><p class="sub">' +
@@ -886,7 +903,7 @@ class PoliciesPage {
         t.html('consolePolicies.named.remove') + '</button></form>' +
         '<ul>' + (one.rules || []).map(function (rule) {
           return '<li>' + kit.esc(rule) + '</li>';
-        }).join('') + '</ul>';
+        }).join('') + '</ul>');
     }).join('');
     // THE NEW POLICY FORM, with a refused create's own fields kept (#841).
     const draftKey = PoliciesPage.draftKeyOf(kind.id);
@@ -933,8 +950,8 @@ class PoliciesPage {
       kit.subTabbedPanels(kind.label, [
         { id: 'attributes-sub-default',
           label: t.text('consolePolicies.sub.default'),
-          html: '<h3>' + t.html('consolePolicies.attributes.heading') +
-            '</h3>' +
+          html: kit.frame('<h3>' +
+            t.html('consolePolicies.attributes.heading') + '</h3>' +
             PoliciesPage.policyProblems(profile, t) +
             kit.note(profile.from === 'realm'
               ? t.html('consolePolicies.attributes.fromRealm',
@@ -947,31 +964,33 @@ class PoliciesPage {
             '<ul>' + ap.rules.map(function (rule) {
               return '<li>' + kit.esc(rule) + '</li>';
             }).join('') + '</ul>' +
-            kit.note(missing) },
+            kit.note(missing)) },
         { id: 'attributes-sub-named',
           label: t.text('consolePolicies.sub.named'),
-          html: '<h3 id="attributes-named">' +
+          html: kit.frame('<h3 id="attributes-named">' +
             t.html('consolePolicies.named.heading') + '</h3>' +
             kit.note(t.html('consolePolicies.attributes.namedLead')) +
             (named || '<p>' + t.html('consolePolicies.named.none') +
-                      '</p>') },
+                      '</p>')) },
         { id: 'attributes-sub-new',
           label: t.text('consolePolicies.sub.new'),
-          html: '<h3>' + t.html('consolePolicies.named.addHeading') +
-            '</h3>' + addForm },
+          html: kit.frame('<h3>' +
+            t.html('consolePolicies.named.addHeading') +
+            '</h3>' + addForm) },
         { id: 'attributes-sub-custom',
           label: t.text('consolePolicies.attributes.customHeading'),
-          html: '<h3 id="attributes-custom">' +
+          html: kit.frame('<h3 id="attributes-custom">' +
             t.html('consolePolicies.attributes.customHeading') + '</h3>' +
             kit.note(t.html('consolePolicies.attributes.customLead',
                             { max: String(ap.maxCustom) })) +
             custom +
-            '<h4>' + t.html('consolePolicies.attributes.defineHeading') +
-            '</h4>' + defineForm }
+            kit.frame('<h4>' +
+              t.html('consolePolicies.attributes.defineHeading') +
+              '</h4>' + defineForm)) }
       ]) +
-      '<h3 id="attributes-schema">' + t.html('consolePolicies.schema') +
-      '</h3>' +
-      PoliciesPage.policySchemaTables(ap.schema, t);
+      kit.frame('<h3 id="attributes-schema">' +
+      t.html('consolePolicies.schema') + '</h3>' +
+      PoliciesPage.policySchemaTables(ap.schema, t));
   }
 
   // A kind this console has nothing particular to say about: its fields,
@@ -1006,28 +1025,32 @@ class PoliciesPage {
     if (PoliciesPage.isTabbedKind(kind, member)) {
       const named = PoliciesPage.namedProfileParts(kind, member, t,
                                                    state || {});
+      // A FRAME EACH (`secframe`, rcbj 2026-11-16): a sub-tab's content;
+      // `body()` frames the kind's section.
       return head + kit.subTabbedPanels(kind.label, [
         { id: kind.id + '-sub-default',
           label: t.text('consolePolicies.sub.default'),
-          html: PoliciesPage.policyProblems(member.profile, t) +
+          html: kit.frame(PoliciesPage.policyProblems(member.profile, t) +
             PoliciesPage.policyForms(kind, member, kind.id + '-', '', t) +
             '<ul>' + member.rules.map(function (rule) {
               return '<li>' + kit.esc(rule) + '</li>';
-            }).join('') + '</ul>' },
+            }).join('') + '</ul>') },
         { id: kind.id + '-sub-named',
           label: t.text('consolePolicies.sub.named'),
-          html: '<h3 id="' + kit.esc(kind.id) + '-named">' +
-            t.html('consolePolicies.named.heading') + '</h3>' + named.list },
+          html: kit.frame('<h3 id="' + kit.esc(kind.id) + '-named">' +
+            t.html('consolePolicies.named.heading') + '</h3>' +
+            named.list) },
         { id: kind.id + '-sub-new',
           label: t.text('consolePolicies.sub.new'),
-          html: '<h3>' + t.html('consolePolicies.named.addHeading') +
-            '</h3>' + named.add }
+          html: kit.frame('<h3>' + t.html('consolePolicies.named.addHeading') +
+            '</h3>' + named.add) }
       ].concat(member.clients ? [
         // THE LEARNED CLIENTS (#1112), the realm's register, beside the
         // profiles whose `clientRules` row is the configured half.
         { id: kind.id + '-sub-clients',
           label: t.text('consolePolicies.sub.clients'),
-          html: PoliciesPage.passkeyClientsSection(member.clients, t) }
+          html: kit.frame(PoliciesPage.passkeyClientsSection(member.clients,
+                                                             t)) }
       ] : [])) + PoliciesPage.policySchemaTables(member.schema, t);
     }
     const out = head +
@@ -1123,10 +1146,12 @@ class PoliciesPage {
    */
   static namedProfilesSection(kind, member, t) {
     const parts = PoliciesPage.namedProfileParts(kind, member, t, {});
-    return '<h3 id="' + kit.esc(kind.id) + '-named">' +
+    // A FRAME, and the add form one inside it (`secframe`, rcbj
+    // 2026-11-16).
+    return kit.frame('<h3 id="' + kit.esc(kind.id) + '-named">' +
       t.html('consolePolicies.named.heading') + '</h3>' + parts.list +
-      '<h4>' + t.html('consolePolicies.named.addHeading') + '</h4>' +
-      parts.add;
+      kit.frame('<h4>' + t.html('consolePolicies.named.addHeading') +
+      '</h4>' + parts.add));
   }
 
   /**
@@ -1333,8 +1358,9 @@ class PoliciesPage {
           : t.html('consolePolicies.named.noteUnranked')) +
       (member.named.length ? member.named.map(function (named) {
         // The heading's id is where an application's Passkey policy card
-        // links to (#609): `<kind>-profile-<name>`.
-        return '<h4 id="' + kit.esc(kind.id) + '-profile-' +
+        // links to (#609): `<kind>-profile-<name>`. A frame each
+        // (`secframe`, rcbj 2026-11-16).
+        return kit.frame('<h4 id="' + kit.esc(kind.id) + '-profile-' +
           kit.esc(named.name) + '">' + kit.esc(named.name) +
           (has('precedence')
           ? t.html('consolePolicies.named.precedenceOf',
@@ -1343,7 +1369,7 @@ class PoliciesPage {
           form(named, kind.id + '-' + named.name + '-', false) +
           '<ul>' + named.rules.map(function (rule) {
             return '<li>' + kit.esc(rule) + '</li>';
-          }).join('') + '</ul>';
+          }).join('') + '</ul>');
       }).join('') : '<p>' + t.html('consolePolicies.named.none') + '</p>');
     return { list: list, add: form(blank, kind.id + '-new-', true) };
   }
@@ -1377,15 +1403,17 @@ class PoliciesPage {
       PoliciesPage.policyForms(kind, pw, 'pp-',
         kit.note(t.html('consolePolicies.password.checked')), t) +
 
-      '<h3 id="rules">' + t.html('consolePolicies.password.rulesHeading') +
-      '</h3>' +
+      // A FRAME EACH (`secframe`, rcbj 2026-11-16): each `<h3>` block, and
+      // a sub-tab's content; `body()` frames the kind's section.
+      kit.frame('<h3 id="rules">' +
+      t.html('consolePolicies.password.rulesHeading') + '</h3>' +
       kit.note(t.html('consolePolicies.password.rules1') +
       '<a href="/portal/password">' +
       t.html('consolePolicies.password.rulesLink') + '</a>' +
       t.html('consolePolicies.password.rules2')) +
       '<ul>' + pw.rules.map(function (rule) {
         return '<li>' + kit.esc(rule) + '</li>';
-      }).join('') + '</ul>';
+      }).join('') + '</ul>');
     // NAMED PASSWORD POLICIES (#1236): Default / Named policies / New
     // policy, the passkey policy's sub-tabs, where the kind declares them;
     // the doors, the history, the generator and the schema are reference
@@ -1397,16 +1425,17 @@ class PoliciesPage {
         return kit.subTabbedPanels(kind.label, [
           { id: 'password-sub-default',
             label: t.text('consolePolicies.sub.default'),
-            html: defaultPart },
+            html: kit.frame(defaultPart) },
           { id: 'password-sub-named',
             label: t.text('consolePolicies.sub.named'),
-            html: '<h3 id="password-named">' +
+            html: kit.frame('<h3 id="password-named">' +
               t.html('consolePolicies.named.heading') + '</h3>' +
-              named.list },
+              named.list) },
           { id: 'password-sub-new',
             label: t.text('consolePolicies.sub.new'),
-            html: '<h3>' + t.html('consolePolicies.named.addHeading') +
-              '</h3>' + named.add }
+            html: kit.frame('<h3>' +
+              t.html('consolePolicies.named.addHeading') +
+              '</h3>' + named.add) }
         ]);
       })()
       : defaultPart;
@@ -1425,8 +1454,8 @@ class PoliciesPage {
 
       body +
 
-      '<h3 id="doors">' + t.html('consolePolicies.password.doorsHeading') +
-      '</h3>' +
+      kit.frame('<h3 id="doors">' +
+      t.html('consolePolicies.password.doorsHeading') + '</h3>' +
       kit.note(t.html('consolePolicies.password.doors') +
       kit.esc(pw.notDoors)) +
       '<table><tr><th>' + t.html('consolePolicies.password.door') +
@@ -1436,17 +1465,17 @@ class PoliciesPage {
         return '<tr><td>' + kit.esc(row.door) + '</td><td><code>' +
                kit.esc(row.via) +
           '</code></td></tr>';
-      }).join('') + '</table>' +
+      }).join('') + '</table>') +
 
-      '<h3 id="history">' + t.html('consolePolicies.password.historyHeading') +
-      '</h3>' +
+      kit.frame('<h3 id="history">' +
+      t.html('consolePolicies.password.historyHeading') + '</h3>' +
       kit.note(t.html('consolePolicies.password.history',
         { history: String(profile.history),
-          ms: String((profile.history + 1) * 70) })) +
+          ms: String((profile.history + 1) * 70) }))) +
 
       // The generator's module, source, pools and stopping rule are the
       // view's English, drawn as they come between the messages (#539).
-      '<h3 id="generator">' +
+      kit.frame('<h3 id="generator">' +
       t.html('consolePolicies.password.generatorHeading') + '</h3>' +
       kit.note(t.html('consolePolicies.password.generator1') +
       '<code>' + kit.esc(pw.generator.module) + '</code>' +
@@ -1461,11 +1490,12 @@ class PoliciesPage {
       }).join(t.html('consolePolicies.password.generatorAnd')) +
       t.html('consolePolicies.password.generatorUntil') +
       kit.esc(pw.generator.drawsUntil) +
-      '.') +
+      '.')) +
 
-      '<h3 id="schema">' + t.html('consolePolicies.schema') + '</h3>' +
+      kit.frame('<h3 id="schema">' + t.html('consolePolicies.schema') +
+      '</h3>' +
       kit.note(t.html('consolePolicies.password.schema')) +
-      PoliciesPage.policySchemaTables(pw.schema, t);
+      PoliciesPage.policySchemaTables(pw.schema, t));
     return out;
   }
 

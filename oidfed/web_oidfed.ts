@@ -148,7 +148,9 @@ class OidfedPage {
       return '<tr><th>' + esc(k) + '</th><td>' + self.code(json.endpoints[k]) +
              '</td></tr>';
     }).join('');
-    return '<h2>' + t.html('consoleOidfed.entityHeading') +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): before the
+    // first tab, so Metadata's; its endpoints a frame inside it.
+    return kit.frame('<h2>' + t.html('consoleOidfed.entityHeading') +
       '</h2><table class="kv">' +
       '<tr><th>' + t.html('consoleOidfed.entityIdentifier') + '</th><td>' +
       this.code(json.entityId) +
@@ -165,15 +167,15 @@ class OidfedPage {
       (json.realmsAreSubordinates ? t.html('consoleOidfed.yes')
                                   : t.html('consoleOidfed.no')) +
       '</td></tr></table>' +
-      '<h3>' + t.html('consoleOidfed.endpoints') +
-      '</h3><table class="kv">' + endpoints + '</table>' +
+      kit.frame('<h3>' + t.html('consoleOidfed.endpoints') +
+      '</h3><table class="kv">' + endpoints + '</table>') +
       (json.entityConfigurationProblem
         ? kit.warn(esc(json.entityConfigurationProblem)) : '') +
       (json.entityConfiguration
         ? '<details><summary>' +
           t.html('consoleOidfed.entityConfigurationClaims') + '</summary>' +
           '<pre>' + esc(JSON.stringify(json.entityConfiguration, null, 2)) +
-          '</pre></details>' : '');
+          '</pre></details>' : ''));
   }
 
   /**
@@ -206,9 +208,13 @@ class OidfedPage {
         control + '</td></tr>';
     }).join('') : '<tr><td colspan="7" class="sub">' +
       t.html('consoleOidfed.noKey') + '</td></tr>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+    // heading stays at the top level, where `protocolTabs()` cuts, and what
+    // follows it is the frame. So for every tab below.
     return '<h2 data-tab="keys">' +
       t.html('consoleOidfed.keysHeading') + '</h2>' +
-      kit.note(t.html('consoleOidfed.keysNote', { alg: json.signingAlg })) +
+      kit.frame(kit.note(t.html('consoleOidfed.keysNote',
+                                { alg: json.signingAlg })) +
       pager.head +
       '<table><thead><tr><th>kid</th><th>' +
       t.html('consoleOidfed.thAlgorithm') + '</th><th>' +
@@ -223,7 +229,7 @@ class OidfedPage {
       this.form('rotate-key', this.hidden('emergency', 'true') +
         ' <input name="confirm" placeholder="' +
         attr(t.text('consoleOidfed.typeCompromised')) + '" required>',
-        t.text('consoleOidfed.emergencyRotation'), true);
+        t.text('consoleOidfed.emergencyRotation'), true));
   }
 
   /**
@@ -276,7 +282,7 @@ class OidfedPage {
         t.html('consoleOidfed.noSubordinates') + '</td></tr>';
     return '<h2 data-tab="subordinates">' +
       t.html('consoleOidfed.subordinatesHeading') + '</h2>' +
-      kit.note(t.html('consoleOidfed.subordinatesNote')) +
+      kit.frame(kit.note(t.html('consoleOidfed.subordinatesNote')) +
       pager.head +
       '<table><thead><tr><th>' + t.html('consoleOidfed.thEntity') +
       '</th><th>' + t.html('consoleOidfed.thKeys') + '</th><th>' +
@@ -304,7 +310,8 @@ class OidfedPage {
       'placeholder="' + attr(t.text('consoleOidfed.phInformationUri')) +
       '" size="30"></p>' +
       '<p><button type="submit">' +
-      t.html('consoleOidfed.registerSubordinate') + '</button></p></form>';
+      t.html('consoleOidfed.registerSubordinate') +
+      '</button></p></form>');
   }
 
   // One subordinate's history (#137), folded: a <details> needs no script.
@@ -366,12 +373,13 @@ class OidfedPage {
                       : t.html('consoleOidfed.revoked')) +
         self.history(f.events, t, f.eventsTotal) + '</td></tr>';
     }).join('');
-    return '<h3>' + t.html('consoleOidfed.formerHeading') +
+    // A frame inside the Subordinates tab's (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h3>' + t.html('consoleOidfed.formerHeading') +
            '</h3>' + pager.head + '<table><thead><tr><th>' +
            t.html('consoleOidfed.thEntity') + '</th>' +
            '<th>' + t.html('consoleOidfed.thHistory') +
            '</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-           pager.foot;
+           pager.foot);
   }
 
   // The Entity Collection (#136): the crawl kept, and Crawl now.
@@ -410,13 +418,13 @@ class OidfedPage {
     // `&#39;` where esc() writes `&apos;`, which would change the page.
     return '<h2 data-tab="collection">' +
       t.html('consoleOidfed.collectionHeading') + '</h2>' +
-      kit.note(t.html('consoleOidfed.collectionNote') + ' ' +
+      kit.frame(kit.note(t.html('consoleOidfed.collectionNote') + ' ' +
         (c.jobOff ? t.html('consoleOidfed.crawlOff') + esc(c.jobOff) +
                     t.html('consoleOidfed.crawlOffEnd')
                   : t.html('consoleOidfed.crawlEvery',
                            { s: String(c.crawlEveryS) }))) +
       kept + this.form('crawl-collection', '',
-                       t.text('consoleOidfed.crawlNow'));
+                       t.text('consoleOidfed.crawlNow')));
   }
 
   /**
@@ -442,7 +450,7 @@ class OidfedPage {
     }).join('');
     return '<h2 data-tab="anchors">' +
       t.html('consoleOidfed.anchorsHeading') + '</h2>' +
-      kit.note(t.html('consoleOidfed.anchorsNote')) +
+      kit.frame(kit.note(t.html('consoleOidfed.anchorsNote')) +
       pager.head +
       '<table><thead><tr><th>' + t.html('consoleOidfed.thAnchor') +
       '</th><th>' + t.html('consoleOidfed.thKeys') +
@@ -459,7 +467,7 @@ class OidfedPage {
       attr(t.text('consoleOidfed.phJwks')) +
       '"></textarea></p><p><button type="submit">' +
       t.html('consoleOidfed.trustIt') +
-      '</button></p></form>';
+      '</button></p></form>');
   }
 
   /**
@@ -516,8 +524,8 @@ class OidfedPage {
     };
     return '<h2 data-tab="marks">' +
       t.html('consoleOidfed.marksHeading') + '</h2>' +
-      kit.note(t.html('consoleOidfed.marksNote')) +
-      '<h3>' + t.html('consoleOidfed.typesIssued') +
+      kit.frame(kit.note(t.html('consoleOidfed.marksNote')) +
+      kit.frame('<h3>' + t.html('consoleOidfed.typesIssued') +
       '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
       '</th>' +
       '<th>' + t.html('consoleOidfed.thLifetime') +
@@ -534,16 +542,16 @@ class OidfedPage {
       attr(t.text('consoleOidfed.phDelegation')) +
       '"></textarea></p><p><button type="submit">' +
       t.html('consoleOidfed.issueThisType') +
-      '</button></p></form>' +
-      '<h3>' + t.html('consoleOidfed.issuedHeading') +
+      '</button></p></form>') +
+      kit.frame('<h3>' + t.html('consoleOidfed.issuedHeading') +
       '</h3>' + issuedNav.head + '<table><thead><tr><th>' +
       t.html('consoleOidfed.thType') +
       '</th><th>' + t.html('consoleOidfed.thTo') + '</th><th>' +
       t.html('consoleOidfed.thStatus') +
       '</th><th>' + t.html('consoleOidfed.thExpires') +
       '</th><th></th></tr></thead><tbody>' +
-      (issued || empty(5)) + '</tbody></table>' + issuedNav.foot +
-      '<h3>' + t.html('consoleOidfed.carriedHeading') +
+      (issued || empty(5)) + '</tbody></table>' + issuedNav.foot) +
+      kit.frame('<h3>' + t.html('consoleOidfed.carriedHeading') +
       '</h3>' + heldNav.head + '<table><thead><tr><th>' +
       t.html('consoleOidfed.thType') +
       '</th>' +
@@ -553,8 +561,8 @@ class OidfedPage {
       (held || empty(4)) + '</tbody></table>' + heldNav.foot +
       this.form('add-held-mark', '<input name="trustMark" size="60" ' +
                 'placeholder="' + attr(t.text('consoleOidfed.phTrustMark')) +
-                '" required>', t.text('consoleOidfed.carryIt')) +
-      '<h3>' + t.html('consoleOidfed.policyHeading') +
+                '" required>', t.text('consoleOidfed.carryIt'))) +
+      kit.frame('<h3>' + t.html('consoleOidfed.policyHeading') +
       '</h3>' + policyNav.head + '<table><thead><tr>' +
       '<th>' + t.html('consoleOidfed.thType') + '</th><th>' +
       t.html('consoleOidfed.thIssuers') + '</th><th>' +
@@ -574,7 +582,7 @@ class OidfedPage {
       'placeholder="' + attr(t.text('consoleOidfed.phOwnerJwks')) +
       '"></textarea></p><p><button ' +
       'type="submit">' + t.html('consoleOidfed.setPolicy') +
-      '</button></p></form>';
+      '</button></p></form>'));
   }
 
   /**
@@ -590,13 +598,13 @@ class OidfedPage {
                           '</pre>' : '';
     return '<h2 data-tab="resolve">' +
       t.html('consoleOidfed.resolveHeading') + '</h2>' +
-      kit.note(t.html('consoleOidfed.resolveNote',
+      kit.frame(kit.note(t.html('consoleOidfed.resolveNote',
                       { n: String(json.resolutions.length) })) +
       this.form('resolve', '<input name="sub" placeholder="https://entity.' +
                 'example" required size="50"> <input name="trustAnchor" ' +
                 'placeholder="' + attr(t.text('consoleOidfed.phTrustAnchor')) +
                 '" size="40">', t.text('consoleOidfed.resolve')) +
-      shown;
+      shown);
   }
 
   // THE PAGE'S BODY (#446), one method so that it can be one renderer. A

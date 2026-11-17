@@ -117,9 +117,12 @@ class StsMetadataPage {
     // every endpoint (its groups as headings inside the one tab) and the
     // specifications; the lead, the download and the drift report are
     // Metadata.
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // heading stays at the top level, its content one frame.
     html += '<h2 id="protocols" data-tab="protocols">' +
-      t.html('consoleStsMetadata.protocols.heading') + '</h2>' +
-      '<p class="lead">' + t.html('consoleStsMetadata.protocols.lead') +
+      t.html('consoleStsMetadata.protocols.heading') + '</h2>';
+    let protocols = '<p class="lead">' +
+      t.html('consoleStsMetadata.protocols.lead') +
       '</p>' +
       '<div class="protos">' +
       json.protocols.map(function (p) {
@@ -146,9 +149,10 @@ class StsMetadataPage {
     // (`mode.describesItselfAsTestDouble()`), and a product service, which
     // checks passwords and validates tokens, is not one.
     if (json.testDouble) {
-      html += '<p class="lead">' + t.html('consoleStsMetadata.testDouble') +
-        '</p>';
+      protocols += '<p class="lead">' +
+        t.html('consoleStsMetadata.testDouble') + '</p>';
     }
+    html += kit.frame(protocols);
 
     // -----------------------------------------------------------------------
     // THE NAMED AUTHORIZATION SERVERS, which this page cannot read off the
@@ -170,7 +174,7 @@ class StsMetadataPage {
     if (namedServers.length) {
       html += '<h2 data-tab="servers">' +
         t.html('consoleStsMetadata.as.heading') + '</h2>' +
-        '<p class="lead">' + t.html('consoleStsMetadata.as.lead',
+        kit.frame('<p class="lead">' + t.html('consoleStsMetadata.as.lead',
           { n: namedServers.length + 1 }) +
         '</p><table><thead><tr><th class="p">' +
         t.html('consoleStsMetadata.as.thServer') + '</th><th>' +
@@ -210,7 +214,7 @@ class StsMetadataPage {
         '</tbody></table><p class="lead"><a ' +
         'href="/admin/authorization-servers">' +
         t.html('consoleStsMetadata.as.configure') + '</a>' +
-        t.html('consoleStsMetadata.as.configureRest') + '</p>';
+        t.html('consoleStsMetadata.as.configureRest') + '</p>');
     }
 
     // Drift, if any. Shown at the top because it is the thing a reader most
@@ -286,8 +290,10 @@ class StsMetadataPage {
     // One tab for every group, each group a heading inside it.
     html += '<h2 data-tab="endpoints">' + t.html('consolePages.endpoints') +
       '</h2>';
+    let groups = '';
     StsMetadataPage.groupsOf(rows, json.groupOrder).forEach(function (group) {
-      html += '<h3 id="' + esc(StsMetadataPage.groupAnchor(group)) + '">' +
+      let block = '<h3 id="' + esc(StsMetadataPage.groupAnchor(group)) +
+        '">' +
         esc(group) +
         '</h3><table><thead><tr><th class="p">' +
         t.html('consoleStsMetadata.th.path') + '</th><th>' +
@@ -303,7 +309,7 @@ class StsMetadataPage {
           return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0);
         })
         .forEach(function (r) {
-          html += '<tr><td class="p">' + StsMetadataPage.pathCell(r, t) +
+          block += '<tr><td class="p">' + StsMetadataPage.pathCell(r, t) +
             '</td>' +
             '<td class="m">' + esc(r.methods.join(', ')) + '</td>' +
             '<td class="n">' +
@@ -322,25 +328,27 @@ class StsMetadataPage {
             StsMetadataPage.specLinks(r.specs, byId) +
             '</td></tr>';
         });
-      html += '</tbody></table>';
+      block += '</tbody></table>';
+      groups += kit.frame(block);
     });
+    html += kit.frame(groups);
 
     html += '<h2 id="specifications" data-tab="specifications">' +
-      t.html('consoleStsMetadata.specs.heading') + '</h2>' +
-      '<table><thead><tr><th class="n">' +
+      t.html('consoleStsMetadata.specs.heading') + '</h2>';
+    let specs = '<table><thead><tr><th class="n">' +
       t.html('consoleStsMetadata.specs.thSpec') + '</th>' +
       '<th>' + t.html('consoleStsMetadata.specs.thWhere') + '</th><th>' +
       t.html('consoleStsMetadata.specs.thCoverage') + '</th></tr></thead>' +
       '<tbody>';
     json.specifications.forEach(function (s) {
-      html += '<tr id="spec-' + esc(s.id) + '"><td class="n"><a href="' +
+      specs += '<tr id="spec-' + esc(s.id) + '"><td class="n"><a href="' +
         esc(s.url) +
         '" target="_blank" rel="noopener noreferrer">' + esc(s.name) +
         '</a></td><td>' + esc(s.where) + '</td><td>' +
         kit.note(esc(s.coverage)) +
         '</td></tr>';
     });
-    html += '</tbody></table>';
+    html += kit.frame(specs + '</tbody></table>');
 
     html += '<div data-metadata>' +
       kit.note(t.html('consoleStsMetadata.machineReadable',

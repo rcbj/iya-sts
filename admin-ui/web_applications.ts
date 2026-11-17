@@ -199,7 +199,10 @@ class ApplicationsPage {
       // tiles, the notes and the caveat are Metadata.
       '</div><h2 data-tab="applications">' +
       t.html('console.nav.applications') + '</h2>' +
-      '<form method="get" action="/admin/applications"><div ' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
+      // tab's content is one frame. The `data-tab` headings stay outside
+      // it, at the top level, where the splitter makes them the tab labels.
+      kit.frame('<form method="get" action="/admin/applications"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleApplications.a1.filterApplication') +
       '</label><input type="text" ' +
@@ -237,7 +240,7 @@ class ApplicationsPage {
                  : t.html('consoleApplications.a1.appearsFirst')) +
                '</td></tr>') +
       '</table>' +
-      nav.foot +
+      nav.foot) +
       '<h2 data-tab="add">' + t.html('consoleApplications.a1.addHeading') +
       '</h2>' +
       // ---------------------------------------------------------------------
@@ -258,7 +261,7 @@ class ApplicationsPage {
       // — that box carries the typed username onward and this page has no field
       // to carry, since the short row below is where a bare identifier goes.
       // ---------------------------------------------------------------------
-      '<p><a class="btn" href="/admin/applications/new">' +
+      kit.frame('<p><a class="btn" href="/admin/applications/new">' +
       t.html('consoleApplications.a1.newButton') + '</a></p>' +
       kit.note(t.html('consoleApplications.a1.fullerForm')) +
       kit.note(t.html('consoleApplications.a1.notConnected')) +
@@ -281,7 +284,7 @@ class ApplicationsPage {
       kit.note(t.html('consoleApplications.a1.shortRowA') +
       '<a href="/admin/applications/new">' +
       t.html('consoleApplications.a1.newApplication') + '</a>' +
-      t.html('consoleApplications.a1.shortRowB')) +
+      t.html('consoleApplications.a1.shortRowB'))) +
       '<div data-metadata>' +
       kit.note(t.html('consoleApplications.a1.oneEntry')) +
       kit.note(t.html('consoleApplications.a1.countsOfChanges')) + '</div>' +
@@ -460,7 +463,9 @@ class ApplicationsPage {
       // The identifier and the name, as the form draws them with no document
       // loaded. With one loaded they are on the pane's third tab instead, and
       // drawing them here as well would post each name twice.
-      const calledSection =
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
+      // section is one frame, the field grid's included.
+      const calledSection = kit.frame(
         '<h2>' + t.html('consoleApplications.a1.calledHeading') +
         '</h2><div class="formrow"><label ' +
         'for="identifier">' + t.html('consoleApplications.a1.identifier') +
@@ -480,7 +485,7 @@ class ApplicationsPage {
         kit.tip(t.html('consoleApplications.a1.nameTip')) +
         ' value="' + kit.esc(drafted('name')) + '"></div>' +
         kit.note(t.html('consoleApplications.a1.nameIs')) +
-        kit.note(t.html('consoleApplications.a1.noKind'));
+        kit.note(t.html('consoleApplications.a1.noKind')));
       // The families ticked: the ones a refused create had ticked, or OAuth 2.0
       // for a document describing an OAuth protected resource.
       const ticked = given.protocols ||
@@ -534,16 +539,18 @@ class ApplicationsPage {
         'aria-hidden="true">' + t.html('consoleApplications.a1.create') +
         '</button>' +
         (loaded
-          ? '<h2>' + t.html('consoleApplications.a1.loadedHeading') + '</h2>' +
+          ? kit.frame('<h2>' +
+            t.html('consoleApplications.a1.loadedHeading') + '</h2>' +
             ApplicationsPage.resourceMetadataPane(loaded, given.draft,
-              given.tab, t) +
-            '<h2>' + t.html('consoleApplications.a1.calledHeading') +
+              given.tab, t)) +
+            kit.frame('<h2>' + t.html('consoleApplications.a1.calledHeading') +
             '</h2>' +
             kit.note(t.html('consoleApplications.a1.onEditableTab')) +
-            kit.note(t.html('consoleApplications.a1.primaryName'))
+            kit.note(t.html('consoleApplications.a1.primaryName')))
           : calledSection) +
 
-        '<h2>' + t.html('consoleApplications.a1.familiesHeading') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleApplications.a1.familiesHeading') +
+        '</h2>' +
         kit.note(t.html('consoleApplications.a1.familiesNote')) +
         '<table><tr><th>' + t.html('consoleApplications.a1.colFor') +
         '</th><th>' + t.html('consoleApplications.a1.colFamily') +
@@ -557,7 +564,7 @@ class ApplicationsPage {
             return ticked.indexOf(id) >= 0;
           }), t);
         }).join('') +
-        '</table>' +
+        '</table>') +
 
         // THE FIELD GRID (2026-09-30): the simplified view is the fields this
         // page has always offered — the declarations, the per-application
@@ -565,7 +572,7 @@ class ApplicationsPage {
         // the advanced view is every field an application has. Both are one
         // grid, typed, shown for the families ticked; the switch is a submit
         // button, so whatever has been typed is carried into the other view.
-        '<h2>' + (view === 'advanced'
+        kit.frame('<h2>' + (view === 'advanced'
           ? t.html('consoleApplications.a1.everyField')
           : t.html('consoleApplications.a1.itsFields')) +
         '</h2>' +
@@ -598,7 +605,7 @@ class ApplicationsPage {
             generateSecret: '/admin/applications/new',
             secretLifetime: ApplicationsPage.newSecretLifetime(
               json.defaultSecretLifetimeDays, drafted('lifetimeDays'), t),
-            protocols: json.protocols }) +
+            protocols: json.protocols })) +
 
         '<div class="formrow"><button type="submit">' +
         t.html('consoleApplications.a1.create') + '</button>' +
@@ -701,11 +708,13 @@ class ApplicationsPage {
    */
   static applicationLdifSection(row, carryBack, writable, t) {
     if (!writable) {
-      return '<h2>' + t.html('consoleApplications.ldif.heading') + '</h2>' +
-        kit.note(t.html('consoleApplications.ldif.needsWrite'));
+      return kit.frame('<h2>' + t.html('consoleApplications.ldif.heading') +
+        '</h2>' + kit.note(t.html('consoleApplications.ldif.needsWrite')));
     }
-    return '<h2>' + t.html('consoleApplications.ldif.exportHeading') +
-      '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): export and
+    // import are a frame each.
+    return kit.frame('<h2>' +
+      t.html('consoleApplications.ldif.exportHeading') + '</h2>' +
       kit.note(t.html('consoleApplications.ldif.exportIntro')) +
       '<form method="post" action="/admin/applications">' + carryBack +
       '<input type="hidden" name="action" value="export-ldif">' +
@@ -716,8 +725,9 @@ class ApplicationsPage {
       t.html('consoleApplications.ldif.withCredentials') + '</label></div>' +
       kit.note(t.html('consoleApplications.ldif.credentialsWarning')) +
       '<div class="formrow"><button type="submit">' +
-      t.html('consoleApplications.ldif.export') + '</button></div></form>' +
-      '<h2>' + t.html('consoleApplications.ldif.importHeading') + '</h2>' +
+      t.html('consoleApplications.ldif.export') + '</button></div></form>') +
+      kit.frame('<h2>' + t.html('consoleApplications.ldif.importHeading') +
+      '</h2>' +
       kit.note(t.html('consoleApplications.ldif.importIntro')) +
       '<form method="post" action="/admin/applications" ' +
       'enctype="multipart/form-data">' + carryBack +
@@ -731,7 +741,7 @@ class ApplicationsPage {
       '<textarea id="ldif-text" name="ldif" rows="8" cols="60"></textarea>' +
       '</div>' +
       '<div class="formrow"><button type="submit">' +
-      t.html('consoleApplications.ldif.import') + '</button></div></form>';
+      t.html('consoleApplications.ldif.import') + '</button></div></form>');
   }
 
   // The form that gives the document. The checkbox shows the three sources; it
@@ -751,7 +761,8 @@ class ApplicationsPage {
   static resourceMetadataLoadSection(state, facts, t) {
     const given = (state && state.loadInput) || {};
     const open = !!(state && (state.loaded || state.loadError));
-    return '<h2>' + t.html('consoleApplications.a1.prmHeading') + '</h2>' +
+    return kit.frame('<h2>' + t.html('consoleApplications.a1.prmHeading') +
+      '</h2>' +
       kit.note(t.html('consoleApplications.a1.prmIntro',
                       { wellKnown: facts.wellKnown })) +
       '<form method="post" action="/admin/applications/new" ' +
@@ -784,7 +795,7 @@ class ApplicationsPage {
       kit.esc(facts.wellKnown) + '"></div>' +
       '<div class="formrow"><button type="submit">' +
       t.html('consoleApplications.a1.prmLoad') + '</button>' +
-      '</div></div></form>';
+      '</div></div></form>');
   }
 
   // THE THREE TABS. `tab` picks which one is open: the raw JSON on a fresh
@@ -924,19 +935,22 @@ class ApplicationsPage {
       '<label for="prm-tab-fields">' +
       t.html('consoleApplications.a1.tabFields') + '</label></div>' +
 
-      '<div class="prm-panel prm-panel-json">' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): inside each
+      // panel, not around the radios and labels that are its tab bar.
+      '<div class="prm-panel prm-panel-json">' + kit.frame(
       '<p class="sub">' + t.html('consoleApplications.a1.asRead') + source +
       '.</p>' +
-      '<pre><code>' + kit.esc(loaded.pretty) + '</code></pre></div>' +
+      '<pre><code>' + kit.esc(loaded.pretty) + '</code></pre>') + '</div>' +
 
-      '<div class="prm-panel prm-panel-table">' +
+      '<div class="prm-panel prm-panel-table">' + kit.frame(
       '<table><tr><th>' + t.html('consoleApplications.a1.colMember') +
       '</th><th>' + t.html('consoleApplications.a1.colValue') + '</th><th>' +
       t.html('consoleApplications.a1.colType') + '</th>' +
       '<th>' + t.html('consoleApplications.a1.colUsedFor') + '</th><th>' +
       t.html('consoleApplications.a1.colWhatItIs') + '</th></tr>' +
-      tableRows + '</table>' +
-      '<h3>' + t.html('consoleApplications.a1.scopesHeading') + '</h3>' +
+      tableRows + '</table>') +
+      kit.frame('<h3>' + t.html('consoleApplications.a1.scopesHeading') +
+      '</h3>' +
       (permissionRows
         ? '<table><tr><th>' + t.html('consoleApplications.a1.colScope') +
           '</th><th>' + t.html('consoleApplications.a1.colPermission') +
@@ -944,16 +958,17 @@ class ApplicationsPage {
           '<th>' + t.html('consoleApplications.a1.colClientAsks') +
           '</th><th></th></tr>' +
           permissionRows + '</table>'
-        : kit.note(t.html('consoleApplications.a1.noScopes'))) +
-      '<h3>' + t.html('consoleApplications.a1.realmAsHeading') + '</h3>' +
+        : kit.note(t.html('consoleApplications.a1.noScopes')))) +
+      kit.frame('<h3>' + t.html('consoleApplications.a1.realmAsHeading') +
+      '</h3>' +
       '<table><tr><th>' + t.html('consoleApplications.a1.colAs') +
       '</th><th>' + t.html('consoleApplications.a1.colIssuer') + '</th></tr>' +
       loaded.authorizationServers.realm.map(function (row) {
         return '<tr><td><code>' + kit.esc(row.id) + '</code></td><td><code>' +
                kit.esc(row.issuer) + '</code></td></tr>';
-      }).join('') + '</table>' + signed + '</div>' +
+      }).join('') + '</table>') + kit.frame(signed) + '</div>' +
 
-      '<div class="prm-panel prm-panel-fields">' +
+      '<div class="prm-panel prm-panel-fields">' + kit.frame(
       kit.note(t.html('consoleApplications.a1.fieldsOfForm')) +
       '<input type="hidden" name="metadata" value="' +
       kit.esc(loaded.compact) +
@@ -988,8 +1003,9 @@ class ApplicationsPage {
                 '<code>oauthResourceMetadataUrl</code>', values.url,
                 t.html('consoleApplications.a1.fUrl'))
         : '') +
-      '</table>' +
-      '<h3>' + t.html('consoleApplications.a1.membersHeading') + '</h3>' +
+      '</table>') +
+      kit.frame('<h3>' + t.html('consoleApplications.a1.membersHeading') +
+      '</h3>' +
       kit.note(t.html('consoleApplications.a1.membersA') +
       (loaded.extensions.length
         ? t.html('consoleApplications.a1.extensionsA',
@@ -1005,7 +1021,7 @@ class ApplicationsPage {
           '</th><th>' + t.html('consoleApplications.a1.colWhatItIs') +
           '</th></tr>' +
           memberRows + '</table>'
-        : '') +
+        : '')) +
       '</div></div>';
     return html;
   }
@@ -1275,10 +1291,36 @@ class ApplicationsPage {
                                                            'samlSpMetadataUrl');
       const consumedAt = ApplicationsPage.firstFieldValue(row,
         'samlSpMetadataConsumedAt');
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): every
+      // section of every tab is one frame, and each block under it a frame
+      // inside that; the tab bars, the tiles and the closing links are not.
+      // The Credentials section holds its DID, enrollment and stored
+      // certificate blocks; where it is not drawn they are frames alone.
+      const credentialsLead = forFamilies(OAUTH.concat(['wstrust']),
+        ApplicationsPage.applicationCredentialsSection(ctx, json,
+          carryBack));
+      const credentialsRest =
+        forFamilies(['did'], kit.frame('<h3 id="credentials-did">' +
+          t.html('consoleApplications.a2.didKeyPair') + '</h3>' +
+          ApplicationsPage.applicationDidPanel(ctx, row, carryBack,
+            'credentials'))) +
+        forFamilies(['acme', 'est', 'scep'],
+          kit.frame('<h3 id="credentials-enroll">' +
+          t.html('consoleApplications.a2.enrollHeading') +
+          '</h3>' + ApplicationsPage.applicationEnrollmentPanel(ctx,
+            row, carryBack, 'credentials'))) +
+        // STORED CERTIFICATES (#1227), on EVERY application and not
+        // forFamilies(): a certificate stored on the entry authenticates
+        // the application at every door that reads a client certificate
+        // as an identity, whatever it is declared for.
+        ApplicationsPage.applicationStoredCertificatesSection(
+          (json.page.credentials || {}).stored, row.identifier,
+          carryBack, !!ctx.write, t);
       const panels = [
         { id: 'tab-overview',
           label: t.text('consoleApplications.a2.tabOverview'),
-          html: '<h3>' + t.html('consoleApplications.a2.whatItIs') + '</h3>' +
+          html: kit.frame('<h3>' + t.html('consoleApplications.a2.whatItIs') +
+            '</h3>' +
         '<table><tr><th>' + t.html('consoleApplications.a2.colThing') +
         '</th><th>' + t.html('consoleApplications.a2.colValue') +
         '</th></tr>' +
@@ -1328,7 +1370,7 @@ class ApplicationsPage {
           : '<span class="state-none">' +
             t.html('consoleApplications.a2.nothingRecorded') + '</span>') +
         '</td></tr>' +
-        '</table>' +
+        '</table>') +
             ApplicationsPage.protocolFamilySection(row, t) },
         // EVERY ATTEMPT (#954), on every application. Not forFamilies():
         // a sign-in names an application that has declared no protocol yet,
@@ -1348,26 +1390,9 @@ class ApplicationsPage {
           // WS-TRUST AUTHENTICATES WITH THESE TOO (#519, #521, #747): a client
           // secret and a message-signing certificate, which a WS-Trust-only
           // application had no tab to reach.
-          html: forFamilies(OAUTH.concat(['wstrust']),
-            ApplicationsPage.applicationCredentialsSection(ctx, json,
-              carryBack)) +
-            forFamilies(['did'], '<h3 id="credentials-did">' +
-              t.html('consoleApplications.a2.didKeyPair') + '</h3>' +
-              ApplicationsPage.applicationDidPanel(ctx, row, carryBack,
-                'credentials')) +
-            forFamilies(['acme', 'est', 'scep'],
-              '<h3 id="credentials-enroll">' +
-              t.html('consoleApplications.a2.enrollHeading') +
-              '</h3>' + ApplicationsPage.applicationEnrollmentPanel(ctx,
-                row, carryBack,
-                                                            'credentials')) +
-            // STORED CERTIFICATES (#1227), on EVERY application and not
-            // forFamilies(): a certificate stored on the entry authenticates
-            // the application at every door that reads a client certificate
-            // as an identity, whatever it is declared for.
-            ApplicationsPage.applicationStoredCertificatesSection(
-              (json.page.credentials || {}).stored, row.identifier,
-              carryBack, !!ctx.write, t) },
+          html: credentialsLead
+            ? kit.frame(credentialsLead + credentialsRest)
+            : credentialsRest },
         { id: 'tab-origins',
           label: t.text('consoleApplications.a2.tabOrigins'),
           html: ApplicationsPage.applicationCorsSection(row, carryBack, t) },
@@ -1445,14 +1470,17 @@ class ApplicationsPage {
               field: 'application', value: row.identifier,
               stateKey: 'applicationOwners', self: '',
               lead: t.html('consoleApplications.owners.lead'),
-              leadRead: t.html('consoleApplications.owners.leadRead') }) +
-            // Closed to its owners (#607).
-            GroupsPage.ownerProtectionSection(t, json.page.ownership, {
+              leadRead: t.html('consoleApplications.owners.leadRead'),
+              framed: true }) +
+            // Closed to its owners (#607), framed here as the Groups
+            // page's Owners tab frames it.
+            kit.frame(GroupsPage.ownerProtectionSection(t,
+              json.page.ownership, {
               route: '/admin/applications/owners', id: 'application-owners',
               kind: 'application', name: row.identifier,
               back: kit.queryWith(kit.listViewOf('/admin/applications',
                                                  ctx.query), {}),
-              write: !!ctx.write, state: json.state }) },
+              write: !!ctx.write, state: json.state })) },
         // THE REMOTE PEP ROUTES THAT FRONT IT (#1760): read only, each linked
         // to the Remote PEPs tab where it is configured. A panel with nothing
         // in it gets no tab.
@@ -1466,7 +1494,8 @@ class ApplicationsPage {
         { id: 'tab-metadata',
           label: t.text('consoleApplications.a2.tabMetadata'),
           html: forFamilies(['saml2', 'saml11'], metadataUrl
-          ? '<h2>' + t.html('consoleApplications.a2.spMetadataHeading') +
+          ? kit.frame('<h2>' +
+            t.html('consoleApplications.a2.spMetadataHeading') +
             '</h2>' +
             kit.note(t.html('consoleApplications.a2.spMetadataA') + '<code>' +
                       kit.esc(metadataUrl) +
@@ -1491,10 +1520,11 @@ class ApplicationsPage {
                 t.html('consoleApplications.a2.consumedB')
               : t.html('consoleApplications.a2.notConsumed')) +
             t.html('consoleApplications.a2.dialsAnything') +
-            '</span></div></form>'
+            '</span></div></form>')
           : '') },
         { id: 'tab-entry', label: t.text('consoleApplications.a2.tabEntry'),
-          html:       '<h2>' + t.html('consoleApplications.a2.entryHeading') +
+          html: kit.frame('<h2>' +
+            t.html('consoleApplications.a2.entryHeading') +
             '</h2><p class="sub">' +
             t.html('consoleApplications.a2.entryNote') + '</p>' +
         (row.dn
@@ -1528,7 +1558,7 @@ class ApplicationsPage {
             // THE ONE-ATTRIBUTE FORMS reach every editable attribute by name,
             // folded, for what the grid leaves to a control of its own and for
             // an ldapmodify-shaped edit.
-        '<details class="fold section"><summary><h3>' +
+        kit.frame('<details class="fold section"><summary><h3>' +
         t.html('consoleApplications.a2.oneAttrHeading') + '</h3></summary>' +
         kit.note(t.html('consoleApplications.a2.oneAttrNote')) +
         '<form method="post" action="/admin/applications">' + carryBack +
@@ -1590,14 +1620,15 @@ class ApplicationsPage {
         '</button>' +
         '</div></form>' +
         kit.note(t.html('consoleApplications.a2.wontChange')) +
-        '</details>' },
+        '</details>')) },
         // #546: the entry as an LDIF file, out and back in.
         { id: 'tab-import-export',
           label: t.text('consoleApplications.ldif.tab'),
           html: ApplicationsPage.applicationLdifSection(row, carryBack,
                                                         ctx.write, t) },
         { id: 'tab-remove', label: t.text('consoleApplications.a2.tabRemove'),
-          html:       '<h2>' + t.html('consoleApplications.a2.takeOutHeading') +
+          html: kit.frame('<h2>' +
+            t.html('consoleApplications.a2.takeOutHeading') +
             '</h2>' +
         (row.registered
           ? '<form method="post" action="/admin/applications">' + carryBack +
@@ -1620,7 +1651,7 @@ class ApplicationsPage {
         'class="sub">' +
         t.html('consoleApplications.a2.deleteEntryNote',
                { n: row.authentications }) +
-        '</span></div></form>' }
+        '</span></div></form>') }
       ];
       // A CREDENTIAL JUST REVEALED (#446): shown once, here, on the page that
       // answered the reveal, and never in a link.
@@ -1790,7 +1821,8 @@ class ApplicationsPage {
         (one.delivered ? '<span class="state-valid">' + t.html(k + 'yes') +
          '</span>' : t.html(k + 'no')) + '</td></tr>';
     });
-    return '<h4 id="cfg-krb5-across">' + t.html(k + 'heading') + '</h4>' +
+    return kit.frame('<h4 id="cfg-krb5-across">' + t.html(k + 'heading') +
+      '</h4>' +
       kit.note(t.html(k + 'intro')) +
       '<h5>' + t.html(k + 'hFrontEnds') + '</h5>' + fronts +
       '<h5>' + t.html(k + 'hTargets') + '</h5>' + targets +
@@ -1801,7 +1833,7 @@ class ApplicationsPage {
                               { setting: String(tgt.foreignTgtDelegation ||
                                                 'inherit') }))) +
       table(['thPartner', 'thTrustAllows', 'thDelivered'], tgtRows,
-            'noTrusts');
+            'noTrusts'));
   }
 
   static applicationFieldsSection(ctx, row, carryBack, state?) {
@@ -1880,7 +1912,11 @@ class ApplicationsPage {
     // the bar, and gets a link only when it has no family panel of its own.
     const familiesPanel = '<div class="subpanel first" id="cfg-families">' +
       DocLinks.consoleHtml(DocLinks.forConsoleTab('cfg-families'), t) +
-      '<h3>' + t.html('consoleApplications.a2.familiesHeading') + '</h3>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+      // tab's heading and note are one frame, and inside each sub-tab every
+      // block is a frame of its own; the sub-tab bars are not.
+      kit.frame('<h3>' + t.html('consoleApplications.a2.familiesHeading') +
+      '</h3>' +
       kit.note(t.html('consoleApplications.a2.familiesNote')) +
       formOpen('families', null,
                '<input type="hidden" name="protocolsPresent" value="1">') +
@@ -1898,7 +1934,7 @@ class ApplicationsPage {
           kit.esc(choice.id) + '"' + (on ? ' checked' : '') + '>' +
           kit.esc(choice.label) + '</label>';
       }).join('') + '</div>' +
-      saveButton(t.text('consoleApplications.a2.saveFamilies')) + '</form>' +
+      saveButton(t.text('consoleApplications.a2.saveFamilies')) + '</form>') +
       '</div>';
     const groupPanels = groups.map(function (group) {
       const mine = shown.filter(function (one) {
@@ -1930,11 +1966,11 @@ class ApplicationsPage {
       // the DID and enrollment panels.
       const sections =
         (group.id === 'did'
-          ? ApplicationsPage.applicationDidPanel(ctx, row, carryBack,
-            'config') : '') +
+          ? kit.frame(ApplicationsPage.applicationDidPanel(ctx, row,
+            carryBack, 'config')) : '') +
         (group.id === 'enroll'
-          ? ApplicationsPage.applicationEnrollmentPanel(ctx, row, carryBack,
-            'config')
+          ? kit.frame(ApplicationsPage.applicationEnrollmentPanel(ctx, row,
+            carryBack, 'config'))
           : '') +
         // The realm's Token lifetimes, Custom claims and UserInfo claims
         // pages, and its Custom SAML attributes page, for this application
@@ -1976,7 +2012,7 @@ class ApplicationsPage {
               t.text('consoleApplications.a2.customClaims'))
           : '');
       // The sub-tab's own fields, in one form.
-      const fieldForm =
+      const fieldForm = kit.frame(
         // A sub-tab drawn only for a section has no fields to save.
         (!mine.length || group.id === 'saml' ? '' :
         formOpen(group.id, drawn.map(function (one) {
@@ -2013,7 +2049,7 @@ class ApplicationsPage {
             '</label></div>'
           : '') +
         saveButton(t.text('consoleApplications.a2.saveGroup',
-                          { label: group.label })) + '</form>');
+                          { label: group.label })) + '</form>'));
       // SAML'S TWO FAMILIES ARE DISTINCT VIEWS (#556): shared attributes
       // appear in both where an application declares both; family-specific
       // attributes and claims stay with their protocol. Metadata is consumed
@@ -2094,7 +2130,8 @@ class ApplicationsPage {
           return { id: 'cfg-' + family,
             label: family === 'saml2' ? 'SAML 2.0' : 'SAML 1.1',
             html: ApplicationsPage.applicationLaunchCard(row, family, t) +
-              observedSaml + familyFields + metadataForm + claims };
+              observedSaml + kit.frame(familyFields) +
+              kit.frame(metadataForm) + claims };
         });
       const samlPanels = group.id === 'saml'
         ? kit.subTabbedPanels(group.label, samlFamilyPanels) : '';
@@ -2136,13 +2173,14 @@ class ApplicationsPage {
         return '<a href="#cfg-' + kit.esc(group.id) + '">' +
           kit.esc(group.label) + '</a>';
       }).join('') + '</nav>';
-    return '<h2 id="fields">' + t.html('consoleApplications.a2.cfgHeading') +
+    return kit.frame('<h2 id="fields">' +
+      t.html('consoleApplications.a2.cfgHeading') +
       '</h2>' +
       kit.note(t.html('consoleApplications.a2.cfgNoteA') +
       '<a href="#tab-origins">' + t.html('consoleApplications.a2.tabOrigins') +
       '</a>' + t.html('consoleApplications.a2.cfgNoteB') + '<a ' +
       'href="#tab-roles">' + t.html('consoleApplications.a2.tabRoles') +
-      '</a>' + t.html('consoleApplications.a2.cfgNoteC')) +
+      '</a>' + t.html('consoleApplications.a2.cfgNoteC'))) +
       '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
   }
 
@@ -2177,7 +2215,8 @@ class ApplicationsPage {
         ? kit.note(t.html('consoleApplications.launch.missing',
             { attributes: one.missing.join(', ') }))
         : '');
-    return '<div class="launch-card' + (one.enabled ? '' : ' muted') +
+    return kit.frame('<div class="launch-card' +
+      (one.enabled ? '' : ' muted') +
       '" id="cfg-launch-' + kit.esc(protocol) + '"><h3>' +
       t.html('consoleApplications.launch.heading') + '</h3>' +
       kit.note(t.html('consoleApplications.launch.lead',
@@ -2187,7 +2226,7 @@ class ApplicationsPage {
       (one.endpoint
         ? '<p class="note">' + t.html('consoleApplications.launch.endpoint') +
           ' <code>' + kit.esc(one.endpoint) + '</code></p>'
-        : '') + '</div>';
+        : '') + '</div>');
   }
 
   // ---------------------------------------------------------------------------
@@ -2233,7 +2272,9 @@ class ApplicationsPage {
     const head = function (key) {
       return '<th>' + t.html(key) + '</th>';
     };
-    return '<h3>' + t.html('consoleApplications.a2.authHeading') + '</h3>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h3>' + t.html('consoleApplications.a2.authHeading') +
+      '</h3>' +
       kit.note(t.html('consoleApplications.a2.authNote', {
         max: String(logInfo.maxEvents || 0),
         dropped: Number(logInfo.dropped || 0)
@@ -2249,7 +2290,7 @@ class ApplicationsPage {
       head('consoleAudit.detail') + '</tr>' +
       (body || '<tr><td colspan="10">' +
         t.html('consoleApplications.a2.authEmpty') + '</td></tr>') +
-      '</table>' + nav.foot;
+      '</table>' + nav.foot);
   }
 
   /**
@@ -2336,7 +2377,7 @@ class ApplicationsPage {
     if (!observed) {
       return '';
     }
-    return '<div class="fg-observed" id="' + kit.esc(id) + '" ' +
+    return kit.frame('<div class="fg-observed" id="' + kit.esc(id) + '" ' +
       'role="group" aria-label="' +
       kit.esc(t.text('consoleApplications.a2.observedLabel')) + '"' +
       kit.tip(tip) + '>' +
@@ -2347,7 +2388,7 @@ class ApplicationsPage {
                                          : one;
         });
         return ApplicationsPage.observedLine(name, values, t);
-      }).join('') + (extra || '') + '</div>';
+      }).join('') + (extra || '') + '</div>');
   }
 
   /**
@@ -2506,12 +2547,12 @@ class ApplicationsPage {
         : t.html('consoleApplications.passkey.default')) + ' <a href="' +
         kit.esc(link) + '">' + t.html('consoleApplications.passkey.open') +
         '</a></p>';
-    return '<div class="pk-card" id="cfg-every-passkey">' +
+    return kit.frame('<div class="pk-card" id="cfg-every-passkey">' +
       '<h3>' + t.html('consoleApplications.passkey.heading') + '</h3>' +
       kit.note(t.html('consoleApplications.passkey.lead')) + verdict +
       kit.note(t.html('consoleApplications.passkey.groupNote',
                       { n: String(pk.groupPolicies || 0) })) +
-      '</div>';
+      '</div>');
   }
 
   /**
@@ -2572,7 +2613,9 @@ class ApplicationsPage {
         '</tr>';
     }).join('');
     const atCap = secret.secrets.length >= secret.max;
-    const secretHtml = '<h3 id="credentials-secret">' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each block
+    // below is a frame; the detail page frames the section around them.
+    const secretHtml = kit.frame('<h3 id="credentials-secret">' +
       t.html('consoleApplications.a2.secretsHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a2.secretsNote',
                       { max: String(secret.max) })) +
@@ -2644,7 +2687,7 @@ class ApplicationsPage {
       '<span class="sub">' + (secret.held
         ? t.html('consoleApplications.a2.regenerateNote')
         : t.html('consoleApplications.a2.holdsNone')) +
-      '</span></div></form>';
+      '</span></div></form>');
 
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
       return '<option value="' + kit.esc(one.id) + '">' + kit.esc(one.label) +
@@ -2803,17 +2846,20 @@ class ApplicationsPage {
               '</span>'
             : t.html('consoleApplications.a2.noneRegistered')) + '</p>');
 
-      return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
+      return kit.frame('<h3 id="' + anchor + '">' + kit.esc(p.label) +
+        '</h3>' +
         managed +
-        '<h4>' + t.html('consoleApplications.a2.regenerateHeading') +
+        kit.frame('<h4>' +
+        t.html('consoleApplications.a2.regenerateHeading') +
         '</h4>' +
         kit.note(t.html('consoleApplications.a2.regenerateKeyNote')) +
-        issueForm + uploadForm + takeOff +
-        '<h4>' + t.html('consoleApplications.a2.registeredHeading') +
+        issueForm + uploadForm + takeOff) +
+        kit.frame('<h4>' +
+        t.html('consoleApplications.a2.registeredHeading') +
         '</h4>' +
         kit.note('<code>' + kit.esc(registered.attribute) + '</code>' +
         t.html('consoleApplications.a2.registeredNote')) +
-        registeredRows;
+        registeredRows));
     }).join('');
 
     // THE ASSERTION PROFILES ONLY FOR AN OAUTH 2.0 CLIENT (2026-09-13). See
@@ -2825,7 +2871,7 @@ class ApplicationsPage {
     });
     const assertionHtml = state.oauthDeclared
       ? purposeHtml
-      : '<h3 id="credentials-assertions">' +
+      : kit.frame('<h3 id="credentials-assertions">' +
         t.html('consoleApplications.a2.assertionHeading') + '</h3>' +
         kit.note(t.html('consoleApplications.a2.assertionNote')) +
         (heldElsewhere.length
@@ -2835,7 +2881,7 @@ class ApplicationsPage {
             }).join(t.html('consoleApplications.a2.and')) +
             t.html('consoleApplications.a2.alreadyCarriesB'),
             t.text('consoleApplications.a2.stillInEffect'))
-          : '');
+          : ''));
 
     return '<h2 id="credentials">' +
       t.html('consoleApplications.a2.tabCredentials') + '</h2>' +
@@ -2924,10 +2970,10 @@ class ApplicationsPage {
         kit.esc(t.text('consoleApplications.a2.storedAddTitle')) + '">' +
         t.html('consoleApplications.a2.storedAdd') + '</button></div></form>'
       : kit.note(t.html('consoleApplications.a2.storedNeedsWrite'));
-    return '<h3 id="credentials-stored">' +
+    return kit.frame('<h3 id="credentials-stored">' +
       t.html('consoleApplications.a2.storedHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a2.storedLead')) +
-      rows + addForm;
+      rows + addForm);
   }
 
   // ---------------------------------------------------------------------------
@@ -3030,14 +3076,14 @@ class ApplicationsPage {
       : kit.note(t.html('consoleApplications.a2.signingNoCa') + '<a ' +
                   'href="/admin/pki">' +
                   t.html('consoleApplications.a2.buildOnPki') + '</a>.');
-    return '<h3 id="credentials-message-signing">' +
+    return kit.frame('<h3 id="credentials-message-signing">' +
       t.html('consoleApplications.a2.signingHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a2.signingNote',
                       { name: state.implicitName })) +
       (state.wstrustDeclared ? ''
         : kit.warn(t.html('consoleApplications.a2.signingNotDeclared'),
                    t.text('consoleApplications.a2.stillInEffect'))) +
-      rows + issueForm;
+      rows + issueForm);
   }
 
   // ---------------------------------------------------------------------------
@@ -3171,15 +3217,19 @@ class ApplicationsPage {
               t.html('consoleApplications.a2.none') + '</span>') +
           '</td></tr>';
       }).join('') + '</table>';
-    const html = '<h3 id="credentials-tls-client">' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+    // section, and each of its three parts a frame inside it.
+    const html = kit.frame('<h3 id="credentials-tls-client">' +
       t.html('consoleApplications.a2.mtlsHeading') + '</h3>' +
       kit.note(methodSentence) +
-      '<h4>' + t.html('consoleApplications.a2.issuedItHeading') + '</h4>' +
+      kit.frame('<h4>' + t.html('consoleApplications.a2.issuedItHeading') +
+      '</h4>' +
       kit.note(t.html('consoleApplications.a2.implicitA') + '<code>' +
       kit.esc(state.implicitName) +
       '</code>' + t.html('consoleApplications.a2.implicitB')) +
-      rows + issueForm +
-      '<h4>' + t.html('consoleApplications.a2.otherAuthorityHeading') +
+      rows + issueForm) +
+      kit.frame('<h4>' +
+      t.html('consoleApplications.a2.otherAuthorityHeading') +
       '</h4>' +
       kit.note(t.html('consoleApplications.a2.explicitA') + '<a ' +
       'href="/admin/tls/trust">/admin/tls/trust</a>' +
@@ -3188,8 +3238,9 @@ class ApplicationsPage {
         kit.esc(state.selfSignedThumbprint) + '</code>)'
         : t.html('consoleApplications.a2.noneParen')) +
       t.html('consoleApplications.a2.explicitC')) +
-      subjectRows +
-      '<h4>' + t.html('consoleApplications.a2.boundHeading') + '</h4>' +
+      subjectRows) +
+      kit.frame('<h4>' + t.html('consoleApplications.a2.boundHeading') +
+      '</h4>' +
       kit.note((state.bindingAvailable
         ? t.html('consoleApplications.a2.bindingYes')
         : t.html('consoleApplications.a2.bindingNo')) +
@@ -3203,7 +3254,7 @@ class ApplicationsPage {
       // `credentials.mtls.adminApiBound`.
       kit.note(state.adminApiBound
         ? t.html('consoleApplications.a2.adminApiBoundYes')
-        : t.html('consoleApplications.a2.adminApiBoundNo'));
+        : t.html('consoleApplications.a2.adminApiBoundNo'))));
     return html;
   }
 
@@ -3353,7 +3404,7 @@ class ApplicationsPage {
           kit.esc(facts.why)) +
       '</div></td></tr></table>' +
       kit.note(t.html('consoleApplications.a2.didWebNote')) + keyTable +
-      linkage +
+      kit.frame(linkage) +
       (canWrite
         ? '<form method="post" action="/admin/applications' + anchor +
           '">' + carryBack +
@@ -3558,7 +3609,10 @@ class ApplicationsPage {
         }).join('')
         : '<tr><td colspan="5" class="sub">' +
           t.html('consoleApplications.a3.none') + '</td></tr>';
-      generation += '<h4>' + t.html('consoleApplications.a3.eabHeading') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
+      // h4 block a frame, inside the frame the caller draws around this.
+      generation += kit.frame('<h4>' +
+        t.html('consoleApplications.a3.eabHeading') +
         '</h4>' +
         '<table><tr><th>' + t.html('consoleApplications.a3.colKeyId') +
         '</th><th>' + t.html('consoleApplications.a3.colCreated') +
@@ -3572,13 +3626,14 @@ class ApplicationsPage {
             kit.tip(t.html('consoleApplications.a3.createEabTip')) +
             '>' + t.html('consoleApplications.a3.createEab') +
             '</button></form>'
-          : '');
+          : ''));
     }
     if (state.families.indexOf('est') >= 0) {
       const rule = state.rules.filter(function (one) {
         return one.family === 'est';
       })[0];
-      generation += '<h4>' + t.html('consoleApplications.a3.estHeading') +
+      generation += kit.frame('<h4>' +
+        t.html('consoleApplications.a3.estHeading') +
         '</h4>' +
         (canWrite && state.est.serverKeyGeneration.on
           ? formOpen('est', 'issue-server-key', entryFields) +
@@ -3603,7 +3658,7 @@ class ApplicationsPage {
             : t.html('consoleApplications.a3.serverKeysOff')) +
             '</p>') +
         '<p class="sub">' + t.html('consoleApplications.a3.estClientNote') +
-        '</p>';
+        '</p>');
     }
     if (state.families.indexOf('scep') >= 0) {
       const rule = state.rules.filter(function (one) {
@@ -3626,7 +3681,8 @@ class ApplicationsPage {
         }).join('')
         : '<tr><td colspan="6" class="sub">' +
           t.html('consoleApplications.a3.none') + '</td></tr>';
-      generation += '<h4>' + t.html('consoleApplications.a3.scepHeading') +
+      generation += kit.frame('<h4>' +
+        t.html('consoleApplications.a3.scepHeading') +
         '</h4>' +
         '<table><tr><th>' + t.html('consoleApplications.a3.colId') +
         '</th><th>' + t.html('consoleApplications.a3.colProfile') +
@@ -3645,7 +3701,7 @@ class ApplicationsPage {
             kit.tip(t.html('consoleApplications.a3.createChallengeTip')) +
             '>' + t.html('consoleApplications.a3.createChallenge') +
             '</button></form>'
-          : '');
+          : ''));
     }
     // THE HOST NAMES, shared by the three: a server certificate names only a
     // host registered here.
@@ -3671,7 +3727,8 @@ class ApplicationsPage {
         '>' + t.html('consoleApplications.a3.add') + '</button></form>'
       : '') + '<p class="sub">' + t.html('consoleApplications.a3.hostsNote') +
       '</p>';
-    return rulesTable + certificates + generation + hosts;
+    return rulesTable + kit.frame(certificates) + generation +
+      kit.frame(hosts);
   }
 
   /**
@@ -3712,7 +3769,8 @@ class ApplicationsPage {
                        { origin: stored })) + '">' +
         t.html('consoleApplications.a3.remove') + '</button></form></td></tr>';
     }).join('');
-    return '<h2>' + t.html('consoleApplications.a3.corsHeading') + '</h2>' +
+    return kit.frame('<h2>' + t.html('consoleApplications.a3.corsHeading') +
+      '</h2>' +
       '<p>' + t.html('consoleApplications.a3.corsIntro') + '</p>' +
       kit.note(t.html('consoleApplications.a3.corsNoClient')) +
       '<table><tr><th>' + t.html('consoleApplications.a3.colOrigin') +
@@ -3732,7 +3790,7 @@ class ApplicationsPage {
       'required placeholder="https://app.example.com">' +
       '<button type="submit">' + t.html('consoleApplications.a3.add') +
       '</button></div></form>' +
-      kit.note(t.html('consoleApplications.a3.corsOneOrigin'));
+      kit.note(t.html('consoleApplications.a3.corsOneOrigin')));
   }
 
   // THE TWO PROTOCOL LISTS AN APPLICATION ENTRY CARRIES, SIDE BY SIDE.
@@ -3835,11 +3893,11 @@ class ApplicationsPage {
     const anchor = 'scope-claims';
     const intro = kit.note(t.html('consoleApplications.sc.intro'));
     if (!state.permissions.length) {
-      return '<h3 id="' + anchor + '">' +
+      return kit.frame('<h3 id="' + anchor + '">' +
         t.html('consoleApplications.sc.heading') + '</h3>' + intro +
         kit.note('<span class="state-none">' +
           t.html('consoleApplications.sc.noPermission') + '</span>' +
-          t.html('consoleApplications.sc.noPermissionRest'));
+          t.html('consoleApplications.sc.noPermissionRest')));
     }
     const formOpen = function (action, permission) {
       return '<form method="post" action="/admin/applications#' + anchor +
@@ -3865,7 +3923,7 @@ class ApplicationsPage {
           '</code></td><td><code>' + kit.esc(one.claim) + '</code></td><td>' +
           kit.esc(one.label || '') + '</td></tr>';
       }).join('');
-      return '<h4>' + '<code>' + kit.esc(p.name) + '</code>' +
+      return kit.frame('<h4>' + '<code>' + kit.esc(p.name) + '</code>' +
         (p.description ? ' &mdash; ' + kit.esc(p.description) : '') +
         '</h4>' + kit.note((p.id ? t.html('consoleApplications.sc.askedFor') +
           ' <code>' + kit.esc(p.id) + '</code>. '
@@ -3896,7 +3954,7 @@ class ApplicationsPage {
               kit.tip(t.text('consoleApplications.sc.clearTip')) + '>' +
               t.html('consoleApplications.sc.clear') + '</button></form>' +
               '</div>' : '')
-          : '');
+          : ''));
     }).join('');
     const stale = state.stale.length
       ? kit.note('<span class="state-revoked">' +
@@ -3904,9 +3962,9 @@ class ApplicationsPage {
           kit.codeList(state.stale) + '. ' +
           t.html('consoleApplications.sc.staleRest'))
       : '';
-    return '<h3 id="' + anchor + '">' +
+    return kit.frame('<h3 id="' + anchor + '">' +
       t.html('consoleApplications.sc.heading') + '</h3>' + intro + stale +
-      html;
+      html);
   }
 
   static applicationAccessTypesSection(row, carryBack, t) {
@@ -3993,7 +4051,10 @@ class ApplicationsPage {
         '<span class="sub">' + help + '</span></div>';
     };
     const anyPerLine = t.html('consoleApplications.a3.onePerLineAny');
-    return '<h2>' + t.html('consoleApplications.a3.accessHeading') + '</h2>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+    // section, and the declare form's block a frame inside it.
+    return kit.frame('<h2>' +
+      t.html('consoleApplications.a3.accessHeading') + '</h2>' +
       '<p>' + t.html('consoleApplications.a3.accessIntro') + '</p>' +
       kit.note(t.html('consoleApplications.a3.accessNote',
                       { dev: row.page.grantsUncataloguedAccess ? 'yes'
@@ -4004,7 +4065,8 @@ class ApplicationsPage {
       (rows || '<tr><td colspan="3"><span class="state-none">' +
        t.html('consoleApplications.a3.none') + '</span>' +
        '</td></tr>') + '</table>' +
-      '<h3>' + t.html('consoleApplications.a3.declareHeading') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleApplications.a3.declareHeading') +
+      '</h3>' +
       '<form method="post" action="/admin/applications">' + carryBack +
       '<input type="hidden" name="action" value="set-access-type">' +
       '<input type="hidden" name="application" value="' +
@@ -4051,7 +4113,7 @@ class ApplicationsPage {
       '<div class="formrow"><button type="submit">' +
       t.html('consoleApplications.a3.saveType') + '</button>' +
       '</div></form>' +
-      kit.note(t.html('consoleApplications.a3.accessRefusedNote'));
+      kit.note(t.html('consoleApplications.a3.accessRefusedNote'))));
   }
 
   // -------------------------------------------------------------------------
@@ -4219,7 +4281,9 @@ class ApplicationsPage {
               t.html('consoleApplications.a3.noneLower') + '</span>'));
       return {
         id: anchor, label: d.type,
-        html: '<p>' + t.html('consoleApplications.fga.coverageOf',
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+        // panel's content, its two h4 blocks frames inside it.
+        html: kit.frame('<p>' + t.html('consoleApplications.fga.coverageOf',
                              { type: d.type }) + ' ' + covered + '</p>' +
           '<table><thead><tr><th>' + t.html('consoleApplications.fga.path') +
           '</th><th>' + t.html('consoleApplications.fga.attributeId') +
@@ -4229,13 +4293,14 @@ class ApplicationsPage {
           '</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
           // A refused Remove is about a row, not a box: under the table.
           at('path', 'remove-access-type-row') +
-          at('', 'remove-access-type-row') + add + notFor
+          at('', 'remove-access-type-row') + kit.frame(add) +
+          kit.frame(notFor))
       };
     });
-    return '<h3 id="access-mapping">' +
+    return kit.frame('<h3 id="access-mapping">' +
       t.html('consoleApplications.fga.mappingHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.fga.mappingIntro'),
-               t.text('consoleApplications.fga.mappingLabel')) +
+               t.text('consoleApplications.fga.mappingLabel'))) +
       kit.subTabbedPanels(t.text('consoleApplications.fga.mappingHeading'),
                           panels);
   }
@@ -4270,8 +4335,9 @@ class ApplicationsPage {
     const t = ctx.t;
     const fga = row.page.fga;
     if (!fga || !fga.known) {
-      return '<h2 id="fga">' + t.html('consoleApplications.fga.heading') +
-        '</h2>' + kit.warn(t.html('consoleApplications.fga.unreadable'));
+      return kit.frame('<h2 id="fga">' +
+        t.html('consoleApplications.fga.heading') +
+        '</h2>' + kit.warn(t.html('consoleApplications.fga.unreadable')));
     }
     const id = String(row.identifier || '');
     const form = function (action, button, tip, extra?) {
@@ -4367,7 +4433,7 @@ class ApplicationsPage {
       : '';
     const policyPart = '<h3 id="fga-policy">' +
       t.html('consoleApplications.fga.policyHeading') + '</h3>' + policyRows +
-      create + reset;
+      create + kit.frame(reset);
     const typeRows = types.map(function (one, n) {
       return '<tr><td><a href="#atmap-' + n + '"><code>' +
         kit.esc(one.type) + '</code></a></td><td>' + (one.covered
@@ -4397,9 +4463,13 @@ class ApplicationsPage {
           '</th></tr>' + typeRows + '</table>'
         : '<p><span class="state-none">' +
           t.html('consoleApplications.fga.noTypes') + '</span></p>');
-    return '<h2 id="fga">' + t.html('consoleApplications.fga.heading') +
-      '</h2>' + tiles + what + fault + switchPart + policyPart +
-      coveragePart + ApplicationsPage.applicationFgaPeps(ctx, fga.peps,
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+    // section, its tiles inside it, and each part a frame inside that.
+    return kit.frame('<h2 id="fga">' +
+      t.html('consoleApplications.fga.heading') +
+      '</h2>' + tiles + what + fault + kit.frame(switchPart) +
+      kit.frame(policyPart) + kit.frame(coveragePart) +
+      kit.frame(ApplicationsPage.applicationFgaPeps(ctx, fga.peps,
         // RE-ENABLING IS THE RE-GRANT (#1210): on an enforcing application
         // the switch offers only Stop enforcing, so a holder that joined
         // the group since is granted by this second door onto the same
@@ -4407,7 +4477,7 @@ class ApplicationsPage {
         ctx.write && fga.enforced
           ? form('fga-enable', t.html('consoleApplications.fga.pepsRegrant'),
                  t.text('consoleApplications.fga.pepsRegrantTip'))
-          : '');
+          : '')));
   }
 
   // ---------------------------------------------------------------------------
@@ -4582,7 +4652,7 @@ class ApplicationsPage {
             kit.esc(one.attribute) + '</code>)'
           : t.html('consoleApplications.a3.theSetting')) + '</td></tr>';
     }).join('');
-    return '<h2 id="signals">Shared Signals</h2>' +
+    return kit.frame('<h2 id="signals">Shared Signals</h2>' +
       kit.note(t.html('consoleApplications.a3.signalsNote')) +
       (state.installed ? '' : kit.warn(
         t.html('consoleApplications.a3.ssfNotLoaded'))) +
@@ -4598,11 +4668,12 @@ class ApplicationsPage {
           streams + '</table>'
         : '<p class="sub">' + t.html('consoleApplications.a3.noStream') +
           '</p>') +
-      '<h3>' + t.html('consoleApplications.a3.sentWithHeading') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleApplications.a3.sentWithHeading') +
+      '</h3>' +
       '<table><tr><th>' + t.html('consoleApplications.a3.colSetting') +
       '</th><th>' + t.html('consoleApplications.a3.colInForce') +
       '</th><th>' + t.html('consoleApplications.a3.colFrom') + '</th></tr>' +
-      settings + '</table>';
+      settings + '</table>'));
   }
 
   // ---------------------------------------------------------------------------
@@ -4766,18 +4837,21 @@ class ApplicationsPage {
     // controls — unless it already carries something, which stays in effect.
     if (!json.page.credentials.oauthDeclared && !state.issuers.length &&
         !issued && !facts) {
-      return '<h2 id="software-statements">' +
+      return kit.frame('<h2 id="software-statements">' +
         t.html('consoleApplications.a3.statementsHeading') + '</h2>' +
-        kit.note(t.html('consoleApplications.a3.statementsUndeclared'));
+        kit.note(t.html('consoleApplications.a3.statementsUndeclared')));
     }
-    return '<h2 id="software-statements">' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+    // section, and each of its three parts a frame inside it.
+    return kit.frame('<h2 id="software-statements">' +
       t.html('consoleApplications.a3.statementsHeading') + '</h2>' +
       kit.note(t.html('consoleApplications.a3.statementsNote',
                       { req: settings.requireTrustedIssuer ? 'yes' : 'no',
                         opens: settings.opensRegistration ? 'yes' : 'no',
                         must: settings.required ? 'yes' : 'no' }) +
       '<a href="/admin/oauth2">/admin/oauth2</a>.') +
-      publisherHtml + issuedHtml + registeredHtml;
+      kit.frame(publisherHtml) + kit.frame(issuedHtml) +
+      kit.frame(registeredHtml));
   }
 
   // ---------------------------------------------------------------------------
@@ -4848,7 +4922,8 @@ class ApplicationsPage {
         button('discard-address', t.html('consoleApplications.a3.discard'),
                'danger') + '</td></tr>';
     }).join('');
-    const html = '<h2>' + t.html('consoleApplications.a3.observedHeading') +
+    const html = kit.frame('<h2>' +
+      t.html('consoleApplications.a3.observedHeading') +
       '</h2>' +
       kit.note(t.html('consoleApplications.a3.observedNote',
                       { product: product ? 'yes' : 'no' })) +
@@ -4861,7 +4936,7 @@ class ApplicationsPage {
       (rows || '<tr><td colspan="4">' +
                t.html('consoleApplications.a3.noneObserved') + '</td></tr>') +
       '</table>' +
-      nav.foot;
+      nav.foot);
     return html;
   }
 
@@ -5076,7 +5151,9 @@ class ApplicationsPage {
         '</td></tr>';
     }).join('');
 
-    return '<h2 id="permissions">' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+    // section, each h3 block a frame inside it, and each h4 one inside that.
+    return kit.frame('<h2 id="permissions">' +
       t.html('consoleApplications.a3.permsHeading') + '</h2>' +
 
       kit.note(t.html('consoleApplications.a3.permsWhichA') + '<a ' +
@@ -5092,7 +5169,8 @@ class ApplicationsPage {
       t.html('consoleApplications.a3.linkOauthSettings') + '</a>' +
       t.html('consoleApplications.a3.permsScopeB')) +
 
-      '<h3>' + t.html('consoleApplications.a3.holdsHeading') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleApplications.a3.holdsHeading') +
+      '</h3>' +
       heldNav.head +
       '<table><tr><th>' + t.html('consoleApplications.a3.colResource') +
       '</th><th>' + t.html('consoleApplications.a3.colPermission') +
@@ -5103,9 +5181,10 @@ class ApplicationsPage {
       (heldRows || '<tr><td colspan="6">' +
         t.html('consoleApplications.a3.holdsNone') + '</td></tr>') +
       '</table>' +
-      heldNav.foot +
+      heldNav.foot) +
 
-      '<h3>' + t.html('consoleApplications.a3.grantHeading') + '</h3>' +
+      kit.frame('<h3>' + t.html('consoleApplications.a3.grantHeading') +
+      '</h3>' +
       (options
         ? kit.note(t.html('consoleApplications.a3.grantNote')) +
           '<form method="post" action="/admin/delegation-settings">' +
@@ -5135,9 +5214,9 @@ class ApplicationsPage {
           t.html('consoleApplications.a3.anotherExposes') +
           '<a href="/admin/delegation-settings#allowed">' +
           t.html('consoleApplications.a3.linkDelegation') + '</a>' +
-          t.html('consoleApplications.a3.appearsHere'))) +
+          t.html('consoleApplications.a3.appearsHere')))) +
 
-      '<h3 id="permissions-exposed">' +
+      kit.frame('<h3 id="permissions-exposed">' +
       t.html('consoleApplications.a3.exposesHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.exposesNote') + '<a ' +
       'href="/admin/delegation-settings#allowed">' +
@@ -5154,7 +5233,8 @@ class ApplicationsPage {
       '</table>' +
       exposedNav.foot +
 
-      '<h4>' + t.html('consoleApplications.a3.exposeHeading') + '</h4>' +
+      kit.frame('<h4>' + t.html('consoleApplications.a3.exposeHeading') +
+      '</h4>' +
       kit.note(t.html('consoleApplications.a3.baseOneAnswer') +
       (baseUri
         ? t.html('consoleApplications.a3.baseThisOnesA') + '<code>' +
@@ -5168,9 +5248,10 @@ class ApplicationsPage {
       '<input type="text" id="app-baseUri" name="baseUri" size="34" ' +
       'value="' + kit.esc(baseUri) + '" ' +
       'placeholder="https://example.com/"><button type="submit">' +
-      t.html('consoleApplications.a3.setBase') + '</button></div></form>' +
+      t.html('consoleApplications.a3.setBase') + '</button></div></form>') +
 
-      '<h4>' + t.html('consoleApplications.a3.defineHeading') + '</h4>' +
+      kit.frame('<h4>' + t.html('consoleApplications.a3.defineHeading') +
+      '</h4>' +
       kit.note(t.html('consoleApplications.a3.defineNote')) +
       '<form method="post" action="/admin/delegation-settings">' +
       resourceHidden('define-permission') +
@@ -5184,9 +5265,9 @@ class ApplicationsPage {
       t.text('consoleApplications.a3.descriptionPlaceholder') +
       '"><button type="submit">' +
       t.html('consoleApplications.a3.defineIt') + '</button>' +
-      '</div></form>' +
+      '</div></form>') +
 
-      '<h4 id="permissions-granted">' +
+      kit.frame('<h4 id="permissions-granted">' +
       t.html('consoleApplications.a3.grantsHeading') + '</h4>' +
       kit.note(t.html('consoleApplications.a3.grantsNoteA') + '<code>' +
       kit.esc(identifier) + '</code>' +
@@ -5225,7 +5306,7 @@ class ApplicationsPage {
             : kit.note(t.html('consoleApplications.a3.searchAbove')))
         : kit.note(grantOwnOptions
           ? t.html('consoleApplications.a3.noOtherApp')
-          : t.html('consoleApplications.a3.nothingOwnYet')));
+          : t.html('consoleApplications.a3.nothingOwnYet'))))));
   }
 
   // ---------------------------------------------------------------------------
@@ -5263,7 +5344,8 @@ class ApplicationsPage {
     if (!rows.length) {
       return '';
     }
-    return '<p>' + t.html('consoleApplications.pepRoutes.lead') + '</p>' +
+    return kit.frame('<p>' + t.html('consoleApplications.pepRoutes.lead') +
+      '</p>' +
       '<table><tr><th>' + t.html('consoleApplications.pepRoutes.thPep') +
       '</th><th>' + t.html('consoleApplications.pepRoutes.thRoute') +
       '</th><th>' + t.html('consoleApplications.pepRoutes.thPath') +
@@ -5273,7 +5355,7 @@ class ApplicationsPage {
           kit.esc(one.pep) + '</code></a></td><td><code>' + kit.esc(one.route) +
           '</code></td><td><code>' + kit.esc(one.path) + '</code></td><td>' +
           kit.esc((one.mechanisms || []).join(', ')) + '</td></tr>';
-      }).join('') + '</table>';
+      }).join('') + '</table>');
   }
 
   static applicationRolesSection(row, state, carryBack, t) {
@@ -5315,7 +5397,7 @@ class ApplicationsPage {
       return '<option value="' + kit.esc(name) + '">' + kit.esc(name) +
              '</option>';
     }).join('');
-    return '<h3 id="app-roles">' +
+    return kit.frame('<h3 id="app-roles">' +
       t.html('consoleApplications.a3.appPermsHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.appPermsNoteA') + '<code>' +
         kit.esc(identifier) + '</code>' +
@@ -5340,7 +5422,7 @@ class ApplicationsPage {
           t.html('consoleApplications.a3.grantWord') + '</button></div></form>'
         : '<p class="sub">' + t.html('consoleApplications.a3.noRoleAdmits') +
           '<a href="/admin/roles#create">' +
-          t.html('consoleApplications.a3.roles') + '</a>.</p>');
+          t.html('consoleApplications.a3.roles') + '</a>.</p>'));
   }
 
   // ---------------------------------------------------------------------------
@@ -5419,7 +5501,7 @@ class ApplicationsPage {
       return '<option value="' + kit.esc(name) + '">' + kit.esc(name) +
              '</option>';
     }).join('');
-    return '<h3 id="app-required-roles"' +
+    return kit.frame('<h3 id="app-required-roles"' +
       kit.tip(t.html('consoleApplications.a3.requiredTip')) + '>' +
       t.html('consoleApplications.a3.requiredHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.requiredNoteA') + '<code>' +
@@ -5453,7 +5535,7 @@ class ApplicationsPage {
         '<a href="/admin/roles">' + t.html('consoleApplications.a3.roles') +
         '</a>' + t.html('consoleApplications.a3.whoHoldsB') + '<a ' +
         'href="/admin/xacml/decide">' +
-        t.html('consoleApplications.a3.tryDecision') + '</a>.');
+        t.html('consoleApplications.a3.tryDecision') + '</a>.'));
   }
 
   /**
@@ -5498,7 +5580,8 @@ class ApplicationsPage {
         '<td>' + seenCell + '</td></tr>';
     }).join('');
 
-    return '<h2>' + t.html('consoleApplications.a3.familiesHeading') +
+    return kit.frame('<h2>' +
+      t.html('consoleApplications.a3.familiesHeading') +
       '</h2>' +
       kit.note(t.html('consoleApplications.a3.declaredNoteA') +
       '<a href="/admin/applications/new">' +
@@ -5512,7 +5595,7 @@ class ApplicationsPage {
       '</th></tr>' +
       (rows || '<tr><td colspan="4">' +
                t.html('consoleApplications.a3.familiesNone') + '</td></tr>') +
-      '</table>';
+      '</table>');
   }
 
   // The two selects the edit forms offer, built from the application table's
@@ -5611,8 +5694,10 @@ class ApplicationsPage {
         '"><input type="hidden" name="set" value="' + kit.esc(setId) + '">';
     };
     // `${…}` holds braces a message may not, so it is a parameter (#539).
-    const html = '<h3 id="' + kit.esc(anchor) + '">' + kit.esc(title) +
-      '</h3>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+    // section, each set's h4 block a frame inside it.
+    const html = kit.frame('<h3 id="' + kit.esc(anchor) + '">' +
+      kit.esc(title) + '</h3>' +
       kit.note(t.html('consoleApplications.a3.claimsNote',
                       { placeholder: '${…}' })) +
       sets.map(function (set) {
@@ -5684,7 +5769,7 @@ class ApplicationsPage {
             : '');
         // The set's label is the view's, and goes into the Set tooltip as
         // the original wrote it, between two messages (#539).
-        return '<h4>' + kit.esc(set.label) + '</h4>' +
+        return kit.frame('<h4>' + kit.esc(set.label) + '</h4>' +
           '<table><tr><th>' + t.html('consoleApplications.a3.name') +
           '</th><th>' + t.html('consoleApplications.a3.colValue') +
           '</th><th>' + t.html('consoleApplications.a3.colFrom') +
@@ -5714,8 +5799,8 @@ class ApplicationsPage {
               kit.tip(t.html('consoleApplications.a3.setTipA') + set.label +
                       t.html('consoleApplications.a3.setTipB')) + '>' +
               t.html('consoleApplications.a3.set') + '</button></div></form>'
-            : '');
-      }).join('');
+            : ''));
+      }).join(''));
     return html;
   }
 
@@ -5828,7 +5913,7 @@ class ApplicationsPage {
             (isVc ? t.html('consoleApplications.a3.noneInForceVc')
                   : t.html('consoleApplications.a3.noneInForceRows')));
       const noAttribute = t.html('consoleApplications.a3.noAttribute');
-      return '<h4>' + (isVc
+      return kit.frame('<h4>' + (isVc
           ? t.html('consoleApplications.a3.credentialClaims')
           : kit.esc(set.label)) +
         t.html('consoleApplications.a3.directoryAttributesSuffix') + '</h4>' +
@@ -5871,13 +5956,13 @@ class ApplicationsPage {
           : '') +
         '<h5>' + t.html('consoleApplications.a3.wouldCarryPrefix') +
         kit.esc(state.preview.user) +
-        '</h5>' + report;
+        '</h5>' + report);
     }).join('');
-    return '<h3 id="' + kit.esc(anchor) + '-attributes">' +
+    return kit.frame('<h3 id="' + kit.esc(anchor) + '-attributes">' +
       t.html('consoleApplications.a3.directoryAttributes') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.selectionNote')) +
       previewForm +
-      ApplicationsPage.previewNotFoundNote(state.preview, t) + html;
+      ApplicationsPage.previewNotFoundNote(state.preview, t) + html);
   }
 
   // THE PREVIEW PERSON IS NOBODY (#1144): a name the realm's directory does
@@ -6042,12 +6127,12 @@ class ApplicationsPage {
         t.html('consoleApplications.a3.wouldCarryPrefix') +
         kit.esc(state.preview.user) + '</h5>' + report;
     }).join('');
-    return '<h3 id="' + kit.esc(anchor) + '-attributes">' +
+    return kit.frame('<h3 id="' + kit.esc(anchor) + '-attributes">' +
       t.html('consoleApplications.a3.directoryAttributes') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.selectionTableNote')) +
       previewForm +
       ApplicationsPage.previewNotFoundNote(state.preview, t) + form +
-      previews;
+      previews);
   }
 
   // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token
@@ -6083,7 +6168,7 @@ class ApplicationsPage {
     const state = json.page.lifetimes;
     const byKey = {};
     state.rows.forEach(function (one) { byKey[one.setting] = one; });
-    const html = '<h3 id="cfg-oauth-lifetimes">' +
+    const html = kit.frame('<h3 id="cfg-oauth-lifetimes">' +
       t.html('consoleApplications.a3.lifetimesHeading') + '</h3>' +
       '<table><tr><th>' + t.html('consoleApplications.a3.colToken') +
       '</th><th>' + t.html('consoleApplications.a3.colInForce') +
@@ -6112,7 +6197,7 @@ class ApplicationsPage {
                       { skew: kit.humanSeconds(state.skew) })) +
       (ApplicationsPage.hostedSessionClient(json.identifier)
         ? kit.note(t.html('consoleApplications.a3.hostedBoundNote'))
-        : '');
+        : ''));
     return html;
   }
 

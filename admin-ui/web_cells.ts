@@ -90,8 +90,11 @@ class CellsPage {
     };
     // THE CELLS, THE RESIDENTS AND THE RE-HOMING ARE TABS (2026-10-12); the
     // tiles, the notes and the store's state are Metadata.
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // content after its heading; the store's state, a section after the
+    // cells tab, on Metadata.
     const map = '<h2 data-tab="cells">' + t.html('consoleCells.headCells') +
-      '</h2><table class="grid"><thead><tr>' +
+      '</h2>' + kit.frame('<table class="grid"><thead><tr>' +
       '<th>' + t.html('consoleCells.thCell') + '</th><th>' +
       t.html('consoleCells.thJurisdiction') + '</th><th>' +
       t.html('consoleCells.thReachable') + '</th><th>' +
@@ -121,8 +124,9 @@ class CellsPage {
       // The link to Cluster carries an href, which a message may not.
       '<p class="sub">' + t.html('consoleCells.consolesBefore') +
       '<a href="/admin/cluster">' + t.html('consoleCells.consolesLink') +
-      '</a>' + t.html('consoleCells.consolesAfter') + '</p>';
-    const store = '<h2>' + t.html('consoleCells.headStore') +
+      '</a>' + t.html('consoleCells.consolesAfter') + '</p>');
+    const store = kit.metadataFrame('<h2>' +
+      t.html('consoleCells.headStore') +
       '</h2><table class="grid"><tbody>' +
       '<tr><th>' + t.html('consoleCells.thTiered') + '</th><td>' +
       (json.store.tiered ? t.html('consoleCells.tieredYes')
@@ -142,20 +146,11 @@ class CellsPage {
               t.text('consoleCells.notListening'))) + '</td></tr>' +
       '<tr><th>' + t.html('consoleCells.thOperations') + '</th><td><small>' +
       esc(json.channel.operations.join(', ')) + '</small></td></tr>' +
-      '</tbody></table>';
+      '</tbody></table>');
     const options = json.peers.map(function (c: Json): string {
       return '<option value="' + esc(c.id) + '">' + esc(c.id) + ' (' +
         esc(c.jurisdiction) + ')</option>';
     }).join('');
-    const ask = json.multi && json.peers.length
-      ? '<h2 data-tab="residents">' +
-        t.html('consoleCells.headResidents') + '</h2><p>' +
-        t.html('consoleCells.residentsText') +
-        '</p><form method="get" action="' + PAGE + '">' +
-        '<select name="people">' + options + '</select> ' +
-        '<button type="submit">' + t.html('consoleCells.list') +
-        '</button></form>'
-      : '';
     let listed = '';
     if (people) {
       listed = people.refused
@@ -176,11 +171,20 @@ class CellsPage {
                          t.html('consoleCells.nextPage') + '</a></p>'
                        : '');
     }
+    const ask = json.multi && json.peers.length
+      ? '<h2 data-tab="residents">' +
+        t.html('consoleCells.headResidents') + '</h2>' +
+        kit.frame('<p>' + t.html('consoleCells.residentsText') +
+        '</p><form method="get" action="' + PAGE + '">' +
+        '<select name="people">' + options + '</select> ' +
+        '<button type="submit">' + t.html('consoleCells.list') +
+        '</button></form>' + listed)
+      : kit.frame(listed);
     // RE-HOMING (§8.8): an administrator's act, drawn only where there is
     // somewhere to move a person to.
     const rehome = json.multi && json.peers.length
       ? '<h2 data-tab="rehome">' + t.html('consoleCells.headRehome') +
-        '</h2><p>' +
+        '</h2>' + kit.frame('<p>' +
         t.html('consoleCells.rehomeText') + '</p>' +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="rehome">' +
@@ -189,9 +193,9 @@ class CellsPage {
         '<label>' + t.html('consoleCells.to') + ' <select name="target">' +
         options + '</select></label> ' +
         '<button type="submit">' + t.html('consoleCells.move') +
-        '</button></form>'
+        '</button></form>')
       : '';
-    return tiles + about + single + map + store + ask + listed + rehome +
+    return tiles + about + single + map + store + ask + rehome +
       SettingsForms.forms(json.settings, PAGE, undefined, t);
   }
 }

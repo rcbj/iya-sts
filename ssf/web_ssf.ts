@@ -81,16 +81,19 @@ class SsfPage {
 
       tiles +
 
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each h2 is a
+      // frame, and each stream's card one inside it.
       (json.installed
-        ? '<h2>' + t.html('consoleSsf.discovery.heading') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleSsf.discovery.heading') +
+          '</h2>' +
           kit.note(t.html('consoleSsf.discovery.where', {
             url: json.metadataUrl || '', issuer: json.issuer || '',
             alg: json.signingAlgorithm || '' })) +
-          kit.note(t.html('consoleSsf.discovery.algorithm'))
+          kit.note(t.html('consoleSsf.discovery.algorithm')))
         : '') +
 
       (json.installed
-        ? '<h2>' + t.html('consoleSsf.streams.heading') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleSsf.streams.heading') + '</h2>' +
           // A PAGE OF CARDS, on `streamsPage`; `stream` (a dead letters'
           // link) narrows them to one, and the way back is the unnarrowed
           // list.
@@ -109,7 +112,7 @@ class SsfPage {
               endpoint: (json.metadata &&
                          json.metadata.configuration_endpoint) ||
                         '/ssf/stream' }))) +
-          streamNav.foot
+          streamNav.foot)
         : '') +
 
       SettingsForms.forms(json.settings, '/admin/ssf', settingsGroups, t) +
@@ -185,7 +188,10 @@ class SsfPage {
 
     // The heading carries an id so Monitoring → Shared Signals → Dead letters
     // can link each stream row straight to this card, where its controls are.
-    return '<h3 id="stream-' + kit.esc(row.stream_id) + '"><code>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the card is a
+    // frame, and each of its h4 tables one inside it.
+    return kit.frame('<h3 id="stream-' + kit.esc(row.stream_id) +
+      '"><code>' +
       kit.esc(row.stream_id) + '</code> &mdash; ' +
       kit.esc(row.status) + (row.dead
         ? ' <span class="state-invalid">' + t.html('consoleSsf.card.dead') +
@@ -233,17 +239,17 @@ class SsfPage {
           kit.esc(row.lastPushError) + '</td></tr>'
         : '') +
       '</table>' +
-      '<h4>' + t.html('consoleSsf.card.subjects') + '</h4>' +
+      kit.frame('<h4>' + t.html('consoleSsf.card.subjects') + '</h4>' +
       '<table><tr><th>' + t.html('consoleSsf.th.subject') + '</th><th>' +
       t.html('consoleSsf.th.state') + '</th><th>' +
       t.html('consoleSsf.th.added') + '</th></tr>' +
-      subjects + '</table>' +
-      '<h4>' + t.html('consoleSsf.card.waiting') + '</h4>' +
+      subjects + '</table>') +
+      kit.frame('<h4>' + t.html('consoleSsf.card.waiting') + '</h4>' +
       '<table><tr><th>jti</th><th>' + t.html('consoleSsf.th.event') +
       '</th><th>' + t.html('consoleSsf.th.queued') + '</th><th>' +
       t.html('consoleSsf.th.delivered') + '</th>' +
-      '</tr>' + queue + '</table>' +
-      '<h4>' + t.html('consoleSsf.card.deadLetters') + '</h4>' +
+      '</tr>' + queue + '</table>') +
+      kit.frame('<h4>' + t.html('consoleSsf.card.deadLetters') + '</h4>' +
       // The link is markup a message cannot carry (#539).
       kit.note(t.html('consoleSsf.card.deadNote') + ' <a href="' +
                 kit.esc('/admin/ssf/dead-letters' +
@@ -253,12 +259,12 @@ class SsfPage {
       '<table><tr><th>jti</th><th>' + t.html('consoleSsf.th.event') +
       '</th><th>' + t.html('consoleSsf.th.deadSince') + '</th><th>' +
       t.html('consoleSsf.th.why') + '</th>' +
-      '<th></th></tr>' + deadRows + '</table>' +
-      '<h4>' + t.html('consoleSsf.card.history') + '</h4>' +
+      '<th></th></tr>' + deadRows + '</table>') +
+      kit.frame('<h4>' + t.html('consoleSsf.card.history') + '</h4>' +
       '<table><tr><th>' + t.html('consoleSsf.th.when') + '</th><th>' +
       t.html('consoleSsf.th.what') + '</th><th>' +
       t.html('consoleSsf.th.detail') + '</th></tr>' + history +
-      '</table>' +
+      '</table>') +
       (row.dead
         ? '<form method="post" action="/admin/ssf"><div class="formrow">' +
           '<input type="hidden" name="stream_id" value="' +
@@ -336,7 +342,7 @@ class SsfPage {
       '<input type="hidden" name="action" value="delete">' +
       '<button class="secondary">' + t.html('consoleSsf.card.delete') +
       '</button>' +
-      '</div></form>';
+      '</div></form>');
   }
 }
 

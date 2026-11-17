@@ -143,7 +143,9 @@ class LdapPage {
       // the notes, the tiles and the container's schema are Metadata.
       '<h2 data-tab="entries">' +
       t.html('console.nav.ldap-applications') + '</h2>' +
-      '<form method="get" action="/admin/ldap/applications"><div ' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content is one frame, and each section of Metadata another.
+      kit.frame('<form method="get" action="/admin/ldap/applications"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleLdap.common.anywhere') + '</label><input ' +
       'type="text" id="q" name="q" value="' + kit.esc(wantedText) +
@@ -170,25 +172,28 @@ class LdapPage {
           : t.html('consoleLdap.apps.nothingYet')) +
         '</td></tr>') +
       '</table>' +
-      nav.foot +
-      '<h2>' + t.html('consoleLdap.apps.kindsHeading') + '</h2>' +
+      nav.foot) +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.apps.kindsHeading') +
+      '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.apps.thKind') + '</th><th>' +
       t.html('consoleLdap.apps.thLabel') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItMeans') + '</th></tr>' +
-      kindRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
+      kindRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.apps.schemaNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
-      classRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.attributesHeading') + '</h2>' +
+      classRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.apps.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thValues') + '</th><th>' +
       t.html('consoleLdap.apps.thSetBy') + '</th>' +
       '<th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
-      attrRows + '</table>' +
+      attrRows + '</table>') +
       '<p class="sub"><a href="/admin/ldap/applications?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/applications">' +
@@ -273,7 +278,9 @@ class LdapPage {
       // the notes, the tiles and the container's schema are Metadata.
       '<h2 data-tab="entries">' +
       t.html('console.nav.ldap-federations') + '</h2>' +
-      '<form method="get" action="/admin/ldap/federations"><div ' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content is one frame, and each section of Metadata another.
+      kit.frame('<form method="get" action="/admin/ldap/federations"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleLdap.fed.thRelationship') + '</label><input ' +
       'type="text" ' +
@@ -302,16 +309,18 @@ class LdapPage {
             t.html('consoleLdap.fed.nothingYetEnd')) +
         '</td></tr>') +
       '</table>' +
-      nav.foot +
-      '<h2>' + t.html('consoleLdap.fed.directionsHeading') + '</h2>' +
+      nav.foot) +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.fed.directionsHeading') +
+      '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thRole') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItMeans') + '</th></tr>' +
       json.roles.map(function (one) {
         return '<tr><td>' + kit.esc(one.short) + '</td><td>' +
           kit.esc(one.what) +
           '</td></tr>';
-      }).join('') + '</table>' +
-      '<h2>' + t.html('consoleLdap.fed.protocolsHeading') + '</h2>' +
+      }).join('') + '</table>') +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.fed.protocolsHeading') +
+      '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.fed.thProtocol') + '</th><th>' +
       t.html('consoleLdap.fed.thWhatHappens') + '</th><th>' +
       t.html('consoleLdap.fed.thNeeds') + '</th></tr>' +
@@ -320,19 +329,21 @@ class LdapPage {
           kit.esc(one.what) +
           '</td><td><code>' + kit.esc(one.needs.join(
               ', ')) + '</code></td></tr>';
-      }).join('') + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.objectClassesHeading') +
+      }).join('') + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.objectClassesHeading') +
       '</h2><table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
-      classRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.attributesHeading') + '</h2>' +
+      classRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.fed.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thValues') + '</th><th>' +
       t.html('consoleLdap.fed.thDirection') + '</th>' +
       '<th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
-      attrRows + '</table>' +
+      attrRows + '</table>') +
       '<p class="sub"><a href="/admin/ldap/federations?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/federation">' +
@@ -426,7 +437,11 @@ class LdapPage {
       kit.note(t.html('consoleLdap.spiffe.pagedNote')) +
       '<h2 data-tab="entries">' + t.html('consoleLdap.spiffe.tileEntries') +
       '</h2>' +
-      '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content is one frame, and each section of Metadata another; the
+      // rows-per-table control above stands alone.
+      kit.frame('<form method="get" action="/admin/ldap/spiffe"><div ' +
+      'class="formrow">' +
       '<input type="hidden" name="agentq" value="' + kit.esc(carried.agentq) +
       '"><input ' +
       'type="hidden" name="per" value="' + kit.esc(carried.per) + '">' +
@@ -447,10 +462,11 @@ class LdapPage {
       '<th class="num">SVIDs</th></tr>' +
       (entryRows || '<tr><td colspan="4">' +
         t.html('consoleLdap.spiffe.none') + '</td></tr>') + '</table>' +
-      entriesNav.foot +
+      entriesNav.foot) +
       '<h2 data-tab="agents">' + t.html('consoleLdap.spiffe.tileAgents') +
       '</h2>' +
-      '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
+      kit.frame('<form method="get" action="/admin/ldap/spiffe"><div ' +
+      'class="formrow">' +
       '<input type="hidden" name="entryq" value="' + kit.esc(carried.entryq) +
       '"><input ' +
       'type="hidden" name="per" value="' + kit.esc(carried.per) + '">' +
@@ -474,20 +490,22 @@ class LdapPage {
        '<tr><td colspan="4">' + t.html('consoleLdap.spiffe.noAgents') +
        '</td></tr>') +
       '</table>' +
-      agentsNav.foot +
-      '<h2>' + t.html('consoleLdap.spiffe.objectClassesHeading') +
+      agentsNav.foot) +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.spiffe.objectClassesHeading') +
       '</h2><table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th>' +
       '<th>' + t.html('consoleLdap.spiffe.thWhat') + '</th></tr>' +
-      classRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.spiffe.attributesHeading') + '</h2>' +
+      classRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.spiffe.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.spiffe.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thValues') + '</th><th>' +
       t.html('consoleLdap.spiffe.thEditable') + '</th>' +
       '<th>' + t.html('consoleLdap.spiffe.thWrittenBy') + '</th><th>' +
       t.html('consoleLdap.spiffe.thWhat') + '</th></tr>' + attrRows +
-      '</table>' +
+      '</table>') +
       '<p class="sub"><a href="/admin/ldap/spiffe?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/cert-issuance#cert-spiffe-entries">' +
@@ -554,7 +572,10 @@ class LdapPage {
       // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
       // the notes, the tiles and the container's schema are Metadata.
       '<h2 data-tab="entries">' + t.html('console.nav.ldap-devices') + '</h2>' +
-      '<form method="get" action="/admin/ldap/devices"><div class="formrow">' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content is one frame, and each section of Metadata another.
+      kit.frame('<form method="get" action="/admin/ldap/devices"><div ' +
+      'class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.devices.thDevice') +
       '</label><input type="text" id="q" name="q" ' +
       'value="' + kit.esc(wantedText) + '" size="30" placeholder="' +
@@ -575,18 +596,20 @@ class LdapPage {
         : t.html('consoleLdap.devices.noneYet') +
           ' <a href="/admin/devices">' + t.html('consoleLdap.devices.link') +
           '</a>' + t.html('consoleLdap.common.period')) +
-        '</td></tr>') + '</table>' + nav.foot +
-      '<h2>' + t.html('consoleLdap.common.objectClassesHeading') +
+        '</td></tr>') + '</table>' + nav.foot) +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.objectClassesHeading') +
       '</h2><table><tr><th>' + t.html('consoleLdap.common.thClass') +
       '</th><th>' + t.html('consoleLdap.common.thWhereFrom') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
-      classRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.attributesHeading') + '</h2>' +
+      classRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.devices.attrNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thValues') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
-      attrRows + '</table>' +
+      attrRows + '</table>') +
       '<p class="sub"><a href="/admin/ldap/devices?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/devices">' + t.html('consoleLdap.devices.footRegister') +
@@ -666,7 +689,10 @@ class LdapPage {
       // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
       // the notes, the tiles and the container's schema are Metadata.
       '<h2 data-tab="entries">' + t.html('console.nav.ldap-roles') + '</h2>' +
-      '<form method="get" action="/admin/ldap/roles"><div class="formrow">' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content is one frame, and each section of Metadata another.
+      kit.frame('<form method="get" action="/admin/ldap/roles"><div ' +
+      'class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.common.anywhere') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
       '" size="30" placeholder="' +
@@ -689,22 +715,26 @@ class LdapPage {
           : t.html('consoleLdap.roles.nothingYet')) +
         '</td></tr>') +
       '</table>' +
-      nav.foot +
-      '<h2>' + t.html('consoleLdap.roles.builtInHeading') + '</h2>' +
+      nav.foot) +
+      kit.metadataFrame('<h2>' + t.html('consoleLdap.roles.builtInHeading') +
+      '</h2>' +
       kit.note(t.html('consoleLdap.roles.builtInNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thRole') + '</th><th>' +
       t.html('consoleLdap.roles.thWhoHolds') + '</th></tr>' +
-      builtInRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
+      builtInRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.common.schemalessNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
-      classRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.attributesHeading') + '</h2>' +
+      classRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
       attrRows +
-      '</table><p class="sub"><a href="/admin/ldap/roles?format=json">' +
+      '</table>') +
+      '<p class="sub"><a href="/admin/ldap/roles?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/roles">' + t.html('consoleLdap.roles.footControls') +
       '</a> &middot; <a ' +
@@ -813,7 +843,10 @@ class LdapPage {
       // the notes, the tiles and the container's schema are Metadata.
       '<h2 data-tab="entries">' +
       t.html('console.nav.ldap-policies') + '</h2>' +
-      '<form method="get" action="/admin/ldap/policies"><div class="formrow">' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content is one frame, and each section of Metadata another.
+      kit.frame('<form method="get" action="/admin/ldap/policies"><div ' +
+      'class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.common.anywhere') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
       '" size="30" placeholder="' +
@@ -837,17 +870,20 @@ class LdapPage {
           : t.html('consoleLdap.policies.nothingYet')) +
         '</td></tr>') +
       '</table>' +
-      nav.foot +
-      '<h2>' + t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
+      nav.foot) +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.common.schemalessNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
-      classRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.attributesHeading') + '</h2>' +
+      classRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
       attrRows +
-      '</table><p class="sub"><a ' +
+      '</table>') +
+      '<p class="sub"><a ' +
       'href="/admin/ldap/policies?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> ' +
       '&middot; <a href="/admin/xacml">' +
@@ -937,7 +973,10 @@ class LdapPage {
       // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
       // the notes, the tiles and the container's schema are Metadata.
       '<h2 data-tab="entries">' + t.html('console.nav.ldap-peps') + '</h2>' +
-      '<form method="get" action="/admin/ldap/peps"><div class="formrow">' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab's
+      // content is one frame, and each section of Metadata another.
+      kit.frame('<form method="get" action="/admin/ldap/peps"><div ' +
+      'class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.common.anywhere') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
       '" size="30" placeholder="' +
@@ -961,17 +1000,20 @@ class LdapPage {
           : t.html('consoleLdap.peps.nothingYet')) +
         '</td></tr>') +
       '</table>' +
-      nav.foot +
-      '<h2>' + t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
+      nav.foot) +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.objectClassesHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.common.schemalessNote')) +
       '<table><tr><th>' + t.html('consoleLdap.common.thClass') + '</th><th>' +
       t.html('consoleLdap.common.thWhatItBrings') + '</th></tr>' +
-      classRows + '</table>' +
-      '<h2>' + t.html('consoleLdap.common.attributesHeading') + '</h2>' +
+      classRows + '</table>') +
+      kit.metadataFrame('<h2>' +
+      t.html('consoleLdap.common.attributesHeading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleLdap.common.thAttribute') +
       '</th><th>' + t.html('consoleLdap.common.thWhatItIs') + '</th></tr>' +
       attrRows +
-      '</table><p class="sub"><a href="/admin/ldap/peps?format=json">' +
+      '</table>') +
+      '<p class="sub"><a href="/admin/ldap/peps?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/xacml/peps">' + t.html('consoleLdap.peps.footControls') +
       '</a> &middot; <a ' +
@@ -1027,7 +1069,10 @@ class LdapPage {
       kit.tile(json.count, t.text('consoleLdap.common.tileEntriesRealm')) +
       kit.tile(json.matched, t.text('consoleLdap.common.tileMatching')) +
       kit.tile(origins.length, t.text('consoleLdap.directory.tileOrigins')) +
-      '</div><form method="get" action="/admin/ldap/directory"><div ' +
+      '</div>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the page has
+      // no heading, so the search and what it finds are one frame.
+      kit.frame('<form method="get" action="/admin/ldap/directory"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleLdap.common.anywhere') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
@@ -1066,7 +1111,7 @@ class LdapPage {
                  : t.html('consoleLdap.directory.empty')) + '</td></tr>') +
       '</table>' +
       nav.foot +
-      kit.note(t.html('consoleLdap.directory.clipNote')) +
+      kit.note(t.html('consoleLdap.directory.clipNote'))) +
       '<p class="sub"><a href="/admin/ldap/directory?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/ldap/service">' +
@@ -1190,16 +1235,22 @@ class LdapPage {
         'href="/admin/ldap">LDAP / LDAPS</a>' +
       t.html('consoleLdap.service.introEnd') + '</p>' +
       tiles +
-      '<table><tr><th>' + t.html('consoleLdap.service.thThing') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the facts
+      // table is one frame, and each section below another.
+      kit.frame('<table><tr><th>' + t.html('consoleLdap.service.thThing') +
       '</th><th>' + t.html('consoleLdap.service.thValue') + '</th></tr>' +
-      rows + '</table>' +
-      '<h2>' + t.html('consoleLdap.service.authHeading') + '</h2>' +
-      kit.note(kit.esc(info.bindPolicy) + '.') +
-      '<h2>' + t.html('consoleLdap.service.entryHeading') + '</h2>' +
-      kit.note(kit.esc(info.autoCreateRule)) +
-      '<h2>' + t.html('consoleLdap.service.howHeading') + '</h2>' +
-      kit.note(kit.esc(info.authenticationFacts)) +
-      '<h2>' + t.html('consoleLdap.service.ldapsHeading') + '</h2>' +
+      rows + '</table>') +
+      kit.frame('<h2>' + t.html('consoleLdap.service.authHeading') +
+      '</h2>' +
+      kit.note(kit.esc(info.bindPolicy) + '.')) +
+      kit.frame('<h2>' + t.html('consoleLdap.service.entryHeading') +
+      '</h2>' +
+      kit.note(kit.esc(info.autoCreateRule))) +
+      kit.frame('<h2>' + t.html('consoleLdap.service.howHeading') +
+      '</h2>' +
+      kit.note(kit.esc(info.authenticationFacts))) +
+      kit.frame('<h2>' + t.html('consoleLdap.service.ldapsHeading') +
+      '</h2>' +
       kit.note(t.html('consoleLdap.service.ldapsNote', { port: ldapsPort }) +
       ' <code>' + kit.esc(info.tls.certificate.subject) + '</code>, SHA-256 ' +
       '<code>' + kit.esc(info.tls.certificate.fingerprint256) + '</code>, ' +
@@ -1211,19 +1262,22 @@ class LdapPage {
       t.html('consoleLdap.service.noStartTls')) +
       // WHO A CERTIFICATE BIND BINDS (#1047), beside whether 636 asks.
       (info.tls.saslExternal && info.tls.saslExternal.rule
-        ? kit.note(kit.esc(info.tls.saslExternal.rule)) : '') +
-      '<h2>' + t.html('consoleLdap.service.schemaHeading') + '</h2>' +
-      kit.note(kit.esc(info.schema)) +
-      '<h2>' + t.html('consoleLdap.service.enforceHeading') + '</h2>' +
+        ? kit.note(kit.esc(info.tls.saslExternal.rule)) : '')) +
+      kit.frame('<h2>' + t.html('consoleLdap.service.schemaHeading') +
+      '</h2>' +
+      kit.note(kit.esc(info.schema))) +
+      kit.frame('<h2>' + t.html('consoleLdap.service.enforceHeading') +
+      '</h2>' +
       info.enforcedRules.map(function (rule) {
         return kit.bullet(kit.esc(rule));
       }).join('') +
-      kit.note(t.html('consoleLdap.service.referentialNote')) +
-      '<h2>' + t.html('consoleLdap.service.containersHeading') + '</h2>' +
+      kit.note(t.html('consoleLdap.service.referentialNote'))) +
+      kit.frame('<h2>' +
+      t.html('consoleLdap.service.containersHeading') + '</h2>' +
       kit.note(t.html('consoleLdap.service.containersNote') +
       ' <a href="/admin/ldap/applications">' +
       t.html('consoleLdap.service.containersLink') + '</a>' +
-      t.html('consoleLdap.common.period')) +
+      t.html('consoleLdap.common.period'))) +
       '<p class="sub"><a href="/admin/ldap/service?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
       '<a href="/admin/ldap/applications">' +

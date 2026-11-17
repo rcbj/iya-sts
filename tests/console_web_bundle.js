@@ -56,6 +56,8 @@ const log = bunyan.createLogger({ name: 'console_web_bundle',
 
 const ROOT = path.join(__dirname, '..');
 
+
+
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.AG_ROOT;
@@ -63,6 +65,33 @@ function childMain() {
   const fsC = require('fs');
   const pathC = require('path');
   const findings = [];
+
+  // ONE TAB PANEL, WHOLE (2026-11-16). Every section of a console page is a
+  // frame since #1850-#1853, and a frame is a <section>: a capture that
+  // stopped at the first </section> ended at the panel's first frame, and a
+  // check that something is ABSENT from the tab then passed whatever the tab
+  // held. This reads from the panel's own tag to the </section> that closes
+  // it, nesting counted. It answers what RegExp.exec did: null, or
+  // [whole, inner].
+  function tabPanel(html, id) {
+    const open = new RegExp('<section class="tabpanel(?: first)?" id="' +
+                            id + '">').exec(html || '');
+    if (!open) {
+      return null;
+    }
+    const tags = /<section\b[^>]*>|<\/section>/g;
+    tags.lastIndex = open.index + open[0].length;
+    let depth = 1;
+    let m;
+    while ((m = tags.exec(html)) !== null) {
+      depth += m[0] === '</section>' ? -1 : 1;
+      if (depth === 0) {
+        return [html.slice(open.index, m.index + m[0].length),
+                html.slice(open.index + open[0].length, m.index)];
+      }
+    }
+    return null;
+  }
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
@@ -1233,11 +1262,9 @@ function childMain() {
       'oauth-tab-userinfo-claims'
     ];
     const metadataTab =
-      /<section class="tabpanel first" id="oauth-tab-metadata">([\s\S]*?)<\/section>/
-        .exec(oauthHtml);
+      tabPanel(oauthHtml, 'oauth-tab-metadata');
     const globalTab =
-      /<section class="tabpanel" id="oauth-tab-global-settings">([\s\S]*?)<\/section>/
-        .exec(oauthHtml);
+      tabPanel(oauthHtml, 'oauth-tab-global-settings');
     // THE ENDPOINT TABLE, NOT THE PATH: a setting's description may name
     // the authorization endpoint in prose (oauth2.spInitiatedSso, #426, is
     // about what /oauth2/authorize answers), so what must be on Metadata and
@@ -1284,28 +1311,21 @@ function childMain() {
       'saml-tab-idp-initiated', 'saml-tab-assertions', 'saml-tab-attributes'
     ];
     const samlMetadataTab =
-      /<section class="tabpanel first" id="saml-tab-metadata">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-metadata');
     const samlGlobalTab =
-      /<section class="tabpanel" id="saml-tab-global-settings">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-global-settings');
     const samlSharedTab =
-      /<section class="tabpanel" id="saml-tab-shared-settings">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-shared-settings');
     const saml2Tab =
-      /<section class="tabpanel" id="saml-tab-saml2">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-saml2');
     const saml11Tab =
-      /<section class="tabpanel" id="saml-tab-saml11">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-saml11');
     const samlTabLabels = samlHtml.match(
       /<a[^>]+href="#saml-tab-saml(?:2|11)"[^>]*>[^<]*<\/a>/g) || [];
     const samlAssertionTab =
-      /<section class="tabpanel" id="saml-tab-assertions">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-assertions');
     const samlAttributeTab =
-      /<section class="tabpanel" id="saml-tab-attributes">([\s\S]*?)<\/section>/
-        .exec(samlHtml);
+      tabPanel(samlHtml, 'saml-tab-attributes');
     const settingKeys = function (settings, groups) {
       return (settings.groups || []).filter(function (group) {
         return groups.indexOf(group.group) >= 0;
@@ -1449,9 +1469,7 @@ function childMain() {
     ];
     const vcTabs = {};
     vcTabIds.forEach(function (id) {
-      vcTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(vcHtml);
+      vcTabs[id] = tabPanel(vcHtml, id);
     });
     const vcExpectedEndpoints = vcView
       ? vcView.protocolEndpoints || [] : [];
@@ -1559,9 +1577,7 @@ function childMain() {
                         WebKit.context({}, true))
       : '';
     const vcMonitorTab = function (id) {
-      const found = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(vcMonitorHtml);
+      const found = tabPanel(vcMonitorHtml, id);
       return found ? found[1] : null;
     };
     const vcMonitorMeta = vcMonitorTab('vc-monitor-tab-metadata');
@@ -1598,9 +1614,7 @@ function childMain() {
     ];
     const xacmlTabs = {};
     xacmlTabIds.forEach(function (id) {
-      xacmlTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(xacmlHtml);
+      xacmlTabs[id] = tabPanel(xacmlHtml, id);
     });
     const xacmlEndpoints = xacmlView
       ? xacmlView.protocolEndpoints || [] : [];
@@ -1667,11 +1681,9 @@ function childMain() {
     // METADATA FIRST (2026-10-12): the endpoints and everything the page
     // explains or reports; Server is its settings.
     const scimServerTab =
-      /<section class="tabpanel(?: first)?" id="server">([\s\S]*?)<\/section>/
-        .exec(scimHtml);
+      tabPanel(scimHtml, 'server');
     const scimMetadataTab =
-      /<section class="tabpanel first" id="scim-tab-metadata">([\s\S]*?)<\/section>/
-        .exec(scimHtml);
+      tabPanel(scimHtml, 'scim-tab-metadata');
     const scimEndpoints = scimView
       ? scimView.protocolEndpoints || [] : [];
     note(!!scimServerTab && !!scimMetadataTab &&
@@ -1704,9 +1716,7 @@ function childMain() {
     ];
     const ssfTabs = {};
     ssfTabIds.forEach(function (id) {
-      ssfTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(ssfHtml);
+      ssfTabs[id] = tabPanel(ssfHtml, id);
     });
     const ssfEndpoints = ssfView
       ? ssfView.protocolEndpoints || [] : [];
@@ -1780,9 +1790,7 @@ function childMain() {
     ];
     const kerberosTabs = {};
     kerberosTabIds.forEach(function (id) {
-      kerberosTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(kerberosHtml);
+      kerberosTabs[id] = tabPanel(kerberosHtml, id);
     });
     note(kerberosTabIds.every(function (id) {
       return !!kerberosTabs[id];
@@ -1857,9 +1865,7 @@ function childMain() {
                         'cert-spiffe-agents', 'cert-spiffe-brokers'];
     const certTabs = {};
     certTabIds.forEach(function (id) {
-      certTabs[id] = new RegExp(
-        '<section class="tabpanel(?: first)?" id="' + id +
-        '">([\\s\\S]*?)<\\/section>').exec(certHtml);
+      certTabs[id] = tabPanel(certHtml, id);
     });
     const spiffeTab = certTabs['cert-tab-spiffe']
       ? certTabs['cert-tab-spiffe'][1] : '';
@@ -2008,8 +2014,7 @@ function childMain() {
       });
       if (ids.length && pview.protocolEndpoints &&
           pview.protocolEndpoints.length) {
-        const meta = new RegExp('<section class="tabpanel first" id="' +
-          slug + '-tab-metadata">([\\s\\S]*?)<\\/section>').exec(html);
+        const meta = tabPanel(html, slug + '-tab-metadata');
         if (!meta || meta[1].indexOf('data-copy="' +
             WebKit.esc(pview.protocolEndpoints[0].url) + '"') < 0) {
           protocolProblems.push(path + '\'s endpoints are not on Metadata');

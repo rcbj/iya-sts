@@ -202,7 +202,8 @@ class XacmlPage {
         '<td>' + esc(row.effect) + '</td>' +
         '<td>' + make + '</td></tr>';
     }).join('');
-    return '<h2 id="service-own">' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2 id="service-own">' +
       t.html('consoleXacml.own.heading') + '</h2>' +
       kit.warn(
         '<p>' + t.html('consoleXacml.own.warn1') +
@@ -214,7 +215,7 @@ class XacmlPage {
       t.html('consoleXacml.th.decides') + '</th>' +
       '<th>' + t.html('consoleXacml.th.inForce') + '</th><th>' +
       t.html('consoleXacml.th.rightNow') + '</th><th></th></tr>' +
-      body + '</table>';
+      body + '</table>');
   }
 
   // ---------------------------------------------------------------------------
@@ -467,7 +468,8 @@ class XacmlPage {
         }));
     };
     const add = writable
-      ? '<h3>' + t.html('consoleXacml.authzen.addHeading') + '</h3>' +
+      ? kit.frame('<h3>' + t.html('consoleXacml.authzen.addHeading') +
+        '</h3>' +
         '<form method="post" action="' + PAGE + '">' +
         self.hidden('action', 'set-attribute') +
         '<table><tr><td>' + t.html('consoleXacml.authzen.object') +
@@ -490,7 +492,7 @@ class XacmlPage {
         '</td></tr></table><p class="sub">' +
         t.html('consoleXacml.authzen.reserved') + '</p>' +
         '<button type="submit">' + t.html('consoleXacml.authzen.save') +
-        '</button></form>'
+        '</button></form>')
       : '';
     const callers = (view.callers || []).map(function (one) {
       return '<tr><td><code>' + esc(one.name) + '</code><div class="sub">' +
@@ -508,7 +510,8 @@ class XacmlPage {
       t.html('consoleXacml.authzen.noCallers') + '</td></tr>';
     // THE CALLBACK URLS A CALLER MAY NAME (#1180): replaced whole.
     const callbackForm = writable
-      ? '<h3>' + t.html('consoleXacml.authzen.callbacksHeading') + '</h3>' +
+      ? kit.frame(
+        '<h3>' + t.html('consoleXacml.authzen.callbacksHeading') + '</h3>' +
         '<form method="post" action="' + PAGE + '">' +
         self.hidden('action', 'set-callbacks') +
         '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
@@ -518,7 +521,7 @@ class XacmlPage {
         '</td></tr></table><p class="sub">' +
         t.html('consoleXacml.authzen.callbacksNote') + '</p>' +
         '<button type="submit">' +
-        t.html('consoleXacml.authzen.setCallbacks') + '</button></form>'
+        t.html('consoleXacml.authzen.setCallbacks') + '</button></form>')
       : '';
     // THE ACCESS REQUESTS (#1180): every one of the realm's, newest first,
     // with the acts an administrator may take — each asked of the
@@ -566,7 +569,8 @@ class XacmlPage {
           '</div>' : '') + '</td><td>' + acts + '</td></tr>';
     }).join('') || '<tr><td colspan="5">' +
       t.html('consoleXacml.authzen.noRequests') + '</td></tr>';
-    const requests = '<h2>' + t.html('consoleXacml.authzen.requestsHeading') +
+    const requests = kit.frame('<h2>' +
+      t.html('consoleXacml.authzen.requestsHeading') +
       '</h2><p class="sub">' + t.html('consoleXacml.authzen.requestsNote') +
       (ar.enabled ? '' : ' ' + t.html('consoleXacml.authzen.requestsOff')) +
       '</p><table><thead><tr><th>' +
@@ -574,9 +578,10 @@ class XacmlPage {
       t.html('consoleXacml.authzen.asked') + '</th><th>' +
       t.html('consoleXacml.authzen.applicationAndPep') + '</th><th>' +
       t.html('consoleXacml.authzen.state') + '</th><th></th></tr></thead>' +
-      '<tbody>' + requestRows + '</tbody></table>';
+      '<tbody>' + requestRows + '</tbody></table>');
     const scope = writable
-      ? '<h3>' + t.html('consoleXacml.authzen.scopeHeading') + '</h3>' +
+      ? kit.frame(
+        '<h3>' + t.html('consoleXacml.authzen.scopeHeading') + '</h3>' +
         '<form method="post" action="' + PAGE + '">' +
         self.hidden('action', 'set-scope') +
         '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
@@ -584,11 +589,14 @@ class XacmlPage {
         '</td></tr><tr><td>' + t.html('consoleXacml.authzen.applications') +
         '</td><td>' + self.textField('applications', '', 50) +
         '</td></tr></table><button type="submit">' +
-        t.html('consoleXacml.authzen.setScope') + '</button></form>'
+        t.html('consoleXacml.authzen.setScope') + '</button></form>')
       : '';
     return tiles + missing + what +
       (view.settings ? SettingsForms.forms(view.settings, PAGE, ['AuthZEN'],
                                            t) : '') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+      // section, its `<h3>` blocks frames inside it.
+      kit.frame(
       '<h2>' + t.html('consoleXacml.authzen.catalogueHeading') + '</h2>' +
       problems + '<table><thead><tr><th>' +
       t.html('consoleXacml.authzen.property') + '</th><th>' +
@@ -596,14 +604,15 @@ class XacmlPage {
       t.html('consoleXacml.authzen.category') + '</th><th>' +
       t.html('consoleXacml.authzen.dataType') + '</th><th>' +
       t.html('consoleXacml.authzen.multiplicity') + '</th><th></th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table>' + add +
+      '</tr></thead><tbody>' + rows + '</tbody></table>' + add) +
+      kit.frame(
       '<h2>' + t.html('consoleXacml.authzen.callersHeading') + '</h2>' +
       '<p class="sub">' + t.html('consoleXacml.authzen.callersNote') +
       '</p><table><thead><tr><th>' + t.html('consoleXacml.authzen.caller') +
       '</th><th>' + t.html('consoleXacml.authzen.kind') + '</th><th>' +
       t.html('consoleXacml.authzen.applications') + '</th><th>' +
       t.html('consoleXacml.authzen.callbacks') + '</th></tr></thead>' +
-      '<tbody>' + callers + '</tbody></table>' + scope + callbackForm +
+      '<tbody>' + callers + '</tbody></table>' + scope + callbackForm) +
       requests;
   }
 
@@ -700,18 +709,21 @@ class XacmlPage {
       '</p><p>' + t.html('consoleXacml.policies.p3') +
       '</p>',
       t.text('consoleXacml.whatThisPageIs')) +
-      '<table><tr><th>' + t.html('consoleXacml.th.name') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the
+      // repository's table, and each `<h2>` section after it.
+      kit.frame('<table><tr><th>' + t.html('consoleXacml.th.name') +
       '</th><th>PolicyId</th><th>' +
       t.html('consoleXacml.th.kind') + '</th>' +
       '<th>' + t.html('consoleXacml.th.combining') + '</th><th>' +
       t.html('consoleXacml.th.state') + '</th><th>' +
       t.html('consoleXacml.th.actions') +
       '</th></tr>' + rows +
-      '</table>' +
+      '</table>') +
       self.applicationPoliciesSection(json, writable, t) +
       self.renderServiceOwnPolicies(json.serviceOwn, writable, t) +
       (writable
-        ? '<h2>' + t.html('consoleXacml.alfa.heading') + '</h2>' + kit.note(
+        ? kit.frame('<h2>' + t.html('consoleXacml.alfa.heading') + '</h2>' +
+          kit.note(
             '<p>' + t.html('consoleXacml.alfa.p1') +
             '</p><p>' + t.html('consoleXacml.alfa.p2') +
             '</p>',
@@ -723,16 +735,17 @@ class XacmlPage {
           '<textarea name="alfa" rows="14" cols="88" ' +
           'placeholder="namespace example { ... }"></textarea>' +
           '<p><button type="submit">' + t.html('consoleXacml.alfa.import') +
-          '</button></p></form>'
+          '</button></p></form>')
         : '') +
       (templateForms
-        ? '<h2>' + t.html('consoleXacml.template.heading') + '</h2>' +
+        ? kit.frame('<h2>' + t.html('consoleXacml.template.heading') +
+          '</h2>' +
           kit.note(
             '<p>' + t.html('consoleXacml.template.p1') +
             '</p><p>' + t.html('consoleXacml.template.p2') +
             '</p><p>' + t.html('consoleXacml.template.p3') +
             '</p>',
-            t.text('consoleXacml.template.label')) + templateForms
+            t.text('consoleXacml.template.label')) + templateForms)
         : '');
     return body;
   }
@@ -807,15 +820,18 @@ class XacmlPage {
       }).join('');
     }).join('') || '<tr><td colspan="6">' +
       t.html('consoleXacml.fga.none') + '</td></tr>';
-    return '<h2 id="fga-policies">' + t.html('consoleXacml.fga.heading') +
-      '</h2>' + kit.note('<p>' + t.html('consoleXacml.fga.p1') + '</p><p>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+    return kit.frame('<h2 id="fga-policies">' +
+      t.html('consoleXacml.fga.heading') + '</h2>' +
+      kit.note('<p>' + t.html('consoleXacml.fga.p1') + '</p><p>' +
         t.html('consoleXacml.fga.p2') + '</p>',
         t.text('consoleXacml.fga.label')) +
       '<table><tr><th>' + t.html('consoleXacml.fga.thApplication') +
       '</th><th>' + t.html('consoleXacml.th.name') + '</th><th>PolicyId' +
       '</th><th>' + t.html('consoleXacml.fga.thVersion') + '</th><th>' +
       t.html('consoleXacml.th.state') + '</th><th>' +
-      t.html('consoleXacml.th.actions') + '</th></tr>' + rows + '</table>';
+      t.html('consoleXacml.th.actions') + '</th></tr>' + rows +
+      '</table>');
   }
 
   // ONE PEP's STATE, its certificate, its notify address, its listener
@@ -1277,7 +1293,9 @@ class XacmlPage {
       (json.peps.length
         ? '<p class="sub">' + t.html('consoleXacml.pepPage.openRow') + '</p>'
         : '') +
-      self.wide(t, 'console.nav.xacml-peps',
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab has
+      // no heading, so its table and the form under it are one frame.
+      kit.frame(self.wide(t, 'console.nav.xacml-peps',
       '<table><tr><th' + self.tipOf(t, 'consoleXacml.tip.peps.name') +
       '>PEP</th>' +
       self.th(t, 'consoleXacml.th.clustered',
@@ -1299,7 +1317,7 @@ class XacmlPage {
       (ctx.write
         ? self.fieldGroup(t, 'consoleXacml.credential.legendNew',
                           self.credentialForm(t, '', 'new'))
-        : '') +
+        : '')) +
       kit.note(
         '<p>' + t.html('consoleXacml.peps.cert1') +
         '</p><p>' + t.html('consoleXacml.peps.cert2') +
@@ -1632,11 +1650,13 @@ class XacmlPage {
       '</h3>' +
       kit.subTabbedPanels(t.text('consoleXacml.pepPage.tab.proxy'),
         self.proxySubTabs(t).map(function (one: Json) {
+          // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
+          // sub-tab's content; the picture is not framed.
           const html: Json = {};
-          html[XacmlPage.PROXY_ROUTES_TAB] = state + problem;
-          html[XacmlPage.PROXY_NEW_ROUTE_TAB] = newRoute;
-          html[XacmlPage.PROXY_MANIFEST_TAB] = '<p class="sub">' +
-            t.html('consoleXacml.proxy.documentHeading') + '</p>' + editor;
+          html[XacmlPage.PROXY_ROUTES_TAB] = kit.frame(state + problem);
+          html[XacmlPage.PROXY_NEW_ROUTE_TAB] = kit.frame(newRoute);
+          html[XacmlPage.PROXY_MANIFEST_TAB] = kit.frame('<p class="sub">' +
+            t.html('consoleXacml.proxy.documentHeading') + '</p>' + editor);
           html[XacmlPage.PROXY_VISUAL_TAB] = PepPicture.panel(t, row, {
             pep: self.ownerHref(row.name) + '#xacml-pep-tab-overview',
             proxy: self.proxyTabHref(row.name),
@@ -2175,7 +2195,9 @@ class XacmlPage {
       t.html('consoleXacml.listeners.lead') + '</p><p>' +
       t.html('consoleXacml.listeners.lead2') + '</p>',
       t.text('consoleXacml.pepPage.tab.listener')) +
-      (reported ? ''
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each sub-tab's
+      // content after its lead, each `<h3>` block a frame.
+      kit.frame((reported ? ''
         : '<p class="sub">' + t.html('consoleXacml.listeners.olderPep') +
           '</p>') +
       (row.listenersProblem
@@ -2183,21 +2205,23 @@ class XacmlPage {
           t.html('consoleXacml.listeners.problem') + ' ' +
           esc(row.listenersProblem) + '</div>' : '') +
       table + '<p class="sub">' + t.html('consoleXacml.listeners.openOne') +
-      '</p>';
+      '</p>');
     // CREATE A NEW LISTENER: the definition form, then the environment's
     // HTTPS pair and its Issue control as a section of its own, both laid
     // out as Create a New Route is. A reader sees the pair as issued
     // (`envPairForm()` without its form).
     const created = (ctx.write
-      ? '<h3>' + t.html('consoleXacml.listeners.addHeading') + '</h3>' +
+      ? kit.frame(
+        '<h3>' + t.html('consoleXacml.listeners.addHeading') + '</h3>' +
         (catalogue.plainHttpProxyAllowed === false
           ? '<p class="sub">' +
             t.html('consoleXacml.listeners.plainProxyRefused') + '</p>' : '') +
-        self.listenerForm(t, json, row.name, null)
+        self.listenerForm(t, json, row.name, null))
       : '') +
+      kit.frame(
       '<h3>' + t.html('consoleXacml.listeners.envPairHeading') + '</h3>' +
       '<p class="sub">' + t.html('consoleXacml.listeners.envPairLead') +
-      '</p>' + self.envPairForm(ctx, json, row) +
+      '</p>' + self.envPairForm(ctx, json, row)) +
       kit.note('<p>' + t.html('consoleXacml.peps.cert1') + '</p><p>' +
                t.html('consoleXacml.peps.cert2') + '</p>',
                t.text('consoleXacml.peps.certLabel'));
@@ -2278,7 +2302,9 @@ class XacmlPage {
         '</th><td>' + value + '</td></tr>';
     };
     const said = one.reported || {};
-    const config = '<h3>' + t.html('consoleXacml.listenerPage.configHeading') +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h3>` block.
+    const config = kit.frame('<h3>' +
+      t.html('consoleXacml.listenerPage.configHeading') +
       '</h3>' + self.wide(t, 'consoleXacml.listenerPage.configHeading',
       '<table>' +
       line('consoleXacml.listeners.form.id', 'consoleXacml.tip.listener.id',
@@ -2306,8 +2332,9 @@ class XacmlPage {
           line('consoleXacml.listeners.form.keyAlg',
                'consoleXacml.tip.listener.keyAlg', code(d.keyAlg))
         : '') +
-      '</table>');
-    const state = '<h3>' + t.html('consoleXacml.listenerPage.stateHeading') +
+      '</table>'));
+    const state = kit.frame('<h3>' +
+      t.html('consoleXacml.listenerPage.stateHeading') +
       '</h3>' + self.wide(t, 'consoleXacml.listenerPage.stateHeading',
       '<table>' +
       line('consoleXacml.listeners.th.address',
@@ -2321,7 +2348,7 @@ class XacmlPage {
       line('consoleXacml.listeners.th.certificate',
            'consoleXacml.tip.listeners.certificate',
            self.listenerCertificate(t, one)) +
-      '</table>');
+      '</table>'));
     const lead = kit.note('<p>' + t.html(environment
       ? 'consoleXacml.listenerPage.envLead'
       : 'consoleXacml.listenerPage.lead', { env: one.env || '' }) +
@@ -2337,29 +2364,31 @@ class XacmlPage {
       acts = '<p class="sub">' +
         t.html('consoleXacml.listeners.clusterEnv') + '</p>';
     } else if (environment && ctx.write) {
-      acts = '<p class="sub">' + t.html('consoleXacml.listeners.envOnly',
-        { env: one.env }) + '</p>' +
-        self.environmentTuningForm(t, json, name, one);
+      acts = kit.frame('<p class="sub">' +
+        t.html('consoleXacml.listeners.envOnly', { env: one.env }) + '</p>' +
+        self.environmentTuningForm(t, json, name, one));
     } else if (environment || !ctx.write) {
       acts = '<span class="sub">' + t.html('consoleXacml.readOnly') +
         '</span>';
     } else {
-      acts = '<h3>' + t.html('consoleXacml.listeners.editHeading',
+      acts = kit.frame('<h3>' + t.html('consoleXacml.listeners.editHeading',
         { id: one.id }) + '</h3>' +
         self.listenerForm(t, json, name, Object.assign({ id: one.id,
           protocol: one.protocol, purpose: one.purpose }, d)) +
         '<p class="sub">' + t.html('consoleXacml.listenerPage.saveNote') +
-        '</p>' +
+        '</p>') +
         (https
-          ? '<h3>' + t.html('consoleXacml.listenerPage.renewHeading') +
+          ? kit.frame('<h3>' +
+            t.html('consoleXacml.listenerPage.renewHeading') +
             '</h3><form method="post" action="/admin/xacml/peps">' +
             self.hidden('action', self.act('renew-pep-listener-certificate')) +
             self.ownerField(name) + self.hidden('listener', one.id) +
             '<button type="submit">' +
-            t.html('consoleXacml.listeners.renew') + '</button></form>'
+            t.html('consoleXacml.listeners.renew') + '</button></form>')
           : '') +
         // REMOVE, BEHIND A CONFIRMATION: an unnamed required checkbox, as
         // the route page's, so the operation's body is unchanged.
+        kit.frame(
         '<h3>' + t.html('consoleXacml.listenerPage.removeHeading') +
         '</h3><form method="post" action="/admin/xacml/peps">' +
         self.hidden('action', self.act('remove-pep-listener')) +
@@ -2368,7 +2397,7 @@ class XacmlPage {
         t.html('consoleXacml.listenerPage.removeConfirm',
                { listener: one.id }) +
         '</label> <button type="submit">' +
-        t.html('consoleXacml.listeners.remove') + '</button></form>';
+        t.html('consoleXacml.listeners.remove') + '</button></form>');
     }
     return self.withinListenerTabs(t, name,
       titled + lead + config + state + acts) + back;
@@ -2391,16 +2420,18 @@ class XacmlPage {
             (one.protocol === 'https' ? 'HTTPS' : 'HTTP') + '</span>';
         }).join('<br>') + '</td></tr>';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list, no
+    // heading.
     return kit.note('<p>' + t.html('consoleXacml.listenerPage.indexLead') +
                     '</p>') +
-      (rows
+      kit.frame(rows
         ? self.wide(t, 'consoleXacml.listeners.tab.configured',
           '<table><tr><th>PEP</th>' +
           self.th(t, 'consoleXacml.listeners.th.listener',
                   'consoleXacml.tip.listeners.listener') + '</tr>' + rows +
           '</table>')
-        : '<p class="sub">' + t.html('consoleXacml.listenerPage.noListeners') +
-          '</p>') +
+        : '<p class="sub">' +
+          t.html('consoleXacml.listenerPage.noListeners') + '</p>') +
       '<p><a href="/admin/xacml#xacml-tab-peps">' +
       t.html('consoleXacml.pepPage.back') + '</a></p>';
   }
@@ -2418,9 +2449,11 @@ class XacmlPage {
         encodeURIComponent(row.name) + '"><code>' + esc(row.name) +
         '</code></a></td><td>' + heard + '</td></tr>';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list, no
+    // heading.
     return kit.note('<p>' + t.html('consoleXacml.remotePeps.lead') +
       '</p>') +
-      (rows
+      kit.frame(rows
         ? self.wide(t, 'consoleXacml.remotePeps.index',
           '<table><tr>' +
           self.th(t, 'consoleXacml.remotePeps.col.pep',
@@ -2513,9 +2546,12 @@ class XacmlPage {
         esc(one.path) + '</code></td>' + cell(one.count) +
         cell(one.refused) + '</tr>';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h3>` block.
     return title +
+      kit.frame(
       '<h3>' + t.html('consoleXacml.remotePeps.memory') + '</h3>' +
-      '<div class="tiles">' + tiles + '</div>' +
+      '<div class="tiles">' + tiles + '</div>') +
+      kit.frame(
       '<h3>' + t.html('consoleXacml.remotePeps.listeners') + '</h3>' +
       self.wide(t, 'consoleXacml.remotePeps.listeners',
         '<table><tr>' +
@@ -2523,16 +2559,16 @@ class XacmlPage {
                 'consoleXacml.tip.remotePeps.listener') +
         head(statHeads, 'consoleXacml.tip.remotePeps.') +
         '</tr>' + (listenerRows || '<tr><td colspan="8">' + missing +
-          '</td></tr>') + '</table>') +
-      '<h3>' + t.html('consoleXacml.remotePeps.pool') + '</h3>' +
+          '</td></tr>') + '</table>')) +
+      kit.frame('<h3>' + t.html('consoleXacml.remotePeps.pool') + '</h3>' +
       self.wide(t, 'consoleXacml.remotePeps.pool',
         '<table><tr>' +
         self.th(t, 'consoleXacml.remotePeps.col.listener',
                 'consoleXacml.tip.remotePeps.listener') +
         head(poolHeads, 'consoleXacml.tip.remotePeps.pool.') +
         '</tr>' + (poolRows || '<tr><td colspan="8">' + missing +
-          '</td></tr>') + '</table>') +
-      '<h3>' + t.html('consoleXacml.remotePeps.paths') + '</h3>' +
+          '</td></tr>') + '</table>')) +
+      kit.frame('<h3>' + t.html('consoleXacml.remotePeps.paths') + '</h3>' +
       (pathRows
         ? self.wide(t, 'consoleXacml.remotePeps.paths',
           '<table><tr>' +
@@ -2546,7 +2582,7 @@ class XacmlPage {
                   'consoleXacml.tip.remotePeps.pathRefused') +
           '</tr>' + pathRows + '</table>')
         : '<p class="sub">' + t.html('consoleXacml.remotePeps.noPaths') +
-          '</p>') + back;
+          '</p>')) + back;
   }
 
   // ---------------------------------------------------------------------------
@@ -3693,7 +3729,9 @@ class XacmlPage {
           : '')
       : table + '<span class="sub">' + t.html('consoleXacml.readOnly') +
         '</span>';
-    const bootstrap = '<h3>' +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the settings
+    // after the tab's lead, and the bootstrap `<h3>` block.
+    const bootstrap = kit.frame('<h3>' +
       t.html('consoleXacml.pepSettings.bootstrap.heading') + '</h3><p>' +
       t.html('consoleXacml.pepSettings.bootstrap.lead') + '</p>' +
       self.wide(t, 'consoleXacml.pepSettings.bootstrap.heading', '<table><tr>' +
@@ -3707,11 +3745,11 @@ class XacmlPage {
         return '<tr><td><code>' + esc(one.env) + '</code></td><td><code>' +
           esc(one.default) + '</code></td><td>' +
           (words.reason[one.reason] || esc(one.reason)) + '</td></tr>';
-      }).join('') + '</table>');
+      }).join('') + '</table>'));
     return kit.note('<p>' + t.html('consoleXacml.pepSettings.lead') +
                     '</p><p>' + t.html('consoleXacml.pepSettings.lead2') +
                     '</p>', t.text('consoleXacml.pepPage.tab.settings')) +
-      status + problem + form + bootstrap;
+      kit.frame(status + problem + form) + bootstrap;
   }
 
   /**
@@ -3828,7 +3866,10 @@ class XacmlPage {
             label: t.text('consoleXacml.routePage.removeHeading'),
             html: panels.remove || '' }]);
     };
-    const state = '<h3>' + t.html('consoleXacml.routePage.stateHeading') +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the state's `<h3>`
+    // block, its `<h4>` a frame inside it, and each editing tab's form.
+    const state = kit.frame('<h3>' +
+      t.html('consoleXacml.routePage.stateHeading') +
       '</h3>' + self.wide(t, 'consoleXacml.routePage.stateHeading', '<table>' +
       line('consoleXacml.routePage.th.usable',
            'consoleXacml.tip.routePage.usable', usable) +
@@ -3845,7 +3886,7 @@ class XacmlPage {
              'consoleXacml.routePage.upstreamNote', 'manifest',
              self.ownerHref(name) + '#' + self.PROXY_MANIFEST_TAB,
              'consoleXacml.proxy.tab.manifest') + '</div>') +
-      '</table>') + '<h4' +
+      '</table>') + kit.frame('<h4' +
       self.tipOf(t, 'consoleXacml.tip.routePage.servedBy') +
       '>' + t.html('consoleXacml.routePage.servedBy') + '</h4>' +
       (served
@@ -3860,7 +3901,7 @@ class XacmlPage {
                   'consoleXacml.tip.listeners.state') + '</tr>' + served +
           '</table>')
         : '<p class="sub">' + t.html('consoleXacml.routePage.noListeners') +
-          '</p>');
+          '</p>')));
     if (!ctx.write) {
       return self.withinPepTabs(t, name, titled(r,
         kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
@@ -3963,10 +4004,11 @@ class XacmlPage {
       : '';
     return self.withinPepTabs(t, name, titled(r,
       kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
-      routeTabs({ metadata: state, settings: settings,
-                  authentication: authentication,
-                  authorization: authorization + regenerate,
-                  identity: identityTab, remove: remove })), true) + back;
+      routeTabs({ metadata: state, settings: kit.frame(settings),
+                  authentication: kit.frame(authentication),
+                  authorization: kit.frame(authorization + regenerate),
+                  identity: kit.frame(identityTab),
+                  remove: kit.frame(remove) })), true) + back;
   }
 
   // `/admin/xacml/pep/route` WITHOUT A ROUTE (#1760): every registered
@@ -3986,9 +4028,11 @@ class XacmlPage {
             esc(route.path) + '</span>';
         }).join('<br>') + '</td></tr>';
     }).join('');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list, no
+    // heading.
     return kit.note('<p>' + t.html('consoleXacml.routePage.indexLead') +
                     '</p>') +
-      (rows
+      kit.frame(rows
         ? self.wide(t, 'consoleXacml.routePage.th.routes',
           '<table><tr><th>PEP</th>' +
           self.th(t, 'consoleXacml.routePage.th.routes',
@@ -4132,8 +4176,11 @@ class XacmlPage {
     const free = (view.peps || []).filter(function (p: Json) {
       return !p.cluster;
     });
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list, and
+    // the create `<h3>` block.
     const create = ctx.write
-      ? '<h3>' + t.html('consoleXacml.cluster.createHeading') + '</h3>' +
+      ? kit.frame(
+        '<h3>' + t.html('consoleXacml.cluster.createHeading') + '</h3>' +
         '<form method="post" action="/admin/xacml/peps">' +
         self.hidden('action', 'create-pep-cluster') +
         self.formRow(self.labelled(t, 'consoleXacml.cluster.name',
@@ -4152,12 +4199,13 @@ class XacmlPage {
               '</option>';
           }).join('') + '</select>')) +
         '<button type="submit">' + t.html('consoleXacml.cluster.create') +
-        '</button></form>'
+        '</button></form>')
       : '';
     return kit.note('<p>' + t.html('consoleXacml.cluster.p1') + '</p><p>' +
                     t.html('consoleXacml.cluster.p2') + '</p>',
                     t.text('consoleXacml.whatThisPageIs')) +
-      self.wide(t, 'console.nav.xacml-pep-clusters', '<table><tr>' +
+      kit.frame(self.wide(t, 'console.nav.xacml-pep-clusters',
+        '<table><tr>' +
         self.th(t, 'consoleXacml.cluster.th.cluster',
                 'consoleXacml.tip.cluster.name') +
         self.th(t, 'consoleXacml.cluster.th.members',
@@ -4166,7 +4214,7 @@ class XacmlPage {
                 'consoleXacml.tip.peps.proxy') +
         self.th(t, 'consoleXacml.cluster.th.state',
                 'consoleXacml.tip.cluster.state') +
-        '</tr>' + rows + '</table>') + create;
+        '</tr>' + rows + '</table>')) + create;
   }
 
   // One member's own addresses as a form (#1760): its publicBaseUrl, its
@@ -4256,8 +4304,10 @@ class XacmlPage {
               'consoleXacml.tip.cluster.problem') +
       self.th(t, 'consoleXacml.th.actions', 'consoleXacml.tip.peps.actions') +
       '</tr>' + rows + '</table>');
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the members,
+    // and the add `<h3>` block with its `<h4>` a frame inside it.
     if (!ctx.write) {
-      return table;
+      return kit.frame(table);
     }
     const free = (json.peps || []).filter(function (p: Json) {
       return !p.cluster;
@@ -4278,7 +4328,8 @@ class XacmlPage {
         '</button></form></td></tr>';
     }).join('') || '<tr><td colspan="2"><span class="sub">' +
       t.html('consoleXacml.cluster.noFree') + '</span></td></tr>';
-    return table + '<h3>' + t.html('consoleXacml.cluster.addHeading') +
+    return kit.frame(table) +
+      kit.frame('<h3>' + t.html('consoleXacml.cluster.addHeading') +
       '</h3>' +
       (signals && (c.members || []).length
         ? '<p class="sub">' + t.html('consoleXacml.cluster.signals') +
@@ -4290,6 +4341,7 @@ class XacmlPage {
         self.th(t, 'consoleXacml.cluster.publicBaseUrl',
                 'consoleXacml.tip.cluster.publicBaseUrl') +
         '</tr>' + candidates + '</table>') +
+      kit.frame(
       '<h4>' + t.html('consoleXacml.cluster.addUnregistered') + '</h4>' +
       '<form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'add-pep-cluster-member') +
@@ -4302,7 +4354,7 @@ class XacmlPage {
         'consoleXacml.tip.cluster.publicBaseUrl',
         self.textField('publicBaseUrl', '', 48))) +
       '<button type="submit">' + t.html('consoleXacml.cluster.add') +
-      '</button></form>';
+      '</button></form>'));
   }
 
   // The Listener tab (#1760): the cluster's definitions, each with Remove,
@@ -4325,9 +4377,11 @@ class XacmlPage {
           : '') + '</td></tr>';
     }).join('') || '<tr><td colspan="6"><span class="sub">' +
       t.html('consoleXacml.cluster.noListeners') + '</span></td></tr>';
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list after the
+    // lead, and the add `<h3>` block.
     return kit.note('<p>' + t.html('consoleXacml.cluster.listenersLead') +
                     '</p>') +
-      (c.listenersProblem ? '<div class="sub xacml-alert">' +
+      kit.frame((c.listenersProblem ? '<div class="sub xacml-alert">' +
         t.html('consoleXacml.listeners.problem') + ' ' +
         esc(c.listenersProblem) + '</div>' : '') +
       self.wide(t, 'consoleXacml.listeners.tab.configured', '<table><tr>' +
@@ -4342,9 +4396,10 @@ class XacmlPage {
         self.th(t, 'consoleXacml.cluster.th.names',
                 'consoleXacml.tip.cluster.names') +
         self.th(t, 'consoleXacml.th.actions', 'consoleXacml.tip.peps.actions') +
-        '</tr>' + rows + '</table>') +
-      (ctx.write ? '<h3>' + t.html('consoleXacml.listeners.addHeading') +
-        '</h3>' + self.listenerForm(t, json, c.name, null) : '');
+        '</tr>' + rows + '</table>')) +
+      (ctx.write ? kit.frame('<h3>' +
+        t.html('consoleXacml.listeners.addHeading') +
+        '</h3>' + self.listenerForm(t, json, c.name, null)) : '');
   }
 
   /**
@@ -4376,8 +4431,12 @@ class XacmlPage {
     const line = function (label: string, value: string): string {
       return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
     };
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // content after its lead, each `<h3>` or `<h4>` block a frame; the
+    // picture is not.
     const remove = ctx.write
-      ? '<h3>' + t.html('consoleXacml.cluster.deleteHeading') + '</h3>' +
+      ? kit.frame(
+        '<h3>' + t.html('consoleXacml.cluster.deleteHeading') + '</h3>' +
         '<form method="post" action="/admin/xacml/peps">' +
         self.hidden('action', 'delete-pep-cluster') +
         self.hidden('cluster', c.name) +
@@ -4393,11 +4452,11 @@ class XacmlPage {
         '<label><input type="checkbox" required> ' +
         t.html('consoleXacml.cluster.deleteConfirm') + '</label> ' +
         '<button type="submit" class="danger">' +
-        t.html('consoleXacml.cluster.delete') + '</button></form>'
+        t.html('consoleXacml.cluster.delete') + '</button></form>')
       : '';
     const overview = kit.note('<p>' + t.html('consoleXacml.cluster.lead') +
                               '</p>') +
-      (c.membersProblem ? '<div class="xacml-alert">' +
+      kit.frame((c.membersProblem ? '<div class="xacml-alert">' +
         esc(c.membersProblem) + '</div>' : '') +
       self.wide(t, 'consoleXacml.pepPage.tab.overview', '<table>' +
         line(t.html('consoleXacml.cluster.name'),
@@ -4411,7 +4470,7 @@ class XacmlPage {
                ? '<code>' + esc(c.proxy.publicBaseUrl) + '</code>'
                : '<span class="sub">' +
                  t.html('consoleXacml.cluster.noLogicalBase') + '</span>') +
-        '</table>') + remove;
+        '</table>')) + remove;
     const picture = '<p class="sub">' +
       t.html('consoleXacml.cluster.visualLead') + '</p>' +
       PepPicture.panel(t, c, {
@@ -4423,11 +4482,12 @@ class XacmlPage {
         listener: function (): string {
           return self.listenerTabHref(c.name);
         } }) +
+      kit.frame(
       '<h4>' + t.html('consoleXacml.cluster.tab.members') + '</h4><ul>' +
       (c.members || []).map(function (m: Json) {
         return '<li><code>' + esc(m.pep) + '</code> <span class="sub">' +
           esc(m.effectivePublicBaseUrl || '') + '</span></li>';
-      }).join('') + '</ul>';
+      }).join('') + '</ul>');
     const html: Json = {
       'xacml-pep-tab-overview': overview,
       'xacml-pep-tab-settings': self.settingsBody(ctx, json, c),
@@ -4521,9 +4581,12 @@ class XacmlPage {
           '</span>'
         : '<code>' + esc(String(value)) + '</code>';
     };
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+    // content after its lead, the cluster's `<h3>` block a frame of its
+    // own.
     const overview = kit.note('<p>' + t.html('consoleXacml.pepPage.lead') +
                               '</p>') +
-      self.wide(t, 'consoleXacml.pepPage.tab.overview', '<table>' +
+      kit.frame(self.wide(t, 'consoleXacml.pepPage.tab.overview', '<table>' +
       line(t.html('consoleXacml.pepPage.th.name'), code(row.name),
            'consoleXacml.tip.overview.name') +
       line(t.html('consoleXacml.th.certificate'), self.pepWho(t, row),
@@ -4560,19 +4623,20 @@ class XacmlPage {
            'consoleXacml.tip.peps.notify') +
       line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row),
            'consoleXacml.tip.peps.actions') +
-      '</table>') + self.pepClusterPart(ctx, row) +
+      '</table>')) + kit.frame(self.pepClusterPart(ctx, row)) +
       (ctx.write
-        ? self.fieldGroup(t, 'consoleXacml.credential.legend',
+        ? kit.frame(self.fieldGroup(t, 'consoleXacml.credential.legend',
             self.credentialForm(t, String((row.identityAccount &&
-              row.identityAccount.username) || row.name || ''), 'pep'))
+              row.identityAccount.username) || row.name || ''), 'pep')))
         : '');
-    const decisions = self.wide(t, 'consoleXacml.pepPage.tab.decisions',
+    const decisions = kit.frame(self.wide(t,
+      'consoleXacml.pepPage.tab.decisions',
       '<table>' +
       line(t.html('consoleXacml.th.enforced'), self.pepCounts(t, row),
            'consoleXacml.tip.peps.enforced') +
       line(t.html('consoleXacml.pepPage.th.policies'),
            code(row.policyCount), 'consoleXacml.tip.overview.policies') +
-      '</table>') +
+      '</table>')) +
       kit.note('<p>' + t.html('consoleXacml.peps.numbers1') + '</p><p>' +
                t.html('consoleXacml.peps.numbers2') + '</p>',
                t.text('consoleXacml.peps.numbersLabel'));
@@ -4593,7 +4657,7 @@ class XacmlPage {
       'xacml-pep-tab-listener': listener,
       'xacml-pep-tab-proxy': inherited(self.PROXY_TAB) + self.proxySection(
         Object.assign({}, shown, { json: json }), row),
-      'xacml-pep-tab-signals': self.signalsPanel(t, row.signals)
+      'xacml-pep-tab-signals': kit.frame(self.signalsPanel(t, row.signals))
     };
     return (member ? self.memberBanner(ctx, json, row) : '') +
       self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
@@ -4863,7 +4927,10 @@ class XacmlPage {
     const evidence =
       '<h2 data-tab="figures">' +
       t.html('consoleXacml.monitor.figuresHeading') + '</h2>' +
-      '<table><tr><th>' + t.html('consoleXacml.th.counted') +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content after its heading, which `WebPages.protocolTabs()` cuts at
+      // the top level.
+      kit.frame('<table><tr><th>' + t.html('consoleXacml.th.counted') +
       '</th><th class="num">' + t.html('consoleXacml.th.decisions') + '</th>' +
       '<th class="num">' + t.html('consoleXacml.th.allowed') +
       '</th><th class="num">' + t.html('consoleXacml.th.refused') + '</th>' +
@@ -4880,7 +4947,7 @@ class XacmlPage {
       kit.note(
         '<p>' + t.html('consoleXacml.monitor.addUp') +
         '</p>',
-        t.text('consoleXacml.monitor.addUpLabel'));
+        t.text('consoleXacml.monitor.addUpLabel')));
 
     // The audit-log link is markup a message cannot carry (#539).
     const what = kit.note(
@@ -4920,6 +4987,7 @@ class XacmlPage {
     const allRows = (json.rows as any[]).concat(json.remoteRows);
     const table = '<h2 data-tab="points">' +
       t.html('consoleXacml.monitor.everyPoint') + '</h2>' +
+      kit.frame(
       '<table><tr><th>' + t.html('consoleXacml.th.point') + '</th><th>' +
       t.html('consoleXacml.th.state') + '</th><th>' +
       t.html('consoleXacml.th.bias') + '</th>' +
@@ -4965,7 +5033,7 @@ class XacmlPage {
         '</a>' + t.html('consoleXacml.monitor.refusal2after') +
         '</p><p>' + t.html('consoleXacml.monitor.refusal3') +
         '</p>',
-        t.text('consoleXacml.monitor.refusalLabel'));
+        t.text('consoleXacml.monitor.refusalLabel')));
 
     // The title is the nav label rather than the bare word `Monitor`: this
     // page is drawn among Metrics, Sessions and Tokens now, where `Monitor`
@@ -5007,7 +5075,7 @@ class XacmlPage {
           }).join(', ')
         : '<em>' + t.html('consoleXacml.decide.noneApplied') +
           '</em>';
-      answer = '<h2>' + esc(json.decision) + '</h2>' +
+      answer = kit.frame('<h2>' + esc(json.decision) + '</h2>' +
         '<div class="tiles">' +
         kit.tile(json.decision, t.text('consoleXacml.tile.pdpDecision')) +
         kit.tile(json.enforcement.allowed
@@ -5033,7 +5101,7 @@ class XacmlPage {
         esc((json.status || {}).code || '') + '</code>' +
         ((json.status || {}).message
           ? '<div class="sub">' + esc(json.status.message) + '</div>' : '') +
-        '</td></tr></table>';
+        '</td></tr></table>');
     }
 
     const explain = kit.note(
@@ -5041,7 +5109,9 @@ class XacmlPage {
       '</p><p>' + t.html('consoleXacml.decide.p2') +
       '</p>',
       t.text('consoleXacml.decide.label'));
-    return explain + form + answer;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the form, and
+    // the answer's section.
+    return explain + kit.frame(form) + answer;
   }
 
   /**
@@ -5232,8 +5302,11 @@ class XacmlPage {
       '</p>',
       t.text('consoleXacml.how.label'));
 
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab has no
+    // heading, so the policy — its tree and its two views — is one frame.
     const body = chooser + whereToCreate + liveWarning + problems + xpathGap +
       explain +
+      kit.frame(
       '<table><tr><th>' + t.html('consoleXacml.th.element') + '</th><th>' +
       t.html('consoleXacml.th.kind') + '</th><th>' +
       t.html('consoleXacml.th.addRemove') +
@@ -5249,7 +5322,7 @@ class XacmlPage {
       '<pre>' + esc(json.alfa || '') + '</pre></details>' +
       '<details><summary>' + t.html('consoleXacml.editor.asStored') +
       '</summary><pre>' +
-      esc(json.document) + '</pre></details>';
+      esc(json.document) + '</pre></details>');
 
     return body;
   }

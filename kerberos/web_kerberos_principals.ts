@@ -192,7 +192,9 @@ class KerberosPrincipalsPage {
       none: t.text('consoleKerberosPrincipals.srcNone'),
       unreadable: t.text('consoleKerberosPrincipals.srcUnreadable')
     };
-    const krbtgtSection = !k ? '' :
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
+    // section one frame, the `<h3>` block a frame inside its own.
+    const krbtgtSection = !k ? '' : kit.frame(
       '<h2>' + t.html('consoleKerberosPrincipals.hKrbtgt') + '</h2>' +
       kit.note(t.html('consoleKerberosPrincipals.krbtgtIntro') +
         (k.source === 'password'
@@ -269,7 +271,7 @@ class KerberosPrincipalsPage {
           '<button type="submit" class="danger">' +
           t.html('consoleKerberosPrincipals.rotateInvalidate') +
           '</button></div></form>'
-        : kit.note(t.html('consoleKerberosPrincipals.needWriteKrbtgt')));
+        : kit.note(t.html('consoleKerberosPrincipals.needWriteKrbtgt'))));
 
     // The notes' sentences after each headline are the view's, drawn as
     // they come.
@@ -309,7 +311,8 @@ class KerberosPrincipalsPage {
                   ? t.html('consoleKerberosPrincipals.personKeysOn')
                   : t.html('consoleKerberosPrincipals.personKeysOff'))) +
       krbtgtSection +
-      '<h2>' + t.html('consoleKerberosPrincipals.hServices') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleKerberosPrincipals.hServices') +
+      '</h2>' +
       servicesNav.head +
       '<table><tr><th>' + t.html('consoleKerberosPrincipals.thPrincipal') +
       '</th><th>kvno</th><th>' +
@@ -320,7 +323,8 @@ class KerberosPrincipalsPage {
       serviceRows + '</table>' +
       servicesNav.foot +
       (mayChange
-        ? '<h3>' + t.html('consoleKerberosPrincipals.hCreate') + '</h3>' +
+        ? kit.frame('<h3>' + t.html('consoleKerberosPrincipals.hCreate') +
+          '</h3>' +
           kit.note(t.html('consoleKerberosPrincipals.create1') +
                     '<code>@' + kit.esc(json.realm) + '</code>' +
                     t.html('consoleKerberosPrincipals.create2',
@@ -333,9 +337,10 @@ class KerberosPrincipalsPage {
           'placeholder="HTTP/web.example.com">' +
           '<button type="submit">' +
           t.html('consoleKerberosPrincipals.createShow') +
-          '</button></div></form>'
-        : kit.note(t.html('consoleKerberosPrincipals.needWriteServices'))) +
-      '<h2>' + t.html('consoleKerberosPrincipals.hPeople') + '</h2>' +
+          '</button></div></form>')
+        : kit.note(t.html('consoleKerberosPrincipals.needWriteServices')))) +
+      kit.frame('<h2>' + t.html('consoleKerberosPrincipals.hPeople') +
+      '</h2>' +
       peopleNav.head +
       '<table><tr><th>' + t.html('consoleKerberosPrincipals.thPrincipal') +
       '</th><th>kvno</th><th>' +
@@ -346,8 +351,9 @@ class KerberosPrincipalsPage {
       t.html('consoleKerberosPrincipals.thAtRest') + '</th><th></th></tr>' +
       peopleRows + '</table>' + peopleNav.foot +
       kit.perPageForm('/admin/kerberos/principals', 'peoplePage', '1',
-                       json.peoplePaging.perPage) +
-      '<h2>' + t.html('consoleKerberosPrincipals.hDatabase') + '</h2>' +
+                       json.peoplePaging.perPage)) +
+      kit.frame('<h2>' + t.html('consoleKerberosPrincipals.hDatabase') +
+      '</h2>' +
       kit.note(t.html('consoleKerberosPrincipals.database')) +
       databaseNav.head +
       '<table id="kerberos-database"><tr><th>' +
@@ -367,9 +373,9 @@ class KerberosPrincipalsPage {
             return one.name;
           }).join(', ')) + '</td><td><code>' + kit.esc(row.salt || '') +
           '</code></td><td>' + kit.esc(flags.join(', ')) + '</td></tr>';
-      }).join('') + '</table>' + databaseNav.foot +
-      '<h2>' + t.html('consoleKerberosPrincipals.hNoButton') + '</h2>' +
-      kit.note(t.html('consoleKerberosPrincipals.noButton')) +
+      }).join('') + '</table>' + databaseNav.foot) +
+      kit.frame('<h2>' + t.html('consoleKerberosPrincipals.hNoButton') +
+      '</h2>' + kit.note(t.html('consoleKerberosPrincipals.noButton'))) +
       // No "this page as JSON" link: on the tab, /admin/kerberos?format=json
       // is the whole Kerberos page's operation, not the principals', so the
       // management API's own operation below is this tab's JSON.

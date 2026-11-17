@@ -124,7 +124,9 @@ class MailPage {
       // THE TWO FORMS, THE MESSAGES AND THE SETTINGS ARE TABS (2026-10-12);
       // the channel's status is Metadata.
       ? '<h2 data-tab="test">' + t.html('consoleMail.test.heading') +
-        '</h2>' + why +
+        // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+        // content after its heading, and the channel's status on Metadata.
+        '</h2>' + kit.frame(why +
         kit.note(t.html('consoleMail.test.note')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="test">' +
@@ -135,17 +137,18 @@ class MailPage {
         esc(t.text('consoleMail.test.yourself')) + '"' + off + '><button ' +
         'type="submit"' + off + '>' + t.html('consoleMail.test.heading') +
         '</button></div>' +
-        '</form>' +
+        '</form>') +
         '<h2 data-tab="verify">' + t.html('consoleMail.verify.heading') +
         '</h2>' +
-        kit.note(t.html('consoleMail.verify.note')) +
+        kit.frame(kit.note(t.html('consoleMail.verify.note')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="verify">' +
         '<div class="formrow"><label for="mail-verify-user">' +
         t.html('consoleMail.test.person') + '</label>' +
         '<input type="text" id="mail-verify-user" name="user" size="24" ' +
         'maxlength="256" required' + off + '><button type="submit"' + off +
-        '>' + t.html('consoleMail.verify.button') + '</button></div></form>'
+        '>' + t.html('consoleMail.verify.button') +
+        '</button></div></form>')
       : '';
     // THE LANGUAGES EACH MESSAGE HAS A BUILT-IN TRANSLATION IN (#539),
     // beside the ones this realm wrote its own wording in: the view's
@@ -154,7 +157,7 @@ class MailPage {
     const templates = '<h2 data-tab="messages">' +
       t.html('consoleMail.templates.heading') +
       '</h2>' +
-      kit.note(t.html('consoleMail.templates.note')) +
+      kit.frame(kit.note(t.html('consoleMail.templates.note')) +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleMail.templates.message') + '</th><th>' +
       t.html('consoleMail.templates.category') + '</th>' +
@@ -180,8 +183,8 @@ class MailPage {
                   encodeURIComponent(l) + '">' + esc(l) + '</a>';
               }).join(' ') : t.html('consoleMail.templates.builtInOnly')) +
           builtIn + '</td></tr>';
-      }).join('') + '</tbody></table>';
-    return status + test + templates +
+      }).join('') + '</tbody></table>');
+    return kit.frame(status) + test + templates +
       (json.confinedToRealm ? '' : '<h2 data-tab="settings">' +
        t.html('consoleMail.settings') + '</h2>' +
        SettingsForms.forms(json.settings, PAGE, undefined, t));
@@ -236,7 +239,8 @@ class MailPage {
                                                                    string) {
         return '<code>{{' + esc(n) + '}}</code>';
       }).join(', ') + ' ' + t.html('consoleMail.template.isLink') : '.')) +
-      form;
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16).
+      kit.frame(form);
   }
 
   /**
