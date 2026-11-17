@@ -1383,10 +1383,23 @@ async function proxyAuditRows() {
     }).filter(Boolean));
   const rows = [];
   for (const one of bases) {
-    /* eslint-disable no-await-in-loop */
-    const r = await get(one + "/realm/" + REALM +
-                        "/admin-api/audit?per=500&action=xacml.remote.proxy");
-    /* eslint-enable no-await-in-loop */
+    let r = null;
+    try {
+      /* eslint-disable no-await-in-loop */
+      r = await get(one + "/realm/" + REALM +
+                    "/admin-api/audit?per=500&action=xacml.remote.proxy");
+      /* eslint-enable no-await-in-loop */
+    } catch (e) {
+      // A NODE THAT CANNOT BE DIALLED DIRECTLY (2026-11-16): the cluster
+      // mode's nodes take PROXY protocol v2 from the balancer and from
+      // nowhere else (STS_PROXY_PROTOCOL=v2), so a direct connection to
+      // STS_TEST_NODE_URLS is reset — the GitHub cluster run of #1857 and
+      // the first local one both gave up on "fetch failed". That node is
+      // read through the balancer instead, which the first base is.
+      log.debug("Caught in proxyAuditRows(): " + one + ": " +
+                ((e && e.message) || e));
+      continue;
+    }
     if (r.status === 200 && r.body) {
       [].concat(r.body.events || r.body.rows || r.body.entries || [])
         .forEach(function (row) {
