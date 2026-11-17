@@ -2418,6 +2418,21 @@ configuration->Listeners", the HTTPS listener there now as the default, and
   call that would set it; the listener's other settings are still applied.
   A knob the library refuses is the same code. When a pair is already
   served, that refusal keeps the previous acceptor.
+* **WHAT EACH KNOB DOES, AND THE ONES THAT DID NOT (2026-11-16).** The
+  cluster job's listener table (`tests/protocol/sts_xacml_pep_proxy_cluster.js`)
+  observes every knob on the wire and found some held and not applied:
+  * **`headersTimeoutS`** — `listener_pool.rs`'s `drive()` keeps it as a
+    deadline of its own (`HeadClock`): from the first byte of a request head
+    to hyper handing the request on, checked every 250 ms when it is under
+    4 s. hyper's `header_read_timeout` cannot be it, because hyper starts
+    that timer when the connection begins WAITING for a head — the
+    keep-alive idle — so it is armed at `headers_timeout_s()`, past the
+    keep-alive, and with `headersTimeoutS` below the keep-alive a slow-loris
+    head was closed by the 60 s keep-alive watchdog. An overdue head is
+    dropped, not shut down gracefully (that waits for the head). HTTP/2
+    (the first bytes are the preface) is held from its first byte to its
+    first request and never re-armed: a later PING is not a head.
+    `listeners::tests::a_slow_header_client_is_closed_after_headers_timeout`.
 * **THE HEARTBEAT'S `listeners` IS THE WHOLE REPORT.** `report()` is
   `{ listeners, memory?, paths? }`, and that object is what the heartbeat
   assigns to `listeners`. Each listener carries `stats`: accepted, open,

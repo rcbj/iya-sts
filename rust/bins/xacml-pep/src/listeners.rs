@@ -1313,4 +1313,108 @@ mod tests {
         status.set("failed", "other");
         assert_eq!(listeners.report()["listeners"][0]["purpose"], "crl");
     }
+
+    /// A definition with `tuning` laid over the small test pool.
+    fn tuned(id: &str, https: bool, port: u16, tuning: Value) -> Def {
+        let mut one = def(id, https, false, port);
+        let mut raw = json!({"threadPoolMin": 1, "threadPoolMax": 2});
+        if let (Some(raw), Some(more)) =
+            (raw.as_object_mut(), tuning.as_object())
+        {
+            for (k, v) in more {
+                raw.insert(k.clone(), v.clone());
+            }
+        }
+        one.tuning = Tuning::overlay(&raw, "api", https);
+        one
+    }
+
+    /// How long until the server closes a connection that sent `first`
+    /// and then nothing, up to `hold`; `None` when it was still open.
+    async fn closed_after(
+        port: u16,
+        first: &[u8],
+        hold: std::time::Duration,
+    ) -> Option<std::time::Duration> {
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        stream.write_all(first).await.unwrap();
+        let started = std::time::Instant::now();
+        let mut sink = [0u8; 256];
+        let read = tokio::time::timeout(hold, async {
+            loop {
+                match stream.read(&mut sink).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        })
+        .await;
+        read.ok().map(|_| started.elapsed())
+    }
+
+    /// `headersTimeoutS` IS APPLIED (2026-11-16): a request whose head never
+    /// finishes is closed `headersTimeoutS` after its first byte, though
+    /// the keep-alive is a minute; with 0 it is still open; and a kept-alive
+    /// connection IDLE between requests is not a head, so it outlives the
+    /// header deadline and answers its next request.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_slow_header_client_is_closed_after_headers_timeout() {
+        let listeners = set(refusing(), false);
+        let (slow, unset) = (free_port(), free_port());
+        listeners
+            .reconcile(vec![
+                tuned(
+                    "slow",
+                    false,
+                    slow,
+                    json!({"headersTimeoutS": 1, "keepAliveTimeoutS": 60}),
+                ),
+                tuned("unset", false, unset, json!({"keepAliveTimeoutS": 60})),
+            ])
+            .await;
+        let partial = b"GET / HTTP/1.1\r\nHost: x\r\nX-Slow: ";
+        let hold = std::time::Duration::from_millis(3500);
+        let closed = closed_after(slow, partial, hold).await;
+        let after = closed.expect("closed within headersTimeoutS");
+        assert!(
+            after >= std::time::Duration::from_millis(900)
+                && after < std::time::Duration::from_millis(2600),
+            "closed after {:?}",
+            after
+        );
+        assert_eq!(
+            closed_after(
+                unset,
+                partial,
+                std::time::Duration::from_millis(2500)
+            )
+            .await,
+            None,
+            "0 is no deadline of its own: the keep-alive's"
+        );
+        // Idle between two requests for longer than the deadline.
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", slow))
+            .await
+            .unwrap();
+        let ask = b"GET / HTTP/1.1\r\nHost: x\r\n\r\n";
+        for round in 0..2 {
+            stream.write_all(ask).await.unwrap();
+            let mut got = Vec::new();
+            let mut buf = [0u8; 512];
+            while !got.ends_with(b"api") {
+                let n = tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    stream.read(&mut buf),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert!(n > 0, "round {}: closed while idle", round);
+                got.extend_from_slice(&buf[..n]);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+        }
+    }
 }

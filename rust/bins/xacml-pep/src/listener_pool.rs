@@ -20,6 +20,20 @@
 //! above `min` leaves after 30s. Counters are cumulative since this process
 //! started except the pool's gauges (`current`, `busy`, `idle`, `queued`).
 //!
+//! `headersTimeoutS` IS A DEADLINE OF ITS OWN (2026-11-16). hyper's
+//! `header_read_timeout` starts when a connection begins waiting for a
+//! request head, which on a kept-alive connection is the idle wait, so it
+//! can only be armed past the keep-alive (`headers_timeout_s()`), and with
+//! `headersTimeoutS` below the keep-alive it was never what closed a slow
+//! client — the keep-alive watchdog was, at 60 s. [`drive`] now keeps the
+//! deadline itself: from the first byte of a request head to the moment
+//! hyper hands the request to the service. A head still unfinished
+//! `headersTimeoutS` after its first byte closes the connection, whatever
+//! trickle of bytes keeps the idle watchdog quiet. HTTP/2 has no header
+//! timeout in hyper; there the deadline runs from the connection's first
+//! byte (the preface) to its first request, and is not re-armed, because
+//! later frames (a PING, a WINDOW_UPDATE) are not the start of a head.
+//!
 //! PATHS ARE THE PROCESS'S, NOT A LISTENER'S: one table, method and path
 //! with the query stripped, 256 distinct paths, no token and no session id.
 //! Memory is read from `/proc/self/status` when the heartbeat is built.
@@ -55,7 +69,11 @@ pub struct HttpCfg {
     pub http2: bool,
     pub streams: u32,
     pub keep_alive: Duration,
+    /// hyper's own `header_read_timeout`, past the keep-alive.
     pub headers: Duration,
+    /// `headersTimeoutS` as asked: from a head's first byte to its end.
+    /// `None` is 0, no deadline of its own.
+    pub head_deadline: Option<Duration>,
     pub max_requests: u64,
     pub max_connections: u64,
 }
@@ -69,6 +87,8 @@ impl HttpCfg {
             streams: tuning.http2_max_concurrent_streams.max(1),
             keep_alive: Duration::from_secs(keep),
             headers: Duration::from_secs(headers),
+            head_deadline: (tuning.headers_timeout_s > 0)
+                .then(|| Duration::from_secs(tuning.headers_timeout_s)),
             max_requests: tuning.max_requests_per_socket,
             max_connections: tuning.max_connections,
         }
@@ -563,7 +583,7 @@ pub async fn drive<I, S, B>(
     I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     S: Service<Request<Incoming>, Response = Response<B>> + Send + 'static,
     S::Future: Send + 'static,
-    S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    S::Error: Into<Box<dyn std::error::Error + Send + Sync>> + Send + 'static,
     B: Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>> + Send,
@@ -582,9 +602,11 @@ pub async fn drive<I, S, B>(
             .fetch_add(1, Ordering::Relaxed);
     }
     let last = Arc::new(AtomicU64::new(millis()));
+    let head = Arc::new(HeadClock::new());
     let io = ActivityIo {
         inner: io,
         last: last.clone(),
+        head: head.clone(),
     };
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
     let service = RequestLimit {
@@ -592,6 +614,14 @@ pub async fn drive<I, S, B>(
         max: cfg.max_requests,
         seen: AtomicU64::new(0),
         shutdown: tx,
+        head: head.clone(),
+    };
+    let head_ms = cfg.head_deadline.map(|d| d.as_millis() as u64);
+    // A short deadline is checked more often than the idle watchdog's
+    // second, so a 1 s headersTimeoutS closes within about 1.25 s.
+    let tick = match cfg.head_deadline {
+        Some(d) if d < Duration::from_secs(4) => Duration::from_millis(250),
+        _ => Duration::from_secs(1),
     };
     let mut builder = Builder::new(TokioExecutor::new());
     // header_read_timeout panics unless a timer is set first.
@@ -621,7 +651,21 @@ pub async fn drive<I, S, B>(
                 closing = true;
                 conn.as_mut().graceful_shutdown();
             }
-            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+            _ = tokio::time::sleep(tick) => {
+                if let Some(limit) = head_ms {
+                    if head.overdue(millis(), limit) {
+                        // A slow client (a slow-loris): its head started
+                        // and did not finish in headersTimeoutS. Dropped,
+                        // not shut down gracefully — a graceful shutdown
+                        // waits for the very head that is not coming.
+                        tracing::debug!(
+                            "xacml-pep: a request head did not finish \
+                             within headersTimeoutS; the connection is \
+                             closed."
+                        );
+                        break;
+                    }
+                }
                 let quiet = millis()
                     .saturating_sub(last.load(Ordering::Relaxed));
                 if quiet >= idle_ms {
@@ -636,22 +680,89 @@ pub async fn drive<I, S, B>(
     }
 }
 
+/// Where the connection is in reading a request head, for the
+/// `headersTimeoutS` deadline. `since` is the millisecond of the first byte
+/// of the head being read, 0 while none is; `armed` is whether the next
+/// byte read starts a head. Hot path: no Entering/Leaving lines, every
+/// read of every connection passes here.
+struct HeadClock {
+    armed: AtomicBool,
+    since: AtomicU64,
+    /// The first bytes were HTTP/2's preface: armed once, never again.
+    h2: AtomicBool,
+    seen_first: AtomicBool,
+}
+
+impl HeadClock {
+    fn new() -> HeadClock {
+        HeadClock {
+            armed: AtomicBool::new(true),
+            since: AtomicU64::new(0),
+            h2: AtomicBool::new(false),
+            seen_first: AtomicBool::new(false),
+        }
+    }
+
+    /// Bytes arrived.
+    fn read(&self, got: &[u8], now: u64) {
+        if got.is_empty() {
+            return;
+        }
+        if !self.seen_first.swap(true, Ordering::AcqRel) {
+            self.h2
+                .store(got.starts_with(b"PRI * HTTP/2.0"), Ordering::Release);
+        }
+        if self.armed.load(Ordering::Acquire) {
+            // Only the first byte of a head sets it. One task polls a
+            // connection, so the load and the store do not race.
+            if self.since.load(Ordering::Acquire) == 0 {
+                self.since.store(now.max(1), Ordering::Release);
+            }
+        }
+    }
+
+    /// hyper handed a request to the service: its head is complete.
+    fn head_done(&self) {
+        self.armed.store(false, Ordering::Release);
+        self.since.store(0, Ordering::Release);
+    }
+
+    /// The response is ready: on HTTP/1 the next byte starts the next head.
+    fn answered(&self) {
+        if !self.h2.load(Ordering::Acquire) {
+            self.armed.store(true, Ordering::Release);
+        }
+    }
+
+    fn overdue(&self, now: u64, limit_ms: u64) -> bool {
+        let since = self.since.load(Ordering::Acquire);
+        since != 0 && now.saturating_sub(since) >= limit_ms
+    }
+}
+
 struct RequestLimit<S> {
     inner: S,
     max: u64,
     seen: AtomicU64,
     shutdown: tokio::sync::mpsc::Sender<()>,
+    head: Arc<HeadClock>,
 }
 
-impl<S, B> Service<Request<Incoming>> for RequestLimit<S>
+type Answered<R, E> = Pin<Box<dyn Future<Output = Result<R, E>> + Send>>;
+
+impl<S, B: 'static> Service<Request<Incoming>> for RequestLimit<S>
 where
     S: Service<Request<Incoming>, Response = Response<B>>,
+    S::Future: Send + 'static,
+    S::Response: Send + 'static,
+    S::Error: Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = S::Future;
+    type Future = Answered<S::Response, S::Error>;
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
+        self.head.head_done();
         let n = self.seen.fetch_add(1, Ordering::Relaxed);
         // The Nth request still finishes. graceful_shutdown tells hyper
         // not to read another one, which is this service's
@@ -665,13 +776,20 @@ where
                 );
             }
         }
-        self.inner.call(req)
+        let answering = self.inner.call(req);
+        let head = self.head.clone();
+        Box::pin(async move {
+            let answer = answering.await;
+            head.answered();
+            answer
+        })
     }
 }
 
 struct ActivityIo<T> {
     inner: T,
     last: Arc<AtomicU64>,
+    head: Arc<HeadClock>,
 }
 
 impl<T: AsyncRead + Unpin> AsyncRead for ActivityIo<T> {
@@ -680,9 +798,14 @@ impl<T: AsyncRead + Unpin> AsyncRead for ActivityIo<T> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        let before = buf.filled().len();
         let poll = Pin::new(&mut self.inner).poll_read(cx, buf);
         if poll.is_ready() {
-            self.last.store(millis(), Ordering::Relaxed);
+            let now = millis();
+            self.last.store(now, Ordering::Relaxed);
+            if let Some(got) = buf.filled().get(before..) {
+                self.head.read(got, now);
+            }
         }
         poll
     }

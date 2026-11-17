@@ -1933,6 +1933,22 @@ in the clear it is right only behind something that terminates TLS.
 * **A port that will not bind** is reported `failed` and tried again after
   the next pull (`STS-XPEP-0103`); the others are unaffected.
 
+#### What each setting does on the wire
+
+Every listener, the environment's four and the ones defined here, applies
+its settings as follows (since 1.1.0):
+
+* **`headersTimeoutS`**: a request whose headers have started arriving and
+  have not finished within this many seconds is closed, however slowly the
+  client keeps sending bytes. It counts from the first byte of each
+  request's headers, so a kept-alive connection waiting between requests is
+  not affected; that wait is `keepAliveTimeoutS`. `0` (the default) sets no
+  limit of its own, and a request's headers then have the keep-alive plus
+  one second. Over HTTP/2 it bounds the time from the connection's first
+  byte to its first request.
+* **`keepAliveTimeoutS`**: a connection with no bytes in either direction
+  for this many seconds is closed.
+
 ### A listener's own page
 
 **Click a listener's id** in the Configured Listeners table to open
