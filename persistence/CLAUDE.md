@@ -1724,6 +1724,27 @@ declares two things at `realms.map()` (`common/realms.js`):
   merge that converges from an OLDER arriving row too.
   `tests/session_window.js`, `windowOffMergeCase()`.
 
+**A DEVELOPMENT REALM IN A PRODUCT PROCESS PERSISTS, AND ITS FLUSH NO LONGER
+EMPTIES THE JOURNAL (2026-11-17).** `persistence_minted.js`'s `enabled()`
+asked `mode.isProduct()` — the AMBIENT realm's mode — so in a product
+process with no workers and no cluster (each cell of the `cells` mode, a
+single-process product service) a realm switched to development read "not
+persisting" inside its own requests. A flush scheduled from one of them took
+`flush()`'s "not persisting" branch and CLEARED THE WHOLE JOURNAL — every
+realm's pending writes, never written — and that is the root of
+`sts_jar_admin_client`'s STS-AUTHN-0346 in the cells mode (runs 43762819441,
+43996600299, 44025839154): the sign-in's own journal entry went with the
+rest while an older flight still held the arrival, and `settleDecided()`,
+finding the key no longer journalled, applied that flight's merged answer —
+the arrival — over the sign-in. Its on-demand stores read as held whole and
+the session window went off inside it as well. `enabled()` now also asks the
+PROCESS's mode (`processIsProduct()`); a product realm in a development
+process keeps the ambient arm. A process of several workers or nodes was
+never affected (`severalProcesses()`, `severalNodes()`).
+`tests/session_window.js`, `devRealmFlushCase()`; `mergeOnApply` above
+closes the second half (an applied answer older than the held copy) for the
+two stores that path reaches.
+
 Tombstones expire with `persistence.mintedRetention` (0 keeps them with
 everything else): `purgeTombstones()`, at most every ten minutes from a
 successful minted flush, any node (`STS-STORE-0055` when it fails). In a

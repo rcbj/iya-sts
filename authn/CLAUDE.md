@@ -2339,9 +2339,11 @@ several cells runs with the window off (`active()` needs one cell): there
 which put it over the held session whole, and the account set's row the
 same way. `authn.sessions` and `authn.accountSets` declare `mergeOnApply`
 (`common/realms.js`), so the arriving row is merged into the held copy
-with `mergeSessionRows()` / `AccountSets.merge()`, found while chasing
-`sts_jar_admin_client`'s STS-AUTHN-0346 in the cells mode (three GitHub runs
-in a row). `persistence/CLAUDE.md` has the store-side rule;
+with `mergeSessionRows()` / `AccountSets.merge()`. `sts_jar_admin_client`'s
+STS-AUTHN-0346 in the cells mode (three GitHub runs in a row) went through
+it: a flush asked from a DEVELOPMENT realm in that product cell emptied the
+journal, and an older flight's merged arrival was then applied over the
+sign-in. `persistence/CLAUDE.md` has both halves;
 `tests/session_window.js`, `windowOffMergeCase()`.
 
 **AND THAT MERGE KEEPS A CLIENT'S `iss` AND `sub` (run 27, 2026-11-14).**

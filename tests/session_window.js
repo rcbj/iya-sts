@@ -1787,6 +1787,58 @@ async function windowOffMergeCase(t) {
   log.debug("Leaving windowOffMergeCase().");
 }
 
+// THE ROOT OF THE SAME RUNS: a realm in development mode, in a product
+// process with no workers and no cluster — each cell of the `cells` mode.
+// `minted.enabled()` read the AMBIENT realm's mode, so inside that realm the
+// process was "not persisting", and a flush scheduled from one of its
+// requests cleared the whole journal: every realm's pending writes, never
+// written. The sign-in's own entry went with them, so the merged answer of
+// an older flight still holding the arrival could be applied over the
+// sign-in.
+async function devRealmFlushCase(t) {
+  log.debug("Entering devRealmFlushCase().");
+  t.log.info('a development realm in a product process: a flush asked ' +
+             'from it writes every realm\'s pending rows');
+  const id = REALM + '-dev';
+  const made = realms.create({ id: id, name: id,
+                               description: 'Created by ' + __filename });
+  if (!made.ok) {
+    t.bad('could not create the realm "' + id + '"',
+          (made.errors || []).join(' '));
+    log.debug("Leaving devRealmFlushCase().");
+    return;
+  }
+  try {
+    realms.run(made.realm, function () {
+      config.setOverride('global.mode', 'development');
+    });
+    t.equal(realms.run(made.realm, function () {
+      return minted.enabled();
+    }), true, 'MINTED STATE IS PERSISTED INSIDE A DEVELOPMENT REALM of a ' +
+              'product process');
+    await minted.flush();
+    captured.upserts.length = 0;
+    const row = sessionBody('dev-realm-flush');
+    authn.sessions.set(row.id, row);
+    await realms.run(made.realm, function () {
+      return minted.flush();
+    });
+    t.equal(upsertsOf(row.id).length, 1,
+            'and a flush asked from that realm writes the row another realm ' +
+            'had pending, rather than clearing the journal');
+    t.equal(minted.journalled('authn.sessions', REALM, row.id), false,
+            'nothing of it is left pending');
+    authn.sessions.delete(row.id);
+    await minted.flush();
+  } finally {
+    realms.run(made.realm, function () {
+      config.clearOverride('global.mode');
+    });
+    realms.remove(id);
+  }
+  log.debug("Leaving devRealmFlushCase().");
+}
+
 // Rows that exist only in the index stub. The realm map stays empty, so a
 // walk that reads the cache and stops cannot see them.
 function partialWalkCase(t) {
@@ -2411,6 +2463,9 @@ async function body(t, dir) {
     sessionWindow.resetForTests();
     await realms.run(made.realm, function () {
       return windowOffMergeCase(t);
+    });
+    await realms.run(made.realm, function () {
+      return devRealmFlushCase(t);
     });
   } finally {
     try {

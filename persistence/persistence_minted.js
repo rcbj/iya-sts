@@ -690,7 +690,26 @@ function enabled() {
   // address, and `sealed()` is guaranteed there: cluster.js refuses
   // active-active without persisted keys. Active-passive counts too — a
   // takeover that restored no sessions would sign everybody out.
-  return mode.isProduct() || keystore.hasEphemeralKek() ||
+  //
+  // **AND THE PROCESS'S MODE AS WELL AS THE AMBIENT REALM'S (2026-11-17, the
+  // cells mode's `sts_jar_admin_client`, three GitHub runs in a row).**
+  // `mode.isProduct()` is the AMBIENT realm's answer, so in a product
+  // process with no workers and no cluster — each cell of the `cells` mode,
+  // and any single-process product service — a realm switched to
+  // development read "not persisting" inside its own requests. A flush
+  // scheduled from one of them took `flush()`'s first branch and CLEARED
+  // THE WHOLE JOURNAL: every realm's pending writes, never written. A
+  // sign-in that had just upgraded an arrival lost its journal entry while
+  // an older flight still held the arrival, so that flight's merged answer
+  // — the arrival — could be applied over the sign-in (`settleDecided()`
+  // asks the journal), and the selection ticket the sign-in handed out
+  // then named a session read here as an arrival (STS-AUTHN-0346). The same
+  // realm's on-demand stores read as held whole and the session window
+  // went off inside it. A product PROCESS persists what every realm in it
+  // mints, as a process of several workers or nodes already did; a product
+  // realm in a development process keeps the ambient arm, as before.
+  return mode.isProduct() || processIsProduct() ||
+         keystore.hasEphemeralKek() ||
          ((severalProcesses() || severalNodes()) && keystore.sealed());
 }
 
