@@ -5,7 +5,8 @@
   button that opens the sidebar. On a versioned page the logo goes to that
   version's overview, and the switcher beside it names the version and
   links each other one: to the same page when that version has it, and to
-  its overview when it does not. "All versions" is the landing page.
+  its overview when it does not. "All versions", a button, goes up to the landing page (rcbj,
+  2026-11-17), as does the one at the top of the sidebar.
 {%- endcomment -%}
 {%- include version.html -%}
 <header class="site-header" role="banner">
@@ -30,7 +31,7 @@
       <a href="{{ v_url | relative_url }}">{{ v.label | escape }}{% if v.folder == doc_latest.folder %} (latest){% endif %}</a>
       {%- endif %}
       {%- endfor %}
-      <a href="{{ "/" | relative_url }}">All versions</a>
+      <a class="all-versions-button" href="{{ "/" | relative_url }}">&uarr; All versions</a>
     </nav>
     {%- endif %}
   </div>

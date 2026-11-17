@@ -30,6 +30,23 @@ $sidebar-width: 270px;
   font-size: $small-font-size;
   a { color: $grey-color-dark; }
 }
+// "Up to the top level": the landing page that lists every version
+// (rcbj, 2026-11-17), in the header and at the top of the sidebar.
+.version-switcher a.all-versions-button,
+.all-versions-button {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid $brand-color;
+  border-radius: 4px;
+  color: $brand-color;
+  font-weight: 600;
+  text-decoration: none;
+  &:hover { background: $brand-color; color: #fff; text-decoration: none; }
+}
+.sidebar-up {
+  margin-bottom: $spacing-unit * 0.5;
+  font-size: $small-font-size;
+}
 .version-label { color: $grey-color; }
 .version-current {
   padding: 1px 8px;

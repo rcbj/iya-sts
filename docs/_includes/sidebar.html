@@ -13,6 +13,9 @@
 <input type="checkbox" id="sidebar-trigger" class="sidebar-trigger" />
 <nav class="sidebar" aria-label="Documentation">
   {%- if doc_version %}
+  <a class="all-versions-button sidebar-up" href="{{ "/" | relative_url }}">&uarr; All documentation versions</a>
+  {%- endif %}
+  {%- if doc_version %}
   {%- assign navigation = site.data.navigation[doc_version.nav] %}
   {%- for group in navigation %}
   <div class="sidebar-section">
