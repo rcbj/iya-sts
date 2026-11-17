@@ -86,6 +86,19 @@ Scope: `xacml:pep-audit`.
 | `ignored` | integer | yes |  |
 | `recorded` | integer | yes |  |
 
+**400**: A malformed batch (STS-XACML-0286), or a body the request schema does not admit: `errors` says why and nothing was recorded.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean |  |  |
+| `status` | integer |  |  |
+| `why` | string |  |  |
+
 ## GET /admin-api/xacml
 
 `getXacml`
