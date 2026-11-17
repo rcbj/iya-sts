@@ -78,6 +78,7 @@ const ldap = require("ldapjs");
 const names = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
 const authnSignin = require("./authn_signin.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -478,13 +479,25 @@ async function sectionA(ctx) {
         function () {
     assert.ok(plain.ok, JSON.stringify(plain));
   });
+  // THE DEFAULT REALM'S MODE IS THE PROCESS'S (2026-11-16, the first local
+  // single-node run): in product its directory AUTHORIZES the write first,
+  // and somebody bound in another realm holds nothing there, so the delete
+  // is 50 insufficientAccessRights before it reaches the protection — no
+  // STS-LDAP-0077 row. In development nothing is authorized and the
+  // protection answers 53, recorded.
+  const defaultProduct = await facts.isProduct(base + "/admin-api");
   check("A11. a realm's SEEDED administrator, and the default realm's, are " +
-        "not: 53 unwillingToPerform, recorded STS-LDAP-0077", function () {
+        "not: 53 unwillingToPerform, recorded STS-LDAP-0077 (the default " +
+        "realm's, in product: 50, refused before it)", function () {
     assert.strictEqual(realmAdmin.code, 53, JSON.stringify(realmAdmin));
-    assert.strictEqual(defaultAdmin.code, 53, JSON.stringify(defaultAdmin));
     assert.ok(protectedRows.length > 0, "no STS-LDAP-0077 row in " + OTHER);
-    assert.ok(defaultRows.length > 0, "no STS-LDAP-0077 row in the default " +
-              "realm");
+    if (defaultProduct) {
+      assert.strictEqual(defaultAdmin.code, 50, JSON.stringify(defaultAdmin));
+    } else {
+      assert.strictEqual(defaultAdmin.code, 53, JSON.stringify(defaultAdmin));
+      assert.ok(defaultRows.length > 0, "no STS-LDAP-0077 row in the " +
+                "default realm");
+    }
   });
   // A NODE DEFECT, FIXED (2026-11-14, #444's D12): the trust realm's refusal
   // called its account "the default realm's bootstrap administrator".
@@ -501,7 +514,7 @@ async function sectionA(ctx) {
     }), said(protectedRows));
     assert.ok(!/default realm's/.test(said(protectedRows)),
               said(protectedRows));
-    assert.ok(defaultRows.some(function (row) {
+    assert.ok(defaultProduct || defaultRows.some(function (row) {
       return /the default realm's bootstrap administrator/
         .test(String(row.summary || ""));
     }), said(defaultRows));
@@ -838,8 +851,12 @@ async function sectionD(ctx) {
   // administers the DEFAULT realm is. The person `admin` is therefore made
   // an administrator of the default realm too (revoked at the end), and
   // `realmOnly` pins what Node does today.
+  // givenName and mail too: the default realm is the process's, and a
+  // product one's attribute policy requires them (#396).
   await ok(base + "/admin-api/users/create", { username: admin,
-    invent: false, attributes: { cn: "Second " + admin, sn: admin } },
+    invent: false, attributes: { cn: "Second " + admin, sn: admin,
+                                 givenName: "Second",
+                                 mail: admin + "@bootstrap.test" } },
     "created " + admin + " in the default realm");
   await ok(base + "/admin-api/rbac/grant", { username: admin, role: "write" },
            "made " + admin + " an administrator of the default realm");
