@@ -30,9 +30,12 @@
 //         from an OUTSIDE authority trusted through the truststore that is
 //         stored on no entry, even when it names alice (49, 0192; it was
 //         0182 until #1061), another realm's certificate held
-//         against this realm's DN (49, 0184), a person with no entry (49,
-//         0187), a disabled person (49, 0188), a revoked certificate (49,
-//         0181);
+//         against this realm's DN (49, 0184), a person with no entry
+//         here because they were re-homed to another cell (49, 0187), a
+//         person DELETED, whose certificate the delete revoked (49, 0181;
+//         it was 0187 until #1835 — a deleted holder's certificates are
+//         revoked by every delete door since 2026-11-16, #1612's rule), a
+//         disabled person (49, 0188), a revoked certificate (49, 0181);
 //      A2b an outside authority's certificate STORED in userCertificate on
 //         frank's entry binds as frank (#1061), with his u: authzId and not
 //         alice's (50, 0189); a renewed certificate with the same subject is
@@ -341,13 +344,16 @@ async function childBody() {
   await issueFor('alice2', { username: 'lsealice' });
   await issueFor('carol', { username: 'lsecarol' });
   await issueFor('dave', { username: 'lsedave' });
+  await issueFor('erin', { username: 'lseerin' });
   await issueFor('svc', { kind: 'application', application: 'lsesvc' });
   await realms.run(realms.get(otherId), async function () {
     ldap.createUser('lsealice', { invent: false });
     await issueFor('other', { username: 'lsealice' }, otherId);
   });
-  // dave's entry goes, his certificate stays on the register.
+  // dave's entry goes by a re-homing, which leaves his certificate valid;
+  // erin's by a delete, which revokes hers.
   const daveDn = ldap.existingUserEntry('lsedave').dn;
+  const erinDn = ldap.existingUserEntry('lseerin').dn;
 
   const aliceDn = ldap.existingUserEntry('lsealice').dn;
   const bobDn = ldap.existingUserEntry('lsebob').dn;
@@ -532,12 +538,25 @@ async function childBody() {
     t.check(got.answer.status === 0,
             'A2. the same certificate with no name binds in its own realm',
             brief(got.answer));
-    const deleted = await ldap.performOperation('del',
-      { dn: daveDn, boundDn: '', channel: 'ldaps', remoteAddress: '' });
-    t.check(deleted && deleted.ok,
-            'precondition: dave\'s entry is deleted', JSON.stringify(deleted));
+    // A PERSON WITH NO ENTRY HERE AND A CERTIFICATE STILL VALID is one
+    // re-homed to another cell: `moved` leaves their certificates alone
+    // (`removePersonEntry()`), so the bind reaches the entry lookup.
+    const moved = ldap.deletePerson(daveDn, { door: 'a re-homing',
+                                              moved: true });
+    t.check(moved && moved.ok,
+            'precondition: dave\'s entry is re-homed away',
+            JSON.stringify(moved));
     await refused('A2. a person with no entry', issued.dave, 49,
                   'STS-LDAP-0187');
+    // A DELETED PERSON's certificate is revoked by the delete itself (#1835,
+    // `forgetHolderCertificates()`), so it is refused on revocation before
+    // the entry is looked for.
+    const deleted = await ldap.performOperation('del',
+      { dn: erinDn, boundDn: '', channel: 'ldaps', remoteAddress: '' });
+    t.check(deleted && deleted.ok,
+            'precondition: erin\'s entry is deleted', JSON.stringify(deleted));
+    await refused('A2. a deleted person, whose certificate the delete ' +
+                  'revoked', issued.erin, 49, 'STS-LDAP-0181');
     const off = accountState.setDisabled('lsecarol', true);
     t.check(off && off.ok !== false, 'precondition: carol is disabled',
             JSON.stringify(off));

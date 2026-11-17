@@ -57,7 +57,7 @@ Scope: `xacml:pep-audit`.
 | `events[].bias` | string |  |  |
 | `events[].caller` | string |  |  |
 | `events[].code` | string |  |  |
-| `events[].decision` | one of `Permit`, `Deny`, `NotApplicable`, `Indeterminate`, empty |  |  |
+| `events[].decision` | one of `Permit`, `Deny`, `NotApplicable`, `Indeterminate` |  |  |
 | `events[].discharged` | list |  |  |
 | `events[].discharged[]` | string |  |  |
 | `events[].endpoint` | string |  |  |

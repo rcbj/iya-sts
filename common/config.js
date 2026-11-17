@@ -23271,9 +23271,16 @@ function floorVerdict(setting) {
 
 function requireComplete() {
   log.debug("Entering requireComplete().");
+  // THE VERDICT FIRST, AND ONLY THEN THE RESOLVE. Resolving a `derived` row
+  // calls its default, and `adminApi.audience`'s reaches `listener_map.js`,
+  // which requires `realms.js`, which calls this module's `registerLogger()`
+  // — while this module is still loading, so node warns of a circular
+  // dependency (tests/composition_root.js). Until 2026-11-16 a `derived`
+  // test came first here; a row with a default never refuses, so asking the
+  // verdict first means no default is called at load.
   const orphans = SETTINGS.filter(function (setting) {
-    return resolve(setting.key).source === 'default' &&
-           floorVerdict(setting) === 'refuse';
+    return floorVerdict(setting) === 'refuse' &&
+           resolve(setting.key).source === 'default';
   });
   if (!orphans.length) {
     log.debug("Leaving requireComplete(). Every setting has a value.");
