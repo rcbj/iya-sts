@@ -5069,11 +5069,28 @@ async function theProxyHoldsASession() {
     assert.strictEqual(to.searchParams.get("client_id"), PROXY_APP,
       "as the confidential client the route's application is (D10); it " +
       "asked as " + to.searchParams.get("client_id"));
-    assert.strictEqual(to.searchParams.get("redirect_uri"),
-                       origin + "/.iya-pep/callback",
-      "returning to the proxy's reserved callback under publicBaseUrl");
-    assert.strictEqual(to.searchParams.get("code_challenge_method"), "S256",
-      "with PKCE S256, which the relying party library requires");
+    // PUSHED, OR IN THE ADDRESS (2026-11-16): the relying party library
+    // pushes its request (RFC 9126) when the realm's discovery document
+    // names a pushed authorization request endpoint, which this one does,
+    // so the browser carries only `client_id` and a `request_uri`; the
+    // redirect URI and the PKCE challenge travelled in the pushed request,
+    // back channel. A library that does not push puts them here, and then
+    // they are asserted as before. The callback itself is asserted by the
+    // walk below, which must pass through /.iya-pep/callback.
+    const pushed = to.searchParams.get("request_uri");
+    if (pushed) {
+      assert.ok(/^urn:ietf:params:oauth:request_uri:/.test(pushed),
+        "a pushed request's request_uri is RFC 9126's URN; it is " + pushed);
+      assert.strictEqual(to.searchParams.get("redirect_uri"), null,
+        "and nothing else of the request is in the address");
+    } else {
+      assert.strictEqual(to.searchParams.get("redirect_uri"),
+                         origin + "/.iya-pep/callback",
+        "returning to the proxy's reserved callback under publicBaseUrl");
+      assert.strictEqual(to.searchParams.get("code_challenge_method"),
+                         "S256",
+        "with PKCE S256, which the relying party library requires");
+    }
     assert.ok(carriesNoSecret(first.location),
       "and no client secret in the address");
     assert.strictEqual(hitsOn(afterFirst, "/pep-app/protected/report"),
