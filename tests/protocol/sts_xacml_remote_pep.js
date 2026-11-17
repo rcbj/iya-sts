@@ -3362,6 +3362,7 @@ const ROLE_OTHER = "pep-role-other";
 const PROXY_API_AUDIENCE = "https://pep-app.example.test/api";
 const PROXY_SAML_AUDIENCE = "https://pep-app.example.test/saml";
 const PROXY_OTHER_AUDIENCE = "https://somebody-else.example.test/api";
+const PROXY_OTHER_APP = "pep-proxy-somebody-else";
 const PROXY_TIMEOUT_MS = 3000;
 // THE APPLICATIONS THE ROUTES NAME (D10), in this run's realm.
 const PROXY_APP = "pep-app";
@@ -3916,6 +3917,7 @@ async function registerTheApplications() {
   PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
   PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
   PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
+  PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
   const callback = proxyCallback();
   await createApplication(PROXY_APP, ["oauth2", "oidc"], {
     oauthClientId: [PROXY_APP], oauthClientSecret: PROXY_SECRETS[0],
@@ -3940,6 +3942,16 @@ async function registerTheApplications() {
     oauthTokenEndpointAuthMethod: "client_secret_basic",
     oauthAudience: ["https://pep-app.example.test/scratch"]
   }, "the scratch application section 10i deletes");
+  // SOMEBODY ELSE'S API, REGISTERED SO A TOKEN CAN BE ADDRESSED TO IT
+  // (2026-11-16): since #1140 the realm mints no access token for an
+  // audience no application object holds, in either mode, so section 10c's
+  // token for another audience was refused invalid_target before the proxy
+  // could be asked to refuse it. No route names this application.
+  await createApplication(PROXY_OTHER_APP, ["oauth2"], {
+    oauthClientId: [PROXY_OTHER_APP], oauthClientSecret: PROXY_SECRETS[3],
+    oauthTokenEndpointAuthMethod: "client_secret_basic",
+    oauthAudience: [PROXY_OTHER_AUDIENCE]
+  }, "another API, whose audience no route of the proxy's names");
   await createApplication(PROXY_PUBLIC_APP, ["oauth2", "oidc"], {
     oauthClientId: [PROXY_PUBLIC_APP], oauthRedirectUri: [callback],
     oauthResponseType: ["code"], oauthGrantType: ["authorization_code"],
