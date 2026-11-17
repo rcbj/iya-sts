@@ -38,7 +38,7 @@ jobs:
       # submodules: the build copies node-ldapjs, and an empty one builds an
       # image that is not the service (build-container.yml says why).
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Pull the published image
@@ -48,7 +48,7 @@ jobs:
           docker tag ghcr.io/rcbj/iya-sts:latest iya-sts:scan
       - name: Set up Buildx
         if: github.ref != 'refs/heads/main'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Log in to GitHub Container Registry
         if: github.ref != 'refs/heads/main'
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
@@ -58,7 +58,7 @@ jobs:
       # branch's and main's) and writes none.
       - name: Build the image of this ref
         if: github.ref != 'refs/heads/main'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: iya-sts:scan

@@ -88,7 +88,7 @@ jobs:
       # project needs for the same reason one level up (this repository is itself
       # a submodule over there).
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -151,7 +151,7 @@ jobs:
       # npm against the registry on every layer miss, which is the slow part
       # by a wide margin and the part most worth caching.
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # THE BASE IMAGES ARE PRIVATE COPIES ON GHCR.IO (2026-09-27): see
       # build-contexts below and .github/image-mirror.txt.
@@ -179,7 +179,7 @@ jobs:
       # `.git`, so the build context carries no history for `git rev-parse` to
       # read.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: rcbj/sts:ci
@@ -208,7 +208,7 @@ jobs:
       # release — one build number.
       # Its one FROM comes from the mirror, as the service's do.
       - name: Build the XACML PEP image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: xacml-pep/Dockerfile
@@ -588,7 +588,7 @@ jobs:
       # io.artifacthub.* LABELs in each Dockerfile, not this file.
       - name: Install oras
         if: ${{ steps.publish-plan.outputs.float != '' }}
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Publish Artifact Hub repository metadata
         if: ${{ steps.publish-plan.outputs.float != '' }}

@@ -114,7 +114,7 @@ jobs:
       tag: ${{ steps.names.outputs.tag }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -166,7 +166,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Build terraform image
         run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
@@ -205,7 +205,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # run-suite.sh builds the tests image from this tree, and the
           # directory needs the node-ldapjs submodule.
@@ -263,7 +263,7 @@ jobs:
 
       - name: Upload the test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aws-cluster-report-${{ env.TF_ENV }}-${{ github.run_number }}
           path: tests/report/aws-${{ env.TF_ENV }}
@@ -306,7 +306,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Build terraform image
         run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
