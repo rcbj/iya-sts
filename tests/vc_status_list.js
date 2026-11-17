@@ -555,16 +555,13 @@ function childMain() {
                 vp_token: w.vpToken('dc+sd-jwt',
                   await w.presentLdp(ldp.credential, ldpHolder, ro.nonce,
                                      ro.client_id,
-                                     pick ? { pick: pick } : {})) } });
+                                     pick ? { pointers: pick } : {})) } });
       answer.ro = ro;
       return answer;
     }
-    function withholding(line) {
-      return /credentials#credentialSubject> <did:jwk:/.test(line) ||
-             /credentials#issuer>/.test(line) ||
-             /credentials#validFrom>/.test(line) ||
-             /credentials#validUntil>/.test(line);
-    }
+    // Everything but the status entries: the subject revealed, and the
+    // issuer and the validity window, which are mandatory (#1878).
+    const withholding = ['/credentialSubject/id'];
     await w.inRealm(function () {
       m.config.setOverride('oid4vp.claims', '');
     });

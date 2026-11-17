@@ -74,17 +74,10 @@ var issuerBase = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/,
     "");
 const ROOT = path.join(__dirname, "..");
 const paths = require("./module_paths.js");
-const stsSuite = paths.requireSharedModule(
-  // The tests image's flattened copy first, then wherever the submodule keeps
-  // it. NOT a hardcoded ROOT/sts/bbs2023.js any more: iya-sts 0f986b3
-  // ("Reorganizing source code.") moved every module into a subdirectory, and
-  // this one is in common/vendored/. mockStsModule() is the single place that
-  // answers that question — see tests/module_paths.js.
-  [path.join(__dirname, "sts_bbs2023.js"),
-   paths.mockStsModule("bbs2023.js") || ""],
-  "the STS's bbs-2023 cryptosuite");
 // The wallet's own module — the one both issuance step 2 and step 4 use.
 // Driving it is the point: it is the code under test, not a stand-in for it.
+// Digital Bazaar's bbs-2023, the second opinion on what was issued (#1878).
+const bbsW3c = require("./bbs_w3c.js");
 const wallet = paths.requireSharedModule(
   [path.join(__dirname, "vci_wallet.js"), path.join(ROOT, "client", "src",
    "vci_wallet.js")],
@@ -402,12 +395,10 @@ async function test() {
     "and expire later — that is the point of refreshing it.");
   assert.notStrictEqual(refreshedCredential.proof.proofValue,
                         heldCredential.proof.proofValue,
-    "and so carry a different proof. Note this follows from the timestamps " +
-        "and NOT from any " +
-    "randomness: BBS Sign is deterministic and an ldp_vc has no salts, so " +
-        "the same claims signed by " +
-    "the same key at the same second give identical bytes. That is checked " +
-        "directly below.");
+    "and so carry a different proof. Since #1878 that would hold whatever " +
+        "the timestamps: every W3C bbs-2023 base proof carries an HMAC key " +
+        "of its own, drawn for it, so no two proofs are alike even where " +
+        "BBS Sign itself is deterministic.");
   assert.strictEqual(subjectIdOf(refreshedCredential), heldSubjectId,
     "reusing the holder key must give the SAME credentialSubject.id: that is " +
         "what makes this a " +
@@ -436,19 +427,19 @@ async function test() {
   const km =
       (await common.httpJson(refreshedCredential.proof.verificationMethod))
       .body;
-  const pk = stsSuite.multibaseToBytes(km.publicKeyMultibase);
-  const verdict = await stsSuite.verifyBase(refreshedCredential, pk);
-  assert.strictEqual(verdict.ok, true,
-    "the refreshed credential's base proof must verify against the issuer's " +
-        "published BBS key.");
+  const verdict = await bbsW3c.deriveAndVerify(refreshedCredential, km);
+  assert.strictEqual(verdict.verified, true,
+    "a proof derived from the refreshed credential by Digital Bazaar's " +
+        "bbs-2023 must verify against the issuer's published BBS key: " +
+        verdict.errors.join("; "));
   const tampered = JSON.parse(got.stored);
   tampered.credentialSubject.given_name = "Mallory";
-  assert.strictEqual((await stsSuite.verifyBase(tampered, pk)).ok, false,
+  assert.strictEqual((await bbsW3c.deriveAndVerify(tampered, km)).verified,
+                     false,
     "and an edited claim must break it — the control that shows the check " +
         "above is not always-true.");
-  log.info("[14.5/2] OK — the refreshed proof verifies over " +
-           verdict.statements.length +
-    " statements; an edit breaks it.");
+  log.info("[14.5/2] OK — a proof derived from the refreshed credential " +
+           "verifies; an edit breaks it.");
 
   // --- what differs between two refreshes inside one second -----------------
   log.info("=== Two refreshes inside one second ===");
@@ -480,11 +471,13 @@ async function test() {
         "both would mean revoking either revoked the other. A=" +
     indexOf(aDoc) + " B=" + indexOf(bDoc));
 
-  const sameSecond = aDoc.proof.created === bDoc.proof.created;
+  // The proof carries no `created` since #1878, so the second is the
+  // credential's own validFrom.
+  const sameSecond = aDoc.validFrom === bDoc.validFrom;
   if (sameSecond) {
-    // Everything but the status entry and the proof over it: BBS Sign draws no
-    // randomness and this format carries no salts, so with the one per-issuance
-    // member removed the two must still be byte-identical.
+    // Everything but the status entry and the proof over it (whose HMAC key
+    // is drawn per proof since #1878): with the one per-issuance member
+    // removed the two must still be byte-identical.
     const strip = function (doc) {
       const copy = JSON.parse(JSON.stringify(doc));
       delete copy.credentialStatus;
@@ -493,9 +486,8 @@ async function test() {
     };
     assert.strictEqual(strip(aDoc), strip(bDoc),
       "two ldp_vc issuances stamped with the same second must differ ONLY in " +
-          "their status entry: BBS Sign draws no randomness and this format " +
-          "carries no salts. If this fails, something ELSE per-issuance has " +
-          "been added — good, but it should be named here.");
+          "their status entry and their proof. If this fails, something ELSE " +
+          "per-issuance has been added — good, but it should be named here.");
     log.info("[determinism] OK — same second, identical but for the status " +
              "entry each credential needs of its own.");
   } else {

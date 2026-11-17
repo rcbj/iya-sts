@@ -344,6 +344,41 @@ function childMain() {
          'proves the nonce and nothing about who presented it',
          bare.code);
 
+    // ==================================================================
+    // 5d-5f. THE PRE-1.1 ENVELOPE (#1878, the transition): a credential as
+    // 1.0 issued it, presented as 1.0's wallets did, inside a holder-bound
+    // presentation. Labelled `bbs-2023` it is refused, because that names
+    // the W3C cryptosuite; labelled `iya-bbs-2023-legacy` it signs in while
+    // oid4vp.legacyBbsEnvelope is on, and not once it is off.
+    // ==================================================================
+    const oldKey = w.holderKey();
+    const oldCred = await w.legacyCredential((await w.issue('fmt-alice',
+      oldKey, { format: 'ldp_vc' })).credential);
+    const asW3c = await attempt('ldp_vc', oldCred, oldKey,
+                                { legacy: 'bbs-2023' });
+    note(!asW3c.ok && /iya-bbs-2023-legacy/.test(asW3c.page.text),
+         '5d. a pre-1.1 envelope labelled bbs-2023 is refused, the ' +
+         'refusal naming the legacy label (STS-VC-0181)',
+         asW3c.code + ' ' + asW3c.page.status);
+    const asLegacy = await attempt('ldp_vc', oldCred, oldKey,
+                                   { legacy: 'iya-bbs-2023-legacy' });
+    note(asLegacy.ok && asLegacy.session &&
+         asLegacy.session.user.username === 'fmt-alice',
+         '5e. labelled iya-bbs-2023-legacy, the same envelope signs ' +
+         'fmt-alice in while oid4vp.legacyBbsEnvelope is on (STS-VC-0182 ' +
+         'logged)', asLegacy.code + ' ' + asLegacy.page.status);
+    await w.inRealm(function () {
+      m.config.setOverride('oid4vp.legacyBbsEnvelope', false);
+    });
+    const turnedOff = await attempt('ldp_vc', oldCred, oldKey,
+                                    { legacy: 'iya-bbs-2023-legacy' });
+    await w.inRealm(function () {
+      m.config.clearOverride('oid4vp.legacyBbsEnvelope');
+    });
+    note(!turnedOff.ok && /legacyBbsEnvelope/.test(turnedOff.page.text),
+         '5f. and is refused once oid4vp.legacyBbsEnvelope is off ' +
+         '(STS-VC-0183)', turnedOff.code + ' ' + turnedOff.page.status);
+
   }
 }
 

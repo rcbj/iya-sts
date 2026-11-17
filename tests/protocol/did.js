@@ -47,8 +47,9 @@ var metadataClient = require("./metadata_client");
 // ---------------------------------------------------------------------------
 // base58btc, which did:key needs and nothing else in this repository has.
 //
-// The bbs-2023 work encodes its keys as multibase base64url ("u"), so there was
-// no base58 anywhere. did:key uses "z", and the alphabet is Bitcoin's — it
+// The bbs-2023 work encoded its keys as multibase base64url ("u") when this
+// was written, so there was no base58 anywhere; its keys are base58btc too
+// since #1878. did:key uses "z", and the alphabet is Bitcoin's — it
 // omits 0, O, I and l precisely so the four characters that look alike cannot
 // be confused when a DID is read aloud or retyped.
 // ---------------------------------------------------------------------------

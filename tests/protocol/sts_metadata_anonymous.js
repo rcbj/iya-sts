@@ -552,6 +552,11 @@ const DOCUMENTS = [
       const bad = [];
       if (d.type !== "Multikey") { bad.push("type is " + d.type); }
       if (!d.publicKeyMultibase) { bad.push("no publicKeyMultibase"); }
+      // vc-di-bbs 2.1.1 (#1878): base58btc of 0xeb01 and the 96-byte key,
+      // which always begins zUC7.
+      if (!/^zUC7/.test(String(d.publicKeyMultibase || ""))) {
+        bad.push("publicKeyMultibase is not a bls12_381-g2-pub Multikey");
+      }
       if (d.secretKeyMultibase) {
         bad.push("CARRIES secretKeyMultibase, and this endpoint needs no " +
                  "credential to read");
