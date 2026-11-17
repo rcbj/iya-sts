@@ -967,9 +967,23 @@ async function test() {
   log.info("=== 0. throwaway realms " + ids.join(", ") + " ===");
   const created = {};
   for (const id of ids) {
-    created[id] = await ok(base + "/admin-api/realms/create", { id: id,
-      domain: id + ".example.net", name: "Bootstrap " + STAMP },
-      "created the realm " + id);
+    // PROD GETS ITS OWN global.publicBaseUrl AT ITS CREATE,
+    // sts_console_bootstrap_product.js's remedy (run #300): a product realm
+    // accepts only the console's REGISTERED redirect URI, which its seed
+    // makes from that setting, and a memory-mode process has none
+    // (run-tests.sh sets STS_PUBLIC_BASE_URL for the product modes alone).
+    // Without it section B's authorization request was refused
+    // STS-OAUTH-0122 on the first local memory run, and set after the
+    // create it is too late: the seed has already written the callback.
+    // The value is the address this job reaches the service at — the same
+    // value where the process has one.
+    const made = { id: id, domain: id + ".example.net",
+                   name: "Bootstrap " + STAMP };
+    if (id === PROD) {
+      made.overrides = { "global.publicBaseUrl": base };
+    }
+    created[id] = await ok(base + "/admin-api/realms/create", made,
+                           "created the realm " + id);
   }
   await ok(base + "/realm/" + PROD + "/admin-api/config/set",
            { key: "global.mode", value: "product" },
