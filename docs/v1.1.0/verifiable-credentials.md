@@ -160,15 +160,25 @@ refused by name.
 iya-sts 1.0 labelled its `ldp_vc` proofs `bbs-2023`, but they were in a
 private format, and its holders presented them as an envelope of disclosed
 statements beside a raw BBS proof. Such a credential cannot be derived into
-a W3C proof. The Verifier still reads that envelope while
-`oid4vp.legacyBbsEnvelope` is on (the default), but only when it is labelled
-`iya-bbs-2023-legacy`. Each acceptance is logged under `STS-VC-0182`, so
-you can see who still presents one before you turn the setting off. The
-envelope labelled `bbs-2023` is refused (`STS-VC-0181`), because that name
-belongs to the W3C cryptosuite. With the setting off, the envelope is refused
-(`STS-VC-0183`). A 1.0 credential expires after `oid4vci.credentialLifetimeS`
-(thirty days by default). A refresh, or a new issuance, gives the holder a
-W3C one. Nothing issues the old format.
+a W3C proof. **By default a realm refuses a presentation in that format**,
+naming it as the pre-W3C, non-standard format (`STS-VC-0181`). The holder
+needs the credential issued again: a refresh or a new issuance gives a W3C
+one.
+
+`oid4vc.bbs2023LegacyFormat` (per realm, off by default) makes a realm use
+the old format, for a wallet that has not moved to W3C bbs-2023:
+
+* the realm **issues** its `ldp_vc` credentials in the old format, and logs
+  each one (`STS-VC-0183`);
+* it **accepts** a presentation in it, as well as W3C presentations, and logs
+  each one (`STS-VC-0182`);
+* the old format is named `iya-bbs-2023-legacy` in the issuer and Verifier
+  metadata and in the credential's proof, never `bbs-2023`.
+
+Both halves are switched together because a wallet that speaks only the old
+format needs a credential it can derive from and a Verifier that reads what
+it derives. Turn the setting off once the wallet has moved: a credential
+issued under it cannot be presented after that.
 
 ## Before you start
 

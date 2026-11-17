@@ -324,14 +324,14 @@ function publicKeyFromMultibase(value) {
 }
 
 // ---------------------------------------------------------------------------
-// THE PRE-1.1 PRIVATE FORMAT, READ AND NEVER MADE (#1878). Until 1.1.0 this
+// THE PRE-1.1 PRIVATE FORMAT, OFF BY DEFAULT (#1878). Until 1.1.0 this
 // service's `bbs-2023` was its own: every canonical statement a BBS message,
 // the header the canonical N-Quads of the proof options, the proofValue the
 // raw signature, and a presentation an envelope of disclosed statements
-// beside a raw BBS proof. No W3C implementation reads it, and nothing here
-// makes it any more. The OpenID4VP verifier still READS such an envelope,
-// only under the non-standard label `iya-bbs-2023-legacy` and only while
-// `oid4vp.legacyBbsEnvelope` is on — `oid4vc/vc_verifier.ts` argues it.
+// beside a raw BBS proof. No W3C implementation reads it. A realm issues
+// and accepts it only with `oid4vc.bbs2023LegacyFormat` on (rcbj's decision
+// on #1878), and names it `iya-bbs-2023-legacy`, never `bbs-2023` —
+// `oid4vc/vc_issuer.ts` and `oid4vc/vc_verifier.ts` argue it.
 // ---------------------------------------------------------------------------
 async function legacyCanonicalizedStatements(doc) {
   log.debug('Entering legacyCanonicalizedStatements().');
@@ -368,6 +368,49 @@ async function legacyHeaderFor(proof) {
   return te(statements.join(''));
 }
 
+// A credential in the old format: the proof options (with the document's
+// @context) canonicalized as the header, every canonical statement a
+// message. Answers the secured document, under LEGACY_CRYPTOSUITE.
+async function legacyIssue(unsecured, proofOptions, secretKey, publicKey) {
+  log.debug('Entering legacyIssue().');
+  const proof = Object.assign({ type: PROOF_TYPE,
+                                cryptosuite: LEGACY_CRYPTOSUITE,
+                                proofPurpose: 'assertionMethod' },
+                              proofOptions);
+  const document = Object.assign({}, unsecured);
+  delete document.proof;
+  const statements = await legacyCanonicalizedStatements(document);
+  const header = await legacyHeaderFor(Object.assign(
+    { '@context': document['@context'] }, proof));
+  const signature = await sign({ secretKey, publicKey, header,
+                                 messages: statements.map(te) });
+  proof.proofValue = 'u' + bytesToB64u(signature);
+  log.debug('Leaving legacyIssue().');
+  return { credential: Object.assign(document, { proof: proof }),
+           statements: statements };
+}
+
+// Its check, for the issuer's own self-test. Never throws.
+async function legacyVerifyBase(secured, publicKey) {
+  log.debug('Entering legacyVerifyBase().');
+  try {
+    const document = Object.assign({}, secured);
+    delete document.proof;
+    const statements = await legacyCanonicalizedStatements(document);
+    const header = await legacyHeaderFor(Object.assign(
+      { '@context': secured['@context'] }, secured.proof));
+    const ok = await verifySignature({
+      publicKey, signature: multibaseToBytes(secured.proof.proofValue),
+      header, messages: statements.map(te) });
+    log.debug('Leaving legacyVerifyBase(). ' + ok);
+    return { ok: ok, statements: statements };
+  } catch (e) {
+    log.debug('Caught in legacyVerifyBase(): ' + ((e && e.message) || e));
+    log.debug('Leaving legacyVerifyBase(). Refused.');
+    return { ok: false, statements: [] };
+  }
+}
+
 async function legacyVerifyDerived(publicKey, derivedProof, header,
                                    presentationHeader, disclosedStatements,
                                    disclosedIndexes) {
@@ -399,6 +442,8 @@ module.exports = {
   publicKeyFromMultibase,
   legacyCanonicalizedStatements,
   legacyHeaderFor,
+  legacyIssue,
+  legacyVerifyBase,
   legacyVerifyDerived,
   bytesToB64u,
   b64uToBytes,

@@ -1015,7 +1015,6 @@ var config = {
   // --- OID4VP ----------------------------------------------------------
   oid4vp: {
     clientId: "sts-verifier",                        // Verifier client ID
-    legacyBbsEnvelope: true,                         // Accept pre-1.1 bbs-2023 presentations
     walletInvocation: "openid4vp",                   // How a wallet app is handed a request
     requestObjectCertificateHeader: "x5u",           // Request Object certificate header
     kbMaxAgeS: 600,                                  // Key Binding max age (s)
@@ -1054,6 +1053,7 @@ var config = {
 
   // --- OID4VCI ---------------------------------------------------------
   oid4vc: {
+    bbs2023LegacyFormat: false, // Use the pre-1.1 bbs-2023 format
     walletCompatibility: false  // Wallet compatibility mode
   },
 

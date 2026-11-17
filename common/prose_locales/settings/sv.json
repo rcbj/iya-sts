@@ -6311,14 +6311,6 @@
     "en": "fad43765b51b8297",
     "text": "Det client_id som den här tjänstens Verifier presenterar i sin Authorization Request, och den `aud` som Key Binding JWT måste ange."
   },
-  "oid4vp.legacyBbsEnvelope|label": {
-    "en": "d5d9a936ecf619b3",
-    "text": "Acceptera bbs-2023-presentationer från före 1.1"
-  },
-  "oid4vp.legacyBbsEnvelope|description": {
-    "en": "4e86f1b86cc145e2",
-    "text": "Om verifieraren fortfarande accepterar en ldp_vc-presentation i det format som iya-sts 1.0 utfärdade, märkt iya-bbs-2023-legacy: en legitimation som utfärdats före 1.1.0 kan inte härledas till ett W3C bbs-2023-bevis och lever i oid4vci.credentialLifetimeS (trettio dagar som standard). Varje godkännande loggas under STS-VC-0182. Ett kuvert märkt bbs-2023 avvisas i vilket fall som helst (STS-VC-0181), eftersom bbs-2023 betecknar W3C:s kryptosvit. Ingenting utfärdar längre det gamla formatet. Avstängd avvisas det (STS-VC-0183)."
-  },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
     "text": "Plånbokens URL"
@@ -6398,6 +6390,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "Den JWS-algoritm som ett signerat Request Object signeras med under Client Identifier-prefixen pre-registered, decentralized_identifier, verifier_attestation och openid_federation (x509-prefixen använder oid4vp.x509SigningAlgorithm). Sfärnyckeln för den är den som begäran anger: i /oauth2/jwks, i DID-dokumentet, i cnf för en självutfärdad Verifier Attestation och i Entity Configurations openid_credential_verifier-jwks. RS256 som standard, vilket varje signerad begäran använde före den här inställningen. Postkvant- och kompositalgoritmerna erbjuds för en plånbok som accepterar dem; oid4vc.walletCompatibility avvisar dem, och det gör även keys.postQuantumSigning avslaget."
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "Använd bbs-2023-formatet från före 1.1"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "Låter denna sfär utfärda sina ldp_vc-legitimationer i det privata format som iya-sts 1.0 använde, och acceptera en presentation i det, för en plånbok som inte har gått över till W3C:s kryptosvit bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0). AV, standardvärdet: sfären utfärdar och accepterar endast W3C bbs-2023, och avvisar det gamla formatet med namn (STS-VC-0181). Det gamla formatet är ingen standard, ingen annan implementation läser det, och det heter iya-bbs-2023-legacy i metadata och i legitimationen, aldrig bbs-2023. W3C-presentationer accepteras fortfarande när det är på. Varje legitimation som utfärdas i det loggas under STS-VC-0183 och varje presentation som accepteras i det under STS-VC-0182. Slå på det bara medan en sådan plånbok används; en legitimation som utfärdats med det kan inte presenteras när det är av, och innehavaren behöver en ny."
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",

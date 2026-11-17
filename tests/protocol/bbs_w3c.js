@@ -40,7 +40,12 @@ const SUITE = path.join(process.env.STS_VC_SUITES_DIR || "/opt/vc-suites",
 // and the four a Multikey and a controller document are read with.
 function contexts() {
   log.debug("Entering contexts().");
-  const bbs = paths.mockStsModule("bbs2023.js");
+  // run-report.js points MOCK_STS_DIR at the repository root; this file is
+  // two levels below it otherwise.
+  const beside = path.join(__dirname, "..", "..", "common", "crypto_impl",
+                           "bbs2023.js");
+  const bbs = paths.mockStsModule("bbs2023.js") ||
+    (fs.existsSync(beside) ? beside : null);
   if (!bbs) {
     log.debug("Leaving contexts(). No service tree.");
     throw new Error("bbs_w3c.js: the service's common/crypto_impl/" +

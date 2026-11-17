@@ -2141,8 +2141,12 @@ class VcVerifier {
       'dc+sd-jwt': { 'sd-jwt_alg_values': algs,
                      'kb-jwt_alg_values': algs },
       'jwt_vc_json': { alg_values: algs },
+      // A realm on the pre-1.1 bbs-2023 format (#1878) names it by its own
+      // label beside the W3C one it still accepts — never as `bbs-2023`.
       'ldp_vc': { proof_type_values: ['DataIntegrityProof'],
                   cryptosuite_values: ['bbs-2023'].concat(
+                    config.value('oid4vc.bbs2023LegacyFormat')
+                      ? [bbs2023.LEGACY_CRYPTOSUITE] : [],
                     vcDataIntegrity.SUPPORTED_CRYPTOSUITES) },
       // Appendix B.2.2 (#935): COSE algorithm identifiers, not JOSE names,
       // for the issuer's signature and the device's.
@@ -3014,17 +3018,15 @@ class VcVerifier {
   // (`vc_issued.ts`) and whether it is still valid.
   //
   // ---------------------------------------------------------------------------
-  // **THE PRE-1.1 ENVELOPE, READ AND NEVER MADE (#1878, the transition).**
-  // `{ cryptosuite, proof, disclosedStatements, disclosedIndexes,
-  // proofOptions }` is what iya-sts 1.0 had a holder present. A credential
-  // issued then cannot be derived into a W3C proof (its signature covers
-  // every statement as a message, under another header), and lives
-  // `oid4vci.credentialLifetimeS`, thirty days by default. So the envelope
-  // is still READ, for that while, on three conditions: it is labelled
-  // `iya-bbs-2023-legacy` — never `bbs-2023`, which names the W3C
-  // cryptosuite (STS-VC-0181) — `oid4vp.legacyBbsEnvelope` is on
-  // (STS-VC-0183 otherwise), and every acceptance is logged (STS-VC-0182)
-  // so an operator can see who still presents it before turning it off.
+  // **THE PRE-1.1 FORMAT, REFUSED UNLESS A REALM ASKS FOR IT (#1878, rcbj's
+  // decision).** `{ cryptosuite, proof, disclosedStatements,
+  // disclosedIndexes, proofOptions }` is what iya-sts 1.0 had a holder
+  // present. By default a realm accepts only W3C bbs-2023, and that envelope
+  // is refused BY NAME as the pre-W3C, non-standard format (STS-VC-0181),
+  // whatever it is labelled — a 1.0 wallet labels it `bbs-2023`. A realm
+  // with `oid4vc.bbs2023LegacyFormat` on issues that format and reads it
+  // back, whichever label the wallet put on it (the envelope's shape is
+  // unambiguous), logging each acceptance (STS-VC-0182).
   // ---------------------------------------------------------------------------
   private async verifyLdpVc(presentation: any, record: any, ctx?: any) {
     const { log, vcDataIntegrity, nowSec } = this.deps;
@@ -3280,40 +3282,29 @@ class VcVerifier {
   }
 
   // ---------------------------------------------------------------------------
-  // THE PRE-1.1 ENVELOPE (#1878, the transition; `verifyLdpVc()` argues it):
-  // read only under `iya-bbs-2023-legacy` and while `oid4vp.legacyBbsEnvelope`
-  // is on, with this request's nonce as the presentation header, exactly as
-  // 1.0 checked it. Answers `{ statements, numbers }` or null.
+  // THE PRE-1.1 ENVELOPE (#1878; `verifyLdpVc()` argues it): refused unless
+  // this realm has `oid4vc.bbs2023LegacyFormat` on, and then checked exactly
+  // as 1.0 checked it, this request's nonce as the presentation header.
+  // Answers `{ statements, numbers }` or null.
   // ---------------------------------------------------------------------------
   private async verifyLegacyBbsEnvelope(envelope: any, record: any,
                                         generations: any[], checks: any[]):
     Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcVerifier.verifyLegacyBbsEnvelope().");
-    const label = String(envelope.cryptosuite || '');
-    if (label !== bbs2023.LEGACY_CRYPTOSUITE) {
+    if (!config.value('oid4vc.bbs2023LegacyFormat')) {
       log.warn(errorCodes.tag('STS-VC-0181') + 'an ldp_vc presentation in ' +
-               'the pre-1.1 envelope, labelled "' + label.slice(0, 40) +
-               '", was refused.');
-      this.vpCheck(checks, 'Format', false, 'this is the envelope iya-sts ' +
-        '1.0 had a holder present (disclosed statements beside a raw BBS ' +
-        'proof), labelled "' + label + '". bbs-2023 names the W3C ' +
-        'cryptosuite since 1.1.0, whose presentation is a reveal document ' +
-        'with an embedded proof. A credential issued before 1.1.0 may be ' +
-        'presented in this envelope labelled "' +
-        bbs2023.LEGACY_CRYPTOSUITE + '".');
-      log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope(). Label.");
-      return null;
-    }
-    if (!config.value('oid4vp.legacyBbsEnvelope')) {
-      log.warn(errorCodes.tag('STS-VC-0183') + 'an ldp_vc presentation in ' +
-               'the pre-1.1 envelope was refused: oid4vp.legacyBbsEnvelope ' +
-               'is off.');
-      this.vpCheck(checks, 'Format', false, 'the pre-1.1 envelope (' +
-        bbs2023.LEGACY_CRYPTOSUITE + ') is not accepted here: ' +
-        'oid4vp.legacyBbsEnvelope is off. Present a W3C bbs-2023 reveal ' +
-        'document of a credential issued since 1.1.0.');
-      log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope(). Off.");
+               'the pre-W3C bbs-2023 format was refused: this realm ' +
+               'accepts only W3C bbs-2023 (oid4vc.bbs2023LegacyFormat is ' +
+               'off).');
+      this.vpCheck(checks, 'Format', false, 'this is the pre-W3C, ' +
+        'non-standard bbs-2023 format iya-sts 1.0 used (disclosed ' +
+        'statements beside a raw BBS proof, here labelled "' +
+        String(envelope.cryptosuite || '').slice(0, 40) + '"). This realm ' +
+        'accepts only W3C bbs-2023 (W3C Data Integrity BBS Cryptosuites ' +
+        'v1.0): a reveal document with an embedded proof, derived from a ' +
+        'credential issued since 1.1.0. The holder needs a new credential.');
+      log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope(). Refused.");
       return null;
     }
     const proofBytes = typeof envelope.proof === 'string' ?
@@ -3330,12 +3321,13 @@ class VcVerifier {
       return null;
     }
     log.warn(errorCodes.tag('STS-VC-0182') + 'an ldp_vc presentation in ' +
-             'the pre-1.1 bbs-2023 envelope (' + bbs2023.LEGACY_CRYPTOSUITE +
-             ') is being read because oid4vp.legacyBbsEnvelope is on.');
-    this.vpCheck(checks, 'Format', true, 'the pre-1.1 envelope (' +
+             'the pre-W3C bbs-2023 format (' + bbs2023.LEGACY_CRYPTOSUITE +
+             ') is being read because oid4vc.bbs2023LegacyFormat is on in ' +
+             'this realm.');
+    this.vpCheck(checks, 'Format', true, 'the pre-W3C bbs-2023 format (' +
       bbs2023.LEGACY_CRYPTOSUITE + ', not the W3C cryptosuite), disclosing ' +
-      statements.length + ' canonical statement(s); read because ' +
-      'oid4vp.legacyBbsEnvelope is on.');
+      statements.length + ' canonical statement(s); read because this ' +
+      'realm has oid4vc.bbs2023LegacyFormat on.');
     const named = String((envelope.proofOptions || {}).verificationMethod ||
                          '');
     const ordered = generations.slice().sort(function (a: any,

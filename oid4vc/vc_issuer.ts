@@ -828,7 +828,10 @@ class VcIssuer {
       // holder's Data Integrity proof at sign-in is verified against. It said
       // `did:key` while the credential carried a `did:jwk`.
       cryptographic_binding_methods_supported: ['did:jwk'],
-      credential_signing_alg_values_supported: ['bbs-2023'],
+      // `bbs-2023`, or `iya-bbs-2023-legacy` in a realm on the pre-1.1
+      // format (#1878) — never the old format under the W3C name.
+      credential_signing_alg_values_supported:
+        this.deps.vciSigningAlgsFor(VCI_LDP_CONFIG_ID),
       // Only the algorithms a Data Integrity cryptosuite exists for: a key of
       // any other kind could be bound and never proved at presentation, so
       // the credential would verify and never sign its holder in.
@@ -2098,6 +2101,38 @@ class VcIssuer {
     if (unsignable) {
       log.debug("Leaving VcIssuer. bbs-2023 is not signed here.");
       throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
+    // THE PRE-1.1 FORMAT, IN A REALM THAT ASKED FOR IT (#1878, rcbj's
+    // decision): `oid4vc.bbs2023LegacyFormat`, off by default. The
+    // credential is signed as iya-sts 1.0 signed it, under the label
+    // `iya-bbs-2023-legacy`, and each one is logged (STS-VC-0183).
+    if (this.deps.config.value('oid4vc.bbs2023LegacyFormat')) {
+      const old = await bbs2023.legacyIssue(unsecured, {
+        verificationMethod: bbsVerificationMethod,
+        created: new Date(now * 1000).toISOString()
+      }, keys.secretKey, keys.publicKey);
+      const oldCheck = await bbs2023.legacyVerifyBase(old.credential,
+                                                      keys.publicKey);
+      if (!oldCheck.ok) {
+        log.error(errorCodes.tag('STS-VC-0079') + 'vc_issuer: the ldp_vc ' +
+                  'credential this issuer just built in the pre-1.1 format ' +
+                  'does not verify under the key that signed it (' + bbsKid +
+                  ').');
+        log.debug("Leaving VcIssuer.buildLdpVc(). It does not verify.");
+        throw new Error('the ldp_vc credential this issuer just ' +
+                        'built does not verify');
+      }
+      log.warn(errorCodes.tag('STS-VC-0183') + 'an ldp_vc credential was ' +
+               'issued in the pre-1.1 bbs-2023 format (' +
+               bbs2023.LEGACY_CRYPTOSUITE + ') because ' +
+               'oid4vc.bbs2023LegacyFormat is on in this realm.');
+      logArtifact('ldp_vc credential', 'after signing (pre-1.1 format, ' +
+                  old.statements.length + ' statements)', old.credential);
+      log.debug("Leaving VcIssuer.buildLdpVc(). The pre-1.1 format.");
+      return { credential: old.credential, disclosures: [],
+               payload: old.credential,
+               validFrom: unsecured.validFrom,
+               validUntil: unsecured.validUntil };
     }
     const pointers = this.ldpMandatoryPointers(
       String(configId || this.deps.VCI_LDP_CONFIG_ID));

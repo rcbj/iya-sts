@@ -6311,14 +6311,6 @@
     "en": "fad43765b51b8297",
     "text": "本服务的验证方在其授权请求中提供的 client_id，也是密钥绑定 JWT 必须指明的 `aud`。"
   },
-  "oid4vp.legacyBbsEnvelope|label": {
-    "en": "d5d9a936ecf619b3",
-    "text": "接受 1.1 之前的 bbs-2023 出示"
-  },
-  "oid4vp.legacyBbsEnvelope|description": {
-    "en": "4e86f1b86cc145e2",
-    "text": "验证者是否仍接受以 iya-sts 1.0 所签发格式、标记为 iya-bbs-2023-legacy 的 ldp_vc 出示：1.1.0 之前签发的凭证无法派生为 W3C bbs-2023 证明，其有效期为 oid4vci.credentialLifetimeS（默认三十天）。每次接受都以 STS-VC-0182 记录。标记为 bbs-2023 的信封无论如何都会被拒绝（STS-VC-0181），因为 bbs-2023 指的是 W3C 密码套件。已不再有任何组件签发旧格式。关闭时会拒绝它（STS-VC-0183）。"
-  },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
     "text": "钱包 URL"
@@ -6398,6 +6390,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "在 pre-registered、decentralized_identifier、verifier_attestation 和 openid_federation 客户端标识符前缀下，已签名请求对象所用的 JWS 签名算法（x509 前缀使用 oid4vp.x509SigningAlgorithm）。对应的领域密钥就是请求所指明的那把：在 /oauth2/jwks 中、在 DID 文档中、在自签发的 Verifier Attestation 的 cnf 中，以及在 Entity Configuration 的 openid_credential_verifier jwks 中。默认为 RS256，即此设置出现之前所有已签名请求所用的算法。后量子算法和组合算法也提供给接受它们的钱包；oid4vc.walletCompatibility 会拒绝它们，关闭 keys.postQuantumSigning 时也会拒绝。"
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "使用 1.1 之前的 bbs-2023 格式"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "使此领域以 iya-sts 1.0 所用的私有格式签发其 ldp_vc 凭证，并接受该格式的出示，供尚未迁移到 W3C bbs-2023 密码套件（W3C Data Integrity BBS Cryptosuites v1.0）的钱包使用。关闭（默认）：领域只签发和接受 W3C bbs-2023，并按名称拒绝旧格式（STS-VC-0181）。旧格式不是标准，没有其他实现能读取它，它在元数据和凭证中称为 iya-bbs-2023-legacy，绝不称为 bbs-2023。开启时仍接受 W3C 出示。以该格式签发的每个凭证以 STS-VC-0183 记录，以该格式接受的每次出示以 STS-VC-0182 记录。仅在使用此类钱包期间开启；在其开启时签发的凭证在关闭后无法出示，持有者需要新的凭证。"
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",

@@ -6311,14 +6311,6 @@
     "en": "fad43765b51b8297",
     "text": "El client_id que el verificador de este servicio presenta en su Authorization Request, y el `aud` que debe nombrar el Key Binding JWT."
   },
-  "oid4vp.legacyBbsEnvelope|label": {
-    "en": "d5d9a936ecf619b3",
-    "text": "Aceptar presentaciones bbs-2023 anteriores a 1.1"
-  },
-  "oid4vp.legacyBbsEnvelope|description": {
-    "en": "4e86f1b86cc145e2",
-    "text": "Si el Verificador sigue aceptando una presentación ldp_vc en el formato que emitía iya-sts 1.0, etiquetada iya-bbs-2023-legacy: una credencial emitida antes de 1.1.0 no puede derivarse en una prueba bbs-2023 del W3C y dura oid4vci.credentialLifetimeS (treinta días de forma predeterminada). Cada aceptación se registra con STS-VC-0182. Un sobre etiquetado bbs-2023 se rechaza en cualquier caso (STS-VC-0181), porque bbs-2023 nombra la suite criptográfica del W3C. Ya nada emite el formato antiguo. Desactivado, se rechaza (STS-VC-0183)."
-  },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
     "text": "URL de la billetera"
@@ -6398,6 +6390,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "El algoritmo JWS con el que se firma un Request Object firmado con los prefijos de Client Identifier pre-registered, decentralized_identifier, verifier_attestation y openid_federation (los prefijos x509 usan oid4vp.x509SigningAlgorithm). La clave del dominio para él es la que nombra la solicitud: en /oauth2/jwks, en el documento DID, en el cnf de una Verifier Attestation autoemitida y en el jwks openid_credential_verifier de la Entity Configuration. RS256 por defecto, que es lo que usaba toda solicitud firmada antes de este ajuste. Los algoritmos poscuánticos y compuestos se ofrecen para una billetera que los acepte; oid4vc.walletCompatibility los rechaza, y también keys.postQuantumSigning desactivado."
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "Usar el formato bbs-2023 anterior a 1.1"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "Hace que este reino emita sus credenciales ldp_vc en el formato privado que usaba iya-sts 1.0, y acepte una presentación en él, para una billetera que no ha pasado a la suite criptográfica bbs-2023 del W3C (W3C Data Integrity BBS Cryptosuites v1.0). DESACTIVADO, el valor predeterminado: el reino emite y acepta solo bbs-2023 del W3C, y rechaza el formato antiguo por su nombre (STS-VC-0181). El formato antiguo no es un estándar, ninguna otra implementación lo lee, y se llama iya-bbs-2023-legacy en los metadatos y en la credencial, nunca bbs-2023. Con él activado se siguen aceptando presentaciones del W3C. Cada credencial emitida en él se registra con STS-VC-0183 y cada presentación aceptada en él con STS-VC-0182. Actívelo solo mientras se use una billetera así; una credencial emitida con él no puede presentarse una vez desactivado, y su titular necesita una nueva."
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",

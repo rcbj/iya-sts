@@ -345,39 +345,62 @@ function childMain() {
          bare.code);
 
     // ==================================================================
-    // 5d-5f. THE PRE-1.1 ENVELOPE (#1878, the transition): a credential as
-    // 1.0 issued it, presented as 1.0's wallets did, inside a holder-bound
-    // presentation. Labelled `bbs-2023` it is refused, because that names
-    // the W3C cryptosuite; labelled `iya-bbs-2023-legacy` it signs in while
-    // oid4vp.legacyBbsEnvelope is on, and not once it is off.
+    // 5d-5i. THE PRE-1.1 FORMAT (#1878, rcbj's decision): refused by
+    // default whatever its label; a realm with oid4vc.bbs2023LegacyFormat
+    // on issues it — named iya-bbs-2023-legacy, never bbs-2023 — and
+    // accepts it beside W3C presentations; off again, it is refused.
     // ==================================================================
     const oldKey = w.holderKey();
-    const oldCred = await w.legacyCredential((await w.issue('fmt-alice',
-      oldKey, { format: 'ldp_vc' })).credential);
+    const w3cOfOld = (await w.issue('fmt-alice', oldKey,
+                                    { format: 'ldp_vc' })).credential;
+    const oldCred = await w.legacyCredential(w3cOfOld);
     const asW3c = await attempt('ldp_vc', oldCred, oldKey,
                                 { legacy: 'bbs-2023' });
-    note(!asW3c.ok && /iya-bbs-2023-legacy/.test(asW3c.page.text),
-         '5d. a pre-1.1 envelope labelled bbs-2023 is refused, the ' +
-         'refusal naming the legacy label (STS-VC-0181)',
+    note(!asW3c.ok && /pre-W3C/.test(asW3c.page.text),
+         '5d. by default a 1.0 presentation (its envelope labelled ' +
+         'bbs-2023) is refused, named as the pre-W3C format (STS-VC-0181)',
          asW3c.code + ' ' + asW3c.page.status);
     const asLegacy = await attempt('ldp_vc', oldCred, oldKey,
                                    { legacy: 'iya-bbs-2023-legacy' });
-    note(asLegacy.ok && asLegacy.session &&
-         asLegacy.session.user.username === 'fmt-alice',
-         '5e. labelled iya-bbs-2023-legacy, the same envelope signs ' +
-         'fmt-alice in while oid4vp.legacyBbsEnvelope is on (STS-VC-0182 ' +
-         'logged)', asLegacy.code + ' ' + asLegacy.page.status);
+    note(!asLegacy.ok && /pre-W3C/.test(asLegacy.page.text),
+         '5e. and so it is labelled iya-bbs-2023-legacy',
+         asLegacy.code + ' ' + asLegacy.page.status);
     await w.inRealm(function () {
-      m.config.setOverride('oid4vp.legacyBbsEnvelope', false);
+      m.config.setOverride('oid4vc.bbs2023LegacyFormat', true);
     });
-    const turnedOff = await attempt('ldp_vc', oldCred, oldKey,
-                                    { legacy: 'iya-bbs-2023-legacy' });
+    const advertised = await w.inRealm(function () {
+      return m.vcConfigs.vciSigningAlgsFor('IdentityCredentialLdpVc');
+    });
+    const legacyKey = w.holderKey();
+    const legacyIssued = (await w.issue('fmt-alice', legacyKey,
+                                        { format: 'ldp_vc' })).credential;
+    note(JSON.stringify(advertised) === '["iya-bbs-2023-legacy"]' &&
+         legacyIssued && legacyIssued.proof.cryptosuite ===
+           'iya-bbs-2023-legacy' &&
+         !/^u2V0C/.test(legacyIssued.proof.proofValue),
+         '5f. with oid4vc.bbs2023LegacyFormat on the realm issues the old ' +
+         'format, named iya-bbs-2023-legacy in its metadata and its proof, ' +
+         'never bbs-2023 (STS-VC-0183 logged)',
+         JSON.stringify(advertised) + ' ' +
+         (legacyIssued && legacyIssued.proof.cryptosuite));
+    const oldWallet = await attempt('ldp_vc', legacyIssued, legacyKey,
+                                    { legacy: 'bbs-2023' });
+    note(oldWallet.ok && oldWallet.session &&
+         oldWallet.session.user.username === 'fmt-alice',
+         '5g. and accepts it as a 1.0 wallet presents it (STS-VC-0182 ' +
+         'logged)', oldWallet.code + ' ' + oldWallet.page.status);
+    const stillW3c = await attempt('ldp_vc', w3cOfOld, oldKey);
+    note(stillW3c.ok,
+         '5h. a W3C presentation still signs in with the flag on',
+         stillW3c.code + ' ' + stillW3c.page.status);
     await w.inRealm(function () {
-      m.config.clearOverride('oid4vp.legacyBbsEnvelope');
+      m.config.clearOverride('oid4vc.bbs2023LegacyFormat');
     });
-    note(!turnedOff.ok && /legacyBbsEnvelope/.test(turnedOff.page.text),
-         '5f. and is refused once oid4vp.legacyBbsEnvelope is off ' +
-         '(STS-VC-0183)', turnedOff.code + ' ' + turnedOff.page.status);
+    const turnedOff = await attempt('ldp_vc', legacyIssued, legacyKey,
+                                    { legacy: 'bbs-2023' });
+    note(!turnedOff.ok && /pre-W3C/.test(turnedOff.page.text),
+         '5i. off again, a credential issued under it is refused ' +
+         '(STS-VC-0181)', turnedOff.code + ' ' + turnedOff.page.status);
 
   }
 }

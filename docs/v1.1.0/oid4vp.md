@@ -115,8 +115,8 @@ the request's nonce. Where the query asks for holder binding, a W3C
 `VerifiablePresentation` around it must carry a
 Data Integrity proof (`challenge` = the nonce, `domain` = the audience) made by
 the holder's `did:jwk`, and the presentation header may then be the nonce or
-empty. A presentation in the format iya-sts 1.0 used is read only when it is
-labelled `iya-bbs-2023-legacy` and `oid4vp.legacyBbsEnvelope` is on
+empty. A presentation in the non-standard format iya-sts 1.0 used is refused
+(`STS-VC-0181`) unless the realm has `oid4vc.bbs2023LegacyFormat` on
 ([Verifiable credentials](verifiable-credentials.md#credentials-issued-before-110)). Three cryptosuites are accepted for that proof:
 `ecdsa-jcs-2019`, `eddsa-jcs-2022` and `mldsa44-jcs-2024`.
 

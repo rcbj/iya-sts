@@ -6311,14 +6311,6 @@
     "en": "fad43765b51b8297",
     "text": "Le client_id que le vérificateur de ce service présente dans sa requête d’autorisation, et le `aud` que le Key Binding JWT doit nommer."
   },
-  "oid4vp.legacyBbsEnvelope|label": {
-    "en": "d5d9a936ecf619b3",
-    "text": "Accepter les présentations bbs-2023 antérieures à 1.1"
-  },
-  "oid4vp.legacyBbsEnvelope|description": {
-    "en": "4e86f1b86cc145e2",
-    "text": "Indique si le Vérificateur accepte encore une présentation ldp_vc au format qu'émettait iya-sts 1.0, étiquetée iya-bbs-2023-legacy : un justificatif émis avant 1.1.0 ne peut pas être dérivé en une preuve bbs-2023 du W3C et vit oid4vci.credentialLifetimeS (trente jours par défaut). Chaque acceptation est journalisée sous STS-VC-0182. Une enveloppe étiquetée bbs-2023 est refusée dans tous les cas (STS-VC-0181), car bbs-2023 désigne la suite cryptographique du W3C. Plus rien n'émet l'ancien format. Désactivé, il est refusé (STS-VC-0183)."
-  },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
     "text": "URL du portefeuille"
@@ -6398,6 +6390,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "L’algorithme JWS avec lequel est signé un Request Object signé sous les préfixes d’identifiant client pre-registered, decentralized_identifier, verifier_attestation et openid_federation (les préfixes x509 utilisent oid4vp.x509SigningAlgorithm). La clé du domaine correspondante est celle que la requête nomme : dans /oauth2/jwks, dans le document DID, dans le cnf d’une Verifier Attestation auto-émise et dans le jwks openid_credential_verifier de l’Entity Configuration. RS256 par défaut, ce qu’utilisait toute requête signée avant ce paramètre. Les algorithmes post-quantiques et composites sont proposés pour un portefeuille qui les accepte ; oid4vc.walletCompatibility les refuse, tout comme keys.postQuantumSigning désactivé."
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "Utiliser le format bbs-2023 antérieur à 1.1"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "Fait émettre à ce domaine ses justificatifs ldp_vc dans le format privé qu'utilisait iya-sts 1.0, et accepter une présentation dans ce format, pour un portefeuille qui n'est pas passé à la suite cryptographique bbs-2023 du W3C (W3C Data Integrity BBS Cryptosuites v1.0). DÉSACTIVÉ, par défaut : le domaine émet et accepte uniquement bbs-2023 du W3C, et refuse l'ancien format en le nommant (STS-VC-0181). L'ancien format n'est pas une norme, aucune autre implémentation ne le lit, et il est nommé iya-bbs-2023-legacy dans les métadonnées et dans le justificatif, jamais bbs-2023. Les présentations du W3C restent acceptées lorsqu'il est activé. Chaque justificatif émis dans ce format est journalisé sous STS-VC-0183 et chaque présentation acceptée sous STS-VC-0182. Ne l'activez que tant qu'un tel portefeuille est utilisé ; un justificatif émis sous ce réglage ne peut plus être présenté une fois celui-ci désactivé, et son détenteur en a besoin d'un nouveau."
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",

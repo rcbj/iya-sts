@@ -12671,29 +12671,6 @@ const SETTINGS = [
                  'Authorization Request, and the `aud` the Key Binding JWT ' +
                  'must name.' },
 
-  // THE PRE-1.1 bbs-2023 ENVELOPE, READ FOR A WHILE (#1878). Until 1.1.0
-  // this service's bbs-2023 was a private format; since then it is the W3C
-  // cryptosuite. A credential issued in the old format cannot be turned into
-  // a W3C derived proof (its signature covers different messages), so a
-  // holder of one may still present it, as the old envelope, but only under
-  // the non-standard label `iya-bbs-2023-legacy` — never as `bbs-2023` — and
-  // each acceptance is logged under STS-VC-0182. `oid4vc/vc_verifier.ts`
-  // argues it.
-  { key: 'oid4vp.legacyBbsEnvelope', group: 'OID4VP',
-    label: 'Accept pre-1.1 bbs-2023 presentations',
-    env: 'OID4VP_LEGACY_BBS_ENVELOPE', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'Whether the Verifier still accepts an ldp_vc ' +
-                 'presentation in the format iya-sts 1.0 issued, labelled ' +
-                 'iya-bbs-2023-legacy: a credential issued before 1.1.0 ' +
-                 'cannot be derived into a W3C bbs-2023 proof, and lives ' +
-                 'oid4vci.credentialLifetimeS (thirty days by default). ' +
-                 'Every acceptance is logged under STS-VC-0182. An ' +
-                 'envelope labelled bbs-2023 is refused either way ' +
-                 '(STS-VC-0181), because bbs-2023 names the W3C ' +
-                 'cryptosuite. Nothing issues the old format any more. Off ' +
-                 'refuses it (STS-VC-0183).' },
-
   { key: 'oid4vp.walletUrl', group: 'OID4VP', label: 'Wallet URL',
     env: 'OID4VP_WALLET_URL', type: 'string',
     dflt: function () {
@@ -12839,6 +12816,38 @@ const SETTINGS = [
                  'for a wallet that accepts them; ' +
                  'oid4vc.walletCompatibility refuses them, and so does ' +
                  'keys.postQuantumSigning off.' },
+
+  // THE PRE-1.1 bbs-2023 FORMAT, PER REALM AND OFF (#1878, rcbj: "add a
+  // flag to use the old format per realm"). Until 1.1.0 this service's
+  // bbs-2023 was a private format; since then it is the W3C cryptosuite, and
+  // a realm issues and accepts only that. A realm with this on ISSUES its
+  // ldp_vc credentials in the old format and also ACCEPTS the old envelope
+  // (as well as W3C presentations): the old format exists only for wallets
+  // that implement it, and such a wallet needs both halves — a credential it
+  // can derive from, and a Verifier that reads what it derives. The old
+  // format is labelled `iya-bbs-2023-legacy` wherever this service names it,
+  // never `bbs-2023`. Every use is logged (STS-VC-0182, STS-VC-0183).
+  // `oid4vc/CLAUDE.md` argues it.
+  { key: 'oid4vc.bbs2023LegacyFormat', group: 'OID4VCI',
+    label: 'Use the pre-1.1 bbs-2023 format',
+    env: 'OID4VC_BBS2023_LEGACY_FORMAT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Makes this realm issue its ldp_vc credentials in the ' +
+                 'private format iya-sts 1.0 used, and accept a ' +
+                 'presentation in it, for a wallet that has not moved to ' +
+                 'the W3C bbs-2023 cryptosuite (W3C Data Integrity BBS ' +
+                 'Cryptosuites v1.0). OFF, the default: the realm issues ' +
+                 'and accepts only W3C bbs-2023, and refuses the old ' +
+                 'format by name (STS-VC-0181). The old format is not a ' +
+                 'standard, no other implementation reads it, and it is ' +
+                 'named iya-bbs-2023-legacy in the metadata and in the ' +
+                 'credential, never bbs-2023. W3C presentations are still ' +
+                 'accepted with it on. Every credential issued in it is ' +
+                 'logged under STS-VC-0183 and every presentation accepted ' +
+                 'in it under STS-VC-0182. Turn it on only while such a ' +
+                 'wallet is in use; a credential issued under it cannot be ' +
+                 'presented once it is off, and its holder needs a new ' +
+                 'one.' },
 
   { key: 'oid4vc.walletCompatibility', group: 'OID4VCI',
     label: 'Wallet compatibility mode',

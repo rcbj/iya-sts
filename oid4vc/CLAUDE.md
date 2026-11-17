@@ -1830,17 +1830,25 @@ the Multikey and, READ ONLY, the old format. The at-risk features (headers
   challenge and domain, B.1.3.2.5 — it may be the nonce or empty, never
   anything else (STS-VC-0185).
 
-**THE TRANSITION (the conservative choice, recorded on #1878).** A 1.0
-credential cannot be derived into a W3C proof, and lives
-`oid4vci.credentialLifetimeS` (30 days by default). So the old envelope is
-still READ (`verifyLegacyBbsEnvelope()`) on three conditions: it is labelled
-`iya-bbs-2023-legacy` — never `bbs-2023`, which names W3C's (STS-VC-0181) —
-`oid4vp.legacyBbsEnvelope` is on (the default, for compatibility;
-STS-VC-0183 when off), and each acceptance is logged (STS-VC-0182). It is
-never ISSUED. An un-updated 1.0 wallet labels its envelope `bbs-2023` and is
-therefore refused: that is the cost of rcbj's "never as plain bbs-2023", and
-the refusal names the label it would be read under. Removing the reader is a
-later decision, rcbj's.
+**THE TRANSITION IS rcbj's DECISION (#1878, 2026-11-17).** By default a
+realm issues and accepts only W3C bbs-2023, and the old envelope is refused
+BY NAME as the pre-W3C, non-standard format (STS-VC-0181), whatever it is
+labelled (a 1.0 wallet labels it `bbs-2023`). Credentials issued by 1.0
+cannot be presented; their holders need a reissue. **`oid4vc.bbs2023LegacyFormat`**
+(per realm, off; "add a flag to use the old format per realm") makes a realm
+USE the old format, which here means BOTH halves: it ISSUES `ldp_vc` in it
+(`bbs2023.legacyIssue()`, self-checked by `legacyVerifyBase()`, STS-VC-0183
+per credential) and ACCEPTS the envelope (`verifyLegacyBbsEnvelope()`,
+STS-VC-0182 per presentation), W3C presentations still accepted beside it.
+Both, because the only reason for the flag is a wallet that speaks only the
+old format, and such a wallet needs a credential it can derive from as much
+as a Verifier that reads what it derives; verify-only would serve nobody
+once the 1.0 credentials (30 days by default) expired. **The old format is
+never named `bbs-2023`**: the credential's proof says `iya-bbs-2023-legacy`,
+and so do the issuer metadata's `credential_signing_alg_values_supported`
+(`vciSigningAlgsFor()`) and the Verifier's `cryptosuite_values` (beside
+`bbs-2023`). A 1.0 wallet that checks the proof's label would not take such a
+credential: the price of that rule, and named in the flag's description.
 
 **THE TESTS ARE AGAINST WHAT NOBODY HERE WROTE** (`tests/vc_bbs2023.js`):
 the specification's TestVectors, byte for byte for everything but the BBS

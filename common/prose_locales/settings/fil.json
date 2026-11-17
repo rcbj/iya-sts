@@ -6311,14 +6311,6 @@
     "en": "fad43765b51b8297",
     "text": "Ang client_id na ipinapakita ng Verifier ng serbisyong ito sa Authorization Request nito, at ang `aud` na dapat pangalanan ng Key Binding JWT."
   },
-  "oid4vp.legacyBbsEnvelope|label": {
-    "en": "d5d9a936ecf619b3",
-    "text": "Tanggapin ang mga bbs-2023 presentation bago ang 1.1"
-  },
-  "oid4vp.legacyBbsEnvelope|description": {
-    "en": "4e86f1b86cc145e2",
-    "text": "Kung tumatanggap pa ang Verifier ng ldp_vc presentation sa format na inisyu ng iya-sts 1.0, na may label na iya-bbs-2023-legacy: ang credential na inisyu bago ang 1.1.0 ay hindi maaaring gawing W3C bbs-2023 proof, at tumatagal ng oid4vci.credentialLifetimeS (tatlumpung araw bilang default). Bawat pagtanggap ay itinatala sa ilalim ng STS-VC-0182. Ang envelope na may label na bbs-2023 ay tinatanggihan sa alinmang kaso (STS-VC-0181), dahil pinangangalanan ng bbs-2023 ang W3C cryptosuite. Wala nang nag-iisyu ng lumang format. Kapag naka-off, tinatanggihan ito (STS-VC-0183)."
-  },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
     "text": "URL ng wallet"
@@ -6398,6 +6390,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "Ang JWS algorithm na ipinapampirma sa naka-sign na Request Object sa ilalim ng mga Client Identifier prefix na pre-registered, decentralized_identifier, verifier_attestation at openid_federation (ginagamit ng mga x509 prefix ang oid4vp.x509SigningAlgorithm). Ang realm key para rito ay ang pinapangalanan ng request: sa /oauth2/jwks, sa DID document, sa cnf ng sariling-isyung Verifier Attestation at sa openid_credential_verifier jwks ng Entity Configuration. RS256 bilang default, na siyang ginamit ng bawat naka-sign na request bago ang setting na ito. Inaalok ang mga post-quantum at composite algorithm para sa wallet na tumatanggap sa mga ito; tinatanggihan sila ng oid4vc.walletCompatibility, at ganoon din kapag naka-off ang keys.postQuantumSigning."
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "Gamitin ang bbs-2023 format bago ang 1.1"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "Pinapaisyu sa realm na ito ang mga ldp_vc credential nito sa pribadong format na ginamit ng iya-sts 1.0, at pinapatanggap ang isang presentation dito, para sa wallet na hindi pa lumilipat sa W3C bbs-2023 cryptosuite (W3C Data Integrity BBS Cryptosuites v1.0). NAKA-OFF, ang default: nag-iisyu at tumatanggap lamang ang realm ng W3C bbs-2023, at tinatanggihan ang lumang format ayon sa pangalan (STS-VC-0181). Hindi pamantayan ang lumang format, walang ibang implementasyong bumabasa nito, at tinatawag itong iya-bbs-2023-legacy sa metadata at sa credential, hindi kailanman bbs-2023. Tinatanggap pa rin ang mga W3C presentation kapag naka-on ito. Bawat credential na inisyu rito ay itinatala sa ilalim ng STS-VC-0183 at bawat presentation na tinanggap dito sa ilalim ng STS-VC-0182. I-on lamang ito habang ginagamit ang ganoong wallet; ang credential na inisyu habang naka-on ito ay hindi maipapakita kapag naka-off na, at kailangan ng may-hawak ng bago."
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",
