@@ -5479,6 +5479,15 @@ const NOT_DRIVEN_HERE = {
   // scope and reads the CAEP event it sends off a poll stream.
   "POST /device-compliance": "sts_devices.js drives it with an MDM client " +
     "holding the device:compliance scope, and checks the event it sends",
+  // A REMOTE PEP'S DECISION RECORDS (#1827). Its token carries
+  // xacml:pep-audit and nothing else, its subject the PEP's own entry in
+  // REMOTE_PEPS, so this run's admin:write token is refused there by
+  // design. The PEP containers push them: sts_xacml_pep_proxy_cluster.js
+  // reads each member's pushed rows back off the audit log, and
+  // sts_admin_closed_sets.js mints a PEP's token to probe its body.
+  "POST /pep-audit": "the remote PEP containers push it, and " +
+    "sts_xacml_pep_proxy_cluster.js reads the rows they pushed back off " +
+    "the audit log",
   // A RISK DATASET UPLOAD (#215). Driven by `sts_admin_risk_upload.js`: the
   // body is the dataset FILE itself, streamed and never parsed as JSON, so
   // this file's example-replaying walk has no shape to send it in, and what
