@@ -24531,10 +24531,13 @@ const CODES = [
     summary: 'A remote PEP could not apply one part of a listener\'s ' +
       'tuning. A TLS knob the library refused keeps the acceptor already ' +
       'served, or serves the certificate without that knob when none is ' +
-      'served yet. sessionTimeoutS other than 300 is left at 300 seconds ' +
-      'and the other settings are applied. A thread-pool worker that does ' +
-      'not start leaves the workers already running (#1760).',
-    spec: 'none — an error in the PEP\'s log' },
+      'served yet. sessionTimeoutS is not applied (the PEP\'s TLS library ' +
+      'has no safe session-lifetime call), so a session lives OpenSSL\'s ' +
+      '7200 seconds; any other value is logged once per value, as a ' +
+      'warning, and the other settings are applied. A thread-pool worker ' +
+      'that does not start leaves the workers already running (#1760).',
+    spec: 'none — an error in the PEP\'s log (a warning for ' +
+      'sessionTimeoutS)' },
   { code: 'STS-XPEP-0120',
     summary: 'A remote PEP was nudged with `full` within a poll interval of ' +
       'its last full pull, so it pulled as usual: a full pull is honoured ' +

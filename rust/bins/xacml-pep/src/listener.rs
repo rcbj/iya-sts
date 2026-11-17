@@ -464,17 +464,29 @@ fn apply_tls_knobs(
         builder.set_session_cache_mode(SslSessionCacheMode::SERVER);
         builder.set_session_cache_size(tuning.session_cache_size as i32);
     }
-    // openssl 0.10 has no safe SSL_CTX_set_timeout, and this crate forbids
-    // unsafe. OpenSSL's own default is 300s, which is this service's
-    // default, so a listener left alone matches. A different value is
-    // recorded and not applied; the other knobs still are.
-    if tuning.session_timeout_s != 300 {
-        tracing::error!(
-            "{}xacml-pep: sessionTimeoutS {} is not applied. This PEP's \
-             TLS library has no session-lifetime call, so a session lives \
-             300 seconds. The listener's other settings are applied.",
+    // THE SESSION LIFETIME IS OPENSSL'S, AND IT IS NOT 300 s (2026-11-16).
+    // The `openssl` crate (0.10.82, the newest) binds no
+    // `SSL_CTX_set_timeout`, and this crate forbids unsafe code, so
+    // `sessionTimeoutS` cannot be set — not for the TLS 1.2 session cache
+    // and not as a TLS 1.3 ticket's lifetime, which is the same value.
+    // The only binding of it in the workspace is `sts-crypto`'s
+    // `set_session_timeout` on #444's branch, the one place unsafe code is
+    // allowed; until this crate can call it, a session lives OpenSSL's own
+    // [`OPENSSL_SESSION_TIMEOUT_S`] (2 hours for TLS, not the 300 s this
+    // comment used to claim; a test reads it off a real session), and
+    // every other value is logged once. The cache size and the other
+    // knobs are applied.
+    if session_timeout_unapplied(tuning.session_timeout_s)
+        && first_time_for(tuning.session_timeout_s)
+    {
+        tracing::warn!(
+            "{}xacml-pep: sessionTimeoutS {} is not applied: this PEP's TLS \
+             library has no safe session-lifetime call, so a TLS session \
+             (and a TLS 1.3 ticket) lives OpenSSL's {} seconds. The \
+             listener's other settings are applied. Logged once per value.",
             tag("STS-XPEP-0119"),
-            tuning.session_timeout_s
+            tuning.session_timeout_s,
+            OPENSSL_SESSION_TIMEOUT_S
         );
     }
     // THE SERVER CHOOSES (2026-11-16). `set_alpn_protos` is the CLIENT's
@@ -492,6 +504,29 @@ fn apply_tls_knobs(
     builder.set_alpn_select_callback(move |_, offered| {
         select_next_proto(ours, offered).ok_or(AlpnError::NOACK)
     });
+}
+
+/// The lifetime OpenSSL gives a TLS session (and a TLS 1.3 ticket) when
+/// nothing sets one: `SSL_CTX_set_timeout`'s default for the TLS methods.
+pub const OPENSSL_SESSION_TIMEOUT_S: u64 = 7200;
+
+/// Whether `sessionTimeoutS` differs from the lifetime in force.
+fn session_timeout_unapplied(asked: u64) -> bool {
+    asked != OPENSSL_SESSION_TIMEOUT_S
+}
+
+/// True the first time a value is seen in this process, so the warning is
+/// logged once per value rather than on every pull that rebuilds an
+/// acceptor.
+fn first_time_for(asked: u64) -> bool {
+    use std::collections::HashSet;
+    use std::sync::OnceLock;
+    static LOGGED: OnceLock<Mutex<HashSet<u64>>> = OnceLock::new();
+    LOGGED
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(asked)
 }
 
 /// The protocols a listener with HTTP/2 on selects from, in its order
@@ -1636,6 +1671,22 @@ mod tests {
             "http2 off never selects h2"
         );
         assert_eq!(negotiate(&off, b"\x02h2").0, None, "no overlap, no ALPN");
+    }
+
+    /// THE SESSION LIFETIME OPENSSL GIVES, which `sessionTimeoutS` cannot
+    /// change from this crate (no safe `SSL_CTX_set_timeout`, and unsafe
+    /// code is forbidden here): every value gives the same lifetime, and
+    /// it is [`OPENSSL_SESSION_TIMEOUT_S`], which the warning names.
+    #[test]
+    fn the_session_lifetime_is_openssls_whatever_is_asked() {
+        let mut tuning = Tuning::defaults("api", true);
+        let (_, default) = negotiate(&tuning, b"\x08http/1.1");
+        tuning.session_timeout_s = 120;
+        let (_, asked) = negotiate(&tuning, b"\x08http/1.1");
+        assert_eq!(default, asked, "sessionTimeoutS changes nothing");
+        assert_eq!(default as u64, OPENSSL_SESSION_TIMEOUT_S);
+        assert!(session_timeout_unapplied(120));
+        assert!(!session_timeout_unapplied(OPENSSL_SESSION_TIMEOUT_S));
     }
 
     /// REQUIRED WITH NO TRUST SOURCE IS REFUSED, FAIL-CLOSED (2026-11-16):

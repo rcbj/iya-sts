@@ -2413,11 +2413,8 @@ configuration->Listeners", the HTTPS listener there now as the default, and
   and does not start workers. Defaults: the decision API starts 4 workers
   and may grow to 32; a reverse proxy starts 16 and may grow to 128, the
   highest. `api-http` uses the API defaults even when the process serves
-  only CRLs. `sessionTimeoutS` other than 300 is logged (`STS-XPEP-0119`)
-  and left at OpenSSL's 300 seconds, because this crate forbids the unsafe
-  call that would set it; the listener's other settings are still applied.
-  A knob the library refuses is the same code. When a pair is already
-  served, that refusal keeps the previous acceptor.
+  only CRLs. A knob the library refuses is `STS-XPEP-0119`. When a pair
+  is already served, that refusal keeps the previous acceptor.
 * **WHAT EACH KNOB DOES, AND THE ONES THAT DID NOT (2026-11-16).** The
   cluster job's listener table (`tests/protocol/sts_xacml_pep_proxy_cluster.js`)
   observes every knob on the wire and found some held and not applied:
@@ -2456,6 +2453,19 @@ configuration->Listeners", the HTTPS listener there now as the default, and
     while `http2` is on (hyper's auto builder answers the preface).
     `listener::tests::alpn_selects_h2_when_the_listener_offers_it`,
     `listeners::tests::alpn_offering_h2_negotiates_h2`.
+  * **`sessionTimeoutS` — STILL NOT APPLIED, and the reason is the only
+    one left.** The `openssl` crate (0.10.82, the newest) binds no
+    `SSL_CTX_set_timeout`, and the workspace forbids unsafe code here. That
+    one value is both the TLS 1.2 cache's lifetime and a TLS 1.3 ticket's,
+    so neither part can be set. OpenSSL's default for the TLS methods is
+    **7200 s, not the 300 s this file used to say** (a session's own
+    `timeout()` says so), so every value but 7200, the service's 300
+    default included, is logged once per value as a warning
+    (`STS-XPEP-0119`). The binding exists on #444's branch
+    (`sts_crypto::pq::set_session_timeout`, the one place unsafe code is
+    allowed); when `sts-crypto` reaches develop the PEP calls it in
+    `apply_tls_knobs()` and the warning goes.
+    `listener::tests::the_session_lifetime_is_openssls_whatever_is_asked`.
 * **THE HEARTBEAT'S `listeners` IS THE WHOLE REPORT.** `report()` is
   `{ listeners, memory?, paths? }`, and that object is what the heartbeat
   assigns to `listeners`. Each listener carries `stats`: accepted, open,

@@ -1962,6 +1962,12 @@ its settings as follows (since 1.1.0):
   not bound at all, and the PEP logs why (`STS-XPEP-0137`, also `GET /`'s
   `https.problem` for the environment's). Until 1.1.0 such an API listener
   asked nobody for a certificate and admitted everybody.
+* **`sessionCacheSize`** is applied to the TLS session cache.
+* **`sessionTimeoutS` is not applied.** The PEP's TLS library binding has
+  no safe call to set a session's lifetime, so a TLS session (and a TLS 1.3
+  session ticket) lives OpenSSL's own 7200 seconds whatever the value. The
+  PEP logs each value other than 7200 once (`STS-XPEP-0119`); the listener's
+  other settings are still applied.
 
 ### A listener's own page
 
@@ -2001,10 +2007,10 @@ grow to 32. `api-http` uses those API defaults even when the process
 serves only CRLs; saving 1 and 4 is how that port is given the smaller
 pool. An empty field is the built-in default. TLS 1.2 is off unless the
 form turns it on, so the minimum version is TLS 1.3. `sessionTimeoutS` is
-stored with the listener. This PEP's TLS library has no session-lifetime
-call, so a value other than 300 is logged (`STS-XPEP-0119`) and a session
-lives OpenSSL's 300 seconds, which is also this service's default. The
-listener's other settings are still applied. A post-quantum-only listener
+stored with the listener and not applied: a session lives OpenSSL's 7200
+seconds ([What each setting does on the
+wire](#what-each-setting-does-on-the-wire)). The listener's other settings
+are still applied. A post-quantum-only listener
 whose cipher, group or signature list has nothing post-quantum is refused
 on save (`STS-XACML-0281`).
 
