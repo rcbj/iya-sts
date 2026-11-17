@@ -39,6 +39,15 @@
 //      synchronous header is empty, and `certificateHeaderForAsync()` — what
 //      the OpenID4VCI credential signers call — answers with the `x5c` all
 //      the same, because it reads the store and asks for the certificate.
+//   C. A REQUEST WAITS FOR ITS REALM'S NEW KEYS TO BE CERTIFIED (2026-11-17).
+//      A set made by a read is certified by `certifyLater()` a moment later,
+//      and a document signed in between carried no `x5u` where the next
+//      fetch did (`tests/authzen_model_wire.js`, GitHub run 44173065871).
+//      `prepareKeySet()` — `app.js`'s middleware — resolves only once a
+//      certification in flight has landed, and `runInPreparedRealm()` —
+//      the inserted-form metadata handlers — runs its function in a realm
+//      whose keys are made and certified. Asserted with no polling: the
+//      certificate is there the moment each resolves.
 //
 // **IN A CHILD** for `tests/jose_certificate_header.js`'s reason: loading the
 // whole stack into `run.js`'s one process builds a certificate authority and
@@ -201,6 +210,38 @@ function childMain() {
     });
     note(Object.keys(none).length === 0,
          'B4. an HMAC signature still gets nothing, and waits for nothing');
+
+    // ---- C. a request waits for its realm's new keys to be certified ------
+    const C = 'latebranch-c';
+    const madeC = realms.create({ id: C });
+    note(madeC && madeC.ok, 'C0. a realm created here',
+         JSON.stringify(madeC && madeC.errors));
+    const keysC = realms.run(realms.get(C), function () {
+      return helpers.stsKeysFor.of(C);
+    });
+    note(!certified(C, 'RS256'),
+         'C1. a key set a read has just made is not certified yet — its ' +
+         'certification is scheduled, not done');
+    await helpers.prepareKeySet(C);
+    const certC = pki.certificateFor(C, 'jose', 'RS256');
+    note(!!certC && certC.kid === keysC.kid,
+         'C2. prepareKeySet() resolves once that certification has landed, ' +
+         'so the request it lets through signs with a certified key',
+         certC ? certC.kid + ' / ' + keysC.kid : '(no certificate)');
+    const D = 'latebranch-d';
+    const madeD = realms.create({ id: D });
+    note(madeD && madeD.ok, 'C3. a second realm created here',
+         JSON.stringify(madeD && madeD.errors));
+    const seen = await helpers.runInPreparedRealm(realms.get(D), function () {
+      const keysD = helpers.stsKeysFor();
+      const certD = pki.certificateFor(D, 'jose', 'RS256');
+      return { realm: realms.currentId(), kid: keysD.kid,
+               certKid: certD ? certD.kid : '' };
+    });
+    note(seen.realm === D && !!seen.certKid && seen.certKid === seen.kid,
+         'C4. runInPreparedRealm() runs in the realm with its keys made ' +
+         'and certified, as a request in the realm\'s prefix is',
+         JSON.stringify(seen));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

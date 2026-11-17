@@ -1466,8 +1466,46 @@ function plainKeySet(realmId, stored) {
 // a function of its own so that the `require` stays lazy — see
 // `certifiedView()` — and so that the fire-and-forget is written down once
 // rather than at each of the three places a key set is built.
+//
+// **AND IT LEAVES A PROMISE BEHIND, WHICH A REQUEST WAITS ON (2026-11-17).**
+// The factory that calls this is a property read and cannot wait, so the
+// first signature under a new key went out before the certification landed
+// and carried no `x5c` or `x5u` — and the NEXT one, a few milliseconds
+// later, usually did. The same document, signed by the same key, fetched
+// twice, with two different headers: `tests/authzen_model_wire.js` had
+// recorded that race as the AuthZEN metadata's wire (the first fetch without
+// `x5u`, the second with it) and failed on GitHub the one time the
+// certification lost it (PR run 44173065871). A PEP refetching the document
+// would have seen the same flip. So the certification in flight is kept here
+// per realm, and `prepareKeySet()` — the request middleware every request
+// passes before a handler reads a key — waits for it, bounded by
+// `CERTIFICATE_WAIT_MS`. A read that cannot wait still signs at once, as
+// before; it is the requests that no longer do.
+const certifying = new Map();   // realm id -> promise of the certification
+
 function certifyLater(realmId, keys) {
   log.debug("Entering certifyLater().");
+  const id = String(realmId || '');
+  /** @type {{ resolve: (() => void) | null }} */
+  const deferred = { resolve: null };
+  const done = new Promise(function (resolve) {
+    deferred.resolve = function () {
+      resolve(undefined);
+    };
+  });
+  certifying.set(id, done);
+  // Settled whichever way the certification ends; a later set's promise for
+  // the same realm is left in place.
+  const finish = function () {
+    log.debug("Entering finish().");
+    if (certifying.get(id) === done) {
+      certifying.delete(id);
+    }
+    if (deferred.resolve) {
+      deferred.resolve();
+    }
+    log.debug("Leaving finish().");
+  };
   setImmediate(function () {
     let pki = null;
     try {
@@ -1478,6 +1516,7 @@ function certifyLater(realmId, keys) {
       // No certificate authority in this process. The key set keeps the
       // self-signed certificate it was born with, which is what this service
       // did before the hierarchy existed.
+      finish();
       return;
     }
     // **NOT `certifyKeySet()` DIRECTLY (2026-11-04).** A realm created at
@@ -1513,9 +1552,18 @@ function certifyLater(realmId, keys) {
                   'certified under its Issuing CAs: ' + e.message + '. They ' +
                   'still SIGN — what they lack is a certificate chaining to ' +
                   'this service\'s Root.');
-      });
+      }).then(finish);
   });
   log.debug("Leaving certifyLater().");
+}
+
+// The certification `certifyLater()` has in flight for a realm's key set, or
+// null. A map lookup: `prepareKeySet()` asks it on every request made while
+// any realm's certification is in flight.
+function certificationInFlight(realmId) {
+  log.debug("Entering certificationInFlight().");
+  log.debug("Leaving certificationInFlight().");
+  return certifying.get(String(realmId || '')) || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2934,20 +2982,37 @@ function generateRsaPairAsync(bits, asPem) {
  * Makes a realm's key set in the background where it does not exist yet, so the
  * read that follows does not generate synchronously. Never rejects.
  *
+ * Where the set was made here, the promise also waits — bounded by
+ * `CERTIFICATE_WAIT_MS` — for its certification, so the request that follows
+ * signs with a certified key; `options.awaitCertificate` false skips that,
+ * for a caller that reads the set and signs nothing.
+ *
  * @param realmId - the realm
+ * @param options - optionally `{ awaitCertificate }`, true unless false
  * @returns a promise resolving once the set is held (false when there was
  * nothing to prepare)
  */
-function prepareKeySet(realmId) {
+function prepareKeySet(realmId, options) {
   log.debug("Entering prepareKeySet(). realm=" + realmId);
   const id = String(realmId || '');
+  const awaitCertificate = !(options && options.awaitCertificate === false);
   if (!keySetNeedsMaking(id)) {
+    // HELD — BUT PERHAPS NOT YET CERTIFIED (2026-11-17): a set a read made
+    // a moment ago, by whatever road, whose certification `certifyLater()`
+    // has in flight. A request signing now would carry no `x5c` or `x5u`
+    // where the next one does; see that function's header.
+    if (awaitCertificate && certifying.size) {
+      log.debug("Leaving prepareKeySet(). Held; any certification in " +
+                "flight is awaited.");
+      return thenCertified(id, Promise.resolve(false));
+    }
     log.debug("Leaving prepareKeySet(). Nothing to make.");
     return Promise.resolve(false);
   }
   if (preparing.has(id)) {
     log.debug("Leaving prepareKeySet(). Already under way.");
-    return preparing.get(id);
+    return awaitCertificate ? thenCertified(id, preparing.get(id))
+                            : preparing.get(id);
   }
   const realm = realmForKeys(id);
   const started = Date.now();
@@ -2997,7 +3062,56 @@ function prepareKeySet(realmId) {
   });
   preparing.set(id, work);
   log.debug("Leaving prepareKeySet(). Generating.");
-  return work;
+  return awaitCertificate ? thenCertified(id, work) : work;
+}
+
+// `answer` once the certification `certifyLater()` has in flight for the
+// realm's set, if any, has landed or `CERTIFICATE_WAIT_MS` has passed — so
+// the request `prepareKeySet()` lets through signs with a certified key
+// (2026-11-17, `certifyLater()`'s header). Asked AFTER `answer` settles,
+// because that is when a set made by it has scheduled its certification.
+// Nothing is in flight where the factory took a stored or a sibling's set.
+function thenCertified(realmId, answer) {
+  log.debug("Entering thenCertified().");
+  log.debug("Leaving thenCertified().");
+  return answer.then(function (made) {
+    const pending = certificationInFlight(realmForKeys(realmId).id);
+    if (!pending) {
+      return made;
+    }
+    return withinCertificateWait(pending).then(function () {
+      return made;
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A HANDLER THAT ENTERS A REALM THE PATH NAMES AFTER THE PREFIX (2026-11-17).
+//
+// The RFC 8414 inserted forms — `/.well-known/<document>/realm/<id>` —
+// arrive at the host root, so `app.js`'s key-set middleware prepared the
+// DEFAULT realm's keys and the handler enters the named one itself. Its keys,
+// on a realm's first request, were then generated inside the handler and the
+// document signed before `certifyLater()` had certified them: no `x5u`, where
+// the appended form a moment later carried one (`tests/authzen_model_wire.js`
+// recorded exactly that). This runs `fn` in the realm once its key set is
+// prepared and certified, as the middleware does for a realm in the prefix.
+// ---------------------------------------------------------------------------
+/**
+ * Runs `fn` in `realm` once that realm's key set is held and any certification
+ * of it in flight has landed (bounded), as `app.js`'s middleware does for the
+ * realm a path's prefix names. Never rejects on the preparation.
+ *
+ * @param realm - the realm, as `realms.get()` answers it
+ * @param fn - what to run in it
+ * @returns a promise of what `fn` returns
+ */
+function runInPreparedRealm(realm, fn) {
+  log.debug("Entering runInPreparedRealm().");
+  log.debug("Leaving runInPreparedRealm().");
+  return prepareKeySet(realm.id).then(function () {
+    return realms.run(realm, fn);
+  });
 }
 
 // Several realms ONE AFTER ANOTHER, yielding to the event loop between them —
@@ -3016,8 +3130,10 @@ function prepareKeySets(realmIds) {
   const ids = (realmIds || []).slice();
   let chain = Promise.resolve();
   ids.forEach(function (id) {
+    // A list reads each set's `kid` and signs nothing, so it does not wait
+    // for a certification in flight; a request in the realm still does.
     chain = chain.then(function () {
-      return prepareKeySet(id);
+      return prepareKeySet(id, { awaitCertificate: false });
     }).then(function () {
       return new Promise(function (resolve) {
         setImmediate(resolve);
@@ -9497,6 +9613,7 @@ module.exports = {
   publicJwkOfKid: publicJwkOfKid,
   prepareKeySet: prepareKeySet,
   prepareKeySets: prepareKeySets,
+  runInPreparedRealm: runInPreparedRealm,
   log: log,
   logArtifact: logArtifact,
   headersOf: headersOf,

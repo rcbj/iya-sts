@@ -39,7 +39,8 @@
       "header": {
        "alg": "RS256",
        "typ": "JWT",
-       "kid": "<kid>"
+       "kid": "<kid>",
+       "x5u": "https://<port>/pki/chain/azwire/<digest>.pem"
       },
       "claims": {
        "policy_decision_point": "https://<port>/realm/azwire",
@@ -4623,7 +4624,8 @@
       "header": {
        "alg": "RS256",
        "typ": "JWT",
-       "kid": "<kid>"
+       "kid": "<kid>",
+       "x5u": "https://<port>/pki/chain/azwirep/<digest>.pem"
       },
       "claims": {
        "policy_decision_point": "https://<port>/realm/azwirep",

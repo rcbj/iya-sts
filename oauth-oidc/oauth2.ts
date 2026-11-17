@@ -477,6 +477,7 @@ interface OAuth2ServerDeps {
   userFor: typeof helpers.userFor;
   hasScope: typeof helpers.hasScope;
   signingKeyFor: typeof helpers.signingKeyFor;
+  runInPreparedRealm: typeof helpers.runInPreparedRealm;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
   publishedKidFor: typeof helpers.publishedKidFor;
   nameForSubject: typeof helpers.nameForSubject;
@@ -1561,6 +1562,7 @@ class OAuth2Server {
       userFor: helpers.userFor,
       hasScope: helpers.hasScope,
       signingKeyFor: helpers.signingKeyFor,
+      runInPreparedRealm: helpers.runInPreparedRealm,
       certificateHeaderFor: helpers.certificateHeaderFor,
       publishedKidFor: helpers.publishedKidFor,
       nameForSubject: helpers.nameForSubject,
@@ -2606,10 +2608,24 @@ class OAuth2Server {
       next();
       return;
     }
-    realms.run(target.realm, function () {
+    // Once the realm's keys are made and certified, where the path named a
+    // realm after the prefix — `app.js` prepared the one in the prefix only,
+    // and a document signed meanwhile carries no x5c or x5u and is cached
+    // (`helpers.runInPreparedRealm()`).
+    const answer = function () {
       req.__asProfile = self.profileFromPath(target.server);
       send(req, res);
-    });
+    };
+    if (target.realm === realms.current()) {
+      realms.run(target.realm, answer);
+    } else {
+      self.deps.runInPreparedRealm(target.realm, answer)
+        .catch(function (e: any) {
+          log.debug("Caught in OAuth2Server.discoveryForPath(): " +
+                    ((e && e.message) || e));
+          next(e);
+        });
+    }
     log.debug("Leaving OAuth2Server.discoveryForPath().");
   }
 
