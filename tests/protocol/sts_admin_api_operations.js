@@ -4071,6 +4071,10 @@ async function thePersonDeleteRoundTrip() {
                   mail: username + "@admin-api-operations.test" },
     credential: "password", password: MINT_PASSWORD
   }, "created the person to delete");
+  // Made here, so ensureTokenParties() must not make them again (it would
+  // be refused, one entry per person): the arrangement of
+  // theDirectoryAndSignOutDoorsRoundTrip(), which this one lacked.
+  mintedParties["realm:user:" + username] = true;
   const tokens = await mintTokens(username, "logout-client-" + REALM);
   assert.ok(await introspectActive(tokens.access),
     "the person's access token should introspect active before the delete");
