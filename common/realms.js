@@ -2846,6 +2846,21 @@ function declareHandle(options, shape, accessors) {
     // -----------------------------------------------------------------------
     tombstone: options.tombstone === true,
     mergeRow: typeof options.mergeRow === 'function' ? options.mergeRow : null,
+    // -----------------------------------------------------------------------
+    // `mergeOnApply: true` (2026-11-17, the cells mode's
+    // `sts_jar_admin_client`): another process's row is MERGED into the copy
+    // this process holds, through `mergeRow`, rather than put over it
+    // (`persistence_minted.js`'s `applyLocally()`). A row is read when its
+    // change-log page is prepared and applied later, so the row that arrives
+    // can be older than a write this process committed meanwhile, or than
+    // one it has not flushed yet; replaced whole, that write is gone from
+    // here, and a pending one is then flushed as the older row. Only for a
+    // store whose merge never keeps an older state over a newer one — a
+    // state that only moves forward, removals as tombstones — which is what
+    // a request reading the row straight after its own write needs.
+    // -----------------------------------------------------------------------
+    mergeOnApply: options.mergeOnApply === true &&
+      typeof options.mergeRow === 'function',
     // ---------------------------------------------------------------------
     // `observation: true` (2026-09-15, #46): a write to this store is a TALLY
     // of what a request did — a decision counted — and not a thing the

@@ -2167,6 +2167,14 @@ const CODES = [
       'process keeps the realm as it was until a later change applies, ' +
       'and does not write its copy back over the store.',
     spec: 'none — logged; the request that wrote it was already answered' },
+  // 2026-11-17, the cells mode's sts_jar_admin_client:
+  // persistence/persistence_minted.js, mergedWithHeld().
+  { code: 'STS-STORE-0175',
+    summary: 'A minted row another process wrote could not be merged into ' +
+      'the copy this process holds (the store\'s merge threw), so the ' +
+      'arriving row replaced the held copy, as it did before such rows ' +
+      'were merged.',
+    spec: 'none — logged' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +

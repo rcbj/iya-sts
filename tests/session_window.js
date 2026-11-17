@@ -1648,6 +1648,145 @@ async function onHalf(t) {
   log.debug("Leaving onHalf().");
 }
 
+// A change-log key for a row of any minted store.
+function storeChangeKey(handle, key) {
+  log.debug("Entering storeChangeKey().");
+  log.debug("Leaving storeChangeKey().");
+  return Buffer.from(handle).toString('base64url') + '.' +
+    Buffer.from(key).toString('base64url');
+}
+
+// The last body a flush wrote for one journal key, opened; null if none.
+function lastWritten(journalKey) {
+  log.debug("Entering lastWritten().");
+  const written = upsertsOf(journalKey);
+  let body = null;
+  try {
+    body = written.length
+      ? JSON.parse(keystore.open(written[written.length - 1].body,
+                                 'minted-rows'))
+      : null;
+  } catch (e) {
+    log.debug("Caught in lastWritten(): " + ((e && e.message) || e));
+    body = null;
+  }
+  log.debug("Leaving lastWritten().");
+  return body;
+}
+
+// A sealed account-set row, as another process's flush wrote it.
+function sealAccountSet(value) {
+  log.debug("Entering sealAccountSet().");
+  log.debug("Leaving sealAccountSet().");
+  return keystore.seal(JSON.stringify(value), 'minted-rows',
+                       tiers.mintedTierOf('authn.accountSets'),
+                       { realm: REALM });
+}
+
+// FOUND CHASING THE CELLS MODE'S `sts_jar_admin_client` (runs
+// 43762819441, 43996600299, 44025839154, 2026-11-17). A service of several
+// cells runs with the session window OFF (`sessionWindow.active()` needs
+// one cell), and so does `authn.sessionWindow: off` anywhere. With it off, another process's
+// row went through `applyLocally()` to the store's plain `restore()`,
+// which REPLACED the held copy whole: the window's merges (2026-11-14,
+// 2026-11-16) are on the window's own path only. A row read before this
+// process's sign-in committed and applied after it put the arrival back
+// over the sign-in; one applied while the sign-in's write was pending
+// replaced it, and the flush then wrote the arrival; an account set copied
+// before the sign-in joined it dropped the session that had just joined.
+// Either way the selection ticket the sign-in handed out would name a
+// session not live in this browser (STS-AUTHN-0346). A store that merges
+// (`mergeRow`) now merges the arriving row into the held copy, and a real
+// change made elsewhere still lands.
+async function windowOffMergeCase(t) {
+  log.debug("Entering windowOffMergeCase().");
+  t.log.info('off, persisted: another process\'s row is merged into the ' +
+             'copy held here, never put over it');
+  const AccountSets = require('../authn/account_sets');
+  t.equal(sessionWindow.active(), false,
+          'the window is off, as in a service of several cells');
+  clearSessions();
+  await minted.flush();
+
+  // 1. A sign-in that committed here, and the arrival read before it.
+  const one = arrivalAndSignIn('off-stale-after-commit');
+  authn.sessions.set(one.signedIn.id, one.signedIn);
+  await minted.flush();
+  answer.read = { body: sealSession(one.arrival) };
+  await minted.applyChange({ key: changeKey(one.arrival.id), realm: REALM });
+  const held = authn.sessions.get(one.arrival.id);
+  t.check(liveSignOn(held),
+          'A COMMITTED SIGN-IN STAYS ONE: the stale arrival is merged into ' +
+          'it, not put over it', JSON.stringify(held));
+  t.equal(held && held.lastSeenAt, 500,
+          'and the arriving row\'s later lastSeenAt is kept');
+
+  // 2. The same, with the sign-in's own write not yet flushed.
+  const two = arrivalAndSignIn('off-stale-pending');
+  authn.sessions.set(two.signedIn.id, two.signedIn);
+  answer.read = { body: sealSession(two.arrival) };
+  await minted.applyChange({ key: changeKey(two.arrival.id), realm: REALM });
+  t.check(liveSignOn(authn.sessions.get(two.arrival.id)),
+          'A PENDING SIGN-IN STAYS ONE too',
+          JSON.stringify(authn.sessions.get(two.arrival.id)));
+  captured.upserts.length = 0;
+  await minted.flush();
+  t.check(liveSignOn(lastWritten(two.arrival.id)),
+          'and its flush writes the sign-in, not the arrival',
+          JSON.stringify(lastWritten(two.arrival.id)));
+
+  // 3. The other way round: a clean arrival here still becomes a sign-in
+  // another process made.
+  const three = arrivalAndSignIn('off-upgraded-elsewhere');
+  authn.sessions.set(three.arrival.id, three.arrival);
+  await minted.flush();
+  answer.read = { body: sealSession(three.signedIn) };
+  await minted.applyChange({ key: changeKey(three.arrival.id),
+                             realm: REALM });
+  t.check(liveSignOn(authn.sessions.get(three.arrival.id)),
+          'a clean arrival still becomes the sign-in another process made',
+          JSON.stringify(authn.sessions.get(three.arrival.id)));
+
+  // 4. The browser's account set, and a copy from before the sign-in
+  // joined it.
+  const row = AccountSets.fresh();
+  AccountSets.addSession(row, 'off-older', { sub: 'urn:uuid:off-older',
+    username: 'off-older', displayName: 'off-older' });
+  AccountSets.rotate(row);
+  const stale = JSON.parse(JSON.stringify(row));
+  AccountSets.addSession(row, one.signedIn.id, {
+    sub: one.signedIn.user.sub, username: one.signedIn.user.username,
+    displayName: one.signedIn.user.username });
+  AccountSets.rotate(row);
+  AccountSets.save(row);
+  await minted.flush();
+  answer.read = { body: sealAccountSet(stale) };
+  await minted.applyChange({
+    key: storeChangeKey('authn.accountSets', row.id), realm: REALM });
+  const set = AccountSets.byId(row.id);
+  t.check(!!(set && set.sessions && set.sessions[one.signedIn.id] &&
+             set.sessions['off-older']),
+          'AN ACCOUNT SET KEEPS THE SESSION THAT HAD JUST JOINED IT when ' +
+          'an older copy arrives', JSON.stringify(set));
+
+  // 5. And a session another process ENDED leaves the set here.
+  const ended = JSON.parse(JSON.stringify(set || row));
+  AccountSets.endSession(ended, 'off-older', Date.now());
+  answer.read = { body: sealAccountSet(ended) };
+  await minted.applyChange({
+    key: storeChangeKey('authn.accountSets', row.id), realm: REALM });
+  const after = AccountSets.byId(row.id);
+  t.check(!!(after && after.sessions && !after.sessions['off-older'] &&
+             after.sessions[one.signedIn.id]),
+          'while a session another process ended leaves it',
+          JSON.stringify(after));
+  answer.read = null;
+  AccountSets.remove(row.id);
+  clearSessions();
+  await minted.flush();
+  log.debug("Leaving windowOffMergeCase().");
+}
+
 // Rows that exist only in the index stub. The realm map stays empty, so a
 // walk that reads the cache and stops cannot see them.
 function partialWalkCase(t) {
@@ -2265,6 +2404,13 @@ async function body(t, dir) {
     });
     await realms.run(made.realm, function () {
       return refusalCases(t, dir);
+    });
+    // The window OFF with minted persistence on: a service of several
+    // cells, or `authn.sessionWindow: off`.
+    windowSetting('off');
+    sessionWindow.resetForTests();
+    await realms.run(made.realm, function () {
+      return windowOffMergeCase(t);
     });
   } finally {
     try {

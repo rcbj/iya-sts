@@ -1696,6 +1696,33 @@ declares two things at `realms.map()` (`common/realms.js`):
   unless a newer local write is already journalled. `authn/CLAUDE.md` carries
   the session rule; `oauth2_bcp.refreshTokens` keeps `rotated` moving forward
   only. A merge that cannot open the row writes this copy (`STS-STORE-0056`).
+* `mergeOnApply: true` (2026-11-17), beside `mergeRow` — another process's
+  row is MERGED into the copy this process holds when it is applied
+  (`applyLocally()`'s `mergedWithHeld()`), not put over it. **Until then
+  every applied row replaced the held copy whole**, and a row is read when
+  its change-log page is prepared and applied later, so it can be older than
+  a write this process committed in between, or than one still in its
+  journal — the first was gone from this process until the next change, the
+  second was then flushed as the older row. The session window had merged
+  into its own copies since 2026-11-14/16 (`authn/session_window.ts`,
+  `considerApply()`), but the window is off in a service of several cells
+  (or with `authn.sessionWindow: off`), and there an arrival could go back
+  over a sign-in and an account set lose the session that had just joined
+  it — the selection ticket then names a session not live here
+  (STS-AUTHN-0346). Found while chasing `sts_jar_admin_client` in the cells
+  mode, whose cells are one process each. Declared by `authn.sessions` and
+  `authn.accountSets`,
+  whose merges never keep an older state over a newer one (a state that only
+  moves forward, removals as tombstones). With the window on, the window's
+  own decision stands for sessions. A merge that throws takes the arriving
+  row (`STS-STORE-0175`). **The other `mergeRow` stores still take the
+  arriving row whole** — `oauth2_bcp.refreshTokens`, `admin_stats.tokenHolders`,
+  `oauth2.opaqueAccessTokens`, `oauth2.cibaRequests`, the delivery queues
+  (`oauth2.cibaDeliveries`, `oauth2.backchannelDeliveries`,
+  `oauth2.commandDeliveries`, `scimClient.deliveries`, `cells.deliveries`,
+  `mail.outbox`) and `scheduler.runs` — and a store that declares it owes a
+  merge that converges from an OLDER arriving row too.
+  `tests/session_window.js`, `windowOffMergeCase()`.
 
 Tombstones expire with `persistence.mintedRetention` (0 keeps them with
 everything else): `purgeTombstones()`, at most every ten minutes from a
