@@ -76,7 +76,7 @@ interface FooterFacts {
  */
 const LINKS = [
   { key: 'documentation', english: 'Documentation',
-    href: 'https://rcbj.github.io/iya-sts/' },
+    href: 'https://rcbj.github.io/iya-sts/v1.1.0/' },
   { key: 'contact', english: 'Contact',
     href: 'https://github.com/rcbj/iya-sts/issues' },
   { key: 'about', english: 'About',

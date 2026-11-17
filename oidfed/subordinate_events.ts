@@ -31,8 +31,8 @@
 // The draft defines `registration`, `metadata_update`,
 // `metadata_policy_update`, `jwks_update`, `revocation` and `suspension`, and
 // says a federation operator MAY define more, documented where the operator
-// documents its federation. Four more are recorded here, and `docs/oidfed.md`
-// documents them:
+// documents its federation. Four more are recorded here, and
+// `docs/v1.1.0/oidfed.md` documents them:
 //
 //   reinstatement           a suspended subordinate reinstated — the draft
 //                           has a way in to suspension and none out, and a
@@ -96,7 +96,7 @@ const EVENTS = Object.freeze({
   JWKS_UPDATE: 'jwks_update',
   REVOCATION: 'revocation',
   SUSPENSION: 'suspension',
-  // This service's own (see the header), documented in docs/oidfed.md.
+  // This service's own (see the header), documented in docs/v1.1.0/oidfed.md.
   REINSTATEMENT: 'reinstatement',
   CONSTRAINTS_UPDATE: 'constraints_update',
   TRUST_MARK_ISSUANCE: 'trust_mark_issuance',

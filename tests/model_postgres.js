@@ -278,7 +278,7 @@ function run(t) {
   t.check(tableClass.indexOf('z.strictObject') >= 0,
     'the table class parses with strictObject');
   sameText(t, ModelEmit.persistenceDocs(model),
-    fs.readFileSync(path.join(ROOT, 'docs',
+    fs.readFileSync(path.join(ROOT, 'docs', 'v1.1.0',
       'data-model-persistence.md'), 'utf8'),
     'the persistence reading page matches the model');
   log.debug("Leaving run().");

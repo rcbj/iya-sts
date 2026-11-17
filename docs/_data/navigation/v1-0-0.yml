@@ -7,7 +7,15 @@
 # navigable. A page that is not listed here is still built
 # and still reachable by a link; it simply has no place in the sidebar.
 #
-# `url` is the page's built address: `foo.md` is served as `/foo.html`.
+# THE NAVIGATION OF ONE DOCUMENTATION VERSION, docs/v1.0.0/. The sidebar
+# picks this file by the page's first path segment and puts `/v1.0.0` in
+# front of every `url`, so a url here is the page's address INSIDE its
+# version folder: `v1.0.0/foo.md` is served as `/v1.0.0/foo.html` and listed
+# as `/foo.html`. `unversioned: true` marks the one item that is not in
+# a version folder: the API reference, which pages.yml adds at /api/.
+#
+# Taken from main at 7907e7e86, the 1.0.0 site, with only the
+# `unversioned` marker added; like docs/v1.0.0/ it is not edited.
 - section: Start here
   items:
     - { title: Overview, url: / }
@@ -42,7 +50,7 @@
     - { title: Token samples, url: /token-samples.html }
     - { title: Error codes, url: /error-codes.html }
     - { title: OpenAPI reference, url: /openapi/ }
-    - { title: API reference (generated from the source), url: /api/ }
+    - { title: API reference (generated from the source), url: /api/, unversioned: true }
 
 - section: OAuth 2.0 and OpenID Connect
   items:
@@ -172,7 +180,6 @@
     - { title: PKI, url: /pki.html }
     - { title: Signer truststore, url: /signer-truststore.html }
     - { title: PKI use cases, url: /pki-use-cases.html }
-    - { title: Signature algorithms, url: /crypto.html }
     - { title: ACME, url: /acme.html }
     - { title: EST, url: /est.html }
     - { title: SCEP, url: /scep.html }
@@ -187,23 +194,6 @@
     - { title: Management API, url: /management-api.html }
     - { title: Account API, url: /account-api.html }
 
-- section: Protocol debugger
-  items:
-    - { title: The protocol debugger, url: /debugger/ }
-    - { title: Accessing the debugger, url: /debugger/access.html }
-    - { title: What a protocol debugger is, url: /debugger/what-is-a-protocol-debugger.html }
-    - { title: The OAuth2 / OIDC workflow, url: /debugger/oauth2-oidc/ }
-    - { title: OAuth 2.0 authorization grants, url: /debugger/oauth2-oidc/oauth2-grants.html }
-    - { title: OpenID Connect authentication flows, url: /debugger/oauth2-oidc/oidc-flows.html }
-    - { title: Dynamic client registration, url: /debugger/oauth2-oidc/dynamic-client-registration.html }
-    - { title: "Token detail, introspection, UserInfo, JWKS", url: /debugger/oauth2-oidc/related-tools.html }
-    - { title: The SAML workflow, url: /debugger/saml.html }
-    - { title: SAML Assertion Tool, url: /debugger/saml-assertion.html }
-    - { title: SAML decoders, url: /debugger/saml-decoders.html }
-    - { title: The WS-Trust workflow, url: /debugger/wstrust.html }
-    - { title: JWT Tools, url: /debugger/jwt-tools.html }
-    - { title: Digital Signature, url: /debugger/digital-signature.html }
-
 - section: Operating it
   items:
     - { title: The compose stack, url: /docker-compose.html }
@@ -213,7 +203,6 @@
     - { title: Caches, url: /caches.html }
     - { title: How the cluster works, url: /cluster-concepts.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
-    - { title: A CDN in front of a cloud deployment, url: /cdn.html }
     - { title: Several regions (cells), url: /cells.html }
     - { title: How cells work, url: /cells-concepts.html }
 

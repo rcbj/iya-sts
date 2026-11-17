@@ -250,8 +250,8 @@ class AuthzenCatalogue {
       return { code: 'STS-AUTHZEN-0011',
                problem: 'context.' + segments[0] + ' is read by the OAuth ' +
                         'token-exchange binding\'s fixed conversion rules ' +
-                        '(docs/authzen.md), which a catalogue row may add ' +
-                        'to but never override' };
+                        '(docs/v1.1.0/authzen.md), which a catalogue row ' +
+                        'may add to but never override' };
     }
     const attributeId = text('attributeId');
     if (!rowsGrammar.idShaped(attributeId)) {

@@ -16,7 +16,7 @@
 // an authorization server, and inventing one would make every resource
 // server depend on this one being up for every operation. So this module is
 // what a resource server does, written once as the reference, and
-// `docs/gnap.md` points an RS author at it. Its one caller was the
+// `docs/v1.1.0/gnap.md` points an RS author at it. Its one caller was the
 // demonstration resource server's `POST /gnap/rs/spend`, which #593
 // (2026-10-12) deleted — the test peer plays a GNAP resource server and keeps
 // its own totals — so no route of this service spends through it now.

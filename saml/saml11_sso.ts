@@ -534,8 +534,8 @@ const assertionsById = realms.map({ persist: 'saml11_sso.assertionsById',
                                     expiresAt: realms.expiryField('expires',
                                                                   1) });
 
-// Described to `/admin/caches` (#74, rule 3ap), in `docs/caches.md`'s other
-// protocols. A register of issued assertions more than a cache — an entry
+// Described to `/admin/caches` (#74, rule 3ap), in `docs/v1.1.0/caches.md`'s
+// other protocols. A register of issued assertions more than a cache — an entry
 // cannot be rebuilt — and listed because that document lists it. A hit is an
 // AssertionIDReference answered.
 const assertionsCount = cacheRegistry.register({

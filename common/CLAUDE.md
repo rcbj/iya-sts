@@ -20,7 +20,7 @@ more than one family needs it, not because it felt general.
 | `app.js` | The express app and every middleware. Requiring it is how a protocol module gets somewhere to register. |
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
-| `error_codes.js` | **THE ONE TABLE OF EVERY FAILURE CONDITION (2026-09-12)** — `STS-<SUBSYSTEM>-<NNNN>`, by subsystem, with what the client sees beside each. `mark()`, `tag()`, and the generator for `docs/error-codes.md`. A LEAF that requires nothing. See below. |
+| `error_codes.js` | **THE ONE TABLE OF EVERY FAILURE CONDITION (2026-09-12)** — `STS-<SUBSYSTEM>-<NNNN>`, by subsystem, with what the client sees beside each. `mark()`, `tag()`, and the generator for `docs/v1.1.0/error-codes.md`. A LEAF that requires nothing. See below. |
 | `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
 | `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
@@ -3894,7 +3894,7 @@ copy of it — and it would have changed the path the parent project's
 lives in `common/config.js`, which no supported customisation replaces, and it
 is not the "constant buried in a module" the refusal was written against: it is
 the same value `/admin/config`, `GET /admin-api/config`, the OpenAPI `default`
-property and `docs/configuration.md`'s table already publish as the default, and
+property and `docs/v1.1.0/configuration.md`'s table already publish as the default, and
 a value taken from it says so (`source: 'default'`). So:
 
 * **a setting an older `env/defaults.js` lacks takes the `dflt`**, and the start
@@ -3938,7 +3938,7 @@ carries `logLevel` and nothing else of ours).
 env/generate_defaults.js` writes it from the `dflt` column. Two copies of a
 default is one copy that will be wrong, and wrong in the quietest way — the
 service running on one value while the console, the OpenAPI document's
-`default` property and `docs/configuration.md`'s table all report the other.
+`default` property and `docs/v1.1.0/configuration.md`'s table all report the other.
 That generator
 neutralises `process.exit` for the length of its own `require` of this module,
 because a row being added may be half-written when it runs; the bypass is in the
@@ -4037,7 +4037,7 @@ with `CONFIG_FILE` pointing at the TEST suite's config.
 `app.js` or `spnego.js` needs it; missing, the failure is `Cannot find module
 './config'` before any test has run. **IT NEEDS `env/` AS A WHOLE DIRECTORY
 TOO**, and that line is in place over there since the 2026-08-28 repair (see
-`docs/parent-project-migration.md`): this module requires `env/defaults.js` by
+`docs/v1.1.0/parent-project-migration.md`): this module requires `env/defaults.js` by
 absolute path off the package root whatever `CONFIG_FILE` says, so narrowing the
 copy to the one file a job names puts every in-process job back to dying at load
 with `Cannot find module` naming a file the operator never mentioned.
@@ -4344,7 +4344,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    LDAP result code, a KRB-ERROR, a gRPC status, a SOAP fault, a failed outbound
    request, a store that cannot be written, a startup refusal — has a code
    `STS-<SUBSYSTEM>-<NNNN>` in the ONE table in `common/error_codes.js`,
-   organised by protocol subsystem or major component. `docs/error-codes.md` is
+   organised by protocol subsystem or major component. `docs/v1.1.0/error-codes.md` is
    generated from it. It goes on the audit row (`errorCode`, filterable at
    `/admin/audit?code=` and `GET /admin-api/audit?code=`) and at the front of a
    log line. It is never in a response body, header or redirect, and **it
@@ -7658,7 +7658,7 @@ KEYS* block; what a caller needs:
   week. **A DEK of this process's own scope that will not unwrap at START is
   fatal** (`STS-KEYS-0091`), for the signing key's reason.
 
-`docs/encryption-at-rest.md` is the operator-facing half.
+`docs/v1.1.0/encryption-at-rest.md` is the operator-facing half.
 
 ### A START'S UNWRAPS GO TOGETHER, OVER KEPT CONNECTIONS (#639, 2026-10-15)
 
@@ -8159,7 +8159,7 @@ them.
   soft-fails accepts them all, a revoked one included. Keeping the replaced
   authorities' keys to go on signing their lists is the fix, and it is not
   built: the Root is replaced so that the old one is no longer trusted, and
-  `docs/pki.md` tells the operator to remove it.
+  `docs/v1.1.0/pki.md` tells the operator to remove it.
 
 **What is still re-certified whatever was revoked: the realm's own LIVE
 signing keys.** `certifyKeySet()` (a build, a rotation, a start) and
@@ -8802,7 +8802,7 @@ Five decisions are in the code and worth knowing before changing it:
   a tier or row from before the field existed, reads the setting.
 
 The size is the cost: about 7 KB per CA certificate and 4.6 KB per leaf with
-ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
+ML-DSA-87. `docs/v1.1.0/pki.md` says what that does to a TLS handshake and to an
 `x5c` header. CRLs and OCSP responses stay classical, rcbj's decision on
 #68 (2026-09-26): no published profile defines an alternative signature on
 either, so nothing could verify one. `tests/pki_hybrid.js` holds all of it,
@@ -9558,7 +9558,7 @@ and the debugger another realm's `pki.paranoid` and `pki.paranoidTlsClient` deci
 nothing, in either direction (`tls_server.js`'s `holdToPathRules()` and
 `holdConnectionsOn()`). The cell channel asks `cell-peer` with no realm. SPIFFE's
 sockets have no such hold (the next paragraph): the realm's row decides only whether
-the SPIRE Server API may bind plain. `docs/tls.md` says all of this.
+the SPIRE Server API may bind plain. `docs/v1.1.0/tls.md` says all of this.
 
 **SPIFFE's gRPC socket is `spiffe-svid`'s (Phase 5)**: it turns `rejectUnauthorized`
 off and `spiffe_auth.ts` verifies what arrived itself, so there is no OpenSSL verdict
@@ -12676,7 +12676,7 @@ each argued there:
 Registration that works in every browser. The mechanisms above need a key a
 browser will not give a web page. **A remembered browser is weaker, and every
 surface says so.** It is a device whose only credential is a BEARER cookie. The
-design, and the user-facing account, are in `docs/devices.md` under
+design, and the user-facing account, are in `docs/v1.1.0/devices.md` under
 *Remembered browsers*. rcbj's decisions:
 * an HttpOnly cookie;
 * an opt-in "Remember this browser" checkbox;
@@ -13029,7 +13029,7 @@ a descriptor. The page asks the registry when it is drawn. A store added
 tomorrow therefore appears the day it registers, and nothing has to remember
 to add a row.
 
-What `docs/caches.md` lists is what is registered, in its two kinds:
+What `docs/v1.1.0/caches.md` lists is what is registered, in its two kinds:
 - **`cache`**: something that could be rebuilt (a fetch, a parse, the
   directory, the key store).
 - **`replay`**: a store that makes a one-time value work once.
@@ -13106,7 +13106,7 @@ Five decisions:
     (`acme.maxSpentNonces`, 10,000)**: each store is whole in every process
     of every node, per realm (#339). The three replay stores REFUSE at the
     bound, so the lower number costs throughput (about 16 or 33 requests a
-    second, `docs/caches.md`) and never the replay window; the register
+    second, `docs/v1.1.0/caches.md`) and never the replay window; the register
     fails closed, so it costs a wallet its sign-in. VC status entries
     (131,072) were left alone: that bound is the status list's size.
   - **The Kerberos long-term keys are bounded by PRINCIPALS**: at most 4,096
@@ -13189,7 +13189,7 @@ cache registry when handed one, a row carrying the key as `rowOf` shows it and
 never the value. A leaf (rule 3): the registry arrives through the
 constructor. **Nothing in the service builds one yet** — the directory window
 is #349's next phase, behind its own setting — so it has no row in
-`docs/caches.md` until something does. `tests/bounded_lru.js`.
+`docs/v1.1.0/caches.md` until something does. `tests/bounded_lru.js`.
 
 
 ### `sync_query.ts` and `sync_query_thread.ts`: A SYNCHRONOUS QUESTION TO THE STORE (#349 phase 3, 2026-09-29)
@@ -13325,7 +13325,7 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   administrator's reset link, because a request anybody can make must not be
   able to lock somebody out. It mails only a VERIFIED address by default
   (`mail.resetRequiresVerifiedAddress` — most secure by default, with the
-  weaker setting warned about in docs/mail.md). **Since #64 it asks for
+  weaker setting warned about in docs/v1.1.0/mail.md). **Since #64 it asks for
   THREE things by default** (`mail.resetRequiresBackupCode`, rcbj's D4): the
   username, the verified address on the account, and one of the person's
   recovery codes, which is SPENT when all three are right — so one code cannot
@@ -13361,7 +13361,7 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
 `smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it
-over HTTP into the Mailpit the compose stack runs. docs/mail.md is the
+over HTTP into the Mailpit the compose stack runs. docs/v1.1.0/mail.md is the
 operator's guide.
 
 ## 3bd. `authn_policy.ts` and `admin-core/policy_kinds.ts`: THE AUTHENTICATION POLICY, AND ONE POLICIES PAGE FOR EVERY KIND (#64, 2026-09-23)
@@ -13516,7 +13516,7 @@ later.
 by a THIRD policy kind on Directory → Policies, per realm and inherited from
 the default realm; browser sign-in is refused unless the realm allows it; and
 its password may ROTATE, pushed to a secrets manager first and committed only
-after, with the previous password kept for an overlap. `docs/service-accounts.md`
+after, with the previous password kept for an overlap. `docs/v1.1.0/service-accounts.md`
 is the operator's page; each file's header argues its part.
 
 * **FOR GOOD (rcbj, 2026-11-15): "Once a user is established as a service
@@ -15820,7 +15820,7 @@ file's header is the argument; what a maintainer must not undo:
   first tick that visits it.
 * **A GAP IS A MISSING BOOKMARK, AND `seq` ARITHMETIC IS THE WRONG TEST.**
   `seq` is leased in blocks. A numeric gap is unused space in another
-  worker's block (`docs/admin-console.md`). The cursor keeps `nextSeq`, the
+  worker's block (`docs/v1.1.0/admin-console.md`). The cursor keeps `nextSeq`, the
   event this process meant to send next. On a later tick, already primed,
   when that event is gone and `cursor.seq` is still below it, the bookmark
   was trimmed. One episode increments `droppedGap` and writes one
@@ -16034,7 +16034,7 @@ response is validated against it, always.** There is no setting, in either mode.
 
 ## ASVS 5.0.0 Level 1 (#1438-#1460)
 
-Three modules exist for it. `docs/product-security.md` is the user's account.
+Three modules exist for it. `docs/v1.1.0/product-security.md` is the user's account.
 
 **`cookie_wire.ts` runs in the main thread**, right after `enterRealm` and
 before the request pool routes on a cookie's name: a worker is behind a unix

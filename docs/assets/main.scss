@@ -20,6 +20,34 @@ $sidebar-width: 270px;
 .site-logo { display: block; height: 48px; width: auto; }
 .site-tagline { color: $grey-color; font-size: $small-font-size; }
 
+// The version switcher, at the right of the header (_includes/header.html).
+.version-switcher {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: $small-font-size;
+  a { color: $grey-color-dark; }
+}
+.version-label { color: $grey-color; }
+.version-current {
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: lighten($brand-color, 40%);
+  color: darken($brand-color, 15%);
+  font-weight: 600;
+}
+
+// The line an older version's pages open with (_layouts/default.html).
+.version-notice {
+  margin-top: $spacing-unit * 0.5;
+  padding: 6px 12px;
+  border-left: 4px solid $brand-color;
+  background: lighten($grey-color-light, 5%);
+  font-size: $small-font-size;
+}
+
 .site-body {
   display: flex;
   align-items: flex-start;

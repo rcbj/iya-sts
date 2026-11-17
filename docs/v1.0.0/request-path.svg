@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC -->
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 330" width="1340" height="330"
+     font-family="Helvetica, Arial, sans-serif" font-size="12" role="img"
+     aria-labelledby="title desc">
+  <title id="title">Where a request waits on its way to a worker</title>
+  <desc id="desc">A request passes the main port's listen backlog, then in the
+  front process the ticket wait, the barrier and the per-worker connection
+  pool, then in a request worker thread the socket backlog, the event loop,
+  the handler and the commit to PostgreSQL, and the answer returns to the
+  client. Brackets above the stages show which phase of the request phases
+  log line measures each.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7"
+            markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3e4c59"/>
+    </marker>
+  </defs>
+  <rect width="1340" height="330" fill="#ffffff"/>
+
+  <!-- Containers -->
+  <rect x="260" y="30" width="440" height="215" rx="10" fill="#eef2f7"
+        stroke="#9aa5b1"/>
+  <text x="275" y="52" font-weight="bold" font-size="14" fill="#1f2933">Front process</text>
+  <text x="400" y="52" fill="#52606d">owns the listeners; one thread</text>
+
+  <rect x="746" y="46" width="490" height="215" rx="10" fill="#f3f6ea"
+        stroke="#b5c09a"/>
+  <rect x="738" y="38" width="490" height="215" rx="10" fill="#f3f6ea"
+        stroke="#b5c09a"/>
+  <rect x="730" y="30" width="490" height="215" rx="10" fill="#f3f6ea"
+        stroke="#8a9a5b"/>
+  <text x="745" y="52" font-weight="bold" font-size="14" fill="#1f2933">Request worker thread</text>
+  <text x="922" y="52" fill="#52606d">× workers.requestCount; one thread each</text>
+
+  <!-- Phase brackets: which phase of the log line measures each stage -->
+  <g fill="#b44d12" stroke="#b44d12" font-weight="bold" text-anchor="middle">
+    <path d="M275,92 v-6 h120 v6" fill="none"/>
+    <text x="335" y="80" stroke="none">ticket</text>
+    <path d="M415,92 v-6 h120 v6" fill="none"/>
+    <text x="475" y="80" stroke="none">barrier</text>
+    <path d="M555,92 v-6 h425 v6" fill="none"/>
+    <text x="767" y="80" stroke="none">queue</text>
+    <path d="M995,92 v-6 h100 v6" fill="none"/>
+    <text x="1045" y="80" stroke="none">handler</text>
+    <path d="M1110,92 v-6 h95 v6" fill="none"/>
+    <text x="1157" y="80" stroke="none">commit</text>
+  </g>
+
+  <!-- Client -->
+  <rect x="20" y="125" width="80" height="60" rx="30" fill="#ffffff"
+        stroke="#3e4c59" stroke-width="1.5"/>
+  <text x="60" y="160" text-anchor="middle" font-weight="bold">Client</text>
+
+  <!-- Stages -->
+  <g fill="#ffffff" stroke="#52606d" stroke-width="1.2">
+    <rect x="120" y="105" width="120" height="100" rx="6" stroke-dasharray="4 3"/>
+    <rect x="275" y="105" width="120" height="100" rx="6"/>
+    <rect x="415" y="105" width="120" height="100" rx="6"/>
+    <rect x="555" y="105" width="130" height="100" rx="6"/>
+    <rect x="745" y="105" width="110" height="100" rx="6"/>
+    <rect x="870" y="105" width="110" height="100" rx="6" stroke="#b44d12" stroke-width="2"/>
+    <rect x="995" y="105" width="100" height="100" rx="6"/>
+    <rect x="1110" y="105" width="95" height="100" rx="6"/>
+  </g>
+  <g fill="#1f2933" text-anchor="middle">
+    <text x="180" y="127" font-weight="bold">1 · Listen backlog</text>
+    <text x="180" y="147">the kernel holds</text>
+    <text x="180" y="163">the connection</text>
+    <text x="180" y="193" font-style="italic" fill="#52606d">OS backlog</text>
+
+    <text x="335" y="127" font-weight="bold">2 · Ticket</text>
+    <text x="335" y="147">other workers'</text>
+    <text x="335" y="163">writes committed</text>
+    <text x="335" y="193" font-style="italic" fill="#52606d">at most 2 s</text>
+
+    <text x="475" y="127" font-weight="bold">3 · Barrier</text>
+    <text x="475" y="147">the chosen worker</text>
+    <text x="475" y="163">catches up</text>
+    <text x="475" y="193" font-style="italic" fill="#52606d">at most 5 s</text>
+
+    <text x="620" y="127" font-weight="bold">4 · Connections</text>
+    <text x="620" y="147">a free socket</text>
+    <text x="620" y="163">to that worker</text>
+    <text x="620" y="193" font-style="italic" fill="#52606d">64 per worker</text>
+
+    <text x="800" y="127" font-weight="bold">5 · Backlog</text>
+    <text x="800" y="147">the worker</text>
+    <text x="800" y="163">accepts it</text>
+    <text x="800" y="193" font-style="italic" fill="#52606d">1,024</text>
+
+    <text x="925" y="127" font-weight="bold">6 · Event loop</text>
+    <text x="925" y="147">its one thread</text>
+    <text x="925" y="163">is free</text>
+    <text x="925" y="193" font-style="italic" fill="#b44d12">the real queue</text>
+
+    <text x="1045" y="127" font-weight="bold">Handler</text>
+    <text x="1045" y="147">the request's</text>
+    <text x="1045" y="163">own work</text>
+    <text x="1045" y="193" font-style="italic" fill="#52606d">bridge inside</text>
+
+    <text x="1157" y="127" font-weight="bold">7 · Commit</text>
+    <text x="1157" y="147">its writes</text>
+    <text x="1157" y="163">are durable</text>
+    <text x="1157" y="193" font-style="italic" fill="#52606d">if it wrote</text>
+  </g>
+
+  <!-- Database -->
+  <g fill="#ffffff" stroke="#3e4c59" stroke-width="1.5">
+    <path d="M1245,125 v60 a42,10 0 0 0 84,0 v-60"/>
+    <ellipse cx="1287" cy="125" rx="42" ry="10"/>
+  </g>
+  <text x="1287" y="163" text-anchor="middle" font-weight="bold">PostgreSQL</text>
+
+  <!-- Forward arrows -->
+  <g stroke="#3e4c59" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+    <path d="M100,155 H118"/>
+    <path d="M240,155 H273"/>
+    <path d="M395,155 H413"/>
+    <path d="M535,155 H553"/>
+    <path d="M685,155 H743"/>
+    <path d="M855,155 H868"/>
+    <path d="M980,155 H993"/>
+    <path d="M1095,155 H1108"/>
+    <path d="M1205,155 H1243"/>
+  </g>
+  <text x="714" y="148" text-anchor="middle" font-size="11" fill="#52606d">unix</text>
+  <text x="714" y="176" text-anchor="middle" font-size="11" fill="#52606d">socket</text>
+
+  <!-- The answer goes back -->
+  <path d="M1157,205 V290 H60 V187" fill="none" stroke="#3e4c59"
+        stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <text x="700" y="308" text-anchor="middle" fill="#3e4c59">the answer, once its writes have committed (a request that wrote nothing skips 7)</text>
+
+  <!-- Answered by the front process itself -->
+  <text x="480" y="228" text-anchor="middle" font-size="11" fill="#52606d">GET /healthcheck and a few console pages are answered here, waiting for none of this</text>
+</svg>

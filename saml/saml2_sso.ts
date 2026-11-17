@@ -450,8 +450,8 @@ function maxArtifacts(): number {
   return Number(config.value('saml2.maxArtifacts'));
 }
 
-// Described to `/admin/caches` (#614, rule 3ap), in `docs/caches.md`'s other
-// protocols. A one-time value made to work once, so a `replay` store: its
+// Described to `/admin/caches` (#614, rule 3ap), in `docs/v1.1.0/caches.md`'s
+// other protocols. A one-time value made to work once, so a `replay` store: its
 // entries cannot be rebuilt. The key shown is the stored digest, clipped
 // again by `digestKey()` so the page shows the same short form every other
 // credential-keyed row does.

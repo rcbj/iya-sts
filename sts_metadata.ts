@@ -2550,9 +2550,9 @@ const SPECS: Spec[] = [
               '(5.2): BCP 195\'s suites are every listener\'s default, TLS ' +
               '1.3 preferred. DPoP nonces stay optional, and consent follows ' +
               'the ordinary rules. The Attacker Model has no normative ' +
-              'requirements; docs/oauth-security.md maps each attacker ' +
-              'class to what stops it. The console, portal and debugger ' +
-              'conform. NOT covered: the conformance suite (#176).' },
+              'requirements; docs/v1.1.0/oauth-security.md maps each ' +
+              'attacker class to what stops it. The console, portal and ' +
+              'debugger conform. NOT covered: the conformance suite (#176).' },
   { id: 'fapi2-message-signing', name: 'FAPI 2.0 Message Signing (final)',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/fapi-message-signing-2_0.html',
@@ -2563,8 +2563,9 @@ const SPECS: Spec[] = [
               'issuer and exp and nbf within 60 minutes (5.3); JARM ' +
               'required, iss inside the JWT (5.4); RFC 9701 introspection ' +
               'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
-              'guidance, answered in docs/oauth-security.md. The console, ' +
-              'portal and debugger conform. RFC 9421 HTTP signatures are NOT ' +
+              'guidance, answered in docs/v1.1.0/oauth-security.md. The ' +
+              'console, portal and debugger conform. RFC 9421 HTTP ' +
+              'signatures are NOT ' +
               'part of the final specification: they are FAPI 2.0 Http ' +
               'Signatures, the next entry (#178).' },
   { id: 'fapi2-http-signatures', name: 'FAPI 2.0 Http Signatures (draft of ' +
@@ -7056,7 +7057,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '?seen=1, paged with ?page= and ?per=. A CODE IS NEVER SENT TO A ' +
           'CLIENT: it is on the audit row and in the log line only. READ ' +
           'ONLY — the table is source. Mirrors GET /admin/error-codes; the ' +
-          'same table is docs/error-codes.md.' },
+          'same table is docs/v1.1.0/error-codes.md.' },
   { path: '/admin-api/audit-export', group: 'Management API',
     name: 'Audit export', specs: ['openapi'],
     what: 'NON-SPEC (#641). What Monitoring → Audit export draws: each ' +

@@ -20,7 +20,7 @@
 //   2. every code the source uses is registered, and every registered code is
 //      used somewhere (a row nothing raises is documentation of a condition
 //      that cannot happen);
-//   3. docs/error-codes.md is exactly what the table generates;
+//   3. docs/v1.1.0/error-codes.md is exactly what the table generates;
 //   4. **every failure-shaped call site has a code beside it** — the patterns
 //      are FAILURE_PATTERNS below, and this is the check that makes "future
 //      failures get a code" a property of the build rather than of memory;
@@ -653,8 +653,8 @@ function run(t) {
     // Missing is reported by the assertion below, with how to make it.
     page = '';
   }
-  t.check(page === errorCodes.markdown(), 'docs/error-codes.md is exactly ' +
-          'what the table ' +
+  t.check(page === errorCodes.markdown(),
+          'docs/v1.1.0/error-codes.md is exactly what the table ' +
           'generates', page ? 'stale — run: node common/error_codes.js ' +
                                     '--docs'
                                   : 'missing — run: node ' +
@@ -666,7 +666,9 @@ function run(t) {
   // failed on a documentation page that is in the navigation. What it asks
   // is unchanged — a generated page nothing links to is a page nobody finds —
   // so it reads WHEREVER the navigation is, and passes if either names it.
-  const navigation = ['_data/navigation.yml', '_config.yml']
+  // Since the site was versioned the sidebar is one file per version, and
+  // the latest version's is the one the generated page is written into.
+  const navigation = ['_data/navigation/v1-1-0.yml', '_config.yml']
     .map(function (one) {
       const at = path.join(ROOT, 'docs', one);
       return fs.existsSync(at) ? fs.readFileSync(at, 'utf8') : '';
@@ -674,7 +676,8 @@ function run(t) {
   t.check(navigation.some(function (one) {
     return one.indexOf('error-codes') >= 0;
   }), 'the page is in the site navigation',
-          'docs/_data/navigation.yml, or _config.yml\'s header_pages');
+          'docs/_data/navigation/v1-1-0.yml, or _config.yml\'s ' +
+          'header_pages');
 
   log.debug("Leaving run().");
   return checkOffTheWire(t);

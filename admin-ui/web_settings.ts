@@ -446,8 +446,8 @@ class SettingsForms {
     // rather than an oversight — see the paragraph in `admin-ui/CLAUDE.md` that
     // used to say the opposite. What pays for it is that a setting's
     // description is also on `/admin/config`'s own JSON view, in
-    // `GET /admin-api/config`, and in docs/configuration.md's table, so the
-    // text has three other doors that a keyboard or a screen reader can
+    // `GET /admin-api/config`, and in docs/v1.1.0/configuration.md's table, so
+    // the text has three other doors that a keyboard or a screen reader can
     // reach. A field whose prose has NO other door does not get this
     // treatment.
     return '<tr>' +

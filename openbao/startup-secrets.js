@@ -32,7 +32,7 @@
 // (`docker compose restart` rather than `up`) has nothing to unwrap, and it
 // starts without the start-up secrets — the management API client then gets a
 // secret minted at start, and an operator gets in through an application of
-// their own (`docs/management-api.md`). It says so on stderr.
+// their own (`docs/v1.1.0/management-api.md`). It says so on stderr.
 //
 // WHY A SCRIPT RUN AS ROOT, AND NOT THE SERVICE READING THE STORE ITSELF: the
 // service seeds its management API client as it LOADS, before anything

@@ -2170,8 +2170,8 @@ async function reportReadCredentialHolders(rows: any, control: any):
       boolean {
     return wantedIds.indexOf(m.id) >= 0;
   }) : MECHANISM_TABLE;
-  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/reporting.md` said
-  // since #1019 that a count by mechanism reads the password's count from
+  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/v1.1.0/reporting.md`
+  // said since #1019 that a count by mechanism reads the password's count from
   // the realm's counter, and nothing did: on 8081 `count` of `mechanism
   // equals password` counted a million holders against the cap and was
   // refused. A count grouped by mechanism alone, filtered on nothing but

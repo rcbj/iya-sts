@@ -1,19 +1,45 @@
 {%- comment -%}
-  The left-hand navigation, drawn from _data/navigation.yml. No script: on a
-  narrow screen the checkbox below is toggled by the header's menu button and
-  CSS shows or hides the list, which is the arrangement minima's own header
-  used.
+  The left-hand navigation. A page inside a version folder draws that
+  version's _data/navigation/<nav>.yml (its _data/versions.yml row's
+  `nav`), every url prefixed with the folder, so a link never leaves the
+  version the reader is in; an item
+  marked `unversioned` (the API reference at /api/) is drawn as written.
+  A page outside every version, the landing page, lists the versions.
+  No script: on a narrow screen the checkbox below is toggled by the
+  header's menu button and CSS shows or hides the list, which is the
+  arrangement minima's own header used.
 {%- endcomment -%}
+{%- include version.html -%}
 <input type="checkbox" id="sidebar-trigger" class="sidebar-trigger" />
 <nav class="sidebar" aria-label="Documentation">
-  {%- for group in site.data.navigation %}
+  {%- if doc_version %}
+  {%- assign navigation = site.data.navigation[doc_version.nav] %}
+  {%- for group in navigation %}
   <div class="sidebar-section">
     <p class="sidebar-heading">{{ group.section | escape }}</p>
     <ul>
       {%- for item in group.items %}
-      <li><a href="{{ item.url | relative_url }}"{% if page.url == item.url %} class="current" aria-current="page"{% endif %}>{{ item.title | escape }}</a></li>
+      {%- if item.unversioned %}{% assign item_url = item.url %}{% else %}{% assign item_url = doc_prefix | append: item.url %}{% endif %}
+      <li><a href="{{ item_url | relative_url }}"{% if page.url == item_url %} class="current" aria-current="page"{% endif %}>{{ item.title | escape }}</a></li>
       {%- endfor %}
     </ul>
   </div>
   {%- endfor %}
+  {%- else %}
+  <div class="sidebar-section">
+    <p class="sidebar-heading">Documentation versions</p>
+    <ul>
+      {%- for v in site.data.versions %}
+      {%- assign v_url = "/" | append: v.folder | append: "/" %}
+      <li><a href="{{ v_url | relative_url }}">{{ v.label | escape }} ({{ v.note | escape }})</a></li>
+      {%- endfor %}
+    </ul>
+  </div>
+  <div class="sidebar-section">
+    <p class="sidebar-heading">Generated</p>
+    <ul>
+      <li><a href="{{ "/api/" | relative_url }}">API reference (from the source)</a></li>
+    </ul>
+  </div>
+  {%- endif %}
 </nav>

@@ -84,7 +84,7 @@ const PROD = realmId("surfp-");
 const CLIENT = ("surf-rp-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "");
 const REDIRECT = "https://rp.example/cb";
 const FOOTER_LINKS = [
-  "https://rcbj.github.io/iya-sts/",
+  "https://rcbj.github.io/iya-sts/v1.1.0/",
   "https://github.com/rcbj/iya-sts/issues",
   "https://github.com/rcbj/iya-sts",
   "https://www.linkedin.com/company/18811689/",
@@ -276,7 +276,7 @@ async function sectionHome() {
       return l.id + " " + l.href;
     }), ["repo https://github.com/rcbj/iya-sts",
          "issues https://github.com/rcbj/iya-sts/issues",
-         "docs https://rcbj.github.io/iya-sts/", "console /admin",
+         "docs https://rcbj.github.io/iya-sts/v1.1.0/", "console /admin",
          "portal /portal", "report /report"]);
   });
   check("and the mode's two facts as each realm answers them", function () {

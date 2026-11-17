@@ -160,7 +160,7 @@ const delegation = require('../common/delegation');
 //
 // (History: when it was added, this require owed the parent project's `sts/`
 // COPY set a line, `COPY sts/common/issuance_gate.js ./sts/common/`. Nothing
-// is owed since #1280; `docs/parent-project-migration.md` records it.)
+// is owed since #1280; `docs/v1.1.0/parent-project-migration.md` records it.)
 const gate = require('../common/issuance_gate');
 // THE MODE. A LEAF (rule 3) requiring only `config`, and already loaded:
 // `common/helpers.js` requires it, and `krb5_principals.js` below does too.

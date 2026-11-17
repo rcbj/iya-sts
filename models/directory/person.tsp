@@ -22,7 +22,7 @@ namespace IyaSts.Directory;
   container: "ou=users",
   ownContainer: true,
   authored: true,
-  section: "docs/ldap-schema.md People",
+  section: "docs/v1.1.0/ldap-schema.md People",
   note: "No SCHEMA export. One person is one entry, RDN uid.",
   objectClasses: #[
     #{

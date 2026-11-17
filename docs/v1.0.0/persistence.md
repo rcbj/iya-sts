@@ -1,0 +1,579 @@
+---
+title: Persistence
+nav_order: 13
+---
+
+# Persistence
+
+Without a store this service writes nothing down and everything is gone on
+restart. Three things are not when a store is configured — and the list of what
+still is not matters just as much.
+
+**Encryption is a page of its own.** What this service seals before a value
+reaches a store, and what encrypts the rest of the database underneath it —
+LUKS, ZFS, the forks that have TDE — is [Encryption at rest](encryption-at-rest.md).
+That page also answers the two questions this one invites: there is ONE
+key-encryption key for the whole service rather than one per trust realm, and
+the DATABASE PASSWORD can come out of the same secret store as that key
+(`persistence.databasePasswordProvider`) rather than out of the connection
+string.
+
+## What survives, and what never can
+
+**This section has three columns, because the answer is not the same in every
+configuration.**
+
+| Survives with any store | Also survives in **product** mode on **postgres** | Never does |
+|---|---|---|
+| the embedded **LDAP directory** — every entry under every realm's base | sessions, access tokens, ID Tokens, refresh tokens | nothing, beyond two caches that are re-derivable |
+| …which is also the **applications registry**, the **federation register**, the **SPIFFE registry** and the **group roster**, because in this service those *are* directory entries | authorization codes, pre-authorized codes, SAML artifacts | |
+| the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches (per trust realm) | |
+| the **used-assertion history** — every RFC 7523 and RFC 7522 assertion accepted and not yet expired, and every RFC 9101 request object `jti` spent, so none is accepted twice across a restart (both modes; its own table on postgres, a file per realm on ldif) | | |
+| **runtime setting changes** — what the console and `POST /admin-api/config/set` write | the statistics, the counters and the audit log | |
+| the **signing keys**, encrypted (product mode only) | | |
+
+### The middle column rests on one fact, and so did the rule it replaced
+
+The old rule was **what persists is what somebody typed, and what resets is what
+this process minted or counted** — and it was right for one reason: *the signing
+key was regenerated on every start*, so a token restored from a disk would verify
+against nothing, an assertion would be a document nobody could check, and a
+statistics file that outlived the key that signed the tokens it described would
+be worse than none.
+
+**That is still exactly true in development mode, which is the default.** It
+stopped being true in product mode, where `keystore.js` generates a realm's keys
+once and reads them back — which is why product mode requires a store. A token
+restored beside the key that signed it verifies, so restoring the rest of it is
+honest.
+
+Two conditions, both required:
+
+* **`global.mode` is `product`.** Development persists nothing it minted.
+* **`persistence.mode` is `postgres`.** The `ldif` store holds none of it in
+  either mode and says so once at startup, because it writes *whole files* per
+  flush — right for a directory somebody types into, wrong for a session table
+  and an audit ring that change on every request.
+
+`persistence.minted` turns it off.
+
+**Rows are kept until the thing they hold ends.** A session is removed when it
+signs out or expires, a grant when it is revoked, a nonce once it is used or
+past its lifetime. Nothing is deleted just because it has not been written for
+a while, so configuration, accounts, the audit log and the statistics survive
+any number of restarts. The one exception is short-lived rows (nonces, codes,
+flows in progress) left behind by a process that stopped before it cleaned
+them up.
+
+**A start reads only what is still live.** Each row is written with its own
+expiry where the thing it holds has one — a code, a nonce, a pending sign-in,
+a refresh-token family, a finished CIBA request. When a process starts it reads
+only the rows of the realms that exist, leaves out every row whose expiry has
+passed, and leaves out a short-lived row with no expiry once it is older than
+`persistence.mintedRetention` (7 days). Starting takes as long as the live state
+takes to read, not as long as everything that was ever written. The
+`persistence.minted-expiry-purge` job then deletes those rows from the database
+in batches every five minutes, together with any row left behind by a realm
+that has been removed. You can see it on Monitoring → Scheduler. In a
+service deployed as cells, that job cleans each cell's own database, and
+`persistence.minted-expiry-purge-global` cleans the global database, run by
+one cell at a time; one database being unreachable does not stop the other
+being cleaned. While the global database is unreachable a cell's run cannot
+tell which realms still exist, so it deletes no row as left behind by a
+removed realm, says so once in the log (`STS-STORE-0164`), and still
+records the run as succeeded, with the reason on Monitoring → Scheduler.
+The tombstones of ended rows are swept the same way, by
+`persistence.tombstone-purge` in each cell and
+`persistence.tombstone-purge-global` for the global database.
+
+**A restarted node carries on where it left off.** Each node writes its own
+share of the audit log and the statistics. When a container restarts under the
+same node name (`cluster.nodeName`, or `STS_CLUSTER_NODE_NAME`), it takes that
+share back and keeps adding to it. If the previous container is somehow still
+running, the new one waits up to 35 seconds for it to go away and otherwise
+starts a fresh share; nothing is lost either way, because every node's pages
+read every share. Set a node name if your platform gives each container a
+random host name.
+
+### Every minted row is encrypted
+
+A session id is a cookie value. An authorization code and a pre-authorized code
+are redeemable. A SAML artifact handle is dereferenceable. A Kerberos principal's
+long-term key *is* the password. So each row's body is AES-256-GCM under **the
+same key-encryption key that already protects the signing keys** — read from a
+mounted file or one of four cloud secret stores, never from the database it
+protects. A dump of `sts_minted` is not a set of live sessions and usable codes.
+
+What that costs is that nothing in that table is queryable by SQL. That is the
+trade taken deliberately: what wants querying is the directory, which is JSONB
+and is not sealed.
+
+## Turning it on
+
+It is **off by default** — `persistence.mode` is `memory` — so a service you
+start today behaves exactly as it always did until you say otherwise.
+
+### No database: `ldif`
+
+```bash
+STS_PERSISTENCE_MODE=ldif STS_PERSISTENCE_DATA_DIR=./data node server.js
+```
+
+Writes one file per trust realm plus two small JSON files:
+
+```
+data/
+  realm-default.ldif     the default realm's directory, RFC 2849 LDIF
+  realm-acme.ldif        one per defined trust realm
+  realms.json            the realm registry: names and per-realm settings
+  appconfig.json         the runtime setting changes
+```
+
+**The `.ldif` files are ordinary LDIF**, which is the whole reason that format
+was chosen over a JSON dump: `ldapadd -f`, `slapadd` and `ldifde` will all load
+them into a real directory, and a diff of one is readable. A
+`# sts-origin:` comment above a record is this service's own marker for how the
+entry came to exist; every other reader ignores it. LDIF has no home for that
+marker, and a comment is the right one: an invented attribute would come back
+real on reload, searchable, and matchable by a filter.
+
+Editing a file by hand is fine **while the service is stopped**. While it is
+running, the next change rewrites the whole file and your edit is gone.
+
+### A shared store: `postgres`
+
+**The connection string already has a value**, so this is one setting:
+
+```bash
+STS_PERSISTENCE_MODE=postgres node server.js
+```
+
+The default `persistence.databaseUrl` is
+`postgres://sts:sts@localhost:5432/sts`: user, password and database all `sts`.
+That is for development mode only. **Product mode does not start with a
+well-known database password** (`sts`, `sts_app`, `postgres` and the like) or
+one equal to the user name (`STS-STORE-0170`), unless
+`persistence.allowDefaultDatabasePassword` is on, so give the role a password
+of your own there. The compose stack generates its passwords at first start.
+Bring up a development database to match:
+
+```bash
+docker run -d --name sts-db -p 5432:5432 \
+  -e POSTGRES_USER=sts -e POSTGRES_PASSWORD=sts -e POSTGRES_DB=sts \
+  postgres:18
+```
+
+That plain container speaks TLS only if you configure it to, and this service
+**never connects to its database in the clear**: a connection string with no
+`sslmode` is dialled as `sslmode=require`, and `sslmode=disable` or `allow`, or
+a string that is not a `postgres://` URL, stops the service starting
+(`STS-STORE-0078`). So give that container a certificate (the compose stack
+below does it for you, and requires TLS at the database end too) — and,
+because the service verifies the server's certificate by default, name its
+CA in `persistence.databaseTlsCaFile` unless it chains to something the
+process already trusts.
+
+Point it somewhere else with `STS_DATABASE_URL`, or by editing
+`persistence.databaseUrl` in your appconfig file — all four of them carry the
+same base block.
+
+The directory is `sts_ldap_entries` (one row per entry, attributes as JSONB,
+keyed by realm and normalised DN), beside the realm registry, the runtime
+settings, the sealed keys, the minted state, the change log, the cluster's
+coordination tables and risk scoring's datasets and history.
+[PostgreSQL schema](postgres-schema.md) describes every table and column. A
+schema change only ever adds; running `postgres/schema.sql` again upgrades an
+older database.
+
+#### Building it, and the role that cannot rebuild it
+
+Against a database with nothing in it, this service creates the tables on its
+first connection exactly as it always did — which is what the command above
+does, and it needs a role that may create them.
+
+**For anything you would leave running, build the schema separately:**
+
+```bash
+psql -v ON_ERROR_STOP=1 -f postgres/schema.sql "postgres://owner@host:5432/sts"
+```
+
+That script creates the tables *and* a second role — `sts_app` by default, or
+whatever `-v sts_app_role=` and `-v sts_app_password=` name — which holds
+`SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` but **not**
+`CREATE` on the schema. Point `STS_DATABASE_URL` at that role and the running
+service can change every row in its store and cannot add, alter, truncate or
+drop a table in it. The script is idempotent, so running it again is also how
+you rotate that password.
+
+The service notices: it asks which objects exist and issues a `CREATE` only for
+one that is missing, so against a schema built this way it creates nothing and
+needs no privilege to. If you point it at an *empty* database with the
+restricted role it refuses to start and says so, naming the script — that is the
+one arrangement this split cannot paper over.
+
+Issuing no `CREATE` when there is nothing to create is not a tidying. `CREATE
+TABLE IF NOT EXISTS` checks `CREATE` on the schema *before* it checks whether the
+table exists, so a least-privileged role would otherwise be refused on every
+start by statements that had nothing to do.
+
+**The compose stack below does all of this for you**, on the start that creates
+the database volume. See the warning there about an older volume.
+
+### With Docker Compose
+
+`docker compose up` in the repository root does the second for you — it brings
+up a Postgres container beside this service, with a named volume under each and
+the `env/` directory bind-mounted so the appconfig files stay editable from the
+host.
+
+The database container runs `postgres/schema.sql` itself, once, on the start
+that creates its volume — so the stack comes up with the schema built and with
+this service connecting as the restricted `sts_app` rather than as the owner.
+**A volume created by an earlier version has the tables and no such role**, and the
+service container then restart-loops with `password authentication failed for
+user "sts_app"`. `docker compose down -v` is the fix, and what it removes is the
+directory, the realm registry and the appconfig overrides — and, in product mode
+(the stack's default), the sealed signing keys and everything minted under them.
+[The compose stack](docker-compose.md) lists every volume and variable.
+
+```bash
+docker compose up            # start; the directory is there again next time
+docker compose down          # stop, keeping the volumes
+docker compose down -v       # stop and throw the data away
+```
+
+### The compose database is TLS, and the service verifies it
+
+The Postgres container generates a server key pair on its first
+start and every `host` rule in its `pg_hba.conf` is `hostssl`, so a plaintext
+client is refused by the database with `no pg_hba.conf entry for host …, no
+encryption`.
+
+The certificate is **self-signed**, because it is generated in the container by
+something that has no CA to sign it. The container copies the certificate (never
+the key) into the `sts-db-ca` volume, which the service mounts read-only, and the
+service trusts that one file for its database connections:
+`STS_DATABASE_TLS_CA_FILE` is `/run/secrets/database-ca/postgres.crt` and the
+connection string carries `?sslmode=verify-full`. So the connection is both
+*encrypted* and *authenticated* — the chain and the host name `postgres` are
+checked — and `/admin/persistence` shows both facts in its **Transport** row.
+
+**The server's certificate is verified by default, in every mode.**
+`persistence.databaseTlsRejectUnauthorized` is `true` unless you turn it off.
+The trust anchors are the file `persistence.databaseTlsCaFile` names when it is
+set — trusted for the database connections only, and nothing else the service
+dials — and the process's default trust store, with `NODE_EXTRA_CA_CERTS`,
+otherwise. A managed database whose certificate chains to a public root, or to
+a bundle you name in either place, needs nothing more. A CA file that is named
+and cannot be read, or holds no certificate, stops the service starting
+(`STS-STORE-0079`). The setting may also name a directory, and then every `.crt`
+and `.pem` file in it is read.
+
+Turning it off is honoured in development mode only: a product deployment with `false` still stored verifies, and writing `false` there is refused. Under [paranoid PKI mode](pki.md#paranoid-pki-mode) the server's certificate is also held to `tls-server-outbound`, with one softer rule: a revocation status that could not be established does not stop the store being dialled, and a certificate revoked does.
+
+> **Warning:** turning `persistence.databaseTlsRejectUnauthorized` off leaves
+> the database server **unauthenticated**. The connection is still encrypted,
+> but anything that can answer at the database's address can impersonate it and
+> read and write every row the service keeps — the sealed keys and the directory
+> included. Monitoring → Database and `/admin/persistence` say so in red, and the
+> service logs a warning at start. Turn it off only for a throwaway database.
+
+`sslmode=verify-ca` and `sslmode=verify-full` in the connection string verify
+the certificate whatever that setting says, as libpq does: `verify-full`
+checks the chain and the host name, and `verify-ca` checks the chain only. A
+certificate that does not verify stops the service starting
+(`STS-STORE-0006`, with the TLS error). The setting decides only for a string
+whose `sslmode` is unset, `require` or `prefer`, and checks the host name too.
+
+**Upgrading from an older stack needs `docker compose down -v`.** The image is
+`postgres:18` now, and a major version will not read a data directory written by
+the previous one — nor will it accept the old `/var/lib/postgresql/data` mount,
+which is a single mount at `/var/lib/postgresql` from 18 onwards. Throwing the
+volume away costs the directory, the realm registry and the setting overrides,
+and in product mode the sealed signing keys and everything minted under them.
+
+### A second engine: `mariadb`
+
+PostgreSQL is this service's primary store, and the one to choose for a
+deployment. **MariaDB is a second engine** that runs the same store: the same
+tables, the same change log, the same coordination between processes and
+nodes, compiled for MariaDB. This project's test suite runs against it, and
+you can too:
+
+```bash
+STS_PERSISTENCE_MODE=mariadb \
+STS_DATABASE_URL='mariadb://sts_app:PASSWORD@db-host:3306/sts_store' \
+node server.js
+```
+
+**What it needs:**
+
+- **MariaDB 11.8** (the version it is tested against) with InnoDB.
+- **The `mysql2` package in the image.** It is optional, like the attribute
+  sources' drivers: build the image with `--build-arg STS_CLOUD_SDKS=mysql2`.
+- **The schema, built once by an owner.** `mariadb/schema.sql` creates every
+  table and an application account that may read and write the rows and
+  nothing else (no `CREATE`, `ALTER` or `DROP`):
+
+  ```bash
+  mariadb -u root -p \
+    --init-command="SET @sts_app_password='...'" \
+    sts_store < mariadb/schema.sql
+  ```
+
+  `@sts_app_user`, `@sts_app_host` and `@sts_app_require_ssl` name the rest.
+  Like PostgreSQL's script it is idempotent, and running it again rotates the
+  password. Against a schema built this way the service creates nothing; with
+  an object missing, the application account is refused at start and the
+  message names the script.
+- **TLS.** A `mariadb://` string is held to the same rule as a `postgres://`
+  one: the connection is always TLS, `ssl=false` or `ssl-mode=DISABLED` stops
+  the service starting, and the server's certificate is verified by default
+  against `persistence.databaseTlsCaFile`. Run the server with
+  `--require-secure-transport=ON` and a certificate whose name is the host in
+  the connection string.
+- **A change log with no gaps.** The server's `auto_increment_increment` must
+  be 1 and `innodb_autoinc_lock_mode` 0 or 1 (1 is MariaDB's default). Other
+  values hand out numbers that every reader would wait for, so the service
+  refuses to start on them (`STS-STORE-0091`).
+
+**What is different on MariaDB:**
+
+- **No change notification.** MariaDB has nothing like PostgreSQL's
+  `LISTEN`/`NOTIFY`, so another process's change is found by polling the
+  change log, every second unless `persistence.pollInterval` says otherwise.
+- **Held whole, not windowed.** The directory window and the session window
+  read through a PostgreSQL connection of their own, so on MariaDB the
+  directory, the sessions and the stores read on demand are held in memory in
+  every process. `ldap.workerDirectory=postgres-lru` and
+  `authn.sessionWindow=on` are refused there.
+- **Refused:** cells, the bulk import, cell conversion and the risk dataset
+  installer need PostgreSQL itself, and say so if asked to run on MariaDB.
+- **Key lengths.** MariaDB's index keys are bounded, so a directory entry
+  whose normalised DN is longer than 352 characters (or a realm id longer than
+  64) is refused when it is created or renamed (`STS-LDAP-0204`). PostgreSQL
+  has no such limit.
+- **[Monitoring → Database](#checking-on-it)** reads MariaDB's own counters
+  (`information_schema`): the cache hit rate, commits and rollbacks, the
+  connections the account can see, the tables and indexes. Counts MariaDB
+  does not keep, such as an index's scans, are left out rather than shown as
+  zero.
+
+`persistence.sqlDialect=portable` is the other half of this: on PostgreSQL it
+sends the statements MariaDB runs for coordinating processes and minted
+state, with no change notification. It exists so the test suite can prove
+that code on PostgreSQL. Leave it at `native` for anything else.
+
+## The settings
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` |
+| `persistence.dataDir` | `STS_PERSISTENCE_DATA_DIR` | `./data` |
+| `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` |
+| `persistence.sqlDialect` | `STS_PERSISTENCE_SQL_DIALECT` | `native` |
+| `persistence.databaseTlsRejectUnauthorized` | `STS_DATABASE_TLS_REJECT_UNAUTHORIZED` | `true` |
+| `persistence.databaseTlsCaFile` | `STS_DATABASE_TLS_CA_FILE` | *(empty)* |
+| `persistence.writeDelay` | `STS_PERSISTENCE_WRITE_DELAY` | `1500` |
+| `persistence.realms` | `STS_PERSISTENCE_REALMS` | `true` |
+| `persistence.appconfig` | `STS_PERSISTENCE_APPCONFIG` | `true` |
+
+All but `writeDelay` are **restart-only**, because the store is opened and read
+before the HTTP listener binds.
+
+`persistence.databaseUrl` carries a password, so **it is never echoed back**:
+`/admin/persistence` and `GET /admin-api/persistence` report the host, port,
+database and user parsed out of it.
+
+## Things worth knowing before you rely on it
+
+### With postgres, a write is answered only after it has committed
+
+With `persistence.mode=postgres`, a request that changes anything this service
+stores is answered only after that change has been **committed** to the
+database. This covers an HTTP request, and an LDAP add, delete, modify or
+rename. If the commit fails, the request does not get its success:
+
+* **HTTP:** `503 Service Unavailable` with `Retry-After: 5`, a
+  `{"error": "temporarily_unavailable"}` body, and none of the success
+  response's headers (no `Location`, no `Set-Cookie`).
+* **LDAP:** result code `unavailable` (52).
+
+A success therefore means the change is in the database. It survives a crash,
+a killed container or a lost node.
+
+The change the refused request made is still held in memory. The service keeps
+retrying the write in the background, starting after one second and backing
+off to 30 seconds, until the write lands. While that retry is still pending,
+any further write request is held until the retry commits, even if it changes
+nothing itself. A client that retries a refused `DELETE` therefore gets a `404`
+only once the delete is actually in the database. **Clients should retry a
+503 or a 52**, and treat a `404` on a retried delete, or a `409` on a retried
+create, as success. Reads are still answered from memory while the database is
+unavailable, and the status turns red with the reason.
+
+With `persistence.mode=ldif` or `memory`, a write is answered at once, as
+before. An ldif write is a whole file on a delay, and memory mode has nothing
+to wait for. A failed ldif write is retried the same way.
+
+The origin-claim renewal, the cluster heartbeat and the cluster leases run on
+a database connection of their own. A heavy write load cannot use up the
+connections these keep-alive statements need, so it cannot take a process
+down. Each process opens up to its pool size plus two connections: the change
+listener and this one. Size `max_connections` accordingly.
+
+**Startup is the opposite, and that is not an inconsistency.** A store that was
+configured and cannot be *opened* stops the service from starting, rather than
+letting it run as something it is not. So the configured mode and the mode in
+force can never disagree in a running process; what the status pages report is
+a store that broke afterwards, which is recorded and is not fatal.
+
+### A restored person has not signed in
+
+Somebody restored from the store shows on `/admin/users` as a **directory**
+person rather than as having authenticated. They exist — an entry, searchable
+over 389, readable over SCIM, and a token issued to them carries their
+attributes — and the page lists them from the directory itself, so they are
+not counted among the sign-ins.
+
+The restore does not copy the directory's people into the register of people
+this service has *seen* (it did until 2026-10-13; at a hundred thousand people
+that copy held every process's event loop for seconds at every start). In
+product mode on postgres the register is itself persisted, so the people it saw
+in earlier runs come back with the rest of what this service mints; in every
+other configuration their counts and their event list are statistics, and
+start at zero with everything else.
+
+### Settings come back as runtime overrides, not as a new layer
+
+A saved setting is applied at startup through exactly the same function a
+console Save uses, so the [configuration layering](configuration.md) is
+unchanged: it is still a runtime override, still above the environment variable
+and the appconfig file, and *Reset* still means "fall back to what the file or
+the variable says". A reset is written down too.
+
+**Nothing ever rewrites an appconfig file.** A service that edited a file
+checked into a repository would leave somebody's forgotten experiment behind
+permanently. The file is what a person edits; the store is what the console
+writes.
+
+Only a runtime-changeable setting can be saved at all, which is what makes
+applying them that late safe — no saved value can reach a bound port, the base
+DN, the scheme this service answers on (`global.https`) or a mode such as
+`oauth2.rfc9700`. That is safe by construction rather than by luck: a runtime
+setting is by definition one that is read per call rather than captured at
+startup, so restoring it after every module has loaded changes nothing a module
+already holds.
+
+### Realm keys come back only in product mode
+
+A trust realm's row, its settings and its own directory are restored. **In
+development mode its signing key is not** — every realm's key is regenerated on
+every start, exactly like the default realm's, so a token minted in a realm today
+verifies against nothing tomorrow. In product mode the keys are kept in the store,
+sealed, like the default realm's.
+
+### Processes against one store coordinate
+
+Every change is written to a monotonic log, `sts_changes`, **inside the
+transaction that made it**. Each process remembers the highest entry it has
+applied and asks for everything after it — the directory, the realm registry, the
+runtime settings and the minted rows alike. A `LISTEN`/`NOTIFY` nudge wakes that
+ask early.
+
+**The log is the contract and the notification is only latency.** That is the
+one sentence worth keeping, because it is what makes the hard parts easy: a
+process whose listener dropped for four seconds misses nothing, the 8000-byte
+notification limit stops mattering (the payload is a *pointer*, never a row), and
+the database can restart underneath it. It is the same trade the remote XACML PEP
+already makes about its own pull.
+
+Turn it off with `persistence.coordinate`; `persistence.pollInterval` (5s) is the
+worst-case convergence lag when a notification is lost.
+
+Several containers against one store go further than this: membership,
+leases, a barrier before each request, and claims for every value used once.
+[How the cluster works](cluster-concepts.md) explains them, and what each
+node still holds alone.
+
+`/admin/persistence` reports the change log's state, and `status.replication`
+carries it in the JSON.
+
+### Request workers can hold the directory as a window
+
+By default every process — the front process and each request and surface
+worker — holds the whole directory in memory, so a node's memory grows with
+the directory times the number of processes. With
+**`ldap.workerDirectory=postgres-lru`** (restart-only, off by default) each
+worker holds only:
+
+* every entry that is **not** a person or a device — the containers, groups,
+  applications, federation relationships, policies and roles — in full, as
+  before;
+* **the people and devices it read most recently**, at most
+  `ldap.workerCacheEntries` (10,000, about 2.5 KB each), and any it changed
+  and has not yet written.
+
+Anything else is read from PostgreSQL when it is asked for. The directory
+behaves the same way to every protocol; what changes is where the answer comes
+from:
+
+* **A miss costs one database round trip**, during which that worker does
+  nothing else. `ldap.workerDirectoryTimeoutMs` (2,000) bounds one question;
+  past it, or when the database refuses, the request is answered **503 with
+  `Retry-After`** (`STS-LDAP-0130`, `STS-LDAP-0131`) rather than from a
+  directory that cannot say what it is missing. One `/admin` or `/admin-api`
+  request also has a budget on the sum of those waits
+  (`ldap.workerDirectoryBudgetMs`, 5,000, `STS-LDAP-0175`): a question that
+  would pass it is refused and not asked.
+* **A walk of the people** — an LDAP subtree search, a console list — reads
+  them from the database a page at a time.
+* **A worker's writes are its own**, as before: an entry it changed is kept
+  until its flush has written it, and the store merges it with a change
+  another process made meanwhile.
+* **The front process always holds the whole directory**: it owns the LDAP
+  listener and its own writes.
+
+It needs `persistence.mode=postgres` and a single cell; otherwise the service
+does not start (`STS-LDAP-0133`). Schema version 13 adds the columns and
+indexes the lookups use — run `postgres/schema.sql` again as the owner on an
+older database. [PostgreSQL schema](postgres-schema.md) lists them.
+
+## Checking on it
+
+`/admin/persistence` in the console, `GET /admin-api/persistence` over JSON, and
+`GET /admin/ldap/service` — which carries the same object and is not behind the console's
+sign-in — all report which mode is in force, where it writes, how much it holds,
+when it last wrote, and what went wrong if that failed. The status also
+reports:
+
+* `answersAfterCommit`: whether a write waits for its commit.
+* `commitBacklog` and `retryArmed`: whether a refused write is waiting for its
+  retry.
+* `liveness`: the keep-alive connection's counters.
+* `eventLoop`: how long the process's event loop was blocked, from the
+  `persistence.event-loop-lag` job. Over five seconds, it is also logged as
+  `STS-STORE-0068`.
+
+## Design decisions
+
+### The store is this service's own, not node-ldapjs's
+
+**There is no persistence option in node-ldapjs, and there could not be.**
+`ldapjs` is a protocol library — a BER codec, a client, and a `Server` that
+routes a parsed operation to a handler you wrote — and it ships no storage of any
+kind. (`lib/persistent_search.js` is the LDAP *persistent search*
+change-notification control; the name is a trap.) The store here is this
+service's own. Proxying to a real OpenLDAP instead would have given persistence
+for free and ended the service: this directory is schemaless on purpose, in
+development mode accepts any bind and creates a person on first sight of a name,
+and is written into directly by other modules as ordinary function calls.
+
+### The whole write path is one function
+
+Every writer in the directory already has to call `touchDirectory()` — a rule
+that exists for a group index — so persistence hangs off that single choke point
+and computes a difference against a shadow of what it last wrote. A new writer
+that forgets it produces a stale groups claim, which is noticed; a new writer
+that forgot a separate `persist()` call would produce an entry that exists until
+the process restarts and then does not, which is not.

@@ -5113,7 +5113,8 @@ class AdminViews {
   // is the table FILTERED and PAGED, with one column the documentation page
   // cannot have — how many rows in this realm's audit log carry each code right
   // now. That column is what makes the page worth having beside
-  // `docs/error-codes.md`: the page answers *what does STS-FED-0012 mean* and
+  // `docs/v1.1.0/error-codes.md`: the page answers *what does STS-FED-0012
+  // mean* and
   // *which failures has this service actually been producing*, and only a
   // running service can answer the second.
   //
@@ -5217,7 +5218,7 @@ class AdminViews {
                   seen: wantedSeen || null },
         page: paging.page, pages: paging.pages, perPage: paging.perPage,
         firstRow: paging.firstRow, lastRow: paging.lastRow,
-        documentation: 'docs/error-codes.md',
+        documentation: 'docs/v1.1.0/error-codes.md',
         neverSentToClients: true,
         subsystems: subsystems,
         unregisteredSeen: unregisteredSeen,
@@ -10570,8 +10571,8 @@ class AdminViews {
   // too.
   //
   // **THE LINK IS `/launch/{app}?protocol=…`**, the one URL
-  // docs/idp-initiated-sso.md gives a person and the portal's Sign in link
-  // uses (`LaunchLinks.launchUrl()`, built where the sign-in service is
+  // docs/v1.1.0/idp-initiated-sso.md gives a person and the portal's Sign in
+  // link uses (`LaunchLinks.launchUrl()`, built where the sign-in service is
   // advertised, realm prefix included); the protocol's own endpoint
   // (`/saml2/unsolicited/{sp}`, `/saml11/sso/{rp}`) rides beside it, as it
   // does on the launch card, for a partner who wants the native form.

@@ -224,7 +224,7 @@ every call, unchanged.
   certificate, and the new default refuses them. A value an operator stored
   (console, `/admin-api/config/set`, a realm's overrides) or set in an
   appconfig file wins as every value does; with neither, the operator sets
-  `either` before upgrading (`docs/release-notes.md`, `docs/remote-pep.md`
+  `either` before upgrading (`docs/v1.1.0/release-notes.md`, `docs/v1.1.0/remote-pep.md`
   *Upgrading a deployment whose PEPs use a certificate*), and the upgrade
   script does that for a SQL store (below). So the refusal is
   never silent: where the refused request presented a certificate that

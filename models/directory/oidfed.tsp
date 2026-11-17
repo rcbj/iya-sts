@@ -17,7 +17,7 @@ namespace IyaSts.Directory;
   container: "ou=oidfed",
   ownContainer: true,
   authored: true,
-  section: "docs/ldap-schema.md OpenID Federation",
+  section: "docs/v1.1.0/ldap-schema.md OpenID Federation",
   note: "One entry per federation key, subordinate, anchor or mark.",
   objectClasses: #[
     #{
