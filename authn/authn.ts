@@ -1794,6 +1794,38 @@ class Authn {
     if (!out.accountSetId && other.accountSetId) {
       out.accountSetId = other.accountSetId;
     }
+    // THE OPENID CONNECT LAUNCHES (#426, #713; run 43936849276). `/launch/
+    // {app}` records `launches[clientId]` on the session and the
+    // authorization request answers a client whose own start is off only
+    // within the window of one (`common/launch_links.ts`). The merge took
+    // the base copy's map whole, so in the cluster mode a launch recorded on
+    // node B was lost on node A when A merged B's row into the copy it held
+    // (same sign-in, so A's copy was the base) — and A refused the client's
+    // request a second later, STS-OAUTH-0959 (`sts_idp_initiated_launch`).
+    // Each client keeps the later launch and the later take
+    // (`launchesTaken`, written by `takeLaunch()`), and a launch no later
+    // than its take is spent, so a stale copy can neither lose a launch nor
+    // bring a spent one back. Both maps converge in either merge order.
+    if (mine.launches || theirs.launches ||
+        mine.launchesTaken || theirs.launchesTaken) {
+      const latest = function (x, y) {
+        const both = Object.assign({}, x || {});
+        Object.keys(y || {}).forEach(function (clientId) {
+          both[clientId] = Math.max(Number(both[clientId]) || 0,
+                                    Number(y[clientId]) || 0);
+        });
+        return both;
+      };
+      const taken = latest(mine.launchesTaken, theirs.launchesTaken);
+      const launches = latest(mine.launches, theirs.launches);
+      Object.keys(launches).forEach(function (clientId) {
+        if (launches[clientId] <= (Number(taken[clientId]) || 0)) {
+          delete launches[clientId];
+        }
+      });
+      out.launches = launches;
+      out.launchesTaken = taken;
+    }
     log.debug("Leaving Authn.mergeSessionRows(). " +
               (mineAhead ? "Mine is ahead." : "The stored copy is ahead."));
     return out;
