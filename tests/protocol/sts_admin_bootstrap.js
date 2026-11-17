@@ -979,9 +979,13 @@ async function test() {
     // value where the process has one.
     const made = { id: id, domain: id + ".example.net",
                    name: "Bootstrap " + STAMP };
-    if (id === PROD) {
-      made.overrides = { "global.publicBaseUrl": base };
-    }
+    // AND EVERY OTHER REALM IS BORN IN DEVELOPMENT, WHATEVER THE PROCESS
+    // (2026-11-16, the first local single-node run): sections A and C are
+    // about the development window (`mode.opensConsoleToAnyone()`, asked in
+    // the realm), which product never opens (#103), so in a product process
+    // A2 met a closed console. PROD is the job's product realm.
+    made.overrides = id === PROD ? { "global.publicBaseUrl": base }
+                                 : { "global.mode": "development" };
     created[id] = await ok(base + "/admin-api/realms/create", made,
                            "created the realm " + id);
   }
