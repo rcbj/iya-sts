@@ -151,8 +151,19 @@ function childMain() {
     // #1084: both lookups are GET forms whose answer must open on the
     // Lookups tab — their action carries that tab's fragment, and the tab
     // with that id is the one holding both forms.
+    // The tab ends at the </section> that closes IT: every section of a
+    // console tab is a frame since #1854, and a frame is a <section>, so the
+    // first </section> after the tab's tag is the end of its first frame.
     const panelAt = page.indexOf('id="risk-tab-lookup"');
-    const panelEnd = page.indexOf('</section>', panelAt);
+    const tags = /<section\b[^>]*>|<\/section>/g;
+    tags.lastIndex = panelAt < 0 ? page.length : panelAt;
+    let depth = 1;
+    let panelEnd = page.length;
+    let tag;
+    while (depth > 0 && (tag = tags.exec(page)) !== null) {
+      depth += tag[0] === '</section>' ? -1 : 1;
+      panelEnd = tag.index;
+    }
     const panel = panelAt >= 0 ? page.slice(panelAt, panelEnd) : '';
     const toLookups = 'action="/admin/risk#risk-tab-lookup"';
     t.check(panel.indexOf('name="address"') >= 0 &&
