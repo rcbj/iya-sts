@@ -146,6 +146,280 @@ async function tabText(driver, tab) {
   return String(text);
 }
 
+// ---------------------------------------------------------------------------
+// A PRESS THAT IS SEEN TO LAND, AND A FAILURE THAT SAYS WHY (GitHub runs
+// 44025839154, single-node, and 44121709873, memory).
+//
+// Both runs pressed Add or Remove and waited 30 s for an answer that never
+// came, and the second run's diagnostic showed that NOTHING was sent: the page
+// was where it was pressed, the form still in it, no sign-in-again bar, no
+// request after the page's own (not even the OpenAPI document the console
+// fetches before it sends a form), no error and no rejected promise in the
+// page's console, and in memory mode a service with nothing else to do. The
+// console's own ways of sending nothing were ruled out by reading
+// `admin-ui/web_runtime.ts`: `onSubmit()` returns without claiming the event
+// only for an action off the console's paths, and `submit()` returns before
+// its first request only for an ordered choice with nothing ticked
+// (`[data-ordered-none]`), the two passkey forms, a field search, a round
+// trip and the new person's Fill — none of which this page draws — and
+// neither form here has a field the browser validates. Any of them failing
+// would have been in the console as an uncaught error, which the browser
+// records (checked). What is left is the press itself: the browser's
+// `click` never activated the button, so no `submit` event was fired, and
+// 22 local runs (Chrome 157 and the suite image's 152, CPU-throttled, with
+// the realm switcher's long list) never showed it again.
+//
+// SO THE PRESS IS NO LONGER TAKEN ON TRUST:
+//   * BEFORE IT, the form is waited for until it is SUBMITTABLE as the
+//     console sees it — valid, its button enabled and not inert, none of the
+//     conditions above, the sign-in-again bar down, and the button itself the
+//     element at its own centre once it is brought to the middle of the
+//     window (the console's `.flash` strip is sticky at the top, which is why
+//     `sts_admin_console.js`'s `clickInView()` does the same).
+//   * THE PRESS IS WATCHED from the window's capture phase: where the
+//     `click` landed, whether the form's `submit` was fired, and whether the
+//     console claimed it (`defaultPrevented` when it reaches the window,
+//     after the console's document listener). WebDriver's click returns once
+//     the browser has handled its input, so this is read straight after it.
+//   * A PRESS WHOSE CLICK NEVER REACHED THE BUTTON IS PRESSED AGAIN, at most
+//     twice more, and says so in the log: nothing can have been sent by a
+//     click the button never had, so a second press cannot send anything
+//     twice. A click that reached the button and fired no `submit`, or a
+//     `submit` the console did not claim, fails AT ONCE with the reason.
+//   * A FAILURE CARRIES what the page was doing: `checkValidity()` and each
+//     invalid field's name and `validationMessage`, which of the console's
+//     reasons to send nothing held, what the press saw, every request the
+//     browser STARTED after it with whether it finished (the performance
+//     log, which unlike resource timing sees a request still in flight),
+//     the page's last requests and its console.
+// ---------------------------------------------------------------------------
+
+// The form's state as the console's onSubmit() and submit() would read it,
+// and the press last watched. The button is brought to the middle first.
+const FORM_STATE = `
+  const form = arguments[0];
+  const button = arguments[1];
+  const describe = function (el) {
+    if (!el || !el.tagName) { return String(el); }
+    return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') +
+      (el.className && typeof el.className === 'string'
+        ? '.' + el.className.trim().split(/\\s+/).join('.') : '') +
+      ' "' + String(el.textContent || '').trim().slice(0, 30) + '"';
+  };
+  if (arguments[2] && document.contains(button)) {
+    button.scrollIntoView({ block: 'center' });
+  }
+  const out = { at: location.href, attached: document.contains(form),
+                buttonAttached: document.contains(button),
+                valid: form.checkValidity(), early: [] };
+  out.invalid = Array.from(form.elements).filter(function (el) {
+    return el.willValidate && !el.checkValidity();
+  }).map(function (el) {
+    return (el.name || describe(el)) + ': ' + el.validationMessage;
+  });
+  const prefix = (/^(.*?)\\/admin(\\/|$)/.exec(location.pathname) ||
+                  ['', ''])[1];
+  const target = new URL(form.getAttribute('action') || location.href,
+                         location.href);
+  const rest = target.pathname.slice(prefix.length);
+  if (target.origin !== location.origin) {
+    out.early.push('its action is on ' + target.origin);
+  }
+  if (target.pathname.indexOf(prefix + '/admin') !== 0 ||
+      !/^\\/admin(\\/|$)/.test(rest) || /^\\/admin-api(\\/|$)/.test(rest)) {
+    out.early.push('its action ' + target.pathname +
+                   ' is not a console page');
+  }
+  if (String(form.getAttribute('method') || 'get').toLowerCase() !==
+      'post') {
+    out.early.push('it is not a POST form');
+  }
+  if (form.querySelector('[data-ordered-none]:not([hidden])')) {
+    out.early.push('an ordered choice in it has nothing ticked');
+  }
+  if (form.getAttribute('data-admin-passkey-upgrade') === 'true' ||
+      form.getAttribute('data-admin-passkey-enrolment') === 'true') {
+    out.early.push('it is a passkey form');
+  }
+  if (button.matches(':disabled')) {
+    out.early.push('its button is disabled');
+  }
+  if (button.closest('[inert]')) {
+    out.early.push('its button is inert');
+  }
+  if (document.querySelector('[data-reauth]')) {
+    out.early.push('the sign-in-again bar is up');
+  }
+  const box = button.getBoundingClientRect();
+  out.box = [Math.round(box.left), Math.round(box.top),
+             Math.round(box.width), Math.round(box.height)];
+  if (!box.width || !box.height) {
+    out.early.push('its button has no box');
+  } else {
+    const hit = document.elementFromPoint(box.left + box.width / 2,
+                                          box.top + box.height / 2);
+    if (!hit || (hit !== button && !button.contains(hit))) {
+      out.early.push('its button is under ' + describe(hit));
+    }
+  }
+  out.scrollY = Math.round(window.scrollY);
+  out.visibility = document.visibilityState;
+  out.focused = document.hasFocus();
+  const press = window.__stsPress;
+  out.press = press ? { clicked: press.clicked, submitted: press.submitted,
+                        taken: press.taken, events: press.events } : null;
+  return out;
+`;
+
+// Watches the next press: every pointer event from the window's capture
+// phase, the form's submit, and whether the console claimed it.
+const WATCH_PRESS = `
+  const form = arguments[0];
+  const button = arguments[1];
+  if (!window.__stsPressWired) {
+    window.__stsPressWired = true;
+    const describe = function (el) {
+      if (!el || !el.tagName) { return String(el); }
+      return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') +
+        ' "' + String(el.textContent || '').trim().slice(0, 20) + '"';
+    };
+    ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(function (k) {
+      window.addEventListener(k, function (e) {
+        const p = window.__stsPress;
+        if (!p) { return; }
+        p.events.push(k + ' ' + describe(e.target) + ' at ' +
+                      Math.round(e.clientX) + ',' + Math.round(e.clientY));
+        if (k === 'click' &&
+            (e.target === p.button || p.button.contains(e.target))) {
+          p.clicked = true;
+        }
+      }, true);
+    });
+    window.addEventListener('submit', function (e) {
+      const p = window.__stsPress;
+      if (p && e.target === p.form) { p.submitted = true; }
+    }, true);
+    window.addEventListener('submit', function (e) {
+      const p = window.__stsPress;
+      if (p && e.target === p.form) { p.taken = e.defaultPrevented; }
+    }, false);
+  }
+  window.__stsPress = { form: form, button: button, events: [],
+                        clicked: false, submitted: false, taken: null };
+`;
+
+async function formState(driver, form, button, centre) {
+  log.debug("Entering formState().");
+  const state = await driver.executeScript(FORM_STATE, form, button,
+                                           !!centre)
+    .catch(function (e) {
+      // A form the page has drawn again, or a document torn down under the
+      // probe: said, rather than thrown.
+      log.debug("Caught in formState(): " + ((e && e.message) || e));
+      return { error: String((e && e.message) || e) };
+    });
+  if (state.error) {
+    // The press as it was watched is still the window's, form or no form.
+    state.press = await driver.executeScript(
+      "const p = window.__stsPress;" +
+      "return p ? { clicked: p.clicked, submitted: p.submitted," +
+      " taken: p.taken, events: p.events } : null;")
+      .catch(function (e) {
+        log.debug("Caught in formState(): " + ((e && e.message) || e));
+        return null;
+      });
+  }
+  log.debug("Leaving formState().");
+  return state;
+}
+
+// Until the console would send the form: what a person sees before pressing.
+async function waitSubmittable(driver, form, button) {
+  log.debug("Entering waitSubmittable().");
+  let last = null;
+  await driver.wait(async function () {
+    last = await formState(driver, form, button, true);
+    return !last.error && last.valid && last.early.length === 0;
+  }, 15000).catch(function (e) {
+    log.debug("Caught in waitSubmittable(): " + ((e && e.message) || e));
+    throw new Error("the form never became one the console would send: " +
+                    JSON.stringify(last));
+  });
+  log.debug("Leaving waitSubmittable().");
+}
+
+// The browser's own record of the requests it STARTED, finished or not.
+async function networkSince(driver) {
+  log.debug("Entering networkSince().");
+  const entries = await driver.manage().logs().get(logging.Type.PERFORMANCE)
+    .catch(function (e) {
+      log.debug("Caught in networkSince(): " + ((e && e.message) || e));
+      return [];
+    });
+  const started = [];
+  const ended = {};
+  entries.forEach(function (entry) {
+    let message = null;
+    try {
+      message = JSON.parse(entry.message).message;
+    } catch (e) {
+      // Not an event this reads.
+      log.debug("Caught in networkSince(): " + ((e && e.message) || e));
+      return;
+    }
+    const params = (message && message.params) || {};
+    if (message.method === "Network.requestWillBeSent" && params.request &&
+        /\/admin-api\/|\/oauth2\//.test(String(params.request.url))) {
+      started.push({ id: params.requestId,
+                     what: params.request.method + " " +
+                           String(params.request.url)
+                             .replace(/^https?:\/\/[^/]+/, "") });
+    } else if (message.method === "Network.loadingFinished") {
+      ended[params.requestId] = "finished";
+    } else if (message.method === "Network.loadingFailed") {
+      ended[params.requestId] = "failed: " + params.errorText;
+    }
+  });
+  log.debug("Leaving networkSince().");
+  return started.map(function (one) {
+    return one.what + " (" + (ended[one.id] || "STILL IN FLIGHT") + ")";
+  });
+}
+
+// Presses the button and reads what the press did; again where its click
+// never reached the button.
+async function press(driver, form, button) {
+  log.debug("Entering press().");
+  let seen = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await driver.executeScript(WATCH_PRESS, form, button);
+    await button.click();
+    seen = await formState(driver, form, button, false);
+    if (seen.error) {
+      throw new Error("the page could not be read after the press: " +
+                      seen.error);
+    }
+    if (!seen.press || seen.press.clicked) {
+      break;
+    }
+    log.info("press " + attempt + " never reached the button, so nothing " +
+             "was sent; pressed again: " + JSON.stringify(seen));
+  }
+  if (!seen.press || !seen.press.clicked) {
+    throw new Error("three presses never reached the button: " +
+                    JSON.stringify(seen));
+  }
+  if (!seen.press.submitted) {
+    throw new Error("the button was clicked and the form fired no submit " +
+                    "event: " + JSON.stringify(seen));
+  }
+  if (seen.press.taken !== true) {
+    throw new Error("the form's submit was not claimed by the console: " +
+                    JSON.stringify(seen));
+  }
+  log.debug("Leaving press().");
+}
+
 // Submits the form on the open tab that holds this field.
 async function submitFormHolding(driver, tab, selector, fields, answerMs) {
   log.debug("Entering submitFormHolding(). " + selector);
@@ -164,7 +438,12 @@ async function submitFormHolding(driver, tab, selector, fields, answerMs) {
   const before = await driver.getCurrentUrl();
   const action = await (await form.findElement(
     By.css("input[name='action']"))).getAttribute("value");
-  await (await form.findElement(By.css("button[type='submit']"))).click();
+  const button = await form.findElement(By.css("button[type='submit']"));
+  await waitSubmittable(driver, form, button);
+  // What the page loaded is read and dropped, so the record a failure
+  // reports holds only what the press started.
+  await networkSince(driver);
+  await press(driver, form, button);
   // UNTIL THE ANSWER HAS ARRIVED, NOT FOR A FIXED TIME. The console fetches the
   // API document before it sends a form, about 0.8s on an idle stack. After a
   // fixed 1.5s on a busy machine the next read found Remove not yet done, and
@@ -179,19 +458,19 @@ async function submitFormHolding(driver, tab, selector, fields, answerMs) {
     .catch(async function (e) {
       // WHAT THE PAGE WAS DOING, rather than a bare timeout (GitHub run
       // 44025839154, single-node: Remove had no answer after 30 s and the
-      // service logged nothing for it). The address, whether the form that
-      // was pressed is still in the document, the last requests the page
-      // made, and its console.
+      // service logged nothing for it): the form as the console reads it
+      // and the press (above), the requests the press started and whether
+      // each finished, the last requests the page completed, and its
+      // console.
       log.debug("Caught waiting for the answer: " + ((e && e.message) || e));
+      const state = await formState(driver, form, button, false);
+      const started = await networkSince(driver);
       const seen = await driver.executeScript(
-        "return { at: location.href," +
-        " attached: document.contains(arguments[0])," +
-        " reauth: !!document.querySelector('[data-reauth]')," +
-        " text: document.body.innerText.slice(0, 300)," +
+        "return { text: document.body.innerText.slice(0, 300)," +
         " requests: performance.getEntriesByType('resource')" +
         ".slice(-15).map(function (one) {" +
         " return one.name.replace(location.origin, '') + ' ' +" +
-        " Math.round(one.duration) + 'ms'; }) };", form)
+        " Math.round(one.duration) + 'ms'; }) };")
         .catch(function (err) {
           return { error: String((err && err.message) || err) };
         });
@@ -204,6 +483,8 @@ async function submitFormHolding(driver, tab, selector, fields, answerMs) {
           return ["(no console: " + ((err && err.message) || err) + ")"];
         });
       throw new Error("no answer to the " + action + " form: " +
+                      JSON.stringify(state) + " started: " +
+                      JSON.stringify(started) + " page: " +
                       JSON.stringify(seen) + " console: " +
                       JSON.stringify(pageConsole));
     });
@@ -233,6 +514,9 @@ async function test() {
   // The page's console, read only when a form has no answer.
   const prefs = new logging.Preferences();
   prefs.setLevel(logging.Type.BROWSER, logging.Level.ALL);
+  // And the requests the browser started, which a form with no answer
+  // reports whether or not they finished (`networkSince()`).
+  prefs.setLevel(logging.Type.PERFORMANCE, logging.Level.ALL);
   options.setLoggingPrefs(prefs);
   options.addArguments("--headless=new", "--no-sandbox",
       "--disable-dev-shm-usage", "--window-size=1400,1200");
