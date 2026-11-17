@@ -2008,6 +2008,66 @@ function compileProblem(ajv, schema, components) {
   return null;
 }
 
+// A REFUSAL AHEAD OF EVERY ROUTE MEETS EVERY OPERATION'S MODEL (2026-11-16).
+// The body parsers, the validation guard and the request ceiling answer before
+// any route, so `install()` never sees what they send and no live answer is
+// held to a model; `common/surface_refusals.ts` writes each API's shape. Each
+// operation's model for each status they answer it with is held here: 400 (the
+// guard, a body cut short) and 429 (the ceiling) on every operation, 413 and
+// 415 on one that takes a body — the declared status's model, or `default`.
+function refusalsAheadOfTheRoutesMeetEveryModel(t, docs) {
+  log.debug("Entering refusalsAheadOfTheRoutesMeetEveryModel().");
+  const { ResponseModels } = require('../common/response_models');
+  const quiet = { debug: function () {}, error: function () {},
+                  warn: function () {}, info: function () {} };
+  const models = new ResponseModels({ log: quiet,
+                                      mark: function () {},
+                                      tag: function (code) {
+                                        return '[' + code + '] ';
+                                      } });
+  const SurfaceRefusals = require('../common/surface_refusals');
+  const refusals = new SurfaceRefusals({ log: quiet });
+  const SURFACE = { admin: 'management', account: 'account',
+                    authn: 'authn', report: 'report' };
+  Object.keys(SURFACE).forEach(function (api) {
+    const doc = docs[api];
+    const installed = models.installed(function () {
+      return doc;
+    });
+    let held = 0;
+    const wrong = [];
+    Object.keys(doc.paths).forEach(function (template) {
+      const concrete = template.replace(/\{[^}]+\}/g, 'x');
+      Object.keys(doc.paths[template]).forEach(function (method) {
+        const op = doc.paths[template][method];
+        if (!op || !op.responses) {
+          return;
+        }
+        const statuses = [400, 429].concat(op.requestBody ? [413, 415] : []);
+        statuses.forEach(function (status) {
+          const shaped = refusals.shape(SURFACE[api], status,
+            'A refusal ahead of every route.',
+            { part: status === 400 ? 'query' : 'body', retryAfterS: 60 });
+          const problem = models.problemOf(installed,
+            { method: method.toUpperCase(), baseUrl: '', path: concrete },
+            { statusCode: status, get: function () {
+              return shaped.type;
+            } }, shaped.body);
+          held += 1;
+          if (problem) {
+            wrong.push(method.toUpperCase() + ' ' + template + ' ' + status +
+                       ': ' + problem.where);
+          }
+        });
+      });
+    });
+    t.check(held > 0 && wrong.length === 0, api + ': each of ' + held +
+            ' refusals made ahead of the routes meets its operation\'s model',
+            wrong.slice(0, 20).join('; '));
+  });
+  log.debug("Leaving refusalsAheadOfTheRoutesMeetEveryModel().");
+}
+
 function ruleOverDocuments(t) {
   log.debug("Entering ruleOverDocuments().");
   const docs = documents();
@@ -2020,6 +2080,7 @@ function ruleOverDocuments(t) {
   consoleAndManagementAgree(t, docs);
   everySchemaRowMeetsTheRowModel(t, docs);
   codesOnlyWhereDrawn(t, docs);
+  refusalsAheadOfTheRoutesMeetEveryModel(t, docs);
   delete docs.finalization;
   delete docs.barrier;
   delete docs.directoryPages;

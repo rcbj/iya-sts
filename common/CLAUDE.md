@@ -2618,6 +2618,39 @@ own — the LDAP connection needed a mirror and an ask, and everything the front
 process MINTS needed the barrier to know it had. Neither was found by reasoning
 about the design; both were found by one job in one mode.
 
+### A REFUSAL AHEAD OF EVERY ROUTE ANSWERS IN ITS API'S OWN SHAPE (2026-11-16)
+
+**`surface_refusals.ts` writes the answer to every refusal made before the
+router on a JSON API**, in that API's documented error shape, never one
+generic shape. Three middlewares make such refusals: the body parsers' error
+handler in `app.js` (413 `STS-HTTP-0004`, 415 `STS-HTTP-0012`, 400
+`STS-HTTP-0013`), `validation.js`'s guard (400 `STS-HTTP-0010`, `-0011`) and
+`request_budget.ts` (429 `STS-CORE-0172`, Retry-After 60). Until then the
+first was Express's HTML page and the other two `text/plain` on every path;
+the fuzzing of the PEP control plane (PR #1858) found both. The router has not
+chosen an endpoint, but the PATH has chosen an API, and each API documents one
+refusal shape for all its operations: `/admin-api` and `/account-api` `{ ok:
+false, errors }`; `/authn-api` `refuse()`'s four members; `/report-api` and
+`/xacml/pep/*` `{ error, error_description }` (the PEP's 429 adds
+`retryAfterS`); `POST /xacml/pip` a `PIPError` in XML; `/access/v1` AuthZEN's
+`{ error: { status, message } }`; `/scim/v2` RFC 7644 3.12's Error as
+`application/scim+json`; OAuth's and OpenID4VCI's JSON endpoints RFC 6749
+5.2's; GNAP's `{ error: { code, description } }`.
+
+**Everything else answers exactly as before**: the console and the static
+surfaces, `/oauth2/authorize` (a person's browser), SAML, WS-*, Kerberos, and
+ACME, whose problem documents need a fresh `Replay-Nonce` only `acme.ts` mints.
+**An unrouted path is untouched**: these are refusals, not 404s, and `Cannot
+GET /path` stays Express's. The code is marked and written on the row as it
+was; it is never in a body. An error of 500 or more is handed on, to
+`response_models.ts`'s `answerExceptions()` on the four published APIs.
+
+**A NEW JSON API OWES A ROW in `SURFACES` and in `tests/surface_refusals.js`**,
+or its refusals ahead of the routes answer in text. The four APIs' `default`
+models already hold these bodies (`openapi_response_models.js` holds every
+operation's model, status by status); the PEP control plane declares each at
+its status (`models/pep/pep_control_plane.tsp`).
+
 ### A BODY THE PARSERS DO NOT TAKE, AND A PROXY THAT MUST NOT HOLD IT (#215, 2026-09-24)
 
 `app.js`'s two body parsers drain every body into memory at 5 MB. **The two

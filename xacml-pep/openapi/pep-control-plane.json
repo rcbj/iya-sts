@@ -3,7 +3,7 @@
   "info": {
     "title": "IYA STS remote PEP control plane",
     "version": "1",
-    "description": "What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/xml on POST /xacml/pip and Accept: application/json everywhere else, and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+    "description": "What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; a request refused before any endpoint sees it (a body over 5 MB, 413; in a character set or content encoding the service does not read, 415; cut short of its Content-Length, or a control character or a parameter named __proto__, constructor or prototype in the query, 400; over the ceiling on one address's requests, 429 with Retry-After) is answered in the same shapes; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/xml on POST /xacml/pip and Accept: application/json everywhere else, and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
   },
   "servers": [
     {
@@ -190,6 +190,31 @@
           "notify",
           "note"
         ]
+      },
+      "TooManyRequests": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "too_many_requests"
+            ]
+          },
+          "error_description": {
+            "type": "string"
+          },
+          "retryAfterS": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "error_description",
+          "retryAfterS"
+        ],
+        "description": "A refusal for now, from every validation door: the doors' shared limiter (STS-XACML-0215), or basic's lockout of the account (0205). The wait is retryAfterS, and the Retry-After header."
       },
       "LibrarySessions": {
         "type": "object",
@@ -2233,31 +2258,6 @@
         ],
         "description": "valid false alone, or valid true with username, sub and a ticket: opaque, bound to this PEP, good for 120 s, the evidence the identity door takes."
       },
-      "TooManyRequests": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "enum": [
-              "too_many_requests"
-            ]
-          },
-          "error_description": {
-            "type": "string"
-          },
-          "retryAfterS": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "error",
-          "error_description",
-          "retryAfterS"
-        ],
-        "description": "A refusal for now, from every validation door: the doors' shared limiter (STS-XACML-0215), or basic's lockout of the account (0205). The wait is retryAfterS, and the Retry-After header."
-      },
       "SamlRequest": {
         "type": "object",
         "properties": {
@@ -2527,7 +2527,7 @@
             }
           },
           "400": {
-            "description": "No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",
+            "description": "No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2552,6 +2552,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -2616,7 +2653,7 @@
             }
           },
           "400": {
-            "description": "No name (STS-XACML-0020) or a bad hostname (0261).",
+            "description": "No name (STS-XACML-0020) or a bad hostname (0261). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2663,6 +2700,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -2762,6 +2836,16 @@
               }
             }
           },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
             "headers": {
@@ -2790,6 +2874,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -2858,6 +2959,16 @@
               }
             }
           },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
             "headers": {
@@ -2886,6 +2997,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -2964,6 +3092,16 @@
               }
             }
           },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
             "headers": {
@@ -2992,6 +3130,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3070,6 +3225,16 @@
               }
             }
           },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
             "headers": {
@@ -3098,6 +3263,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3176,6 +3358,16 @@
               }
             }
           },
+          "400": {
+            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
             "headers": {
@@ -3204,6 +3396,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3247,7 +3456,7 @@
             }
           },
           "400": {
-            "description": "Not a defined https listener of this PEP (STS-XACML-0253), or a bad CSR or key (0254).",
+            "description": "Not a defined https listener of this PEP (STS-XACML-0253), or a bad CSR or key (0254). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3294,6 +3503,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }
@@ -3348,7 +3594,7 @@
             }
           },
           "400": {
-            "description": "No token, or too long (STS-XACML-0207).",
+            "description": "No token, or too long (STS-XACML-0207). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3389,8 +3635,28 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "The limiter (STS-XACML-0215).",
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -3456,7 +3722,7 @@
             }
           },
           "400": {
-            "description": "Malformed (STS-XACML-0204).",
+            "description": "Malformed (STS-XACML-0204). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3497,8 +3763,28 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After.",
+            "description": "Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After. Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -3564,7 +3850,7 @@
             }
           },
           "400": {
-            "description": "Malformed (STS-XACML-0208).",
+            "description": "Malformed (STS-XACML-0208). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3605,8 +3891,28 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "The limiter (STS-XACML-0215).",
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -3672,7 +3978,7 @@
             }
           },
           "400": {
-            "description": "Malformed (STS-XACML-0214).",
+            "description": "Malformed (STS-XACML-0214). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3713,8 +4019,28 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "The limiter (STS-XACML-0215).",
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -3780,7 +4106,7 @@
             }
           },
           "400": {
-            "description": "Malformed, or claims the route does not name (STS-XACML-0229).",
+            "description": "Malformed, or claims the route does not name (STS-XACML-0229). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3821,6 +4147,26 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The route not usable, no SAML entity ID or no directory entry (STS-XACML-0233); issuance failed (0235).",
             "content": {
@@ -3832,7 +4178,7 @@
             }
           },
           "429": {
-            "description": "The limiter (STS-XACML-0215).",
+            "description": "The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
             "headers": {
               "Retry-After": {
                 "schema": {
@@ -3898,7 +4244,7 @@
             }
           },
           "400": {
-            "description": "Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025).",
+            "description": "Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",
             "content": {
               "application/xml": {
                 "schema": {
@@ -3939,8 +4285,28 @@
               }
             }
           },
+          "413": {
+            "description": "A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "The limiter (STS-XACML-0022). Retry-After.",
+            "description": "The limiter (STS-XACML-0022). Retry-After. Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",
             "headers": {
               "Retry-After": {
                 "schema": {

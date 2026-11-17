@@ -29,6 +29,14 @@
 // every validation door answers one 429 shape. `xacml/CLAUDE.md`, *What
 // modelling the control plane corrected*, argues each.
 //
+// THE REFUSALS AHEAD OF EVERY ROUTE (2026-11-16): a body over 5 MB, in a
+// charset or encoding the service does not read, or cut short; a control
+// character or a polluting name in the query; the per-address ceiling. The
+// fuzzing of PR #1858 found the first two answered as Express's HTML page and
+// in text; `common/surface_refusals.ts` answers them as `Error` (and
+// `TooManyRequests`), and a `PIPError` at the PIP, and every operation here
+// declares each at its status. `tests/surface_refusals.js` holds the two.
+//
 // The PEP reaches the five validation doors at the absolute URLs the proxy
 // pull's `validation` names, which are these paths under the realm.
 
@@ -41,7 +49,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP control plane",
     `version`:"1",
-    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/xml on POST /xacml/pip and Accept: application/json everywhere else, and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
+    `description`:"What the identity service serves for a remote XACML PEP: registration and heartbeat, the pulls (policies, AuthZEN attribute catalogue and callers, reverse-proxy configuration, managed settings and listeners), a defined listener's certificate, the reverse proxy's five validation doors and the PIP. Paths are under PEP_PDP_URL, which carries the realm's prefix (/realm/<id>). Every operation needs a client certificate the service verifies whose entry holds REMOTE_PEPS (the access-control policy on xacml-pep-api: READ for the pulls, the doors and the PIP; WRITE for register, heartbeat and listener-certificate); a refusal is 403 access_denied (STS-XACML-0007, 0008, 0009, 0010, 0179, 0180, or the revocation's code). xacml.enabled off is 501 (STS-XACML-0001), xacml.remotePeps off 501 (0002), both before the gate. A pull's sync token is base64url SHA-256, sent as ETag in quotes; ?since=<token> equal to it answers 304, and so does an If-None-Match that matches the ETag (RFC 9110 section 13.1.2: *, or a list of entity tags compared weakly). Errors are the Error object, with Cache-Control: no-store, except at POST /xacml/pip, where every refusal (the gate's and the off switches' included) is a PIPError in XML; a request refused before any endpoint sees it (a body over 5 MB, 413; in a character set or content encoding the service does not read, 415; cut short of its Content-Length, or a control character or a parameter named __proto__, constructor or prototype in the query, 400; over the ceiling on one address's requests, 429 with Retry-After) is answered in the same shapes; no error code is ever in a body, except a route's resolved.code inside the proxy pull. The PEP sends Accept: application/xml on POST /xacml/pip and Accept: application/json everywhere else, and User-Agent: sts/<version> (xacml-pep), and follows no redirect."
   },
   `servers`:#[
     #{`url`:"https://localhost:8081",`description`:"PEP_PDP_URL: the service, with /realm/<id> for a realm."}
@@ -114,9 +122,12 @@ namespace IyaSts.Pep.ControlPlane {
   `responses`:#{
     `200`:#{`description`:"Registered again.",`content`:#{`application/json`:#{`schema`:null}}},
     `201`:#{`description`:"Registered for the first time.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client; or the token door refused the credential (see the dpop scheme), with a DPoP challenge.",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
     `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",`content`:#{`application/json`:#{`schema`:null}}},
     `507`:#{`description`:"The directory refused the entry: ou=peps holds xacml.maxPeps, or the directory its entry cap (STS-XACML-0027): server_error, until an operator makes room.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -128,6 +139,9 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/501/content/application~1json/schema`: `Error`,
   `responses/503/content/application~1json/schema`: `Error`,
   `responses/507/content/application~1json/schema`: `Error`): void;
@@ -286,10 +300,13 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Acknowledged.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No name (STS-XACML-0020) or a bad hostname (0261).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No name (STS-XACML-0020) or a bad hostname (0261). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
     `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error.",`content`:#{`application/json`:#{`schema`:null}}},
     `507`:#{`description`:"The directory refused the write (STS-XACML-0027): server_error.",`content`:#{`application/json`:#{`schema`:null}}}
@@ -301,6 +318,9 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/404/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/501/content/application~1json/schema`: `Error`,
   `responses/503/content/application~1json/schema`: `Error`,
   `responses/507/content/application~1json/schema`: `Error`): void;
@@ -340,14 +360,18 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `responses`:#{
     `200`:#{`description`:"The policies. ETag: \"<syncToken>\".",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `400`:#{`description`:"A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
+  `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- AuthZEN
@@ -393,15 +417,19 @@ op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
   `responses`:#{
     `200`:#{`description`:"The catalogue. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `400`:#{`description`:"A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since or If-None-Match is compared.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getAuthzenCatalogue`(`responses/200/content/application~1json/schema`: `AuthzenCatalogue`,
+  `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -449,14 +477,18 @@ op `getAuthzenCatalogue`(`responses/200/content/application~1json/schema`: `Auth
   `responses`:#{
     `200`:#{`description`:"The callers. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `400`:#{`description`:"A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `AuthzenCallers`,
+  `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- proxy
@@ -568,14 +600,18 @@ op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `Authze
   `responses`:#{
     `200`:#{`description`:"The configuration. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `400`:#{`description`:"A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
+  `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- settings
@@ -680,14 +716,18 @@ op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
   `responses`:#{
     `200`:#{`description`:"The settings. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `400`:#{`description`:"A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull`,
+  `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- listener certificate
@@ -717,10 +757,13 @@ op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Issued, or the one held.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"Not a defined https listener of this PEP (STS-XACML-0253), or a bad CSR or key (0254).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"Not a defined https listener of this PEP (STS-XACML-0253), or a bad CSR or key (0254). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0253).",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"Issuance failed (STS-XACML-0255).",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -731,6 +774,9 @@ op `postListenerCertificate`(`requestBody/content/application~1json/schema`: `Li
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/404/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -837,10 +883,12 @@ op `postListenerCertificate`(`requestBody/content/application~1json/schema`: `Li
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"The token's reading.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No token, or too long (STS-XACML-0207).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No token, or too long (STS-XACML-0207). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -850,6 +898,8 @@ op `postIntrospect`(`requestBody/content/application~1json/schema`: `IntrospectR
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
@@ -861,10 +911,12 @@ op `postIntrospect`(`requestBody/content/application~1json/schema`: `IntrospectR
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Valid or not; the reason is audited (STS-XACML-0206).",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"Malformed (STS-XACML-0204).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"Malformed (STS-XACML-0204). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `429`:#{`description`:"Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After. Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -874,6 +926,8 @@ op `postBasic`(`requestBody/content/application~1json/schema`: `BasicRequest`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
@@ -885,10 +939,12 @@ op `postBasic`(`requestBody/content/application~1json/schema`: `BasicRequest`,
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Valid or not.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"Malformed (STS-XACML-0208).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"Malformed (STS-XACML-0208). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -898,6 +954,8 @@ op `postSaml`(`requestBody/content/application~1json/schema`: `SamlRequest`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
@@ -909,10 +967,12 @@ op `postSaml`(`requestBody/content/application~1json/schema`: `SamlRequest`,
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Live or ended.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"Malformed (STS-XACML-0214).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"Malformed (STS-XACML-0214). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -922,6 +982,8 @@ op `postSession`(`requestBody/content/application~1json/schema`: `SessionRequest
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
@@ -933,11 +995,13 @@ op `postSession`(`requestBody/content/application~1json/schema`: `SessionRequest
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"The identity.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"Malformed, or claims the route does not name (STS-XACML-0229).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"Malformed, or claims the route does not name (STS-XACML-0229). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate; not one of this PEP's non-public routes (STS-XACML-0230); the evidence invalid or not for the application (0231); the ticket unknown, expired or another PEP's (0232); the issuance policy refused (0234).",`content`:#{`application/json`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `422`:#{`description`:"The route not usable, no SAML entity ID or no directory entry (STS-XACML-0233); issuance failed (0235).",`content`:#{`application/json`:#{`schema`:null}}},
-    `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
+    `429`:#{`description`:"The limiter (STS-XACML-0215). Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
@@ -947,6 +1011,8 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
+  `responses/413/content/application~1json/schema`: `Error`,
+  `responses/415/content/application~1json/schema`: `Error`,
   `responses/422/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
@@ -970,10 +1036,12 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
   `requestBody`:#{`required`:true,`content`:#{`application/xml`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"The attributes. Cache-Control: no-store.",`content`:#{`application/xml`:#{`schema`:null}}},
-    `400`:#{`description`:"Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025).",`content`:#{`application/xml`:#{`schema`:null}}},
+    `400`:#{`description`:"Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/xml`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate, the body a PIPError.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/xml`:#{`schema`:null}}},
     `403`:#{`description`:"The gate (the codes in the document's description), error=\"access_denied\".",`content`:#{`application/xml`:#{`schema`:null}}},
-    `429`:#{`description`:"The limiter (STS-XACML-0022). Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/xml`:#{`schema`:null}}},
+    `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/xml`:#{`schema`:null}}},
+    `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/xml`:#{`schema`:null}}},
+    `429`:#{`description`:"The limiter (STS-XACML-0022). Retry-After. Or over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/xml`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off (STS-XACML-0001, 0002), error=\"not_implemented\".",`content`:#{`application/xml`:#{`schema`:null}}}
   }
 })
@@ -982,6 +1050,8 @@ op `postPip`(`requestBody/content/application~1xml/schema`: `PipRequest`,
   `responses/400/content/application~1xml/schema`: `PipError`,
   `responses/401/content/application~1xml/schema`: `PipError`,
   `responses/403/content/application~1xml/schema`: `PipError`,
+  `responses/413/content/application~1xml/schema`: `PipError`,
+  `responses/415/content/application~1xml/schema`: `PipError`,
   `responses/429/content/application~1xml/schema`: `PipError`,
   `responses/501/content/application~1xml/schema`: `PipError`): void;
 
