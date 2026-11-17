@@ -401,6 +401,19 @@ async function thePageAndTheApiAgree(consoleClient) {
         function () {
           json.jobs.forEach(function (j) {
             const other = jobOf(pageJson.body, j.id, j.realm);
+            // A DUE RUN BETWEEN THE TWO READS (2026-11-16): a job with no
+            // next run once it has run — persistence.granting-key-backfill
+            // (#1311) — read due on the API (02:28:00, read at 02:28:22 in
+            // a GitHub cluster run) and finished by the page's read, which
+            // said null. A time already past on one read and null on the
+            // other is that run, not a disagreement.
+            const due = function (at) {
+              return at !== null && Date.parse(at) <= Date.now();
+            };
+            if ((j.nextRunAt === null && due(other.nextRunAt)) ||
+                (other.nextRunAt === null && due(j.nextRunAt))) {
+              return;
+            }
             if (j.nextRunAt === null || other.nextRunAt === null) {
               assert.strictEqual(j.nextRunAt, other.nextRunAt, j.id);
               return;
