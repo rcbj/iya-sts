@@ -930,7 +930,22 @@ async function provisionTheContainersIdentity() {
   // enforcement point is a record somebody reads. The realm's attribute
   // policy (#396) requires givenName, sn and mail of every entry under
   // ou=users in product mode.
-  const made = await postJson(api("/users/create"), {
+  //
+  // **A DEVELOPMENT REALM ALREADY HOLDS IT** (2026-11-16, the first local
+  // memory run after phase 4): development seeds `cn=remote-pep-1` in every
+  // realm's directory and in `remote-peps` (ldap_server.js, demo data), so a
+  // create there is refused as a username already held (STS-LDAP-0005).
+  // That entry is the one the container's assertion key is registered on,
+  // so it is used as it stands; product seeds none and the create runs.
+  const existing = await get(api("/users/certificates?user=" +
+                                 encodeURIComponent(PEP_NAME)));
+  if (existing.status === 200) {
+    log.info(PEP_NAME + " is already in " + REALM + "'s directory (" +
+             ((existing.body || {}).dn || "?") + "), which is development's " +
+             "seed; it is used as it stands.");
+  }
+  const made = existing.status === 200 ? existing :
+    await postJson(api("/users/create"), {
     username: PEP_NAME, invent: false,
     attributes: { cn: PEP_NAME, givenName: "Remote", sn: "Remote PEP",
                   mail: PEP_NAME + "@xacml-remote-pep.test",
