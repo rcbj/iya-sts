@@ -4883,9 +4883,17 @@ async function theProxyForwardsTheIdentity() {
     assert.strictEqual(h["x-iya-user"], adminSub,
       "X-Iya-User is the person's sub; it arrived as " +
       JSON.stringify(h["x-iya-user"]));
+    // THE TOKEN'S `email`, WHICH THIS SECTION'S DEVELOPMENT REALM INVENTS
+    // (2026-11-16, the first local run): helpers.js's userFor() gives a
+    // development sign-in its persona — `<name>@<the realm's domain>`,
+    // realms.inventedMailOf() — and the claim-attribute resolver reads the
+    // entry's `mail` only for a claim set that selects it. The header is the
+    // claim the token carried, which is what the proxy forwards; the entry's
+    // own mail (@xacml-remote-pep.test) is not in it.
     assert.strictEqual(h["x-iya-email"],
-                       ADMIN_PERSON + "@xacml-remote-pep.test",
-      "X-Iya-Email is the entry's mail; it arrived as " +
+                       ADMIN_PERSON + "@" + REALM + ".example.net",
+      "X-Iya-Email is the token's email claim, the development persona's " +
+      "address in the realm's domain; it arrived as " +
       JSON.stringify(h["x-iya-email"]));
     assert.ok(String(h["x-iya-groups"] || "").split(",")
       .indexOf("ssf-read") >= 0,
