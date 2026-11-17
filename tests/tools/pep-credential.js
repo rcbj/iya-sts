@@ -1016,8 +1016,24 @@ async function issueAssertionCredential(api, base, prefix, name, csrPem,
   log.debug("Entering issueAssertionCredential(). " + prefix + " " + name);
   const url = String(base || '').replace(/\/+$/, '') + String(prefix || '') +
               '/admin-api/xacml/issue-pep-credential';
-  const r = await api.post(url, Object.assign({ name: name, csr: csrPem },
-    (options && options.revokePrevious) ? { revokePrevious: true } : {}));
+  const payload = Object.assign({ name: name, csr: csrPem },
+    (options && options.revokePrevious) ? { revokePrevious: true } : {});
+  // A REALM'S CERTIFICATE AUTHORITY IS BUILT JUST AFTER realms/create
+  // ANSWERS (2026-11-16): a job that creates a realm and issues straight
+  // away met "has no certificate authority yet" (STS-PKI-0008) on the first
+  // local runs — sts_xacml_remote_pep in memory, sts_fga in single-node —
+  // with the branch logged built a second or two later. That refusal, and
+  // only that one, is asked again for up to a minute.
+  const deadline = Date.now() + 60000;
+  let r = await api.post(url, payload);
+  while (r.status === 400 && Date.now() < deadline &&
+         /no certificate authority yet/.test(String(r.text ||
+           JSON.stringify(r.body || {})))) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 500);
+    });
+    r = await api.post(url, payload);
+  }
   if (r.status !== 200 || !r.body || !r.body.ok) {
     log.debug("Leaving issueAssertionCredential(). Refused.");
     throw new Error('POST ' + prefix + '/admin-api/xacml/' +

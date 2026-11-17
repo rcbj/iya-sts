@@ -5684,7 +5684,15 @@ async function createThePeople() {
       attributes: { cn: "Remote PEP " + one[2] + " Person", givenName: "Remote",
                     sn: one[2] + " Person", displayName: "Remote PEP " + one[2],
                     mail: one[0] + "@xacml-remote-pep.test",
-                    employeeType: one[1] }
+                    employeeType: one[1] },
+      // A PASSWORD TYPED, NOT GENERATED (2026-11-16, the first local
+      // single-node run): in a product realm a create with none GENERATES
+      // one and sets pwdReset (#1446), and section 10's browser sign-in —
+      // in the realm switched to development, which checks no password but
+      // still honours pwdReset — was sent to the password-change step
+      // instead of on. An administrator's typed password sets no pwdReset.
+      credential: "password",
+      password: "Pep-" + nodeCrypto.randomBytes(18).toString("base64url")
     });
     assert.ok(r.status === 200 && r.body && r.body.ok,
       "POST /admin-api/users/create should put " + one[0] + " (employeeType=" +
