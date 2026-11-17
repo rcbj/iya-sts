@@ -408,6 +408,8 @@ async function thePageAndTheApiAgree(consoleClient) {
             // said null. A time already past on one read and null on the
             // other is that run, not a disagreement.
             const due = function (at) {
+              log.debug("Entering due().");
+              log.debug("Leaving due().");
               return at !== null && Date.parse(at) <= Date.now();
             };
             if ((j.nextRunAt === null && due(other.nextRunAt)) ||
