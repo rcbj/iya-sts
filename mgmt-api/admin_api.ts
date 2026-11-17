@@ -10572,7 +10572,11 @@ class AdminApi {
                        '/admin/delegation-settings'],
       getPermissionGroups: ['/admin/delegation/cluster'],
       getFederationRelationships: ['/admin/federation/map'],
-      getOpenApi: ['/admin/api-explorer']
+      getOpenApi: ['/admin/api-explorer'],
+      // The remote PEPs' monitor (#1760) draws GET /admin-api/xacml/peps,
+      // which `mirrors` names in a sentence of four pages; the index reads
+      // one page per `mirrors`, so the drawing is named here as well.
+      getXacmlPeps: ['/admin/xacml/pep/monitor']
     };
     Object.keys(DRAWN_ON).forEach(function (id) {
       byId(id).drawnOn = DRAWN_ON[id].slice(0);

@@ -1067,6 +1067,155 @@ services:
       retries: 12
       start_period: 5s
 
+  # ===========================================================================
+  # A REMOTE PEP CLUSTER BEHIND A LOAD BALANCER (2026-11-16, rcbj: "add the
+  # reverse proxy cluster test. Model it after the two node remote pep
+  # cluster we have on 8081"). Two more PEPs from the image above,
+  # `pep-cluster-1` and `pep-cluster-2`, and an HAProxy in front of them
+  # (`pep-cluster-lb`, tests/cluster/pep-haproxy.cfg): 9543 the reverse
+  # proxy, sticky by source address, and 9443 the decision API, round robin.
+  # tests/protocol/sts_xacml_pep_proxy_cluster.js drives all three over HTTP
+  # and shells out to nothing.
+  #
+  # NOT THE `xacml-pep` ABOVE, AND IN A REALM OF THEIR OWN
+  # (`pep-cluster-e2e`): sts_xacml_remote_pep.js reconfigures that PEP's
+  # proxy section by section, takes its PDP away in section 9 and leaves it
+  # that way, and asserts its registration needed retries. A cluster sharing
+  # it would write a second job's ordering into the first.
+  #
+  # EACH AUTHENTICATES WITH ITS OWN RFC 7523 KEY ALONE, as on 8081: no client
+  # certificate, `xacml.pepAuthentication=token` in the realm. ./run-tests.sh
+  # writes each key and its certificate request under
+  # tests/report/pep-cluster-credential/<name> (mintThePepClusterCredentials,
+  # `pep-credential.js --assertion --csr-only`, the first PEP's way), and the
+  # job sends each request to issue-pep-credential once the entry exists,
+  # then issues each member's listener pair, naming the balancer too, and
+  # writes it into `server/` beside the key.
+  #
+  # BEHIND THE `pep-cluster` PROFILE, which ./run-tests.sh turns on in the
+  # modes STS_TEST_PEP_CLUSTER_MODES names (every mode but `fuzz`, which runs
+  # its own jobs only). Elsewhere the job declines to run, with the reason.
+  # Not in the runner's depends_on, for xacml-pep's isolation reason and
+  # because a dependency on a service of an inactive profile is an error.
+  #
+  # PINNED at `.50` to `.52`, for the conformance suite's reason: `sts` adds
+  # `.11` to `.13` to its own interface, which docker's allocator cannot see.
+  # Each member's name is its PEP_NAME AND its hostname, one string, for the
+  # reason the PEP above gives: its listener certificate names its registered
+  # name, and the notify URL it derives is the DNS name equal to its hostname.
+  # The two environments are the same but for PEP_NAME.
+  # ===========================================================================
+  pep-cluster-1:
+    container_name: ${XACML_PEP_CLUSTER_1_CONTAINER_NAME:-xacml-pep-docker-tests-cluster-1}
+    hostname: pep-cluster-1
+    profiles: ["pep-cluster"]
+    # THE IMAGE `xacml-pep` BUILDS, and no build of its own: one artifact,
+    # built once, three containers.
+    image: ${XACML_PEP_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/xacml-pep:${IMAGE_TAG:-latest}}
+    depends_on:
+      sts:
+        condition: service_healthy
+    volumes:
+      - ${XACML_PEP_CLUSTER_CERT_DIR:-./xacml-pep/certs-cluster}/pep-cluster-1:/certs:ro
+    # THE CUSTOM PROXY LISTENER the job defines on this member once it is a
+    # standalone PEP again (sts_xacml_pep_proxy_cluster.js, "Listeners"),
+    # and the port its `port` row moves it to. Reached on this network
+    # only; nothing is published.
+    expose:
+      - "9643"
+      - "9644"
+    environment:
+      - PEP_PDP_URL=${XACML_PEP_CLUSTER_PDP_URL:-https://sts:8081/realm/pep-cluster-e2e}
+      - PEP_NAME=pep-cluster-1
+      - PEP_ASSERTION_KEY=/certs/pep-assertion.key
+      - PEP_HTTPS_CERT=/certs/server/pep-server.crt
+      - PEP_HTTPS_KEY=/certs/server/pep-server.key
+      - PEP_HTTPS_PORT=9443
+      - PEP_HTTPS_RELOAD_INTERVAL_MS=1000
+      - PEP_TLS_INSECURE=true
+      - PEP_BIAS=deny-biased
+      - PEP_PIP=true
+      - PEP_POLL_INTERVAL_MS=5000
+      - PEP_HEARTBEAT_INTERVAL_MS=2000
+      - PEP_BACKOFF_MAX_MS=15000
+      # Short, so both members' decision records reach the audit log well
+      # inside the job's bound.
+      - PEP_AUDIT_INTERVAL_MS=2000
+      - PEP_LOG_LEVEL
+      # PLAIN 9090 ON for the job's reads of GET / before the pair exists,
+      # and for the healthcheck; the proxy's plain listener OFF, as on 8081:
+      # the session routes need https, and the balancer carries 9543 only.
+      - PEP_HTTP=true
+      - PEP_PROXY_HTTP=false
+      - PEP_PROXY_HTTPS_PORT=9543
+      - PEP_PROXY_SESSION_RECHECK_MS=0
+    healthcheck:
+      test: ["CMD", "xacml-pep", "--healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    networks:
+      default:
+        ipv4_address: ${PEP_CLUSTER_1_ADDRESS:-172.30.0.50}
+
+  pep-cluster-2:
+    container_name: ${XACML_PEP_CLUSTER_2_CONTAINER_NAME:-xacml-pep-docker-tests-cluster-2}
+    hostname: pep-cluster-2
+    profiles: ["pep-cluster"]
+    image: ${XACML_PEP_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/xacml-pep:${IMAGE_TAG:-latest}}
+    depends_on:
+      sts:
+        condition: service_healthy
+    volumes:
+      - ${XACML_PEP_CLUSTER_CERT_DIR:-./xacml-pep/certs-cluster}/pep-cluster-2:/certs:ro
+    environment:
+      - PEP_PDP_URL=${XACML_PEP_CLUSTER_PDP_URL:-https://sts:8081/realm/pep-cluster-e2e}
+      - PEP_NAME=pep-cluster-2
+      - PEP_ASSERTION_KEY=/certs/pep-assertion.key
+      - PEP_HTTPS_CERT=/certs/server/pep-server.crt
+      - PEP_HTTPS_KEY=/certs/server/pep-server.key
+      - PEP_HTTPS_PORT=9443
+      - PEP_HTTPS_RELOAD_INTERVAL_MS=1000
+      - PEP_TLS_INSECURE=true
+      - PEP_BIAS=deny-biased
+      - PEP_PIP=true
+      - PEP_POLL_INTERVAL_MS=5000
+      - PEP_HEARTBEAT_INTERVAL_MS=2000
+      - PEP_BACKOFF_MAX_MS=15000
+      - PEP_AUDIT_INTERVAL_MS=2000
+      - PEP_LOG_LEVEL
+      - PEP_HTTP=true
+      - PEP_PROXY_HTTP=false
+      - PEP_PROXY_HTTPS_PORT=9543
+      - PEP_PROXY_SESSION_RECHECK_MS=0
+    healthcheck:
+      test: ["CMD", "xacml-pep", "--healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    networks:
+      default:
+        ipv4_address: ${PEP_CLUSTER_2_ADDRESS:-172.30.0.51}
+
+  pep-cluster-lb:
+    container_name: ${XACML_PEP_CLUSTER_LB_CONTAINER_NAME:-xacml-pep-docker-tests-cluster-lb}
+    hostname: pep-cluster-lb
+    profiles: ["pep-cluster"]
+    # The image the `cluster` mode's balancer runs, from the mirror.
+    image: ${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/haproxy:3.2.23-alpine
+    volumes:
+      - ./tests/cluster/pep-haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      pep-cluster-1:
+        condition: service_started
+      pep-cluster-2:
+        condition: service_started
+    networks:
+      default:
+        ipv4_address: ${PEP_CLUSTER_LB_ADDRESS:-172.30.0.52}
+
   # ---------------------------------------------------------------------------
   # THE SUITE. Every job — the in-process half and the protocol half,
   # including the Selenium admin-console one — run by
@@ -1553,6 +1702,19 @@ services:
       - MAILPIT_CA_FILE=${MAILPIT_CA_FILE:-/run/sts-test/mailpit/server.crt}
       - XACML_PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
       - XACML_PEP_REALM=${XACML_PEP_REALM:-pep-e2e}
+      # ---------------------------------------------------------------------
+      # THE REMOTE PEP CLUSTER (2026-11-16), handed to
+      # sts_xacml_pep_proxy_cluster.js in the modes whose `pep-cluster`
+      # profile ./run-tests.sh turns on: the realm the two members poll,
+      # their names (each also its host name), the balancer's host name, and
+      # the members' credential directory as THIS container sees it, where
+      # the job reads each certificate request and writes each listener
+      # pair. EMPTY elsewhere, and the job then declines to run, saying why.
+      # ---------------------------------------------------------------------
+      - XACML_PEP_CLUSTER_REALM=${XACML_PEP_CLUSTER_REALM:-}
+      - XACML_PEP_CLUSTER_MEMBERS=${XACML_PEP_CLUSTER_MEMBERS:-}
+      - XACML_PEP_CLUSTER_LB=${XACML_PEP_CLUSTER_LB:-}
+      - XACML_PEP_CLUSTER_CERT_DIR_HERE=${XACML_PEP_CLUSTER_CERT_DIR_HERE:-}
       # ---------------------------------------------------------------------
       # THE PEP'S ROOT CA AS TEXT, AND IT NEVER ARRIVED UNTIL 2026-09-09.
       #

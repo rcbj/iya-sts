@@ -827,9 +827,16 @@ function documentedActions(doc) {
 //                    refused there with 403 by design, so a replay would only
 //                    ever measure that. Exercised in `sts_devices.js`, with a
 //                    feed client that declares the scope.
+//   * `pep-audit` (2026-11-16, #1827) — a remote PEP's decision records
+//                    take the `xacml:pep-audit` scope on a token whose
+//                    subject is the PEP's own entry in REMOTE_PEPS, the MDM
+//                    feed's shape; this run's admin:write token is refused
+//                    there with 403 by design, so a replay would only ever
+//                    measure that.
 const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
                           /^\/tls\/trust\//, /^\/kerberos\/principals\//,
-                          /^\/pki\/build-root$/, /^\/device-compliance$/];
+                          /^\/pki\/build-root$/, /^\/device-compliance$/,
+                          /^\/pep-audit$/];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
@@ -4064,6 +4071,10 @@ async function thePersonDeleteRoundTrip() {
                   mail: username + "@admin-api-operations.test" },
     credential: "password", password: MINT_PASSWORD
   }, "created the person to delete");
+  // Made here, so ensureTokenParties() must not make them again (it would
+  // be refused, one entry per person): the arrangement of
+  // theDirectoryAndSignOutDoorsRoundTrip(), which this one lacked.
+  mintedParties["realm:user:" + username] = true;
   const tokens = await mintTokens(username, "logout-client-" + REALM);
   assert.ok(await introspectActive(tokens.access),
     "the person's access token should introspect active before the delete");
@@ -5468,6 +5479,15 @@ const NOT_DRIVEN_HERE = {
   // scope and reads the CAEP event it sends off a poll stream.
   "POST /device-compliance": "sts_devices.js drives it with an MDM client " +
     "holding the device:compliance scope, and checks the event it sends",
+  // A REMOTE PEP'S DECISION RECORDS (#1827). Its token carries
+  // xacml:pep-audit and nothing else, its subject the PEP's own entry in
+  // REMOTE_PEPS, so this run's admin:write token is refused there by
+  // design. The PEP containers push them: sts_xacml_pep_proxy_cluster.js
+  // reads each member's pushed rows back off the audit log, and
+  // sts_admin_closed_sets.js mints a PEP's token to probe its body.
+  "POST /pep-audit": "the remote PEP containers push it, and " +
+    "sts_xacml_pep_proxy_cluster.js reads the rows they pushed back off " +
+    "the audit log",
   // A RISK DATASET UPLOAD (#215). Driven by `sts_admin_risk_upload.js`: the
   // body is the dataset FILE itself, streamed and never parsed as JSON, so
   // this file's example-replaying walk has no shape to send it in, and what

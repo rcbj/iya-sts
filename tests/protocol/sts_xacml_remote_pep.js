@@ -930,7 +930,22 @@ async function provisionTheContainersIdentity() {
   // enforcement point is a record somebody reads. The realm's attribute
   // policy (#396) requires givenName, sn and mail of every entry under
   // ou=users in product mode.
-  const made = await postJson(api("/users/create"), {
+  //
+  // **A DEVELOPMENT REALM ALREADY HOLDS IT** (2026-11-16, the first local
+  // memory run after phase 4): development seeds `cn=remote-pep-1` in every
+  // realm's directory and in `remote-peps` (ldap_server.js, demo data), so a
+  // create there is refused as a username already held (STS-LDAP-0005).
+  // That entry is the one the container's assertion key is registered on,
+  // so it is used as it stands; product seeds none and the create runs.
+  const existing = await get(api("/users/certificates?user=" +
+                                 encodeURIComponent(PEP_NAME)));
+  if (existing.status === 200) {
+    log.info(PEP_NAME + " is already in " + REALM + "'s directory (" +
+             ((existing.body || {}).dn || "?") + "), which is development's " +
+             "seed; it is used as it stands.");
+  }
+  const made = existing.status === 200 ? existing :
+    await postJson(api("/users/create"), {
     username: PEP_NAME, invent: false,
     attributes: { cn: PEP_NAME, givenName: "Remote", sn: "Remote PEP",
                   mail: PEP_NAME + "@xacml-remote-pep.test",
@@ -3347,6 +3362,7 @@ const ROLE_OTHER = "pep-role-other";
 const PROXY_API_AUDIENCE = "https://pep-app.example.test/api";
 const PROXY_SAML_AUDIENCE = "https://pep-app.example.test/saml";
 const PROXY_OTHER_AUDIENCE = "https://somebody-else.example.test/api";
+const PROXY_OTHER_APP = "pep-proxy-somebody-else";
 const PROXY_TIMEOUT_MS = 3000;
 // THE APPLICATIONS THE ROUTES NAME (D10), in this run's realm.
 const PROXY_APP = "pep-app";
@@ -3901,6 +3917,7 @@ async function registerTheApplications() {
   PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
   PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
   PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
+  PROXY_SECRETS.push(nodeCrypto.randomBytes(24).toString("base64url"));
   const callback = proxyCallback();
   await createApplication(PROXY_APP, ["oauth2", "oidc"], {
     oauthClientId: [PROXY_APP], oauthClientSecret: PROXY_SECRETS[0],
@@ -3925,6 +3942,16 @@ async function registerTheApplications() {
     oauthTokenEndpointAuthMethod: "client_secret_basic",
     oauthAudience: ["https://pep-app.example.test/scratch"]
   }, "the scratch application section 10i deletes");
+  // SOMEBODY ELSE'S API, REGISTERED SO A TOKEN CAN BE ADDRESSED TO IT
+  // (2026-11-16): since #1140 the realm mints no access token for an
+  // audience no application object holds, in either mode, so section 10c's
+  // token for another audience was refused invalid_target before the proxy
+  // could be asked to refuse it. No route names this application.
+  await createApplication(PROXY_OTHER_APP, ["oauth2"], {
+    oauthClientId: [PROXY_OTHER_APP], oauthClientSecret: PROXY_SECRETS[3],
+    oauthTokenEndpointAuthMethod: "client_secret_basic",
+    oauthAudience: [PROXY_OTHER_AUDIENCE]
+  }, "another API, whose audience no route of the proxy's names");
   await createApplication(PROXY_PUBLIC_APP, ["oauth2", "oidc"], {
     oauthClientId: [PROXY_PUBLIC_APP], oauthRedirectUri: [callback],
     oauthResponseType: ["code"], oauthGrantType: ["authorization_code"],
@@ -4059,15 +4086,17 @@ async function itTakesItsSettingsFromTheService() {
   check("the PEP's page answers that row alone, with the catalogue",
         function () {
           // SETTINGS in xacml/xacml_pep_settings.ts, description through
-          // proxyStripCookies. proxyMaxAccounts and proxyStripCookies are
-          // the two past the old count of 23.
+          // auditBuffer. proxyMaxAccounts and proxyStripCookies are the two
+          // past the old count of 23, and auditEnabled, auditIntervalMs,
+          // auditBatch and auditBuffer (#1827's decision records) the four
+          // past 25.
           const catalogue = page.body.settingsCatalogue;
           const n = catalogue && catalogue.settings
             ? catalogue.settings.length : 0;
           assert.ok(page.status === 200 && page.body.peps &&
-            page.body.peps.length === 1 && n === 25,
+            page.body.peps.length === 1 && n === 29,
             "GET /admin-api/xacml/peps?pep= should answer one row and the " +
-            "catalogue of 25 settings; it answered " + page.status +
+            "catalogue of 29 settings; it answered " + page.status +
             " with " + ((page.body.peps && page.body.peps.length) || 0) +
             " row(s) and " + n + " settings");
         });
@@ -4854,9 +4883,17 @@ async function theProxyForwardsTheIdentity() {
     assert.strictEqual(h["x-iya-user"], adminSub,
       "X-Iya-User is the person's sub; it arrived as " +
       JSON.stringify(h["x-iya-user"]));
+    // THE TOKEN'S `email`, WHICH THIS SECTION'S DEVELOPMENT REALM INVENTS
+    // (2026-11-16, the first local run): helpers.js's userFor() gives a
+    // development sign-in its persona — `<name>@<the realm's domain>`,
+    // realms.inventedMailOf() — and the claim-attribute resolver reads the
+    // entry's `mail` only for a claim set that selects it. The header is the
+    // claim the token carried, which is what the proxy forwards; the entry's
+    // own mail (@xacml-remote-pep.test) is not in it.
     assert.strictEqual(h["x-iya-email"],
-                       ADMIN_PERSON + "@xacml-remote-pep.test",
-      "X-Iya-Email is the entry's mail; it arrived as " +
+                       ADMIN_PERSON + "@" + REALM + ".example.net",
+      "X-Iya-Email is the token's email claim, the development persona's " +
+      "address in the realm's domain; it arrived as " +
       JSON.stringify(h["x-iya-email"]));
     assert.ok(String(h["x-iya-groups"] || "").split(",")
       .indexOf("ssf-read") >= 0,
@@ -5032,11 +5069,28 @@ async function theProxyHoldsASession() {
     assert.strictEqual(to.searchParams.get("client_id"), PROXY_APP,
       "as the confidential client the route's application is (D10); it " +
       "asked as " + to.searchParams.get("client_id"));
-    assert.strictEqual(to.searchParams.get("redirect_uri"),
-                       origin + "/.iya-pep/callback",
-      "returning to the proxy's reserved callback under publicBaseUrl");
-    assert.strictEqual(to.searchParams.get("code_challenge_method"), "S256",
-      "with PKCE S256, which the relying party library requires");
+    // PUSHED, OR IN THE ADDRESS (2026-11-16): the relying party library
+    // pushes its request (RFC 9126) when the realm's discovery document
+    // names a pushed authorization request endpoint, which this one does,
+    // so the browser carries only `client_id` and a `request_uri`; the
+    // redirect URI and the PKCE challenge travelled in the pushed request,
+    // back channel. A library that does not push puts them here, and then
+    // they are asserted as before. The callback itself is asserted by the
+    // walk below, which must pass through /.iya-pep/callback.
+    const pushed = to.searchParams.get("request_uri");
+    if (pushed) {
+      assert.ok(/^urn:ietf:params:oauth:request_uri:/.test(pushed),
+        "a pushed request's request_uri is RFC 9126's URN; it is " + pushed);
+      assert.strictEqual(to.searchParams.get("redirect_uri"), null,
+        "and nothing else of the request is in the address");
+    } else {
+      assert.strictEqual(to.searchParams.get("redirect_uri"),
+                         origin + "/.iya-pep/callback",
+        "returning to the proxy's reserved callback under publicBaseUrl");
+      assert.strictEqual(to.searchParams.get("code_challenge_method"),
+                         "S256",
+        "with PKCE S256, which the relying party library requires");
+    }
     assert.ok(carriesNoSecret(first.location),
       "and no client secret in the address");
     assert.strictEqual(hitsOn(afterFirst, "/pep-app/protected/report"),
@@ -5270,9 +5324,34 @@ async function theProxyLosesAnApplication() {
         return one.id === "scratch";
       })[0] || {};
     const resolved = route.resolved || {};
-    assert.ok(resolved.usable === false || route.usable === false,
+    // `proxyRoutes` (the first local run, 2026-11-16): the row's `proxy`
+    // is the configuration as written, and each route's resolution — its
+    // application found, `usable`, `why` — is a `proxyRoutes` entry named
+    // by `route`. The older shapes are still read.
+    const listed = (((row.row || {}).proxyRoutes) || [])
+      .filter(function (one) {
+        return one.route === "scratch";
+      })[0] || {};
+    assert.ok(listed.usable === false || resolved.usable === false ||
+              route.usable === false,
       "GET /admin-api/xacml/peps should mark the scratch route unusable " +
-      "(D10); it holds " + JSON.stringify(route).slice(0, 300));
+      "(D10); it holds " + JSON.stringify(listed).slice(0, 300) + " " +
+      JSON.stringify(route).slice(0, 300));
+  });
+  // AND WHILE IT STANDS NO OTHER ROUTE CAN BE SAVED (observed on the first
+  // local run, 2026-11-16): a route form builds the WHOLE document and asks
+  // `resolutionProblem()` of every route in it (xacml_admin.ts, withRoute),
+  // so section 10j's set-pep-route was refused with the dangling route's
+  // own sentence (STS-XACML-0217, "There is no application
+  // \"pep-app-scratch\"…"). Removing it is the edit that goes through, so
+  // it is removed here, as an administrator would.
+  const removed = await postJson(api("/xacml/remove-pep-route"),
+                                 { name: PEP_NAME, route: "scratch" });
+  check("the dangling route can be removed", function () {
+    assert.ok(removed.status === 200 && removed.body &&
+              removed.body.ok !== false,
+      "remove-pep-route for the dangling route answered " + removed.status +
+      " " + String(removed.text).slice(0, 300));
   });
   log.debug("Leaving theProxyLosesAnApplication().");
 }
@@ -5554,7 +5633,42 @@ async function createTheRealm() {
     "launcher owns the PEP container. Restart the stack, or remove " + REALM +
     " by hand once you have finished reading it.");
   log.info("Created the throwaway realm " + REALM + ".");
+  await theRealmsCertificateAuthority();
   log.debug("Leaving createTheRealm().");
+}
+
+// THE REALM'S CERTIFICATE AUTHORITY IS BUILT BEHIND THE CREATE (2026-11-16).
+// `realms/create` answers once the realm exists, and its branch under the
+// service Root — the Intermediate and the Issuing CAs, the PEP-assertion
+// one among them — is built just after: on the first local memory run the
+// create answered at 03:21:57, issue-pep-credential was refused at 03:21:58
+// with "no certificate authority yet" (STS-PKI-0008), and the branch was
+// logged built at 03:22:00. Since phase 4 the PEP's key is registered
+// straight after the create, so this waits for the chain to be readable on
+// the realm's `GET /admin-api/pki` rather than meeting that race.
+async function theRealmsCertificateAuthority() {
+  log.debug("Entering theRealmsCertificateAuthority().");
+  const deadline = Date.now() + 60000;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await get(api("/pki"));
+    const tiers = (last.body && last.body.chain && last.body.chain.tiers) ||
+                  [];
+    if (last.status === 200 && tiers.some(function (t) {
+      return t && t.tier === "intermediate";
+    })) {
+      log.debug("Leaving theRealmsCertificateAuthority(). " + tiers.length +
+                " tier(s).");
+      return;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 500);
+    });
+  }
+  log.debug("Leaving theRealmsCertificateAuthority(). Timed out.");
+  assert.fail("the realm " + REALM + " had no certificate authority 60 s " +
+              "after it was created (GET /admin-api/pki answered " +
+              (last && last.status) + "), so nothing can be issued in it");
 }
 
 // THE TWO PEOPLE THE RBAC POLICY DECIDES ABOUT, created in this run's realm

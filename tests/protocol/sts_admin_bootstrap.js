@@ -101,6 +101,16 @@ var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
 const LDAPS_PORT = Number(process.env.STS_LDAPS_PORT || 636);
 const LDAP_PORT = Number(process.env.STS_LDAP_PORT || 389);
+// THE DIRECTORY'S SOCKET IS WHERE THE SERVICE IS (2026-11-16): `localhost`
+// was right only for a runner on the service's own host, and the stack's
+// runner reaches `sts` by its compose name — STS_LDAP_URL, which
+// docker-compose-run-tests.yml sets, or the service URL's host
+// (sts_ldaps.js's rule), and LDAPS the same. The first local memory run
+// met ECONNREFUSED 127.0.0.1:389 at A10.
+const LDAP_URL = process.env.STS_LDAP_URL ||
+  ("ldap://" + new URL(base).hostname + ":" + LDAP_PORT);
+const LDAPS_URL = process.env.STS_LDAPS_URL ||
+  ("ldaps://" + new URL(base).hostname + ":" + LDAPS_PORT);
 const STAMP = names.runStamp().toLowerCase().replace(/[^a-z0-9]/g, "");
 
 function realmId(prefix) {
@@ -264,7 +274,7 @@ function ldapDelete(bindDn, dn) {
   log.debug("Entering ldapDelete().");
   return new Promise(function (resolve) {
     const client = ldap.createClient({
-      url: "ldap://localhost:" + LDAP_PORT, timeout: 10000,
+      url: LDAP_URL, timeout: 10000,
       connectTimeout: 10000 });
     client.on("error", function (e) {
       log.debug("Caught in ldapDelete(): " + ((e && e.message) || e));
@@ -298,7 +308,7 @@ function ldapsBind(dn, password) {
   log.debug("Entering ldapsBind().");
   return new Promise(function (resolve) {
     const client = ldap.createClient({
-      url: "ldaps://localhost:" + LDAPS_PORT,
+      url: LDAPS_URL,
       tlsOptions: { rejectUnauthorized: false }, timeout: 10000,
       connectTimeout: 10000 });
     client.on("error", function (e) {
@@ -957,9 +967,23 @@ async function test() {
   log.info("=== 0. throwaway realms " + ids.join(", ") + " ===");
   const created = {};
   for (const id of ids) {
-    created[id] = await ok(base + "/admin-api/realms/create", { id: id,
-      domain: id + ".example.net", name: "Bootstrap " + STAMP },
-      "created the realm " + id);
+    // PROD GETS ITS OWN global.publicBaseUrl AT ITS CREATE,
+    // sts_console_bootstrap_product.js's remedy (run #300): a product realm
+    // accepts only the console's REGISTERED redirect URI, which its seed
+    // makes from that setting, and a memory-mode process has none
+    // (run-tests.sh sets STS_PUBLIC_BASE_URL for the product modes alone).
+    // Without it section B's authorization request was refused
+    // STS-OAUTH-0122 on the first local memory run, and set after the
+    // create it is too late: the seed has already written the callback.
+    // The value is the address this job reaches the service at — the same
+    // value where the process has one.
+    const made = { id: id, domain: id + ".example.net",
+                   name: "Bootstrap " + STAMP };
+    if (id === PROD) {
+      made.overrides = { "global.publicBaseUrl": base };
+    }
+    created[id] = await ok(base + "/admin-api/realms/create", made,
+                           "created the realm " + id);
   }
   await ok(base + "/realm/" + PROD + "/admin-api/config/set",
            { key: "global.mode", value: "product" },

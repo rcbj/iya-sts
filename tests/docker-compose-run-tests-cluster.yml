@@ -125,6 +125,20 @@ services:
       sts-lb:
         condition: service_started
 
+  # THE REMOTE PEP CLUSTER'S TWO MEMBERS (2026-11-16), when the launcher
+  # turns their `pep-cluster` profile on: through the balancer like the PEP
+  # above. The launcher hands them XACML_PEP_CLUSTER_PDP_URL naming `sts-lb`
+  # in this mode; this adds the start order the base file has no line for.
+  pep-cluster-1:
+    depends_on:
+      sts-lb:
+        condition: service_started
+
+  pep-cluster-2:
+    depends_on:
+      sts-lb:
+        condition: service_started
+
   tests:
     # The balancer's dotted name (#694), for the reason the base file's
     # `tests` maps `sts.example.com`: a did:web needs a host of two labels.

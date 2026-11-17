@@ -750,10 +750,25 @@ async function pepApplication(t) {
     t.check(r.status === 200 && !!r.json && r.json.waitedMs === 300 &&
             took >= 280,
             '9e. /pep-app/slow waits what it was asked', took + 'ms');
+    // 9g (2026-11-16): /pep-app/whoami names the identity the proxy
+    // forwarded and the listener it came through, off the proxy's own
+    // X-Forwarded-Host and X-Forwarded-Proto. Before the counter's read, so
+    // the counter's total below counts it.
+    r = await raw(port, 'GET', '/pep-app/whoami/x', {
+      'x-remote-user': 'alice', 'x-iya-user': 'urn:uuid:1',
+      'x-iya-auth': 'basic', 'x-forwarded-host': 'pep-1:9643',
+      'x-forwarded-proto': 'https' });
+    const who = (r.json && r.json.whoami) || {};
+    t.check(r.status === 200 && r.json.page === 'whoami' &&
+            who.user === 'alice' && who.subject === 'urn:uuid:1' &&
+            who.mechanism === 'basic' && who.via.host === 'pep-1' &&
+            who.via.port === 9643 && who.via.proto === 'https',
+            '9g. /pep-app/whoami names the forwarded identity and the ' +
+            'listener it came through', r.text);
     r = await raw(port, 'GET', '/pep-app/_hits');
     const hits = (r.json && r.json.byPath) || {};
     t.check(r.status === 200 && hits['/pep-app/protected/x'] === 1 &&
-            hits['/pep-app/api/items'] === 1 && r.json.total === 5 &&
+            hits['/pep-app/api/items'] === 1 && r.json.total === 6 &&
             !('/pep-app/_hits' in hits),
             '9f. /pep-app/_hits counts each path that reached the ' +
             'application and not itself', r.text);

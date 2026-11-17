@@ -14085,8 +14085,12 @@ op `reportDeviceCompliance`(@js(#{
         `description`:"`acknowledged` — the highest `seq` the batch carried — and how many records were `recorded` and `ignored`.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
+      `400`:#{
+        `description`:"A malformed batch (STS-XACML-0286), or a body the request schema does not admit: `errors` says why and nothing was recorded.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
       `default`:#{
-        `description`:"A refusal or a failure: a malformed batch (400, STS-XACML-0286), a PEP not registered in this realm (404, STS-XACML-0287), or a token that is not a remote PEP's (403).",
+        `description`:"A refusal or a failure: a PEP not registered in this realm (404, STS-XACML-0287), or a token that is not a remote PEP's (403).",
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
@@ -14128,6 +14132,7 @@ op `reportPepDecisions`(@js(#{
     @js(#{`minimum`:0}) `recorded`: integer;
     @js(#{`minimum`:0}) `ignored`: integer
   },
+  `responses/400/content/application~1json/schema`: `RefusalFailure`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 

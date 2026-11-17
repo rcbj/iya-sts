@@ -560,11 +560,14 @@ async function theDocumentDescribesTheGate() {
     const wrong = [];
     Object.keys(document.paths || {}).forEach(function (path) {
       Object.keys(document.paths[path]).forEach(function (method) {
-        // THE ONE EXCEPTION (#164): the MDM feed takes device:compliance,
-        // as the gate's isDeviceComplianceFeed() says.
-        const feed = method.toUpperCase() === "POST" &&
-                     path === "/admin-api/device-compliance";
+        // THE TWO EXCEPTIONS: the MDM feed takes device:compliance (#164),
+        // as the gate's isDeviceComplianceFeed() says, and a remote PEP's
+        // decision records take xacml:pep-audit (#1827), the same shape.
+        const post = method.toUpperCase() === "POST";
+        const feed = post && path === "/admin-api/device-compliance";
+        const pepFeed = post && path === "/admin-api/pep-audit";
         const wanted = feed ? "device:compliance"
+          : pepFeed ? "xacml:pep-audit"
           : (method.toUpperCase() === "GET" ? "admin:read" : "admin:write");
         const security = document.paths[path][method].security || [];
         const named = (security[0] || {}).oauth2 || [];
@@ -577,7 +580,8 @@ async function theDocumentDescribesTheGate() {
     assert.deepStrictEqual(wrong.slice(0, 5), [],
       wrong.length + " operation(s) declare a scope the gate would not ask " +
       "for. A GET needs admin:read and everything else needs admin:write " +
-      "(but the MDM feed, which needs device:compliance), which is the " +
+      "(but the MDM feed, which needs device:compliance, and a remote " +
+      "PEP's decision records, xacml:pep-audit), which is the " +
       "rule in the middleware this file drives:\n  " +
       wrong.slice(0, 5).join("\n  "));
   });

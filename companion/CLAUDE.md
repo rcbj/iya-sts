@@ -238,6 +238,7 @@ the job or the test peer (`tests/peer/`). `pep_app.js` serves it at
 | `GET /pep-app/public/hop` | `hop` | answers `Connection: x-upstream-secret`, `X-Upstream-Secret` and `Keep-Alive` beside an end-to-end `X-Upstream-Visible`, so the job can assert the proxy drops a response's hop-by-hop headers (RFC 9110 section 7.6.1) |
 | `/pep-app/protected[/…]` | `protected` | the session route |
 | `GET /pep-app/api/items` | `items` | the OAuth 2.0 and Basic route's read |
+| `GET /pep-app/whoami[/…]` | `whoami` | beside the echo, `whoami`: the identity headers the proxy forwarded and the listener the request came through (`via`: host, port and scheme of `X-Forwarded-Host` and `X-Forwarded-Proto`), for `sts_xacml_pep_proxy_cluster.js`'s route on a listener of its own (2026-11-16) |
 | `POST /pep-app/api/items` | `item-created` (201) | the write: allowed and refused methods |
 | `GET /pep-app/slow?ms=` | `slow` | answered after `ms`, at most 30 s: the proxy's upstream timeout (504) |
 | `POST /pep-app/saml/acs` | `saml-acs` | the application's own SAML ACS, where the proxy POSTs the assertion in D11's `saml` mode |

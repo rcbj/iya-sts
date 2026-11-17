@@ -288,6 +288,7 @@ shim) are in git history.
 | `cargo test -p sts-xacml` | The engine against the vendored OASIS suite, case for case as `tests/xacml_conformance.js` holds the service's. |
 | `tests/xacml_pep.js` | The PDP's side (sync token, register, nudge refusals, change observer), the Dockerfile building and stamping the Rust binary, and **the service's `enforce()` against the same `enforcement_cases.json`** — so the two readings of section 7.2 are checked against one expectation. |
 | `tests/xacml_request.js` E | The remote PEP builds through `sts-xacml`'s `AuthorizationRequest`, and every identifier that builder declares is spelt as `xacml_request.js`'s `VOCABULARY` spells it. |
+| `tests/protocol/sts_schemathesis.js` (the `fuzz` mode) | **EVERY DOCUMENTED ENDPOINT, FUZZED (2026-11-16)**: the four documents in `openapi/`, by Schemathesis, against this container and the service — *THE FUZZING OF EVERY DOCUMENTED ENDPOINT*, below. |
 | `tests/protocol/sts_xacml_remote_pep.js` | **THE DEPLOYMENT**: this image, on the service's own docker network — registering on a later attempt, pulling, deciding out here, converging by polling and by the nudge, the PIP end to end, the HTTPS listener, deciding correctly with the PDP taken away. **The only thing that runs what this Dockerfile produces.** |
 
 **THE LAUNCHERS OWN THAT CONTAINER AND THE JOB DRIVES IT**: `./run-tests.sh`
@@ -2115,6 +2116,75 @@ realm's PDP; every validation door answers one 429 shape,
 `{error, error_description, retryAfterS}`; and the service refuses to save a
 route under `/.iya-pep/` (STS-XACML-0300), a stored one being pulled as
 `configured: false`.
+
+## THE FUZZING OF EVERY DOCUMENTED ENDPOINT (2026-11-16)
+
+**rcbj: "Build a fuzzing test for all documented endpoints (within the
+model) for the Remote XACML PEP", modelled on the service's data fuzzing
+test.** It is that test: the same job (`tests/protocol/sts_schemathesis.js`),
+kit, proxy, checks and verdict, in run-tests.sh's `fuzz` mode on its
+`internal`, no-egress product stack, so in CI wherever that mode runs. The
+PEP's half of the PLAN, and the provisioning a PEP surface needs, is
+`tests/protocol/schemathesis_pep.js`; `tests/schemathesis_plan.js` asserts
+it without a stack. No compose or launcher change: the mode already starts
+this container and `companion` and generates its assertion key.
+
+| Cell | Document | Against | Authenticated as |
+|---|---|---|---|
+| `pep-control-plane` (each realm profile) | `pep-control-plane.json` | the service, the realm's prefix | a PEP of its own: `pep-fuzzer-<hex>` in `remote-peps`, its key certified by `issue-pep-credential`, a DPoP-bound `xacml:pep` token and a proof per request with the nonce kept (`credential.rs`'s scheme, `tests/tools/pep-credential.js`'s code) |
+| `pep-control-plane-anonymous` (each) | the same | the same | nothing: every gated answer must be 401, or a refusal that runs ahead of the gate (400, 413, 415, 429) |
+| `pep-service`, `pep-service-plain` | `pep-service.json` | this container's HTTPS and plain listeners (the nudge is HTTPS only, a CRL plain only) | nothing, by design |
+| `pep-authzen` | `pep-authzen.json` | the HTTPS listener | an AuthZEN caller the SERVICE admits: an outside chain whose leaf is stored on an entry in `authzen-peps`, scoped to one application; this listener verifies it against anchors named in its environment tuning (`trustAnchorsFile`, `askClientCertificate`), and admits it by the SHA-256 the caller pull lists |
+| `pep-authzen-anonymous` | the same | the same | no certificate: every evaluation must be 401 |
+| `pep-proxy` | `pep-proxy.json` | the proxy's plain listener, with a pulled configuration (one public route) | nothing: a proxy session is what a browser sign-in through the realm earns, which this cell does not drive, so `/.iya-pep/accounts*` meet their no-session answers here and their session answers in `sts_xacml_remote_pep.js` |
+| `pep-still-serving` | — | `GET /healthcheck` and `GET /` | after the lane: healthy, registered, holding policy, holding its `xacml-pep` token |
+
+**WHY THE CONTROL PLANE IS FUZZED AS A SECOND PEP.** A fuzzed register as
+this container would rewrite its own row — its notify URL, bias and
+resource — and stop its nudges; excluding `postRegister` would leave it
+unfuzzed. As a PEP of its own every operation is fuzzed and only that row
+is reached, so NO operation of any of the four documents is excluded.
+
+**THE CHECKS**: the service's four invariants (no uncaught 5xx, no
+`STS-` code in a body — `STS-XPEP-` included, *Error codes* below — HTML
+keeps `frame-ancestors`, no outbound lookup, here also in the Rust
+resolver's words), Schemathesis's status, content-type and response-schema
+conformance (these documents are a model, so an answer outside it is a
+finding), `--max-response-time` (no hang: 30 s here, 60 at the service), `no_internal_detail` (no stack
+frame, panic, backtrace or image path) and, in the two anonymous cells,
+`refused_unauthenticated`. Every GET is also probed with an undeclared
+parameter and header, held to no 5xx and no code: each surface argues in the
+plan why it TOLERATES an unknown name (`/protected` reads every unnamed
+parameter as a subject attribute; the control plane is a PEP contract that
+versions send names to; the metadata and the relying party's callback are
+specifications' endpoints). Each cell is bounded by `--max-time`
+(`STS_SCHEMATHESIS_PEP_MAX_TIME`, 300 s).
+
+**CONTAINED, NOT EXCLUDED.** Nothing here dials a URL a caller names: a
+nudge pulls from `PEP_PDP_URL`, the PIP and the forwarded evaluations go to
+the service, the proxy to its configured upstream. The one caller-named
+address is register's `notifyUrl`, which the SERVICE nudges — and only the
+fuzz PEP's row can carry one; on the no-egress network that dial fails at
+the network layer.
+
+**WHAT IT FOUND, 2026-11-16, on a throwaway stack** (the service and this
+image as built from `develop` that day, a product-mode realm per profile,
+every cell at its 300-second budget: about 12,400 cases a control-plane
+cell, 33,500 at the proxy, 1,100 to 16,100 at the PEP's API). This
+container: nothing — no 5xx, no code, no internal detail, no slow answer,
+every answer inside the model, the edge PDP refusing every evaluation
+without the admitted certificate. The control plane: seven answers the model
+did not declare, of two kinds, both from the service's own middleware ahead
+of every route: a control character in a query value was 400 in text on
+every pull (`common/app.js`), and a body over the JSON parser's 5 MB was 413
+as Express's HTML page on every JSON POST — which a `SamlRequest` within its
+524288-character `assertion`, or an `IdentityRequest`, reaches when its
+characters are sent as JSON escapes. Neither carried a code or a detail.
+**Both are the JSON API's own `Error` shape since #1861** (JSON refusals
+ahead of the routes, `common/surface_refusals.ts`), and that is what
+`models/pep/pep_control_plane.tsp` declares: 400 (STS-HTTP-0010, 0011,
+0013), 413 (STS-HTTP-0004), 415 (STS-HTTP-0012) and 429 (STS-CORE-0172),
+each `application/json`.
 
 ## THE DECISION RECORDS GO TO THE SERVICE (#1827)
 
