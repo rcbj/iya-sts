@@ -5338,6 +5338,21 @@ async function theProxyLosesAnApplication() {
       "(D10); it holds " + JSON.stringify(listed).slice(0, 300) + " " +
       JSON.stringify(route).slice(0, 300));
   });
+  // AND WHILE IT STANDS NO OTHER ROUTE CAN BE SAVED (observed on the first
+  // local run, 2026-11-16): a route form builds the WHOLE document and asks
+  // `resolutionProblem()` of every route in it (xacml_admin.ts, withRoute),
+  // so section 10j's set-pep-route was refused with the dangling route's
+  // own sentence (STS-XACML-0217, "There is no application
+  // \"pep-app-scratch\"…"). Removing it is the edit that goes through, so
+  // it is removed here, as an administrator would.
+  const removed = await postJson(api("/xacml/remove-pep-route"),
+                                 { name: PEP_NAME, route: "scratch" });
+  check("the dangling route can be removed", function () {
+    assert.ok(removed.status === 200 && removed.body &&
+              removed.body.ok !== false,
+      "remove-pep-route for the dangling route answered " + removed.status +
+      " " + String(removed.text).slice(0, 300));
+  });
   log.debug("Leaving theProxyLosesAnApplication().");
 }
 
