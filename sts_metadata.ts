@@ -6294,7 +6294,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'actor; a change sends CAEP device-compliance-change.' },
   { path: '/admin-api/pep-audit', group: 'Management API',
     name: 'A remote PEP\'s decision records',
-    specs: ['xacml', 'openapi'],
+    specs: ['xacml30', 'openapi'],
     effect: 'records a batch of decisions a remote PEP made as audit rows',
     what: 'NON-SPEC (#1827). A remote XACML PEP pushes the records of the ' +
           'decisions it made in its own process — /protected enforcements, ' +

@@ -827,9 +827,16 @@ function documentedActions(doc) {
 //                    refused there with 403 by design, so a replay would only
 //                    ever measure that. Exercised in `sts_devices.js`, with a
 //                    feed client that declares the scope.
+//   * `pep-audit` (2026-11-16, #1827) — a remote PEP's decision records
+//                    take the `xacml:pep-audit` scope on a token whose
+//                    subject is the PEP's own entry in REMOTE_PEPS, the MDM
+//                    feed's shape; this run's admin:write token is refused
+//                    there with 403 by design, so a replay would only ever
+//                    measure that.
 const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
                           /^\/tls\/trust\//, /^\/kerberos\/principals\//,
-                          /^\/pki\/build-root$/, /^\/device-compliance$/];
+                          /^\/pki\/build-root$/, /^\/device-compliance$/,
+                          /^\/pep-audit$/];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
