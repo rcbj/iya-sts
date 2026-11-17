@@ -1656,21 +1656,22 @@ async function theClusterBehindABalancer() {
 //                           make: every handshake refused; restored,
 //                           admitted
 //      requireClientCertificate  with a trust anchors file set first, a
-//                           client with no certificate is refused (the PEP
-//                           asks nobody on the API listener without one)
+//                           client with no certificate is refused; without
+//                           a trust source the service refuses the save
+//                           (STS-XACML-0281) and the PEP the listener
+//                           (STS-XPEP-0137), both since #1860
 //      keepAliveTimeoutS    an idle keep-alive connection is closed by the
 //                           PEP within the new bound, and held past it
 //                           restored
-//      headersTimeoutS      a request whose headers never finish should be
-//                           closed within the new bound: A KNOWN PEP DEFECT
-//                           (the row's `knownDefect`) — held and not applied
+//      headersTimeoutS      a request whose headers never finish is
+//                           closed within the new bound, and held past it
+//                           restored (#1860 made the PEP apply it)
 //      maxRequestsPerSocket 1: the second request on one connection is not
 //                           answered; restored, both are
 //      maxConnections       1: a second connection beside one held open is
 //                           refused; restored, both answered
-//      http2                an h2 client by prior knowledge gets the PEP's
-//                           SETTINGS on, and fails off (ALPN never selects
-//                           h2: a PEP defect, logged by the row)
+//      http2                an h2 client gets the PEP's SETTINGS on, and
+//                           fails off; on, ALPN selects h2 (#1860)
 //      http2MaxConcurrentStreams  the SETTINGS frame's
 //                           MAX_CONCURRENT_STREAMS the PEP sends
 //      threadPoolMin, threadPoolMax  the listener's pool, as the PEP itself
@@ -1691,8 +1692,9 @@ async function theClusterBehindABalancer() {
 //    authorities a CertificateRequest names; a Node client cannot read
 //    them), sessionCacheSize (TLS 1.3 resumes from a stateless ticket
 //    whatever the server's cache holds), and sessionTimeoutS — which the
-//    PEP does NOT APPLY: its TLS library has no session-lifetime call, and
-//    it logs STS-XPEP-0119 for any value but 300.
+//    PEP does NOT APPLY: its TLS library has no session-lifetime call, a
+//    session lives OpenSSL's own 7200 s (the default since #1860), and it
+//    logs STS-XPEP-0119 for any other value.
 //
 //    THE TABLE IS CHECKED AGAINST THE MODEL: every tuning key the service's
 //    listener catalogue declares (`tuningDefaults`) and every member of a
@@ -1994,11 +1996,12 @@ const LISTENER_ROWS = [
   { key: "askClientCertificate", tls: true, flip: true,
     pulledOnly: "whether a CertificateRequest is sent, which a Node " +
                 "client cannot see when it has no certificate to give" },
-  // WITH A TRUST SOURCE: on the API listener the PEP asks nobody for a
-  // certificate unless it has authorities to verify one against
-  // (`apply_client_auth`, PEP_AUTHZEN_CLIENT_CA unset here), so `true`
-  // alone was held and changed nothing on the first hand run. A trust
-  // anchors file first, observed as harmless, then the requirement.
+  // WITH A TRUST SOURCE: `true` with nothing to verify a certificate
+  // against is refused at save since #1860 (STS-XACML-0281), and a PEP
+  // handed one anyway serves nothing on that listener (STS-XPEP-0137).
+  // On the first hand run, before #1860, it was held and changed nothing.
+  // So a trust anchors file first, observed as harmless, then the
+  // requirement.
   { key: "requireClientCertificate", tls: true,
     from: { trustAnchorsFile: "/certs/server/pep-server.crt" },
     fromObserved: async function (t) {
@@ -2017,18 +2020,19 @@ const LISTENER_ROWS = [
     } },
   { key: "sessionTimeoutS", tls: true, change: { sessionTimeoutS: 120 },
     pulledOnly: "NOT APPLIED by the PEP: its TLS library has no " +
-                "session-lifetime call, and it logs STS-XPEP-0119" },
+                "session-lifetime call, so a session lives OpenSSL's 7200 " +
+                "s (the default), and it logs STS-XPEP-0119 for any other " +
+                "value" },
   { key: "sessionCacheSize", tls: true, change: { sessionCacheSize: 16 },
     pulledOnly: "TLS 1.3 resumes from a stateless ticket whatever the " +
                 "server's session cache holds" },
-  // HTTP/2 BY PRIOR KNOWLEDGE, NOT BY ALPN, and the difference is a PEP
-  // defect these rows found on 2026-11-16: the PEP calls `set_alpn_protos`
-  // (the CLIENT's offer) on its acceptor and no `set_alpn_select_callback`,
-  // so no handshake ever selects h2 — a browser never uses HTTP/2 against
-  // it — while hyper still answers an h2 connection preface when `http2`
-  // is on. So the knob is observed by a client that speaks h2 without
-  // asking (Node's http2.connect): on, its SETTINGS arrive; off
-  // (`http1_only`), the connection fails. The ALPN half is logged.
+  // HTTP/2, BY PRIOR KNOWLEDGE AND BY ALPN. These rows found on
+  // 2026-11-16 that the PEP called `set_alpn_protos` (the CLIENT's offer)
+  // on its acceptor and no `set_alpn_select_callback`, so no handshake
+  // selected h2; #1860 fixed it. The knob is observed by a client that
+  // speaks h2 without asking (Node's http2.connect): on, its SETTINGS
+  // arrive; off (`http1_only`), the connection fails. On, a handshake
+  // offering h2 and http/1.1 must select h2.
   { key: "http2", tls: true, change: { http2: false },
     changed: async function (t) {
       const s = await http2Settings(t);
@@ -2039,12 +2043,7 @@ const LISTENER_ROWS = [
       const p = await probe(t, { handshakeOnly: true,
                                  connect: { ALPNProtocols: ["h2",
                                                             "http/1.1"] } });
-      if (s.ok && p.alpn !== "h2") {
-        log.warn("KNOWN PEP DEFECT, " + t.id + ".http2: HTTP/2 answers a " +
-                 "preface but ALPN never selects h2 (alpn " +
-                 JSON.stringify(p.alpn) + ").");
-      }
-      return { ok: s.ok, note: JSON.stringify([s, p]) };
+      return { ok: s.ok && p.alpn === "h2", note: JSON.stringify([s, p]) };
     } },
   { key: "http2MaxConcurrentStreams", tls: true,
     change: { http2MaxConcurrentStreams: 7 },
@@ -2072,10 +2071,8 @@ const LISTENER_ROWS = [
   { key: "headersTimeoutS", change: { headersTimeoutS: 2 },
     // FOUND BY THIS ROW ON 2026-11-16: with 2 held (settingsCurrent), a
     // request whose headers never finished was still open 20 s later on
-    // api-http; only the keep-alive watchdog closed it, at 60 s.
-    knownDefect: "the PEP holds the value and does not apply it: hyper's " +
-                 "header_read_timeout never closed a request whose headers " +
-                 "did not finish (keep-alive closed it, at 60 s)",
+    // api-http; only the keep-alive watchdog closed it, at 60 s. #1860
+    // made the PEP apply it, and the row's knownDefect went.
     changed: async function (t) {
       const p = await probe(t, { partial: true, holdMs: 6000 });
       return { ok: p.handshake && p.closedAfterMs !== null &&
