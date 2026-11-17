@@ -3259,6 +3259,10 @@ const LOCAL_HELPERS = [
   // tests/tlsfuzzer/sts_adapter.py; shared by sts_tlsfuzzer.js and the
   // in-process tests/tlsfuzzer_debugger.js. Nothing from the service.
   'tlsfuzzer_kit.js',
+  // The remote XACML PEP's half of the Schemathesis PLAN (2026-11-16): its
+  // surfaces, their auth and checks, and the provisioning of the PEP lane;
+  // required by schemathesis_kit.js, which sts_schemathesis.js runs.
+  'schemathesis_pep.js',
   // A registered OAuth client and a PKCE pair, for the jobs that start an
   // authorization request: product mode refuses an unknown client_id and a
   // public client without PKCE (2026-09-18).

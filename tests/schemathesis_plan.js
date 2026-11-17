@@ -26,6 +26,7 @@ const childProcess = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const kit = require("./protocol/schemathesis_kit");
+const pep = require("./protocol/schemathesis_pep");
 
 // The four custom checks the plan must name, each this service's own
 // cross-cutting invariant. no_uncaught_server_error is the no-uncaught-5xx
@@ -592,7 +593,235 @@ function run(t) {
     });
 
   strictRequestSection(t);
+  pepSection(t);
   t.log.debug("Leaving run().");
+}
+
+// What tests/schemathesis/pep_bodies.py says of each case, by plain python3.
+function pepBodies(cases) {
+  const log = require("bunyan").createLogger({
+    name: "schemathesis_plan", level: process.env.STS_LOG_LEVEL || "info" });
+  log.debug("Entering pepBodies().");
+  const answer = childProcess.spawnSync("python3", [path.join(__dirname,
+    "schemathesis", "pep_bodies.py")], { input: cases.map(function (one) {
+    return JSON.stringify(one);
+  }).join("\n") + "\n", encoding: "utf8" });
+  if (answer.status !== 0) {
+    log.debug("Leaving pepBodies(). It failed.");
+    throw new Error("pep_bodies.py failed: " + answer.stderr);
+  }
+  log.debug("Leaving pepBodies().");
+  return answer.stdout.trim().split("\n").map(function (line) {
+    return JSON.parse(line);
+  });
+}
+
+// THE REMOTE XACML PEP'S HALF OF THE PLAN (rcbj, 2026-11-16): every operation
+// of the four documents models/pep/ generates is fuzzed, each surface names
+// the auth it must and runs the no-5xx invariant, the three conformance
+// checks and the PEP's own, every gated surface has its unauthenticated
+// pass, an exclusion with no reason is refused (mutation-confirmed below by
+// handing validatePep() a copy with the reason taken off), and the control
+// plane is fuzzed as a PEP of its own rather than as the container.
+function pepSection(t) {
+  t.log.debug("Entering pepSection().");
+  const builtins = kit.BUILTIN_CHECKS;
+  const custom = kit.CUSTOM_CHECKS;
+  t.equal(pep.validatePep(pep.plan(), builtins, custom).length, 0,
+    "the PEP plan validates (" +
+    pep.validatePep(pep.plan(), builtins, custom).join("; ") + ")");
+
+  const EXPECTED = {
+    "pep-control-plane": ["dpop-pep", "service", "pep-control-plane.json"],
+    "pep-control-plane-anonymous": ["none", "service",
+                                    "pep-control-plane.json"],
+    "pep-service": ["none", "pep-https", "pep-service.json"],
+    "pep-service-plain": ["none", "pep-http", "pep-service.json"],
+    "pep-authzen": ["mtls", "pep-https", "pep-authzen.json"],
+    "pep-authzen-anonymous": ["none", "pep-https", "pep-authzen.json"],
+    "pep-proxy": ["none", "pep-proxy", "pep-proxy.json"]
+  };
+  const all = pep.allPepSurfaces();
+  t.equal(all.map(function (one) {
+    return one.key;
+  }).sort().join(","), Object.keys(EXPECTED).sort().join(","),
+    "the PEP surfaces are exactly the seven cells");
+  all.forEach(function (surface) {
+    const want = EXPECTED[surface.key] || [];
+    t.equal([surface.auth, surface.target, surface.schemaFile].join(" "),
+      want.join(" "), surface.key + " is fuzzed as " + want.join(" "));
+    const enabled = pep.checksFor(surface, custom);
+    ["no_uncaught_server_error", "no_error_code_leak",
+     "frame_ancestors_present", "no_outbound_fetch", "no_internal_detail",
+     "status_code_conformance", "content_type_conformance",
+     "response_schema_conformance"].forEach(function (check) {
+      t.check(enabled.indexOf(check) >= 0,
+        surface.key + " runs " + check);
+    });
+    t.equal(enabled.indexOf("refused_unauthenticated") >= 0,
+      !!surface.anonymous, surface.key + " asks refused_unauthenticated " +
+      "exactly when it is an unauthenticated pass");
+    t.check(!!surface.strictReason && surface.strictReason.length > 20,
+      surface.key + " argues its strictness");
+  });
+
+  // Every document is fuzzed, every operation in it (nothing excluded), so
+  // the cells cover the model whole.
+  const files = fs.readdirSync(path.join(__dirname, "..", "xacml-pep",
+    "openapi")).filter(function (one) {
+      return /\.json$/.test(one);
+    }).sort();
+  t.equal(Array.from(new Set(all.map(function (one) {
+    return one.schemaFile;
+  }))).sort().join(","), files.join(","),
+    "every committed PEP document is fuzzed: " + files.join(", "));
+  t.equal(pep.PEP_EXCLUSIONS.length, 0,
+    "no PEP operation is excluded (the control plane is fuzzed as a PEP " +
+    "of its own, so nothing can sabotage the container)");
+
+  // MUTATIONS: what validatePep() must refuse.
+  const base = pep.plan();
+  const withExclusion = function (reason) {
+    return Object.assign({}, base, { exclusions: [{ surface: "pep-service",
+      match: "postNotify", reason: reason }] });
+  };
+  t.equal(pep.validatePep(withExclusion("a reason a reader can check"),
+    builtins, custom).length, 0, "an exclusion with a reason is accepted");
+  t.check(pep.validatePep(withExclusion(""), builtins, custom).some(
+    function (one) {
+      return /carries no reason/.test(one);
+    }), "an exclusion with its reason removed is refused");
+  t.check(pep.validatePep(Object.assign({}, base,
+    { fuzzPepName: "xacml-pep", containerName: "xacml-pep" }),
+    builtins, custom).some(function (one) {
+      return /container's own identity/.test(one);
+    }), "fuzzing the control plane as the container's identity is refused");
+  t.check(pep.FUZZ_PEP_NAME !== (process.env.XACML_PEP_NAME || "xacml-pep"),
+    "the control plane's fuzz PEP is not the stack's container");
+  const noPass = Object.assign({}, base, { realmSurfaces:
+    base.realmSurfaces.filter(function (one) {
+      return !one.anonymous;
+    }) });
+  t.check(pep.validatePep(noPass, builtins, custom).some(function (one) {
+    return /no unauthenticated pass/.test(one);
+  }), "a gated surface with its unauthenticated pass removed is refused");
+  const noReason = Object.assign({}, base, { cells: base.cells.map(
+    function (one) {
+      return one.key === "pep-proxy"
+        ? Object.assign({}, one, { anonymousReason: "" }) : one;
+    }) });
+  t.check(pep.validatePep(noReason, builtins, custom).some(function (one) {
+    return /does not say why/.test(one);
+  }), "an open surface that does not say why it is its own unauthenticated " +
+    "pass is refused");
+  const noFiveHundred = Object.assign({}, base, { cells: base.cells.map(
+    function (one) {
+      return Object.assign({}, one, { checks: ["status_code_conformance"] });
+    }) });
+  t.equal(pep.validatePep(noFiveHundred, builtins, []).filter(
+    function (one) {
+      return /no-uncaught-5xx/.test(one);
+    }).length, base.cells.length + base.realmSurfaces.length,
+    "a surface without the no-uncaught-5xx invariant is refused, every one");
+
+  // The unauthenticated passes' expectations, read from the documents.
+  const authzen = pep.documentOf(pep.PEP_CELLS.filter(function (one) {
+    return one.key === "pep-authzen";
+  })[0]);
+  t.equal(pep.publicOperations(authzen).join(","),
+    "GET /.well-known/authzen-configuration",
+    "the AuthZEN metadata is the edge PDP's one open operation");
+  const control = pep.documentOf(pep.PEP_REALM_SURFACES[0]);
+  t.equal(pep.publicOperations(control).length, 0,
+    "every control-plane operation is gated");
+  t.check(pep.PEP_REALM_SURFACES.concat(pep.PEP_CELLS).filter(
+    function (one) {
+      return one.anonymous;
+    }).every(function (one) {
+      return one.refusedWith.join(",") === "401";
+    }), "an unauthenticated control-plane or AuthZEN call is refused 401");
+  // The refusals ahead of the gate the control plane's unauthenticated pass
+  // accepts as refusals, each with its reason; the edge PDP's door is the
+  // first thing its listener asks, so its pass accepts the 401 alone.
+  pep.REFUSED_BEFORE_THE_GATE.forEach(function (one) {
+    t.check(one.status >= 400 && one.status < 500 && !!one.reason &&
+      one.reason.length > 20, "a refusal before the gate, " + one.status +
+      ", is a 4xx with a reason");
+  });
+  const refusals = function (key) {
+    return pep.refusalStatuses(pep.allPepSurfaces().filter(function (one) {
+      return one.key === key;
+    })[0]).sort().join(",");
+  };
+  t.equal(refusals("pep-control-plane-anonymous"), "400,401,413,415,429",
+    "the control plane's unauthenticated pass accepts the gate's 401 and " +
+    "the refusals ahead of it");
+  t.equal(refusals("pep-authzen-anonymous"), "401",
+    "the edge PDP's unauthenticated pass accepts its 401 alone");
+
+  // THE ORDER: the control plane runs in each realm, after the service's
+  // own surfaces and before admin-api, which stays last.
+  const order = kit.realmCells().map(function (one) {
+    return one.key;
+  });
+  t.equal(order[order.length - 1], "admin-api", "admin-api stays last");
+  t.check(order.indexOf("pep-control-plane") > order.indexOf("protocol") &&
+    order.indexOf("pep-control-plane-anonymous") <
+      order.indexOf("admin-api"),
+    "the control plane runs between protocol and admin-api",
+    order.join(","));
+
+  // THE BUDGET: its own, bounded, and a slow answer is a finding.
+  const budget = kit.pepBudgetArgs(pep.PEP_CELLS[0]).join(" ");
+  t.check(/--max-time \d+/.test(budget) &&
+    /--max-response-time 30/.test(budget) &&
+    /--request-timeout 120/.test(budget),
+    "a PEP container cell is bounded by --max-time and a 30-second answer " +
+    "is a finding", budget);
+  t.check(/--max-response-time 60/.test(kit.pepBudgetArgs(
+    pep.PEP_REALM_SURFACES[0]).join(" ")),
+    "the control plane, the service answering, is given 60 seconds");
+
+  // THE PROBES: every GET of each document is probed and held to "no 5xx
+  // and no leaked code" (each surface argues why it tolerates).
+  all.forEach(function (surface) {
+    const probes = kit.strictRequestProbes(pep.documentOf(surface),
+      { tolerates: surface.strict === "tolerates" });
+    t.check(probes.length > 0, surface.key + " is probed (" +
+      probes.length + ")");
+  });
+
+  // THE PEP'S TWO INVARIANTS, decided by pep_bodies.py.
+  const bodies = pepBodies([
+    { body: "Error: x\n    at Router.handle (/usr/src/sts/app.js:10:3)" },
+    { body: "thread 'main' panicked at src/sync.rs:41:9" },
+    { body: "{\"error\":\"invalid_request\"}" },
+    { body: "{\"echo\":\"panicked at\"}", sent: ["x panicked at y"] },
+    { kind: "refusal", route: "POST /xacml/pip", status: 200,
+      statuses: [401] },
+    { kind: "refusal", route: "POST /xacml/pip", status: 401,
+      statuses: [401] },
+    { kind: "refusal", route: "GET /.well-known/authzen-configuration",
+      status: 200, statuses: [401],
+      public: ["GET /.well-known/authzen-configuration"] }
+  ]);
+  t.check(typeof bodies[0] === "string" && typeof bodies[1] === "string",
+    "a node stack frame and a Rust panic are internal details");
+  t.equal(bodies[2], null, "an OAuth error body is not");
+  t.equal(bodies[3], null, "the caller's own input echoed back is not");
+  t.check(/answered 200/.test(String(bodies[4])),
+    "an unauthenticated success on a gated operation is a finding");
+  t.equal(bodies[5], null, "the documented 401 is the refusal");
+  t.equal(bodies[6], null, "an open operation is not asked to refuse");
+
+  // The checks are registered where the CLI loads them.
+  const hooks = fs.readFileSync(path.join(__dirname, "schemathesis",
+    "sts_checks.py"), "utf8");
+  ["no_internal_detail", "refused_unauthenticated"].forEach(function (name) {
+    t.check(new RegExp("@schemathesis\\.check\\ndef " + name +
+      "\\(").test(hooks), "sts_checks.py registers " + name);
+  });
+  t.log.debug("Leaving pepSection().");
 }
 
 // #1476: what the gate sends to every /admin-api GET, and what each answer

@@ -33,6 +33,16 @@
 //   STS_SCHEMA_USER          the fuzz person (or admin) to sign in as
 //   STS_SCHEMA_PASSWORD      that person's password
 //
+// and, for the remote PEP's surfaces (tests/protocol/schemathesis_pep.js),
+// where STS_SCHEMA_SERVICE_BASE is the PEP container's listener (or the
+// service, for the control plane):
+//   STS_SCHEMA_AUTH          dpop-pep|mtls as well
+//   STS_SCHEMA_PEP_NAME      dpop-pep: the PEP's name, its assertion's iss/sub
+//   STS_SCHEMA_PEP_KEY_FILE  dpop-pep: the PEM key that signs the assertion
+//                            and every proof
+//   STS_SCHEMA_CLIENT_CERT   mtls: the client certificate (leaf + issuer)
+//   STS_SCHEMA_CLIENT_KEY    mtls: its key
+//
 // The proxy listens on loopback and the stack has no egress (the `internal`
 // network), so nothing it forwards can leave the device.
 // ===========================================================================
@@ -53,6 +63,10 @@ const SURFACE = String(process.env.STS_SCHEMA_SURFACE || "");
 const AUTH = String(process.env.STS_SCHEMA_AUTH || "none");
 const USER = String(process.env.STS_SCHEMA_USER || "");
 const PASSWORD = String(process.env.STS_SCHEMA_PASSWORD || "");
+const PEP_NAME = String(process.env.STS_SCHEMA_PEP_NAME || "");
+const PEP_KEY_FILE = String(process.env.STS_SCHEMA_PEP_KEY_FILE || "");
+const CLIENT_CERT = String(process.env.STS_SCHEMA_CLIENT_CERT || "");
+const CLIENT_KEY = String(process.env.STS_SCHEMA_CLIENT_KEY || "");
 
 // ===========================================================================
 // THE INFRASTRUCTURE-NAME GUARD (#1299, iya-sts-60, 2026-11-06). An admin-api
@@ -229,8 +243,13 @@ const UPSTREAM = SERVICE.protocol === "http:" ? http : https;
 // isolated network; this hop's certificate is not what the run verifies
 // (tlsfuzzer exercises the listener's TLS). The JOBS get a real anchor
 // elsewhere; here the question is only whether the service answers.
+// THE AUTHZEN CALLER'S CERTIFICATE (`mtls`, the remote PEP's edge PDP): the
+// agent presents it on every connection, which is the whole of that door.
 const AGENT = SERVICE.protocol === "http:" ? undefined
-  : new https.Agent({ rejectUnauthorized: false });
+  : new https.Agent(Object.assign({ rejectUnauthorized: false },
+    AUTH === "mtls" ? {
+      cert: require("fs").readFileSync(CLIENT_CERT),
+      key: require("fs").readFileSync(CLIENT_KEY) } : {}));
 
 // The session established for a gated surface: a DPoP key, the current token,
 // a refresh(), the sign-in wrapper (its `token` getter is live, so a refresh
@@ -238,7 +257,15 @@ const AGENT = SERVICE.protocol === "http:" ? undefined
 // token RESPONSE object its internal retry consumes, not the access-token
 // string), and (for authn) the sign-on cookie. Filled by signIn().
 const session = { key: null, token: "", refresh: null, wrapper: null,
-  cookie: "", csrf: "", origin: SERVICE.origin };
+  cookie: "", csrf: "", origin: SERVICE.origin, pepKey: "", nonce: "" };
+
+// The surfaces whose token is DPoP-bound and whose 401s the proxy corrects.
+// Hot path (every forwarded request): no Entering/Leaving pair, which would
+// drown the log, as currentToken() above.
+function dpopBound() {
+  return AUTH === "dpop-portal" || AUTH === "dpop-console" ||
+    AUTH === "dpop-report" || AUTH === "dpop-pep";
+}
 
 // The access token in force right now: the wrapper's live getter once a
 // gated surface has signed in, so a value replaced by a refresh is picked up
@@ -277,6 +304,22 @@ async function signIn() {
     session.token = wrapper.token;
     session.refresh = wrapper.refresh;
     session.wrapper = wrapper;
+  } else if (AUTH === "dpop-pep") {
+    // THE CONTROL PLANE AS A PEP (rust/bins/xacml-pep/src/credential.rs, in
+    // node through pep-credential.js): an RFC 7523 self-assertion signed with
+    // the PEP's key, for a DPoP-bound `xacml:pep` token audienced to the
+    // realm's /xacml/pep. The proofs are signed per request by the same key.
+    const credentials = require("../tools/pep-credential.js");
+    session.pepKey = session.pepKey ||
+      require("fs").readFileSync(PEP_KEY_FILE, "utf8");
+    const got = await credentials.pepAccessToken(REALM_BASE, PEP_NAME,
+      session.pepKey, "xacml:pep", "/xacml/pep");
+    if (!got.token) {
+      throw new Error("the PEP's token request answered " + got.status +
+        " " + String(got.text || "").slice(0, 300));
+    }
+    session.token = got.token;
+    session.nonce = "";
   } else if (AUTH === "authn") {
     // The authn-api operations take no token; its POSTs are bound (an Origin,
     // and X-CSRF-Token matching the sts_session cookie). A portal sign-in
@@ -318,6 +361,10 @@ function outboundHeaders(req, url) {
     const token = currentToken();
     headers.authorization = "DPoP " + token;
     headers.dpop = session.key.proof(req.method, url, token);
+  } else if (AUTH === "dpop-pep") {
+    headers.authorization = "DPoP " + session.token;
+    headers.dpop = require("../tools/pep-credential.js").dpopProof(
+      session.pepKey, req.method, url, session.token, session.nonce);
   } else if (AUTH === "authn") {
     if (session.cookie) {
       headers.cookie = session.cookie +
@@ -507,17 +554,29 @@ async function forward(req, url, body) {
   log.debug("Entering forward().");
   let answer = await forwardOnce(req.method, url,
     outboundHeaders(req, url), body);
-  const dpop = AUTH === "dpop-portal" || AUTH === "dpop-console" ||
-    AUTH === "dpop-report";
+  if (AUTH === "dpop-pep" && answer.nonce) {
+    // A nonce on ANY answer is the next proof's, as the PEP keeps them.
+    session.nonce = answer.nonce;
+  }
+  const dpop = dpopBound();
   if (!dpop) {
     log.debug("Leaving forward(). " + answer.status);
     return answer;
   }
   for (let attempt = 0; attempt < 3 && answer.status === 401; attempt++) {
     if (/use_dpop_nonce/.test(answer.challenge)) {
-      session.key.keepNonce(nonceCarrier(answer));
+      if (AUTH === "dpop-pep") {
+        // The latest DPoP-Nonce the resource handed, kept for the next proof
+        // as the PEP keeps one per origin and role.
+        session.nonce = answer.nonce || session.nonce;
+      } else {
+        session.key.keepNonce(nonceCarrier(answer));
+      }
     } else if (/invalid_token/.test(answer.challenge)) {
-      await diagnoseFirstInvalid();
+      if (AUTH !== "dpop-pep") {
+        // The diagnostic reads a PERSON's entry; a PEP has no fuzz person.
+        await diagnoseFirstInvalid();
+      }
       const resigned = await resignInIfDue("invalid_token on " + SURFACE);
       if (!resigned) {
         break;

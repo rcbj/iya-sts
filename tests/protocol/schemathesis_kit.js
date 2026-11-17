@@ -48,6 +48,9 @@ const os = require("os");
 const path = require("path");
 const log = bunyan.createLogger({ name: "schemathesis_kit",
   level: process.env.LOG_LEVEL || "info" });
+// The remote XACML PEP's half of the plan (rcbj, 2026-11-16): its surfaces,
+// auth, checks and provisioning. It requires nothing of this file.
+const pep = require("./schemathesis_pep.js");
 
 // ---------------------------------------------------------------------------
 // THE THREE REALM PROFILES. Each is a realm the job creates on the dedicated
@@ -724,6 +727,13 @@ function validate() {
       problems.push("service exclusion " + one.match + " carries no reason");
     }
   });
+  // The remote PEP's surfaces (schemathesis_pep.js), held to the same rules
+  // and to the PEP's own: a known auth kind, the no-5xx invariant, a reason
+  // for every exclusion, an unauthenticated pass or the reason there is none.
+  pep.validatePep(pep.plan(), BUILTIN_CHECKS, CUSTOM_CHECKS)
+    .forEach(function (one) {
+      problems.push(one);
+    });
   log.debug("Leaving validate(). " + problems.length + " problem(s)");
   return problems;
 }
@@ -805,6 +815,39 @@ const MAX_EXAMPLES = parseInt(
 // takes 1,087 ms in the service image on an idle machine, and the fuzz
 // stage's other cells hold every core. The handler was working, not hung.
 const REQUEST_TIMEOUT_SECONDS = 300;
+
+// THE REMOTE PEP'S BUDGET (schemathesis_pep.js), its own so that its cells
+// cannot spend the mode's six hours. Each PEP document is small (five, three,
+// nine and fourteen operations), so its cases are as many as a service
+// surface's and its whole cell is bounded by --max-time, which in
+// Schemathesis 4.33 is also how long the fuzzing phase goes on: a cell takes
+// its five minutes, whatever -n says (the 2026-11-16 throwaway run's pep-
+// service cell generated 14458 cases in its 120 seconds). A PEP answers in
+// milliseconds (a control-plane listener certificate is one signature), so a
+// request is given 120 seconds and an ANSWER that takes more than 30 is a
+// finding (the max_response_time check): the "no hang" invariant, where the
+// service's surfaces allow 300 for a legal CA rebuild.
+const PEP_MAX_EXAMPLES = parseInt(
+  process.env.STS_SCHEMATHESIS_PEP_MAX_EXAMPLES || "50", 10);
+const PEP_MAX_TIME_SECONDS = parseInt(
+  process.env.STS_SCHEMATHESIS_PEP_MAX_TIME || "300", 10);
+// THE CONTROL PLANE IS GIVEN TWICE THAT: it is the SERVICE answering, beside
+// the other realms' lanes on one host (four cores on a GitHub runner), and a
+// listener certificate is a signature by the realm's CA.
+const PEP_REQUEST_TIMEOUT_SECONDS = 120;
+const PEP_MAX_RESPONSE_SECONDS = 30;
+const PEP_SERVICE_MAX_RESPONSE_SECONDS = 60;
+
+function pepBudgetArgs(surface) {
+  log.debug("Entering pepBudgetArgs().");
+  const slow = !!(surface && surface.target === "service");
+  const args = ["--request-timeout", String(PEP_REQUEST_TIMEOUT_SECONDS),
+    "--max-response-time", String(slow ? PEP_SERVICE_MAX_RESPONSE_SECONDS
+      : PEP_MAX_RESPONSE_SECONDS),
+    "--max-time", String(PEP_MAX_TIME_SECONDS)];
+  log.debug("Leaving pepBudgetArgs().");
+  return args;
+}
 // The venv the tests image builds, or the PATH. STS_SCHEMATHESIS_DIR is the
 // venv ROOT (the Dockerfile's `python3 -m venv /opt/schemathesis`), so the
 // executable is `<dir>/bin/schemathesis` — no `venv` segment.
@@ -1508,7 +1551,10 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
   // LOUDLY if it cannot be done (#1299): a previous cell's fuzzing can change
   // the fuzz person's password or the realm's DPoP settings, and the next cell
   // starts from whatever it left.
-  const reasserted = await reassertRealm(serviceBase, provisioned, say);
+  // The PEP lane's realm has no fuzz person and no profile to put back: its
+  // provisioning is the PEP's (schemathesis_pep.js provisionPepLane()).
+  const reasserted = provisioned.pepLane ? { ok: true }
+    : await reassertRealm(serviceBase, provisioned, say);
   if (!reasserted.ok) {
     log.debug("Leaving runSurface(). re-assert failed");
     return { surface: surface.key, realm: provisioned.realmPrefix,
@@ -1517,11 +1563,39 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
         surface.key + " cell (#1299, start from a known state): " +
         reasserted.why };
   }
+  // A REMOTE PEP SURFACE (schemathesis_pep.js) is fuzzed from its committed
+  // document, forwarded to the PEP's listener (or to the service under the
+  // realm's prefix, for the control plane), and authenticated as a PEP or as
+  // an AuthZEN caller.
+  const isPep = !!surface.schemaFile;
+  const forwardTo = isPep
+    ? pep.targetBase(surface, serviceBase, pep.pepEnvironment()) : serviceBase;
+  const forwardPrefix = (!isPep || surface.target === "service")
+    ? provisioned.realmPrefix : "";
+  if (surface.auth === "dpop-pep" && !provisioned.pep) {
+    // The realm's fuzz PEP, made once per realm before its first cell.
+    try {
+      provisioned.pep = await pep.provisionFuzzPep({ serviceBase: serviceBase,
+        adminCall: adminCall, say: say }, provisioned.realmPrefix, workDir);
+    } catch (e) {
+      log.debug("Leaving runSurface(). The fuzz PEP was not provisioned.");
+      return { surface: surface.key, realm: provisioned.realmPrefix,
+        code: null, status: "error", findings: [],
+        output: "could not provision the control plane's fuzz PEP: " +
+          ((e && e.message) || e) };
+    }
+  }
   const port = await freePort();
   const proxyEnv = Object.assign({}, process.env, {
     STS_SCHEMA_PROXY_PORT: String(port),
-    STS_SCHEMA_SERVICE_BASE: serviceBase,
-    STS_SCHEMA_REALM_PREFIX: provisioned.realmPrefix,
+    STS_SCHEMA_SERVICE_BASE: forwardTo,
+    STS_SCHEMA_REALM_PREFIX: forwardPrefix,
+    STS_SCHEMA_PEP_NAME: provisioned.pep ? provisioned.pep.name : "",
+    STS_SCHEMA_PEP_KEY_FILE: provisioned.pep ? provisioned.pep.keyFile : "",
+    STS_SCHEMA_CLIENT_CERT: provisioned.caller
+      ? provisioned.caller.certFile : "",
+    STS_SCHEMA_CLIENT_KEY: provisioned.caller
+      ? provisioned.caller.keyFile : "",
     STS_SCHEMA_SURFACE: surface.key,
     STS_SCHEMA_AUTH: surface.auth,
     STS_SCHEMA_USER: provisioned.user,
@@ -1551,7 +1625,10 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     let schemaLocation;
     // The synthesized protocol document, kept for the probes after the run.
     let synthesizedDoc = null;
-    if (surface.kind === "synthesized") {
+    if (isPep) {
+      schemaLocation = pep.schemaPathOf(surface);
+      synthesizedDoc = pep.documentOf(surface);
+    } else if (surface.kind === "synthesized") {
       const meta = await metadataAnswer(serviceBase, provisioned, say);
       if (!meta.ok) {
         log.debug("Leaving runSurface(). sts-metadata unreadable");
@@ -1577,15 +1654,20 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // (undeclared-method, schema-valid-rejected, schema-violating-accepted),
     // which this gate does not assert (rcbj, 2026-11-04); naming the checks is
     // how the scope stays the four invariants.
-    const enabledChecks = surface.checks.concat(CUSTOM_CHECKS);
+    const enabledChecks = isPep ? pep.checksFor(surface, CUSTOM_CHECKS)
+      : surface.checks.concat(CUSTOM_CHECKS);
     const args = ["run", schemaLocation, "--url", base,
-      "--checks", enabledChecks.join(","), "-n", String(MAX_EXAMPLES)]
-      .concat(requestTimeoutArgs());
+      "--checks", enabledChecks.join(","),
+      "-n", String(isPep ? PEP_MAX_EXAMPLES : MAX_EXAMPLES)]
+      .concat(isPep ? pepBudgetArgs(surface) : requestTimeoutArgs());
     // The surface's own run-sabotage exclusions (the service cell inherits the
     // admin-api surface's through exclusionsKey) plus any serviceExclusions it
     // carries (#1299, the default-realm service cell).
     exclusionsFor(surface.exclusionsKey || surface.key)
-      .concat(surface.serviceExclusions || []).forEach(function (one) {
+      .concat(surface.serviceExclusions || [])
+      .concat(pep.PEP_EXCLUSIONS.filter(function (one) {
+        return one.surface === surface.key;
+      })).forEach(function (one) {
         args.push("--exclude-operation-id", one.match);
       });
     // Each custom check appends its finding (route, status, code, body
@@ -1606,7 +1688,15 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
       { SCHEMATHESIS_HOOKS: HOOKS_FILE,
         STS_SCHEMATHESIS_FINDINGS: findingsPath,
         STS_SCHEMA_REALM_PREFIX: provisioned.realmPrefix,
-        STS_SCHEMA_SURFACE: surface.key });
+        STS_SCHEMA_SURFACE: surface.key,
+        // The unauthenticated pass's expectation (refused_unauthenticated):
+        // the statuses a gated operation may answer, and the operations the
+        // document gates not at all. Empty everywhere else, so the check is
+        // a no-op on every other cell.
+        STS_SCHEMA_REFUSED_WITH: surface.anonymous
+          ? pep.refusalStatuses(surface).join(",") : "",
+        STS_SCHEMA_PUBLIC_OPERATIONS: surface.anonymous
+          ? pep.publicOperations(synthesizedDoc).join("|") : "" });
     say("[schemathesis] " + surface.key + " @ " + realmShown +
       ": " + SCHEMATHESIS_BIN + " " + args.join(" "));
     const run = await runSchemathesis(SCHEMATHESIS_BIN, args, runEnv, workDir);
@@ -1615,7 +1705,9 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // FUZZ_DPOP's is the cell's own fuzzing having reset them mid-cell (#1299),
     // which is the remaining explanation for a replay cache that filled. A
     // diagnostic only; it changes nothing and never fails the cell.
-    await logDpopSettings(serviceBase, provisioned, surface.key, say);
+    if (!provisioned.pepLane) {
+      await logDpopSettings(serviceBase, provisioned, surface.key, say);
+    }
     const storeProblem = await storeFailing(serviceBase, surface.key,
       realmShown, say);
     const code = run.status;
@@ -1626,7 +1718,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     let strictFindings = [];
     if (surface.strict) {
       strictFindings = await probeStrictRequests(port, surface, say,
-        surface.kind === "synthesized" ? synthesizedDoc : null);
+        (isPep || surface.kind === "synthesized") ? synthesizedDoc : null);
       if (strictFindings.length && status === "pass") {
         status = "fail";
       }
@@ -1715,6 +1807,21 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
   }
 }
 
+// A realm's cells, in order: the service's surfaces with the remote PEP's
+// control plane (schemathesis_pep.js) before admin-api, which stays LAST in
+// the realm because it is the one cell that can break the cells after it.
+function realmCells() {
+  log.debug("Entering realmCells().");
+  const before = SURFACES.filter(function (one) {
+    return one.key !== "admin-api";
+  });
+  const last = SURFACES.filter(function (one) {
+    return one.key === "admin-api";
+  });
+  log.debug("Leaving realmCells().");
+  return before.concat(pep.PEP_REALM_SURFACES).concat(last);
+}
+
 // The cells a caller named, or null for the whole matrix. Keys match a
 // surface or the service cell exactly: `admin-api` does not select
 // `admin-api-service`. Empty and unset are the whole matrix (#1416).
@@ -1756,7 +1863,7 @@ async function run(serviceBase, options) {
   const only = selectedSurfaces();
   if (only) {
     const known = {};
-    SURFACES.forEach(function (one) {
+    SURFACES.concat(pep.allPepSurfaces()).forEach(function (one) {
       known[one.key] = true;
     });
     known[SERVICE_CELL.key] = true;
@@ -1804,20 +1911,21 @@ async function run(serviceBase, options) {
           ((e && e.message) || e) });
       return;
     }
-    for (let s = 0; s < SURFACES.length; s++) {
-      if (only && !only[SURFACES[s].key]) {
+    const cells = realmCells();
+    for (let s = 0; s < cells.length; s++) {
+      if (only && !only[cells[s].key]) {
         continue;
       }
       let result;
       try {
-        result = await runSurface(serviceBase, provisioned, SURFACES[s],
+        result = await runSurface(serviceBase, provisioned, cells[s],
           workDir, say);
       } catch (e) {
         // runSurface returns its own error results; this is the backstop for
         // an unexpected throw, so one surface never ends the matrix.
-        log.warn("the surface " + SURFACES[s].key + " @ " +
+        log.warn("the surface " + cells[s].key + " @ " +
           provisioned.realmPrefix + " threw: " + ((e && e.message) || e));
-        result = { surface: SURFACES[s].key, realm: provisioned.realmPrefix,
+        result = { surface: cells[s].key, realm: provisioned.realmPrefix,
           code: null, status: "error", findings: [],
           output: "the surface threw: " + ((e && e.message) || e) };
       }
@@ -1825,7 +1933,79 @@ async function run(serviceBase, options) {
     }
     log.debug("Leaving runRealm(). " + profile.realm);
   }
-  await boundedMap(PROFILES, realmConcurrency(), runRealm);
+  // THE REMOTE PEP'S LANE (schemathesis_pep.js), beside the realm lanes: it
+  // touches only the PEP's realm and the PEP container. Provisioned first,
+  // its cells in order, and then the invariant that the PEP is still up,
+  // registered and holding its token — a cell of its own in the verdict.
+  async function runPepLane() {
+    log.debug("Entering runPepLane().");
+    const wanted = pep.PEP_CELLS.filter(function (one) {
+      return !only || only[one.key];
+    });
+    if (!wanted.length) {
+      log.debug("Leaving runPepLane(). Not asked for.");
+      return;
+    }
+    const env = pep.pepEnvironment();
+    const where = "/realm/" + (env.realm || "(no PEP realm)");
+    const missing = pep.pepLaneMissing(env);
+    if (missing) {
+      record({ surface: "(pep provision)", realm: where, code: null,
+        status: "error", findings: [], output: "the PEP lane cannot run: " +
+          missing });
+      log.debug("Leaving runPepLane(). No PEP.");
+      return;
+    }
+    let lane = null;
+    try {
+      await freshAdminToken(serviceBase, say);
+      lane = await pep.provisionPepLane({ serviceBase: serviceBase,
+        adminCall: adminCall, say: say }, workDir);
+    } catch (e) {
+      log.warn("provisioning the PEP lane failed: " + ((e && e.message) ||
+        e));
+      record({ surface: "(pep provision)", realm: where, code: null,
+        status: "error", findings: [], output: "provisioning the PEP lane " +
+          "failed: " + ((e && e.message) || e) });
+      log.debug("Leaving runPepLane(). Not provisioned.");
+      return;
+    }
+    const provisioned = { realmPrefix: where, pepLane: true,
+      caller: lane.caller, user: "", password: "" };
+    try {
+      for (let c = 0; c < wanted.length; c++) {
+        let result;
+        try {
+          result = await runSurface(serviceBase, provisioned, wanted[c],
+            workDir, say);
+        } catch (e) {
+          log.warn("the PEP cell " + wanted[c].key + " threw: " +
+            ((e && e.message) || e));
+          result = { surface: wanted[c].key, realm: where, code: null,
+            status: "error", findings: [], output: "the cell threw: " +
+              ((e && e.message) || e) };
+        }
+        record(result);
+      }
+      const wrong = await pep.pepStillServing(env);
+      record({ surface: "pep-still-serving", realm: where, code: null,
+        status: wrong ? "fail" : "pass",
+        findings: wrong ? [{ kind: "pep_not_serving", status: 0,
+          route: "GET " + env.url + "/", detail: wrong, body: "" }] : [],
+        output: wrong ? "after its cells the PEP " + wrong
+          : "the PEP is healthy, registered and holds its token" });
+    } finally {
+      const credentials = require("../tools/pep-credential.js");
+      await credentials.settleAnchors(serviceBase, lane.anchors, null)
+        .catch(function (e) {
+          log.warn("the AuthZEN caller's Root was not taken off the " +
+            "truststore: " + ((e && e.message) || e));
+        });
+    }
+    log.debug("Leaving runPepLane().");
+  }
+  await Promise.all([boundedMap(PROFILES, realmConcurrency(), runRealm),
+    runPepLane()]);
   // THE DEFAULT-REALM SERVICE CELL, LAST (#1299): the admin-api surface against
   // the default realm with a SERVICE admin token, so the ~86 service-level
   // operations every realm cell's realm token is refused (STS-API-0112) are
@@ -1880,6 +2060,8 @@ module.exports = {
   exclusionsFor: exclusionsFor,
   knownChecks: knownChecks,
   validate: validate,
+  realmCells: realmCells,
+  pepBudgetArgs: pepBudgetArgs,
   openApiPathOf: openApiPathOf,
   extractRows: extractRows,
   synthesizeProtocolDoc: synthesizeProtocolDoc,
