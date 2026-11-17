@@ -5324,9 +5324,19 @@ async function theProxyLosesAnApplication() {
         return one.id === "scratch";
       })[0] || {};
     const resolved = route.resolved || {};
-    assert.ok(resolved.usable === false || route.usable === false,
+    // `proxyRoutes` (the first local run, 2026-11-16): the row's `proxy`
+    // is the configuration as written, and each route's resolution — its
+    // application found, `usable`, `why` — is a `proxyRoutes` entry named
+    // by `route`. The older shapes are still read.
+    const listed = (((row.row || {}).proxyRoutes) || [])
+      .filter(function (one) {
+        return one.route === "scratch";
+      })[0] || {};
+    assert.ok(listed.usable === false || resolved.usable === false ||
+              route.usable === false,
       "GET /admin-api/xacml/peps should mark the scratch route unusable " +
-      "(D10); it holds " + JSON.stringify(route).slice(0, 300));
+      "(D10); it holds " + JSON.stringify(listed).slice(0, 300) + " " +
+      JSON.stringify(route).slice(0, 300));
   });
   log.debug("Leaving theProxyLosesAnApplication().");
 }
