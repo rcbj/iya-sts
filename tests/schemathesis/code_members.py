@@ -103,6 +103,10 @@ HELP_TEXT_BY_ROUTE = {
     "/admin-api/ldap/federations": (
         ".schema.attributes[].what",
     ),
+    # The PEP schema's `stsXacmlPepHostname` names the refusal (#1760).
+    "/admin-api/ldap/peps": (
+        ".schema.attributes[].what",
+    ),
     "/admin-api/mode": (
         ".requirements[].inForce",
         ".requirements[].product",

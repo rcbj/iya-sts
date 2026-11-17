@@ -29,7 +29,8 @@
 #                  repeated it.
 #   mode (matrix)  memory, single-node, mariadb, cluster, cells, fuzz:
 #                  ./run-tests.sh --no-build --modes=<mode> --protocol=only,
-#                  one runner each.
+#                  one runner each. The five on a dispatch; fuzz on a push to
+#                  main, or on a dispatch with the `fuzz` input.
 #   openid-conformance, openid-conformance-oidcc
 #                  the OpenID Foundation plans, split by lane, --no-build.
 #   openapi-breaking  pull requests only: the published APIs did not break.
@@ -72,12 +73,18 @@ on:
   # each, and the account has a finite number of them. A push or a pull
   # request runs the cheap jobs (mirror, dependency-windows, build, unit,
   # rust, openapi-breaking); the whole suite is `gh workflow run tests.yml --ref
-  # develop`, started deliberately once a batch of fixes has landed.
+  # develop`, started deliberately once a batch of fixes has landed. THE ONE
+  # EXCEPTION IS FUZZ (rcbj, 2026-11-17): it runs on a push to main (a release)
+  # and on a dispatch only when the `fuzz` input asks (see the mode job).
   # `coverage` adds the coverage run to a dispatch.
   workflow_dispatch:
     inputs:
       coverage:
         description: Also run the coverage job
+        type: boolean
+        default: false
+      fuzz:
+        description: Also run the fuzz mode (5.5 hours; otherwise only on main)
         type: boolean
         default: false
       # THE #444 JOBS (rcbj, 2026-11-15): off unless asked, each reported
@@ -148,7 +155,7 @@ jobs:
       packages: write
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - name: Log in to GitHub Container Registry
@@ -168,7 +175,7 @@ jobs:
       contents: read
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - name: Fail on an advisory past its window
@@ -206,7 +213,7 @@ jobs:
       # preflight guard it too; asking for it here keeps a fetch failure on
       # the checkout step, where it reads as one.
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
           submodules: recursive
@@ -243,7 +250,7 @@ jobs:
       # Already zstd, so the upload does not compress it again. One day: it
       # is for this run's jobs and nobody else.
       - name: Upload the images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stack-images
           path: ${{ runner.temp }}/stack-images.tar.zst
@@ -272,7 +279,7 @@ jobs:
       contents: read
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
@@ -283,7 +290,7 @@ jobs:
         run: nohup .github/scripts/runner-host.sh sample tests/report/runner/resources.log > /dev/null 2>&1 &
 
       - name: Download the images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: stack-images
           path: ${{ runner.temp }}
@@ -311,7 +318,7 @@ jobs:
 
       - name: Upload the test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report-unit
           path: tests/report
@@ -369,7 +376,15 @@ jobs:
   # ---------------------------------------------------------------------------
   mode:
     name: mode (${{ matrix.mode }})
-    if: github.event_name == 'workflow_dispatch'
+    # FUZZ RUNS ON A MERGE INTO MAIN, OR WHEN A DISPATCH ASKS FOR IT (rcbj,
+    # 2026-11-17): its five and a half hours on every merge into develop cost
+    # more runner time than the account has. A push to main (a release) runs
+    # the fuzz mode alone; a dispatch runs the other five, and fuzz too with
+    # the `fuzz` input. A push to develop runs no mode at all. A job's `if`
+    # cannot read `matrix`, so the split is the matrix itself, chosen by event.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.minutes }}
@@ -379,30 +394,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - mode: memory
-            minutes: 150
-            bound: 6000
-          - mode: single-node
-            minutes: 240
-            bound: 11400
-          - mode: mariadb
-            minutes: 250
-            bound: 13200
-          - mode: cluster
-            minutes: 300
-            bound: 16200
-          - mode: cells
-            minutes: 230
-            bound: 12000
-          - mode: fuzz
-            minutes: 330
-            bound: 18000
+        # Fuzz alone on a push to main; on a dispatch the other five, and
+        # fuzz as well when the `fuzz` input asks (see the job's `if`).
+        include: >-
+          ${{ fromJSON(github.event_name == 'push' && '[
+            {"mode":"fuzz","minutes":330,"bound":18000}
+          ]' || inputs.fuzz && '[
+            {"mode":"memory","minutes":150,"bound":6000},
+            {"mode":"single-node","minutes":240,"bound":11400},
+            {"mode":"mariadb","minutes":250,"bound":13200},
+            {"mode":"cluster","minutes":300,"bound":16200},
+            {"mode":"cells","minutes":230,"bound":12000},
+            {"mode":"fuzz","minutes":330,"bound":18000}
+          ]' || '[
+            {"mode":"memory","minutes":150,"bound":6000},
+            {"mode":"single-node","minutes":240,"bound":11400},
+            {"mode":"mariadb","minutes":250,"bound":13200},
+            {"mode":"cluster","minutes":300,"bound":16200},
+            {"mode":"cells","minutes":230,"bound":12000}
+          ]') }}
     steps:
       # See the build job: recursive, for the nested node-ldapjs submodule,
       # which the launcher's preflight checks even with --no-build.
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
           submodules: recursive
@@ -427,7 +442,7 @@ jobs:
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Download the images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: stack-images
           path: ${{ runner.temp }}
@@ -471,7 +486,7 @@ jobs:
       # whatever it is worth.
       - name: Upload the test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report-${{ matrix.mode }}
           path: |
@@ -508,7 +523,7 @@ jobs:
       packages: read
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
           submodules: recursive
@@ -524,7 +539,7 @@ jobs:
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Download the images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: stack-images
           path: ${{ runner.temp }}
@@ -548,7 +563,7 @@ jobs:
       # Each job's log names the suite's plan ids and every module's result.
       - name: Upload the conformance report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report-conformance
           path: |
@@ -572,7 +587,7 @@ jobs:
       packages: read
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
           submodules: recursive
@@ -588,7 +603,7 @@ jobs:
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Download the images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: stack-images
           path: ${{ runner.temp }}
@@ -609,7 +624,7 @@ jobs:
 
       - name: Upload the conformance report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report-conformance-oidcc
           path: |
@@ -641,7 +656,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -662,7 +677,7 @@ jobs:
       packages: read
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: recursive
@@ -697,7 +712,7 @@ jobs:
       packages: read
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
           submodules: recursive
@@ -713,7 +728,7 @@ jobs:
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Download the images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: stack-images
           path: ${{ runner.temp }}
@@ -741,7 +756,7 @@ jobs:
       # failure.
       - name: Upload the coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage
@@ -753,7 +768,7 @@ jobs:
       # here, not a container).
       - name: Upload the coverage run's test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report-coverage
           path: |

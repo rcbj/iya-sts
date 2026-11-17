@@ -107,12 +107,12 @@ jobs:
       # Every tag, because each documentation version's API reference is
       # generated from its own release tag (docs/_data/versions.yml's `ref`).
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           # 24.22.1 is the 21 October 2026 security release (CVE-2026-111497).
           node-version: '24.22.1'
@@ -123,7 +123,7 @@ jobs:
         run: .github/scripts/api-references.sh apidocs
 
       - name: Upload the API reference
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-reference
           path: apidocs
@@ -139,7 +139,7 @@ jobs:
       # Fetching it here would only make this job slower and its failures
       # confusing.
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # `enablement: true` — ask to create the Pages site if this repository has
       # none. See the header comment: with this repository's GITHUB_TOKEN that
@@ -147,7 +147,7 @@ jobs:
       # kept for forks whose runner has the rights this token lacks.
       - name: Configure Pages
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
 
@@ -169,7 +169,7 @@ jobs:
       # The jsdoc job's pages, under /api/. `_site` is written by the Jekyll
       # action's container as root, hence sudo.
       - name: Download the API reference
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: api-reference
           path: apidocs
@@ -210,7 +210,7 @@ jobs:
           echo "Built $(find _site -name '*.html' | wc -l) page(s)."
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
 
   deploy:
     needs: build
@@ -221,4 +221,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
