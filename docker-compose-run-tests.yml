@@ -1117,6 +1117,13 @@ services:
         condition: service_healthy
     volumes:
       - ${XACML_PEP_CLUSTER_CERT_DIR:-./xacml-pep/certs-cluster}/pep-cluster-1:/certs:ro
+    # THE CUSTOM PROXY LISTENER the job defines on this member once it is a
+    # standalone PEP again (sts_xacml_pep_proxy_cluster.js, "Listeners"),
+    # and the port its `port` row moves it to. Reached on this network
+    # only; nothing is published.
+    expose:
+      - "9643"
+      - "9644"
     environment:
       - PEP_PDP_URL=${XACML_PEP_CLUSTER_PDP_URL:-https://sts:8081/realm/pep-cluster-e2e}
       - PEP_NAME=pep-cluster-1
