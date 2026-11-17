@@ -22,7 +22,7 @@
 
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By } = require("selenium-webdriver");
+const { Builder, By, logging } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const credentials = require("../tools/pep-credential.js");
@@ -175,7 +175,38 @@ async function submitFormHolding(driver, tab, selector, fields, answerMs) {
       "const path = '/admin-api/pki/trust/' + arguments[0];" +
       "return performance.getEntriesByType('resource')" +
       ".some(function (one) { return one.name.endsWith(path); });", action);
-  }, answerMs || 30000, "no answer to the " + action + " form");
+  }, answerMs || 30000, "no answer to the " + action + " form")
+    .catch(async function (e) {
+      // WHAT THE PAGE WAS DOING, rather than a bare timeout (GitHub run
+      // 44025839154, single-node: Remove had no answer after 30 s and the
+      // service logged nothing for it). The address, whether the form that
+      // was pressed is still in the document, the last requests the page
+      // made, and its console.
+      log.debug("Caught waiting for the answer: " + ((e && e.message) || e));
+      const seen = await driver.executeScript(
+        "return { at: location.href," +
+        " attached: document.contains(arguments[0])," +
+        " reauth: !!document.querySelector('[data-reauth]')," +
+        " text: document.body.innerText.slice(0, 300)," +
+        " requests: performance.getEntriesByType('resource')" +
+        ".slice(-15).map(function (one) {" +
+        " return one.name.replace(location.origin, '') + ' ' +" +
+        " Math.round(one.duration) + 'ms'; }) };", form)
+        .catch(function (err) {
+          return { error: String((err && err.message) || err) };
+        });
+      const pageConsole = await driver.manage().logs()
+        .get(logging.Type.BROWSER).then(function (entries) {
+          return entries.slice(-15).map(function (one) {
+            return one.level.name + " " + one.message;
+          });
+        }, function (err) {
+          return ["(no console: " + ((err && err.message) || err) + ")"];
+        });
+      throw new Error("no answer to the " + action + " form: " +
+                      JSON.stringify(seen) + " console: " +
+                      JSON.stringify(pageConsole));
+    });
   await waitForDrawn(driver);
   log.debug("Leaving submitFormHolding(). From " + before);
 }
@@ -199,6 +230,10 @@ async function test() {
   const leafName = "paranoid-console-leaf-" + STAMP;
 
   const options = new chrome.Options();
+  // The page's console, read only when a form has no answer.
+  const prefs = new logging.Preferences();
+  prefs.setLevel(logging.Type.BROWSER, logging.Level.ALL);
+  options.setLoggingPrefs(prefs);
   options.addArguments("--headless=new", "--no-sandbox",
       "--disable-dev-shm-usage", "--window-size=1400,1200");
   browserFlags.addBrowserAccessFlags(options, base);
