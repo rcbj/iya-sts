@@ -2459,9 +2459,15 @@ configuration->Listeners", the HTTPS listener there now as the default, and
     one value is both the TLS 1.2 cache's lifetime and a TLS 1.3 ticket's,
     so neither part can be set. OpenSSL's default for the TLS methods is
     **7200 s, not the 300 s this file used to say** (a session's own
-    `timeout()` says so), so every value but 7200, the service's 300
-    default included, is logged once per value as a warning
-    (`STS-XPEP-0119`). The binding exists on #444's branch
+    `timeout()` says so), so every value but 7200 is logged once per
+    value as a warning (`STS-XPEP-0119`). **The default is 7200** — the
+    service's (`xacml_pep_listener_tuning.ts`, the console form in
+    `web_xacml.ts`) and this binary's own when a pull carries no tuning —
+    because it was 300 and so warned at every start of every untouched PEP,
+    and a warning that always fires is one people learn to ignore. Nothing
+    behaves differently, the value never having been applied; a stored 300
+    still warns, which is right. It is not `tls.sessionTimeoutS`, which the
+    service's own listeners do apply. The binding exists on #444's branch
     (`sts_crypto::pq::set_session_timeout`, the one place unsafe code is
     allowed); when `sts-crypto` reaches develop the PEP calls it in
     `apply_tls_knobs()` and the warning goes.

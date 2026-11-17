@@ -1965,9 +1965,10 @@ its settings as follows (since 1.1.0):
 * **`sessionCacheSize`** is applied to the TLS session cache.
 * **`sessionTimeoutS` is not applied.** The PEP's TLS library binding has
   no safe call to set a session's lifetime, so a TLS session (and a TLS 1.3
-  session ticket) lives OpenSSL's own 7200 seconds whatever the value. The
-  PEP logs each value other than 7200 once (`STS-XPEP-0119`); the listener's
-  other settings are still applied.
+  session ticket) lives OpenSSL's own 7200 seconds whatever the value, and
+  7200 is the default. The PEP logs each other value once
+  (`STS-XPEP-0119`), a listener saved with the earlier default of 300
+  included; the listener's other settings are still applied.
 
 ### A listener's own page
 

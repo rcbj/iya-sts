@@ -190,7 +190,11 @@ class PepListenerTuning {
       trustIssuedClientCertificates: https === true && purpose === 'api',
       askClientCertificate: ask,
       requireClientCertificate: false,
-      sessionTimeoutS: 300,
+      // OpenSSL's own TLS session lifetime (2026-11-16): the PEP cannot set
+      // it (`xacml-pep/CLAUDE.md`, STS-XPEP-0119), so the default says what
+      // a session really lives, and an untouched listener is not warned.
+      // Not `tls.sessionTimeoutS`, which this service's own listeners apply.
+      sessionTimeoutS: 7200,
       sessionCacheSize: 2048,
       keepAliveTimeoutS: 60,
       headersTimeoutS: 0,
