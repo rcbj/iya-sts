@@ -2483,7 +2483,7 @@ environment's, then the default.
 
 | Variable | Default | |
 |---|---|---|
-| `PEP_PDP_URL` | `https://localhost:8081` | the service. Append `/realm/<id>` for a trust realm |
+| `PEP_PDP_URL` | `https://localhost:8081` | the service. Append `/realm/<id>` for a trust realm. A connection to it idle for 4 seconds is closed by the PEP, below any keep-alive the service or a balancer in between keeps, and a call that meets a connection already closed is sent once more on a new one rather than waiting out its timeout |
 | `PEP_NAME` | `pep-1` | **the PEP's directory username**: the token's subject, and the name of its row |
 | `PEP_ASSERTION_KEY` | `PEP_TLS_KEY` | a path: the private key (RSA or EC P-256) the PEP signs its token requests and DPoP proofs with, read again every `httpsReloadIntervalMs` |
 | `PEP_CLIENT_ID` | `sts-remote-pep` | the client the PEP gets its tokens through. `PEP_AUDIT_CLIENT_ID` is still read when it is unset |
