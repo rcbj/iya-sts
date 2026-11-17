@@ -51,6 +51,15 @@ and `index.md`, the landing page that lists the versions.
   `/<folder>/api/`. `api/index.html` here is a redirect to the latest
   version's reference, so the address 1.0.0 published still answers.
 
+* **THE OLD TOP-LEVEL ADDRESSES REDIRECT** (rcbj, 2026-11-17). Every
+  address the unversioned site published (`/configure-oauth2-grants.html`),
+  which bookmarks and every running 1.0.0 service link to, gets a small
+  no-script redirect page to the same page in the newest version that has
+  it. `.github/scripts/root-redirects.sh` writes them into the built site
+  in `pages.yml`, so none is committed and a new page is covered without a
+  hand edit; a real top-level page (`index.md`, `api/index.html`) is
+  never overwritten.
+
 **Making the next release's snapshot** (when 1.1.0 ships and develop moves
 on): copy `v1.1.0/` to the new release's folder — or, if `v1.1.0/` is
 itself to become the frozen copy, `git mv` the current pages to the new

@@ -194,6 +194,12 @@ jobs:
                  "$(find "_site/${folder}/api" -name '*.html' | wc -l) page(s)."
           done
 
+      # Every address the unversioned site published redirects to the same
+      # page in the newest version that has it (rcbj, 2026-11-17). Under
+      # sudo for the reason the step above copies under sudo.
+      - name: Redirect the top-level addresses into the versions
+        run: sudo .github/scripts/root-redirects.sh _site
+
       - name: Check the site is not empty
         run: |
           if [ ! -f _site/index.html ]; then
