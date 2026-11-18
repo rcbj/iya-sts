@@ -4281,7 +4281,8 @@ rule is split on the verdict now:**
   `realms.removalDeliveryTimeoutS`), drained before the reports are written,
   and **drained and HELD around every exclusive job and every cluster
   restart** (`RemovalQueue.hold()`, run #493: `sts_realm_count_limit` saw the
-  realm count move under it in every mode). `tests/realm_removal_queue.js`. Only an ACCEPTED create is written, so a job
+  realm count move under it in every mode). `tests/realm_removal_queue.js`.
+  Only an ACCEPTED create is written, so a job
   refused "already defined" for somebody else's realm cannot put that realm on
   its list.
 * **A job that FAILED, timed out or declined keeps every realm**, for the
