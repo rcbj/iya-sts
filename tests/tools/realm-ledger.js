@@ -324,8 +324,95 @@ async function removeRecorded(args) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE QUEUE THE RUNNER REMOVES REALMS THROUGH, AND THE HOLD AN EXCLUSIVE JOB
+// TAKES ON IT (2026-11-18, GitHub Actions run #493).
+//
+// The removals run one at a time beside the jobs, so a lane does not wait
+// out a realm's retirement. That made them run beside EXCLUSIVE jobs too,
+// which exist because nothing else may change the service under them:
+// `sts_realm_count_limit` failed in every mode, "the realm count moved while
+// the cap was being set (5 -> 4)", because a passed job's realm was removed
+// halfway through it. So a job that must have the service to itself — and
+// a cluster restart — `hold()`s the queue: the hold waits for every removal
+// already queued to land, and a removal queued during the hold does not
+// start until it is released. `drain()` waits for everything queued.
+// tests/realm_removal_queue.js holds both.
+// ---------------------------------------------------------------------------
+class RemovalQueue {
+  constructor() {
+    log.debug('Entering RemovalQueue.constructor().');
+    this.tail = Promise.resolve();
+    this.gate = Promise.resolve();
+    log.debug('Leaving RemovalQueue.constructor().');
+  }
+
+  /**
+   * Queues `fn` after every removal already queued and after any hold.
+   *
+   * @param {Function} fn - the removal, answering a promise
+   * @returns {Promise} when it has run; never rejects
+   */
+  enqueue(fn) {
+    log.debug('Entering RemovalQueue.enqueue().');
+    // The gate as it is NOW: a removal queued before a hold runs (and is
+    // what the hold drains); one queued during a hold waits for its release.
+    const gate = this.gate;
+    this.tail = this.tail.then(function () {
+      return gate;
+    }).then(function () {
+      return fn();
+    }).then(function () {
+      return null;
+    }, function (e) {
+      log.debug('Caught in RemovalQueue.enqueue(): ' +
+                ((e && e.message) || e));
+      return null;
+    });
+    log.debug('Leaving RemovalQueue.enqueue().');
+    return this.tail;
+  }
+
+  /**
+   * Waits for every queued removal to land.
+   *
+   * @returns {Promise} when the queue is empty as of the call
+   */
+  drain() {
+    log.debug('Entering RemovalQueue.drain().');
+    log.debug('Leaving RemovalQueue.drain().');
+    return this.tail;
+  }
+
+  /**
+   * Drains the queue and holds it: nothing queued from now on starts until
+   * the answered release is called.
+   *
+   * @returns {Promise<Function>} the release
+   */
+  async hold() {
+    log.debug('Entering RemovalQueue.hold().');
+    let release = null;
+    const held = new Promise(function (resolve) {
+      release = resolve;
+    });
+    const before = this.gate;
+    this.gate = before.then(function () {
+      return held;
+    });
+    await this.drain();
+    log.debug('Leaving RemovalQueue.hold().');
+    return function () {
+      log.debug('Entering the hold\'s release.');
+      release();
+      log.debug('Leaving the hold\'s release.');
+    };
+  }
+}
+
 if (process.env.STS_TEST_REALM_LEDGER) {
   install(process.env.STS_TEST_REALM_LEDGER);
 }
 
-module.exports = { idOfBody, readLedger, removeRecorded, CREATE };
+module.exports = { idOfBody, readLedger, removeRecorded, CREATE,
+                   RemovalQueue };
