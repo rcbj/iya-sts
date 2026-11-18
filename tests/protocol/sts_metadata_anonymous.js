@@ -248,6 +248,30 @@ const SCIM_TYPE = /^application\/scim\+json\b/;
 const DID_TYPE = /^application\/did\+json\b/;
 const SAML_TYPE = /^application\/samlmetadata\+xml\b/;
 const XML_TYPE = /^application\/xml\b/;
+
+// Whether a publicKeyMultibase is a bls12_381-g2-pub Multikey (vc-di-bbs
+// 2.1.1): `z`, then base58btc of 0xeb 0x01 and a 96-byte key (#1878).
+function bbsMultikey(value) {
+  log.debug("Entering bbsMultikey().");
+  const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  if (value.charAt(0) !== "z") {
+    log.debug("Leaving bbsMultikey(). Not base58btc.");
+    return false;
+  }
+  let n = BigInt(0);
+  for (const ch of value.slice(1)) {
+    const v = B58.indexOf(ch);
+    if (v < 0) {
+      log.debug("Leaving bbsMultikey(). Not base58.");
+      return false;
+    }
+    n = n * BigInt(58) + BigInt(v);
+  }
+  const hex = n.toString(16);
+  const ok = hex.length === 196 && hex.slice(0, 4) === "eb01";
+  log.debug("Leaving bbsMultikey(). " + ok);
+  return ok;
+}
 const TEXT_TYPE = /^text\/plain\b/;
 // WSDL 1.1 names no media type. application/wsdl+xml is the conventional one
 // GET /sts/metadata sends (#958).
@@ -553,8 +577,9 @@ const DOCUMENTS = [
       if (d.type !== "Multikey") { bad.push("type is " + d.type); }
       if (!d.publicKeyMultibase) { bad.push("no publicKeyMultibase"); }
       // vc-di-bbs 2.1.1 (#1878): base58btc of 0xeb01 and the 96-byte key,
-      // which always begins zUC7.
-      if (!/^zUC7/.test(String(d.publicKeyMultibase || ""))) {
+      // decoded here rather than matched by prefix — it begins zUC6 or
+      // zUC7, depending on the key's first bytes (run #478).
+      if (!bbsMultikey(String(d.publicKeyMultibase || ""))) {
         bad.push("publicKeyMultibase is not a bls12_381-g2-pub Multikey");
       }
       if (d.secretKeyMultibase) {

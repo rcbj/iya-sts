@@ -146,6 +146,31 @@ async function run(t) {
   t.check(/starts with "z"/.test(refused),
           'A3. the pre-1.1 `u` + raw bytes encoding is not a Multikey',
           refused);
+  // A4 (run #478): the Multikey's leading characters depend on the key. A
+  // compressed G2 key's first byte is 0x80-0xbf, and one starting 0x80 0x0…
+  // encodes to zUC6…, not the zUC7… every vector's key happens to give —
+  // the cluster mode's ldp_vc jobs asserted the prefix and failed on a
+  // sound key. Both ends of the range round-trip, and so do fresh keys.
+  const low = Buffer.alloc(96, 0);
+  low[0] = 0x80;
+  const high = Buffer.alloc(96, 0xff);
+  high[0] = 0xbf;
+  const lowMk = bbs2023.publicKeyMultibase(low);
+  const highMk = bbs2023.publicKeyMultibase(high);
+  const fresh = [];
+  for (let i = 0; i < 8; i++) {
+    fresh.push((await stsCrypto.bbs.generateKeyPair()).publicKey);
+  }
+  t.check(/^zUC6/.test(lowMk) && /^zUC7/.test(highMk) &&
+          Buffer.from(bbs2023.publicKeyFromMultibase(lowMk)).equals(low) &&
+          Buffer.from(bbs2023.publicKeyFromMultibase(highMk)).equals(high) &&
+          fresh.every(function (k) {
+            return Buffer.from(bbs2023.publicKeyFromMultibase(
+              bbs2023.publicKeyMultibase(k))).equals(Buffer.from(k));
+          }),
+          'A4. a key encodes to zUC6… or zUC7… by its first bytes, and ' +
+          'every one decodes back — a Multikey is checked by decoding, ' +
+          'never by its prefix', lowMk.slice(0, 6) + ' ' + highMk.slice(0, 6));
 
   t.log.info('=== B. the specification\'s vectors ===');
   const derive = json('BBSDeriveMaterial.json');

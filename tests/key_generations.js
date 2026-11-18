@@ -259,6 +259,31 @@ function childMain() {
     note(/<xs:element name="CryptoMetadataLocation" type="xs:anyURI"\/>/
            .test(xsd.text),
          'C9b. the schema declares cm:CryptoMetadataLocation (#188)');
+    // #1878's REGRESSION (run #478): with a BBS key in the set, every form
+    // of the document answered 500 (STS-PKI-0187) — its Multikey line read
+    // `this` inside a map callback — and no test here made a BBS key before
+    // fetching it. The key is made on first use, so it is made here.
+    const bbsKeys = await helpers.bbsKeyPair();
+    const bbsCodec = require(ROOT + '/common/crypto_impl/bbs2023.js');
+    const withBbs = await get(port, '/crypto/metadata.json');
+    const withBbsXml = await get(port, '/crypto/metadata.xml');
+    const bbsKey = unitOf(withBbs.json, 'bbs:BBS').keys[0] || {};
+    let bbsDecoded = null;
+    let bbsUndecodable = '';
+    try {
+      bbsDecoded = Buffer.from(bbsCodec.publicKeyFromMultibase(
+        bbsKey.publicKeyMultibase));
+    } catch (e) {
+      // Reported in the finding's detail below.
+      bbsUndecodable = String((e && e.message) || e);
+    }
+    note(withBbs.status === 200 && withBbsXml.status === 200 &&
+         bbsDecoded && bbsDecoded.equals(Buffer.from(bbsKeys.publicKey)),
+         'C9c. with a BBS key in the set the document still answers 200, ' +
+         'JSON and XML, and publishes that key as its vc-di-bbs Multikey',
+         withBbs.status + '/' + withBbsXml.status + ' ' +
+         String(bbsKey.publicKeyMultibase || '').slice(0, 12) + ' ' +
+         bbsUndecodable);
     const discovery = await get(port, '/.well-known/openid-configuration');
     note(discovery.json && /\/crypto\/metadata\.json$/.test(
            discovery.json.crypto_metadata_uri || ''),

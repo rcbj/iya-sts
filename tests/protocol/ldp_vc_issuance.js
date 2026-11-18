@@ -155,10 +155,14 @@ async function test() {
         JSON.stringify(km).slice(0, 160));
   assert.strictEqual(km.cryptosuite, "bbs-2023",
                      "and name the cryptosuite it is for.");
-  assert.ok(/^zUC7/.test(km.publicKeyMultibase),
-    "the key is a bls12_381-g2-pub Multikey — base58btc ('z') of 0xeb01 and " +
-        "the 96-byte key, which always begins zUC7 (vc-di-bbs 2.1.1). Got: " +
-        String(km.publicKeyMultibase).slice(0, 12));
+  // A bls12_381-g2-pub Multikey: base58btc ('z') of 0xeb01 and the 96-byte
+  // key (vc-di-bbs 2.1.1), which publicKeyFromMultibase() below holds it
+  // to. It usually begins zUC7 but not always: a key whose first byte is
+  // 0x80 and second is small begins zUC6 — which is how the cluster mode of
+  // run #478 failed this job on a sound key.
+  assert.ok(/^z/.test(km.publicKeyMultibase),
+    "the key is base58btc ('z') — vc-di-bbs 2.1.1 allows no other " +
+        "encoding. Got: " + String(km.publicKeyMultibase).slice(0, 12));
   const pk = stsSuite.publicKeyFromMultibase(km.publicKeyMultibase);
   assert.strictEqual(pk.length, 96,
     "a BLS12-381 G2 public key is 96 compressed bytes.");
