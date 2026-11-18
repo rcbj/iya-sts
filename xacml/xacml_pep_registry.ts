@@ -1486,12 +1486,50 @@ class PepRegistry {
   }
 
   // -------------------------------------------------------------------------
+  // WHAT IN A SIGNAL-HEALTH SNAPSHOT IS AN EVENT (#1882), as one string:
+  // every count and flag, without `at`, `oldestSuccessAgeMs` and each
+  // stream's times and poll counts, which move on every heartbeat of a
+  // PEP whose receivers are polling and say only that they are.
+  // -------------------------------------------------------------------------
+  private static signalEvents(signals: PepSignals | null): string {
+    helpers.log.debug("Entering PepRegistry.signalEvents().");
+    if (!signals || typeof signals !== 'object') {
+      helpers.log.debug("Leaving PepRegistry.signalEvents(). None.");
+      return '';
+    }
+    const kept: any = Object.assign({}, signals);
+    delete kept.at;
+    delete kept.oldestSuccessAgeMs;
+    if (Array.isArray(kept.streams)) {
+      kept.streams = kept.streams.map(function (one: any) {
+        const copy = Object.assign({}, one);
+        delete copy.startedAt;
+        delete copy.lastPollAt;
+        delete copy.lastSuccessAt;
+        delete copy.polls;
+        return copy;
+      });
+    }
+    helpers.log.debug("Leaving PepRegistry.signalEvents().");
+    return JSON.stringify(kept);
+  }
+
+  // -------------------------------------------------------------------------
   // WHETHER A HEARTBEAT THAT CHANGED NOTHING DURABLE IS JOURNALLED (#1882).
   //
   // AT ONCE WHEN THE COUNTERS MOVED, because they are what the PEP did and
   // another node's page should not show a number a minute old; they move
   // only on the PEP's own heartbeat, so a busy PEP costs one minted row a
   // heartbeat interval (a minute by default) and never a directory write.
+  // AND AT ONCE WHEN THE SIGNAL HEALTH'S EVENTS MOVED (`signalEvents()`): a
+  // set accepted or refused, a session ended, a receiver gone unhealthy or
+  // failing. Those are what the PEP's proxy DID, the counters' argument;
+  // until this was said, a heartbeat carrying them was held in the one
+  // process that received it, and in a dispatched service the page and
+  // `/admin-api/xacml/peps` are answered by another, which drew the last
+  // journalled snapshot for up to a minute — `sts_xacml_remote_pep` waited
+  // 40 s for `setsAccepted` and gave up (run #478). The ages and poll
+  // counts in it move on every heartbeat and wait for the interval.
   // OTHERWISE ONCE AN INTERVAL (`journalIntervalMs()`), measured from the
   // newer of the entry's `lastSeen` and the journalled record's, which every
   // process reads, so the request workers of one node and the nodes of a
@@ -1504,13 +1542,18 @@ class PepRegistry {
     const storedAt = stored ? PepRegistry.instant(stored.seenAt) : -Infinity;
     const entryAt = PepRegistry.instant(entry.lastSeen);
     const held: { decisions: number; allowed: number; refused: number;
-                  undischargeable: number } =
+                  undischargeable: number; signals: PepSignals | null } =
       stored && storedAt > entryAt ? stored : entry;
     if (held.decisions !== record.decisions ||
         held.allowed !== record.allowed ||
         held.refused !== record.refused ||
         held.undischargeable !== record.undischargeable) {
       log.debug('Leaving PepRegistry.journalNow(). The counters moved.');
+      return true;
+    }
+    if (PepRegistry.signalEvents(held.signals) !==
+        PepRegistry.signalEvents(record.signals)) {
+      log.debug('Leaving PepRegistry.journalNow(). The signal health moved.');
       return true;
     }
     const due = PepRegistry.instant(record.seenAt) -

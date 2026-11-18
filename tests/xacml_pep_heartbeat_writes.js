@@ -175,7 +175,14 @@ function child() {
         notifyUrl: 'https://pep.example.com/notify',
         hostname: 'pep-1.internal',
         settings: { token: 'settings-1', values: {} },
-        signals: { receivers: 1, healthy: 1, stale: 0, setsAccepted: n },
+        // The ages and poll counts move on every heartbeat; the events
+        // (a set accepted) do not, unless a test says so.
+        signals: { receivers: 1, healthy: 1, stale: 0, setsAccepted: 0,
+                   oldestSuccessAgeMs: 1000 * n,
+                   streams: [{ clientId: 'pep-app', streamId: 's1',
+                               running: true, healthy: true, polls: n,
+                               lastPollAgeMs: n, lastSuccessAgeMs: n,
+                               setsAccepted: 0 }] },
         listeners: listeners(n)
       }, extra || {});
     };
@@ -242,7 +249,8 @@ function child() {
       const row = registry.read('pep-1');
       note(row.listenersInUse &&
            row.listenersInUse.listeners[0].stats.accepted === 10 * (N + 1) &&
-           row.signals && row.signals.setsAccepted === N + 1,
+           row.signals && row.signals.oldestSuccessAgeMs === 1000 * (N + 1) &&
+           row.signals.streams[0].polls === N + 1,
            'H3. and so do the volatile reports: the listener figures and the ' +
            'signal health are the last heartbeat\'s',
            JSON.stringify(row.listenersInUse && row.listenersInUse.listeners));
@@ -267,6 +275,37 @@ function child() {
            'H3. GET /admin-api/xacml/peps\' row carries the same values',
            JSON.stringify(mine && { decisions: mine.decisions,
                                     lastSeen: mine.lastSeen }));
+
+      // A SET ACCEPTED IS AN EVENT, journalled at once like the counters:
+      // what another process — the worker answering the console or
+      // /admin-api — reads (sts_xacml_remote_pep, run #478, waited 40 s
+      // for it and gave up while it was held in the receiving process).
+      const journalSignals = journalled;
+      const signalled = report(N + 2, { decisions: 41, allowed: 31 });
+      signalled.signals.setsAccepted = 1;
+      signalled.signals.streams[0].setsAccepted = 1;
+      registry.heartbeat('pep-1', signalled);
+      const signalStored = realms.handleFor(HANDLE).read(realmId, 'pep-1');
+      note(writes === afterFirst && journalled === journalSignals + 1 &&
+           signalStored.present && signalStored.value.signals &&
+           signalStored.value.signals.setsAccepted === 1 &&
+           signalStored.value.signals.streams[0].setsAccepted === 1,
+           'H3. a signal-health event (a set accepted) is journalled at ' +
+           'once, so another process reads it, with no entry write',
+           JSON.stringify({ journalled: journalled - journalSignals,
+                            stored: signalStored.value &&
+                              signalStored.value.signals }));
+      const journalAges = journalled;
+      const aged = report(N + 3, { decisions: 41, allowed: 31 });
+      aged.signals.setsAccepted = 1;
+      aged.signals.streams[0].setsAccepted = 1;
+      registry.heartbeat('pep-1', aged);
+      note(journalled === journalAges &&
+           registry.read('pep-1').signals.oldestSuccessAgeMs ===
+             1000 * (N + 3),
+           'H3. while one whose signal health moved only its ages and poll ' +
+           'counts waits for the interval, and is read here at once',
+           'journalled=' + (journalled - journalAges));
 
       // ---------------------------------------------------------------
       // H2. A DURABLE CHANGE WRITES EXACTLY ONCE.
