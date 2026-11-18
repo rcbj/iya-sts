@@ -8744,6 +8744,182 @@ async function certifyVerifierKey(realmId, spec) {
 }
 
 // ===========================================================================
+// THE CREDENTIAL SIGNERS' CERTIFICATES (#1880): `common/credential_signer.js`
+// argues the design; this is the certificate half, beside the OpenID4VP
+// Verifier's, whose arrangement it follows.
+//
+// One certificate per credential signer, under the realm's JOSE Issuing CA,
+// in the slot `vc-issuer:<key family>`, carrying:
+//
+//   * subjectAltName: `uniformResourceIdentifier` entries only — every issuer
+//     identifier the realm answers to and the `did:web` of each. NEVER a
+//     `dNSName`: with one, a TLS stack that finds no reason to refuse would
+//     take the certificate for a server certificate of that host.
+//   * extendedKeyUsage: `id-kp-documentSigning` (RFC 9336) alone, which
+//     excludes `serverAuth` and `clientAuth` (RFC 5280 section 4.2.1.12).
+//   * keyUsage: `digitalSignature` alone, critical.
+//
+// **CURRENT, OR RE-ISSUED.** `credentialSignerCertificateCurrent()` is asked
+// before every credential is signed, and a certificate is used again only
+// while it is over the key, from the Issuing CA the branch holds now, still
+// chaining to the Root, with more than a third of its validity left, carrying
+// documentSigning, and naming EXACTLY the issuer identifiers wanted now — so
+// a `global.publicBaseUrl` changed, a listener added or a host name taken out
+// of `tls.hostnames` re-issues it at the next credential. **THE CERTIFICATE
+// IT REPLACES IS NOT REVOKED**: `certify()` keeps its record in the issued
+// register (`pki_merge.js`'s displaced record), so the OCSP responder goes on
+// answering `good` for a credential issued under it, which is a valid
+// certificate for a key this realm still holds.
+// ===========================================================================
+// The URIs of a record's subjectAltName, sorted, as it was issued.
+function credentialSignerUrisOf(record) {
+  log.debug("Entering credentialSignerUrisOf().");
+  const ext = (record && record.issuedAs && record.issuedAs.extensions) || {};
+  const san = ext.subjectAltName || {};
+  const out = (san.names || []).filter(function (one) {
+    return one && one.kind === 'uri';
+  }).map(function (one) {
+    return String(one.value);
+  }).sort();
+  log.debug("Leaving credentialSignerUrisOf(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Answers whether a credential signer's held certificate may be used again:
+ * over this key, from the Issuing CA held now, chaining to the Root, with a
+ * third of its validity left, carrying documentSigning, and naming exactly
+ * `spec.uris`.
+ *
+ * @param realmId - the realm
+ * @param spec - `{ slot, publicKeyPem, uris }`
+ * @returns `{ current: true }`, or `{ current: false, why }`
+ */
+function credentialSignerCertificateCurrent(realmId, spec) {
+  log.debug("Entering credentialSignerCertificateCurrent().");
+  const id = realmIdOf(realmId);
+  const held = certificateFor(id, 'jose', spec.slot);
+  if (!held || !held.certificatePem) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). None.");
+    return { current: false, why: 'it has no certificate yet' };
+  }
+  if (held.subjectKeyFingerprint !== thumbprintOf(spec.publicKeyPem)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Another key.");
+    return { current: false, why: 'its certificate is over another key' };
+  }
+  const row = rawRowFor(id) || {};
+  const issuing = (row.issuing || {}).jose;
+  if (!issuing || (held.chainPem || [])[0] !== issuing.certificatePem ||
+      !scopeChainsToRoot(id)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Old branch.");
+    return { current: false,
+             why: 'its certificate is from a branch this realm no longer ' +
+                  'holds' };
+  }
+  const ext = (held.issuedAs && held.issuedAs.extensions) || {};
+  const eku = (ext.extKeyUsage && ext.extKeyUsage.usages) || [];
+  if (eku.length !== 1 || eku[0] !== 'documentSigning') {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Old profile.");
+    return { current: false,
+             why: 'its certificate does not carry documentSigning alone' };
+  }
+  const wanted = (spec.uris || []).slice().sort();
+  const named = credentialSignerUrisOf(held);
+  if (JSON.stringify(wanted) !== JSON.stringify(named)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Other names.");
+    return { current: false,
+             why: 'the issuer identifiers changed (' + named.length +
+                  ' named, ' + wanted.length + ' wanted)' };
+  }
+  const from = new Date(held.notBefore).getTime();
+  const to = new Date(held.notAfter).getTime();
+  const now = Date.now();
+  if (!(from <= now) || !(to - now > (to - from) / 3)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Renew.");
+    return { current: false,
+             why: 'less than a third of its validity remains' };
+  }
+  log.debug("Leaving credentialSignerCertificateCurrent(). Current.");
+  return { current: true };
+}
+
+/**
+ * Certifies a credential signer's key under the realm's JOSE Issuing CA, with
+ * a subjectAltName of `uniformResourceIdentifier` entries only, documentSigning
+ * and digitalSignature (#1880). The realm's branch is asked for first where
+ * this process builds branches; the certificate it replaces is not revoked.
+ *
+ * @param realmId - the realm
+ * @param spec - `{ slot, kid, alg, keyAlg, publicKeyPem, uris }`
+ * @param why - why it is issued, for the log
+ * @returns a promise of `{ ok: true, record }` or `{ ok: false, errors }`
+ */
+async function certifyCredentialSigner(realmId, spec, why) {
+  log.debug("Entering certifyCredentialSigner(). " + spec.slot);
+  const id = realmIdOf(realmId);
+  const uris = (spec.uris || []).map(String).filter(function (one) {
+    return /^[a-z][a-z0-9+.-]*:/i.test(one);
+  });
+  if (!spec.publicKeyPem || !uris.length) {
+    log.debug("Leaving certifyCredentialSigner(). Nothing to name.");
+    return errorCodes.mark({ ok: false,
+             errors: ['A credential-signing certificate names the issuer ' +
+                      'and is over the signing key, and ' +
+                      (!uris.length ? 'no issuer identifier' : 'no key') +
+                      ' was given.'] }, 'STS-PKI-0286');
+  }
+  const row = rawRowFor(id);
+  if (!(row && row.issuing && row.issuing.jose)) {
+    if (!buildsRealmBranches()) {
+      log.debug("Leaving certifyCredentialSigner(). No branch, no builder.");
+      return errorCodes.mark({ ok: false,
+               errors: ['The "' + (id || 'default') + '" realm has no ' +
+                        'certificate authority branch.'] }, 'STS-PKI-0008');
+    }
+    const branch = await ensureScope(id);
+    if (!branch.ok) {
+      log.debug("Leaving certifyCredentialSigner(). No branch.");
+      return branch;
+    }
+  }
+  const made = await certify(id, 'jose', {
+    slot: spec.slot,
+    label: 'Credential signing (' + String(spec.alg || '') + ')',
+    commonName: 'Credential signing (' + String(spec.slot).replace(
+      /^vc-issuer:/, '') + ')',
+    alg: String(spec.alg || ''),
+    keyAlg: String(spec.keyAlg || ''),
+    kid: spec.kid,
+    publicKeyPem: spec.publicKeyPem,
+    profile: 'digital-signature',
+    keyUsage: ['digitalSignature'],
+    extensions: {
+      subjectAltName: { present: true, critical: false,
+                        names: uris.map(function (one) {
+                          return { kind: 'uri', value: one };
+                        }) },
+      extKeyUsage: { present: true, critical: false,
+                     usages: ['documentSigning'] }
+    }
+  });
+  if (!made.ok) {
+    log.warn(errorCodes.tag('STS-PKI-0286') + 'pki: the "' +
+             (id || 'default') + '" realm\'s credential signer ' + spec.slot +
+             ' could not be certified: ' + (made.errors || []).join(' ') +
+             ' It still signs; its credentials carry no x5c until it is.');
+    log.debug("Leaving certifyCredentialSigner(). certify() refused.");
+    return made;
+  }
+  log.info('pki: the credential signer ' + spec.slot + ' of "' +
+           (id || 'default') + '" was certified for ' + uris.length +
+           ' issuer identifier(s)' + (why ? ' (' + why + ')' : '') +
+           ', serial ' + made.record.serialHex + ', until ' +
+           made.record.notAfter + '.');
+  log.debug("Leaving certifyCredentialSigner(). Issued.");
+  return { ok: true, record: made.record };
+}
+
+// ===========================================================================
 // ISSUING SOMETHING THIS MODULE DOES NOT KEEP (2026-09-11): `issueUnder()`.
 //
 // **EVERY OTHER DOOR IN HERE RECORDS WHAT IT ISSUED, AND THAT IS EXACTLY WHY
@@ -15619,6 +15795,8 @@ module.exports = {
   PKINIT_SAN_OID: PKINIT_SAN_OID,
   pkinitCertificateFacts: pkinitCertificateFacts,
   certifyVerifierKey: certifyVerifierKey,
+  credentialSignerCertificateCurrent: credentialSignerCertificateCurrent,
+  certifyCredentialSigner: certifyCredentialSigner,
   verifierCertificateFor: verifierCertificateFor,
   MAX_VERIFIER_CERTIFICATES: MAX_VERIFIER_CERTIFICATES,
   TLS_SERVER_KEY_ALGS: TLS_SERVER_KEY_ALGS,

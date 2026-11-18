@@ -1145,6 +1145,10 @@ function serialise(keys) {
     bbsKey: serialiseBbsKey(keys.bbsKey),
     // THE SIGNER GROUPS (2026-09-26, #68) — see serialiseSignerGroups().
     signerGroups: serialiseSignerGroups(keys.signerGroups),
+    // THE CREDENTIAL SIGNERS (#1880) — the signer groups' row shape, so
+    // serialiseSignerGroups() writes them too. See signerGroupsHeldFor()'s
+    // twin, credentialSignersHeldFor(), below.
+    credentialSigners: serialiseSignerGroups(keys.credentialSigners),
     generations: serialiseGenerations(keys.generations)
   };
   log.debug('Leaving serialise(). ' + out.extraKeys.length + ' extra key(s).');
@@ -1203,6 +1207,7 @@ function deserialise(blob) {
     xmlKey: deserialiseXmlKey(blob.xmlKey),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
     signerGroups: deserialiseSignerGroups(blob.signerGroups),
+    credentialSigners: deserialiseSignerGroups(blob.credentialSigners),
     generations: deserialiseGenerations(blob.generations)
   };
   log.debug('Leaving deserialise(). ' + out.extraKeys.length +
@@ -1835,17 +1840,22 @@ function enriches(candidate, held) {
   // And the VC-API keys, the TENTH (#598).
   const vcHere = candidate.vcApiKeys ? 1 : 0;
   const vcThere = held.vcApiKeys ? 1 : 0;
+  // And the credential signers, the ELEVENTH (#1880) — a list, made one key
+  // family at a time as credentials ask for them.
+  const csHere = (candidate.credentialSigners || []).length;
+  const csThere = (held.credentialSigners || []).length;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
       roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere ||
       grpHere < grpThere || bdHere < bdThere || kemHere < kemThere ||
-      vcHere < vcThere) {
+      vcHere < vcThere || csHere < csThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
          roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere ||
-         grpHere > grpThere || bdHere > bdThere || kemHere > kemThere;
+         grpHere > grpThere || bdHere > bdThere || kemHere > kemThere ||
+         csHere > csThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -2055,6 +2065,74 @@ function signerGroupsHeldFor(realmId) {
     return { group: one.group, slot: one.slot, alg: one.alg, kind: one.kind,
              pairedSlot: one.pairedSlot || null, publicJwk: one.publicJwk };
   }) : null;
+}
+
+// ---------------------------------------------------------------------------
+// THE REALM'S CREDENTIAL SIGNERS (#1880), from the store or a sibling, PUBLIC
+// halves only — `signerGroupsHeldFor()`'s question for the list
+// `common/credential_signer.js` keeps: one key per key family, made the first
+// time a credential is signed with that family. The private halves are
+// `privateMaterialFor().credential`, by kid, on the residency timer.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a realm's credential-signing keys from the store or a sibling,
+ * public halves only.
+ *
+ * @param realmId - the realm
+ * @returns `{ group, slot, alg, kind, publicJwk }` per key, or null
+ */
+function credentialSignersHeldFor(realmId) {
+  log.debug("Entering credentialSignersHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const fromShared = shared.get(id);
+  // THE UNION, BY SLOT, the stored key winning: a key family made by a
+  // sibling and not yet written down is still one this realm signs with.
+  const rows = [];
+  [fromStore, fromShared].forEach(function (blob) {
+    ((blob && blob.credentialSigners) || []).forEach(function (one) {
+      const known = rows.some(function (have) {
+        return have.slot === one.slot;
+      });
+      if (!known) {
+        rows.push({ group: one.group, slot: one.slot, alg: one.alg,
+                    kind: one.kind, pairedSlot: null,
+                    publicJwk: one.publicJwk });
+      }
+    });
+  });
+  log.debug("Leaving credentialSignersHeldFor(). " + rows.length + ".");
+  return rows.length ? rows : null;
+}
+
+// The private half of one credential signer (#1880), by kid: the stored
+// material's, on its residency timer, and otherwise the shared blob's — in a
+// service that persists nothing, a key a sibling made reaches this process
+// only through the sibling channel. Null where neither holds it.
+/**
+ * Returns the private half of one of a realm's credential signers.
+ *
+ * @param realmId - the realm
+ * @param kid - the signer's `kid`
+ * @returns the private key (a KeyObject, or raw bytes for a post-quantum
+ *   key), or null
+ */
+function credentialSignerPrivateFor(realmId, kid) {
+  log.debug("Entering credentialSignerPrivateFor().");
+  const id = String(realmId || '');
+  const held = privateMaterialFor(id);
+  if (held && held.credential && held.credential.has(kid)) {
+    log.debug("Leaving credentialSignerPrivateFor(). Stored.");
+    return held.credential.get(kid);
+  }
+  const blob = shared.get(id);
+  const row = ((blob && blob.credentialSigners) || []).filter(function (one) {
+    return one && one.publicJwk && one.publicJwk.kid === kid;
+  })[0];
+  const parsed = row ? (deserialiseSignerGroups([row]) || [])[0] : null;
+  log.debug("Leaving credentialSignerPrivateFor(). " +
+            (parsed ? 'Shared.' : 'None.'));
+  return parsed ? parsed.privateKey : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2336,11 +2414,18 @@ function privateMaterialFor(realmId) {
     // THE SIGNER GROUPS' PRIVATE HALVES (#68), by kid, on this record's
     // timer like every other private key here.
     groups: new Map(),
+    // THE CREDENTIAL SIGNERS' PRIVATE HALVES (#1880), by kid, the same.
+    credential: new Map(),
     standby: new Map()
   };
   (deserialiseSignerGroups(blob.signerGroups) || []).forEach(
     function (one) {
       parsed.groups.set(one.publicJwk && one.publicJwk.kid, one.privateKey);
+    });
+  (deserialiseSignerGroups(blob.credentialSigners) || []).forEach(
+    function (one) {
+      parsed.credential.set(one.publicJwk && one.publicJwk.kid,
+                            one.privateKey);
     });
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
@@ -5410,11 +5495,12 @@ function pkiSettled(scopeId) {
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
                          'requestObjectEncKeys', 'xmlKey', 'bbsKey',
                          'signerGroups', 'browserDeviceKeys', 'kemEncKeys',
-                         'vcApiKeys'];
+                         'vcApiKeys', 'credentialSigners'];
 
 // The ARRAY members, where an empty list is "none" (#68 added the second,
 // #82 the third).
-const LIST_MEMBERS = ['pqKeys', 'signerGroups', 'kemEncKeys'];
+const LIST_MEMBERS = ['pqKeys', 'signerGroups', 'kemEncKeys',
+                      'credentialSigners'];
 
 function hasMember(blob, member) {
   log.debug("Entering hasMember().");
@@ -5539,6 +5625,22 @@ function decideKeys(stored, offered) {
     });
     if (fresh.length) {
       joined.kemEncKeys = stored.kemEncKeys.concat(fresh);
+      added += 1;
+    }
+  }
+  // THE CREDENTIAL SIGNERS GROW ONE KEY FAMILY AT A TIME (#1880), the KEM
+  // keys' rule above BY SLOT: a credential already signed with the stored
+  // key must go on verifying, so a race never replaces it.
+  if (hasMember(stored, 'credentialSigners') &&
+      hasMember(offered, 'credentialSigners')) {
+    const slots = stored.credentialSigners.map(function (one) {
+      return one.slot;
+    });
+    const fresh = offered.credentialSigners.filter(function (one) {
+      return slots.indexOf(one.slot) === -1;
+    });
+    if (fresh.length) {
+      joined.credentialSigners = stored.credentialSigners.concat(fresh);
       added += 1;
     }
   }
@@ -6235,6 +6337,8 @@ module.exports = {
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
   signerGroupsHeldFor: signerGroupsHeldFor,
+  credentialSignersHeldFor: credentialSignersHeldFor,
+  credentialSignerPrivateFor: credentialSignerPrivateFor,
   withHeldMembers: withHeldMembers,
   joinSignerGroups: joinSignerGroups,
   serialiseSignerGroups: serialiseSignerGroups,

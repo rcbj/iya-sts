@@ -670,6 +670,23 @@ class VcDid {
                   'cannot publish it.');
       }
     }
+    // THE CREDENTIAL SIGNERS (#1880): what this realm's credentials and
+    // status lists are signed with under `keys.credentialSigner`'s default,
+    // a DID-named credential included — every one the realm has made, so a
+    // credential signed by any of them resolves here. Not a post-quantum one
+    // while `keys.postQuantumSigning` is off, for the reason above.
+    helpers.credentialVerificationKeys().forEach(function (one: any): void {
+      const id = did + '#' + one.publicJwk.kid;
+      const listed = methods.some(function (m: any): boolean {
+        return m.id === id;
+      });
+      if (listed ||
+          (one.publicJwk.kty === 'AKP' && !stsCrypto.postQuantumSigningOn())) {
+        return;
+      }
+      methods.push({ id: id, type: 'JsonWebKey2020', controller: did,
+                     publicKeyJwk: one.publicJwk });
+    });
     // THE KEY A SIGNED OPENID4VP REQUEST IS SIGNED WITH (#657), where it is
     // not one already listed: under the decentralized_identifier prefix the
     // request names its key as `<this DID>#<kid>`, so a wallet resolving this

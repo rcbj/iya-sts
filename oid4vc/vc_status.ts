@@ -334,6 +334,7 @@ interface VcStatusDeps {
   // #820: every artifact key the issued register marks revoked.
   revokedArtifactKeys: () => string[];
   signingKeyForAsync: typeof helpers.signingKeyForAsync;
+  credentialSignerForAsync: typeof helpers.credentialSignerForAsync;
   publishedKidFor: typeof helpers.publishedKidFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
   STS: typeof helpers.STS;
@@ -414,6 +415,7 @@ class VcStatus {
       artifactRevokedByKey: stats.artifactRevokedByKey,
       revokedArtifactKeys: stats.revokedArtifactKeys,
       signingKeyForAsync: helpers.signingKeyForAsync,
+      credentialSignerForAsync: helpers.credentialSignerForAsync,
       publishedKidFor: helpers.publishedKidFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
       STS: helpers.STS,
@@ -506,16 +508,27 @@ class VcStatus {
    *
    * @param chosen - the algorithm a credential's offer chose, or '' for the
    *   configured one
+   * @param issuer - the credential's `iss`, where it has one: checked
+   *   against what the credential signer's certificate names (#1880)
    * @returns `{ alg, key, kid, headerKid }`
    */
-  async signerAsync(chosen?: string): Promise<{ alg: string; key: any;
-                                                kid: string;
-                                                headerKid: string }> {
-    const { log, config, STS, signingKeyForAsync, publishedKidFor } =
-      this.deps;
+  async signerAsync(chosen?: string, issuer?: string): Promise<{
+      alg: string; key: any; kid: string; headerKid: string }> {
+    const { log, config, STS, signingKeyForAsync, publishedKidFor,
+            credentialSignerForAsync } = this.deps;
     log.debug("Entering VcStatus.signerAsync().");
     const alg = stsCrypto.signaturePolicy.underPqcOnly(String(chosen ||
       config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
+    // THE DEDICATED CREDENTIAL SIGNER (#1880), unless the realm asked for
+    // 1.0.0's `realm-key`: a key of its own whose certificate names the
+    // issuer, for the credentials and the lists alike.
+    if (String(config.value('keys.credentialSigner') || 'dedicated') !==
+        'realm-key') {
+      const own = await credentialSignerForAsync(alg, { issuer: issuer || '' });
+      log.debug("Leaving VcStatus.signerAsync(). The credential signer.");
+      return { alg: alg, key: own.key, kid: own.kid,
+               headerKid: publishedKidFor(own.kid) };
+    }
     // THE CREDENTIALS GROUP'S KEY in a hybrid-groups realm (#68) — the list
     // and the credentials it describes are both `vci-credential`, so they
     // still sign with one key — else the per-algorithm key.

@@ -3455,7 +3455,12 @@ class OAuth2Server {
           // of its use) until its grace after an unpin ends, with its x5c.
           // A pinned RSA key is already above, as a non-current row of
           // `ownRsaCertificates('jose')`.
-          .concat(helpers.pinnedPublishedJwks(STS)))
+          .concat(helpers.pinnedPublishedJwks(STS))
+          // THE CREDENTIAL SIGNERS (#1880): the keys this realm's
+          // credentials and status lists are signed with, each with its own
+          // chain in `x5c`. JWT VC Issuer Metadata's `jwks_uri` is this
+          // document. Only the ones the realm has made.
+          .concat(helpers.credentialPublishedJwks(STS)))
         // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101 section 6.1,
         // 2026-09-13), LAST — after every signing key, for the ordering rule
         // above — and marked `use: "enc"`, which is what tells a client these

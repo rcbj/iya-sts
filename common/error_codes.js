@@ -5260,6 +5260,38 @@ const CODES = [
       'phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0282',
+    summary: 'A credential was to be signed with an algorithm the ' +
+      'dedicated credential signer has no key family for (#1880): not an ' +
+      'asymmetric JWS algorithm this service holds keys for.',
+    spec: 'The credential request fails as the credential endpoint fails ' +
+      'any signing error (OpenID4VCI 1.0 section 8.3.1)' },
+  { code: 'STS-PKI-0283',
+    summary: 'A credential\'s iss is not one of the issuer identifiers its ' +
+      'credential-signing certificate names (#1880): the request reached ' +
+      'the service under a name that neither global.publicBaseUrl nor ' +
+      'tls.hostnames, tls.ips or a listener names. The credential is ' +
+      'still signed, with its x5c; a wallet that compares iss with the ' +
+      'certificate (HAIP 1.0 section 6.1.1) refuses it. Logged once per ' +
+      'realm and address.',
+    spec: 'none: the credential is issued' },
+  { code: 'STS-PKI-0284',
+    summary: 'A realm answers to more issuer identifiers than one ' +
+      'credential-signing certificate names (#1880), and the certificate ' +
+      'names the first 64.',
+    spec: 'none: the credential is issued' },
+  { code: 'STS-PKI-0285',
+    summary: 'A realm\'s credential-signing key could not be made, did not ' +
+      'arrive from the process that claimed it in time, or is held ' +
+      'encrypted and could not be decrypted (#1880).',
+    spec: 'The credential request fails as the credential endpoint fails ' +
+      'any signing error; a late key is made here instead' },
+  { code: 'STS-PKI-0286',
+    summary: 'A realm\'s credential-signing key could not be certified ' +
+      '(#1880): no issuer identifier or key to name, or the JOSE Issuing ' +
+      'CA refused. It still signs; its credentials carry no x5c until it ' +
+      'is certified.',
+    spec: 'none: the credential is issued without x5c' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

@@ -580,6 +580,7 @@ var config = {
     plaintextRetention: "timed",       // How long a decrypted private key is kept
     plaintextTtlS: 300,                // Decrypted key idle timeout (seconds)
     signerModel: "per-algorithm",      // Signer model
+    credentialSigner: "dedicated",     // Credential signing key
     encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
     offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
     postQuantumSigning: true,          // Post-quantum signing

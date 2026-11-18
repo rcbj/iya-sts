@@ -851,6 +851,18 @@ class VcVerifier {
         }
       });
     }
+    // AND THIS REALM'S CREDENTIAL SIGNERS (#1880), which sign what it
+    // issues since 1.1.0; the keys above still verify what it issued before.
+    helpers.credentialVerificationKeys().forEach((one: any) => {
+      const signs = one.kind === 'rsa' ? family !== 'pq' && /^(RS|PS)/.test(alg)
+                                       : one.alg === alg;
+      if (one.publicJwk.kty !== 'AKP' && signs &&
+          (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid))) {
+        candidates.push({ label: 'this issuer\'s credential signer (' +
+                                 one.slot + ')',
+                          key: stsCrypto.publicKeyFromJwk(one.publicJwk) });
+      }
+    });
     this.trustedIssuerKeys().forEach((one) => { candidates.push(one); });
     let lastError = 'no key this Verifier trusts can verify a ' + alg + ' ' +
         'signature';
@@ -926,7 +938,14 @@ class VcVerifier {
     }).map(function (one) {
       return { label: 'this issuer\'s ' + alg + ' key',
                publicJwk: one.publicJwk, pem: '' };
-    });
+    }).concat(helpers.credentialVerificationKeys().filter(function (one) {
+      // This realm's credential signers (#1880), as verifyIssuerSignature().
+      return one.alg === alg &&
+             (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid));
+    }).map(function (one) {
+      return { label: 'this issuer\'s credential signer (' + one.slot + ')',
+               publicJwk: one.publicJwk, pem: '' };
+    }));
     // AND A TRUSTED ISSUER CERTIFICATE WITH A KEY OF THIS ALGORITHM (#657),
     // after this realm's own keys, as verifyIssuerSignature() orders them.
     this.trustedIssuerPqKeys().forEach(function (one) {
