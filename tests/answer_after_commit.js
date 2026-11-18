@@ -40,7 +40,8 @@
 //   F. A KEY ROW WHOSE WRITE FAILED fails the commit a response waits for,
 //      and is written again by the retry with what it held.
 //   G. AND ONE OF A REALM THAT HAS SINCE BEEN REMOVED is dropped with it
-//      rather than retried (2026-11-18).
+//      rather than retried (2026-11-18); its key set published afterwards
+//      is not adopted, and its data-key row read back is not either.
 //
 // IN A CHILD PROCESS, for `cluster_barrier_throughput.js`'s reason: the store
 // modules are one per process, and this file installs stubs on them.
@@ -322,6 +323,36 @@ async function keyRows(t, dir) {
               failing: keystore.failing(),
               pending: keystore.pendingWrites() }));
     store.fail = false;
+
+    // G3 (run #493): a removed realm's data-key row still in the store —
+    // the purge deletes it after the removal has answered — is not adopted
+    // back by a re-read of the data-key rows, so the encryption report does
+    // not list keys nothing uses and no count will reach.
+    realms.create({ id: 'aac-gone2', name: 'aac-gone2' });
+    realms.run(realms.get('aac-gone2'), function () {
+      return helpers.stsKeysFor();
+    });
+    await keystore.settleAll();
+    const dekRows = Array.from(store.rows.keys()).filter(function (key) {
+      return /^dek:[^:]+:aac-gone2$/.test(key);
+    });
+    realms.remove('aac-gone2');
+    store.loadDekRows = function () {
+      log.debug("Entering loadDekRows().");
+      log.debug("Leaving loadDekRows().");
+      return Promise.resolve(dekRows.map(function (key) {
+        return { realm: key, material: store.rows.get(key) };
+      }));
+    };
+    await keystore.refreshDekRows({ fresh: true });
+    delete store.loadDekRows;
+    const listed = keystore.dataKeys().filter(function (d) {
+      return d.realm === 'aac-gone2';
+    });
+    t.check(dekRows.length === 1 && listed.length === 0,
+            'G: a removed realm\'s data-key row read back from the store is ' +
+            'not adopted, and the report lists none of its keys',
+            JSON.stringify({ rows: dekRows, listed: listed.length }));
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;

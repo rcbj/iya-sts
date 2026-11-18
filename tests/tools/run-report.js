@@ -2335,8 +2335,9 @@ async function main() {
   // ONE JOB, FROM THE DECISION WHETHER IT RUNS TO ITS RESULT. It was the body
   // of a `for` loop until 2026-09-26; runScheduled() decides when each is
   // called. A job that is not run answers its result without spawning.
-  // The realm removals of passed jobs, one after another (runOne()).
-  let removals = Promise.resolve();
+  // The realm removals of passed jobs, one after another (runOne()), held
+  // around an exclusive job and a cluster restart (realm-ledger.js).
+  const removals = new realmLedger.RemovalQueue();
   async function runOne(job, n) {
     log.debug('Entering runOne(). ' + job.name);
     // A DELIBERATE EXCLUSION, by an opt-in switch (rcbj, 2026-11-15): first,
@@ -2740,7 +2741,17 @@ async function main() {
       delete job.env.NODE_V8_COVERAGE;
     }
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);
-    const result = await runJob(job, opts);
+    // AN EXCLUSIVE JOB HAS THE SERVICE TO ITSELF, realm removals included
+    // (run #493: sts_realm_count_limit saw the count move under it).
+    const release = job.exclusive ? await removals.hold() : null;
+    let result = null;
+    try {
+      result = await runJob(job, opts);
+    } finally {
+      if (release) {
+        release();
+      }
+    }
     // The name is on the result line because, with jobs running side by
     // side, the line above it is often another job's. A job that declined
     // to run is SKIPPED here as in the report: this line said FAILED for
@@ -2756,13 +2767,14 @@ async function main() {
     // realms.removalDeliveryTimeoutS each) before its next job. Drained
     // before a cluster restart and before the reports are written.
     if (job.realmLedger) {
-      removals = removals.then(function () {
-        return removeRealmsOfPassedJob(job, result, instance);
-      }).then(function (n) {
-        result.realmsRemoved = n;
-      }, function (e) {
-        log.warn('    the realms ' + job.name + ' created could not be ' +
-                 'removed: ' + ((e && e.message) || e));
+      removals.enqueue(function () {
+        return removeRealmsOfPassedJob(job, result, instance)
+          .then(function (removed) {
+            result.realmsRemoved = removed;
+          }, function (e) {
+            log.warn('    the realms ' + job.name + ' created could not be ' +
+                     'removed: ' + ((e && e.message) || e));
+          });
       });
     }
     log.debug('Leaving runOne(). ' + job.name);
@@ -2774,23 +2786,27 @@ async function main() {
     restart: async function (k, of) {
       log.debug('Entering restart().');
       // No realm removal may be in flight across a restart either.
-      await removals;
-      restarts.push(await clusterRestart.restart({
-        k: k, of: of, dir: process.env.STS_TEST_RESTART_DIR || '',
-        url: (instance && instance.url) || '',
-        nodes: Number(process.env.STS_TEST_CLUSTER_NODES) || 1,
-        tokenFor: function (base) {
-          log.debug('Entering tokenFor().');
-          log.debug('Leaving tokenFor().');
-          return adminApiToken.tokenFor(base);
-        },
-        log: log
-      }));
+      const releaseRemovals = await removals.hold();
+      try {
+        restarts.push(await clusterRestart.restart({
+          k: k, of: of, dir: process.env.STS_TEST_RESTART_DIR || '',
+          url: (instance && instance.url) || '',
+          nodes: Number(process.env.STS_TEST_CLUSTER_NODES) || 1,
+          tokenFor: function (base) {
+            log.debug('Entering tokenFor().');
+            log.debug('Leaving tokenFor().');
+            return adminApiToken.tokenFor(base);
+          },
+          log: log
+        }));
+      } finally {
+        releaseRemovals();
+      }
       log.debug('Leaving restart().');
     }
   }));
   // Every queued realm removal has landed before anything is reported.
-  await removals;
+  await removals.drain();
   const wallMs = Date.now() - started;
 
   // The service goes down BEFORE the coverage is rendered, because under
