@@ -19,6 +19,14 @@
     "en": "985fea890f064ed5",
     "text": "L’exigence R6 de RFC 4226 section 4 impose au moins 128 bits et en recommande 160, soit les 20 octets ici et la longueur d’une clé HMAC-SHA-1. Une longueur supérieure est autorisée et est recopiée à la main par quiconque ne peut pas balayer le code QR — 20 octets représentent déjà 32 caractères base32."
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "Clé de signature des justificatifs"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "La clé qui signe les justificatifs dc+sd-jwt et jwt_vc_json de ce domaine et leurs Token Status List Tokens. `dedicated` — la valeur par défaut — est une clé qui leur est propre, par famille d'algorithmes, utilisée pour rien d'autre, sous un certificat dont le subjectAltName nomme comme URI chaque identifiant d'émetteur auquel le domaine répond (aucun nom DNS), avec l'usage étendu de clé id-kp-documentSigning (RFC 9336) et rien qu'une pile TLS accepterait, afin qu'un portefeuille puisse comparer l'iss du justificatif à son x5c (HAIP 1.0, section 6.1.1). Le certificat est réémis lorsque les identifiants d'émetteur changent (global.publicBaseUrl, tls.hostnames, un écouteur). `realm-key` les signe avec la clé JOSE générale du domaine, comme le faisait la 1.0.0, dont le certificat ne nomme aucun émetteur. Les justificatifs déjà émis restent vérifiables dans les deux cas. ldp_vc et mso_mdoc ne sont pas touchés."
+  },
   "keys.kekRef|description": {
     "en": "a5a5b6e7f2c06fdc",
     "text": "Le nom par lequel les fournisseurs infonuagique désignent le secret : un nom ou un ARN AWS Secrets Manager, un nom de ressource GCP (projects/<p>/secrets/<s>, avec /versions/latest ajouté si aucune version n’est indiquée), un nom de secret Azure Key Vault, ou un chemin de lecture HashiCorp Vault. Inutilisé par le fournisseur `file`."

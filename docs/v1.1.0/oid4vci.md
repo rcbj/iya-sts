@@ -84,7 +84,11 @@ both. Until then the default was `x5u`, and a wallet that does not follow it
 metadata, the credential. The `x5c` stops short of the service Root, the
 trust anchor, which HAIP 1.0 sections 6.1 and 6.1.1 forbid there: a wallet or
 verifier is given the Root to trust (`/pki`), and the chain in the token
-reaches it.
+reaches it. Since 1.1.0 the key is one the realm keeps for credentials alone.
+Its certificate names the credential issuer as a URI subjectAltName and
+carries `id-kp-documentSigning`, with no DNS name and no TLS usage
+(`keys.credentialSigner`; see
+[The credential-signing certificate](verifiable-credentials.md#the-credential-signing-certificate)).
 
 **The trusted list** (`GET /oid4vci/trusted-list`, 2026-10-17). A wallet in
 the EUDI ecosystem takes its anchors from a signed *List of Trusted Entities*

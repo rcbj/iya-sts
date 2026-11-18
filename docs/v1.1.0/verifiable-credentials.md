@@ -792,6 +792,9 @@ profile asks for.
 * The x509 request certificate is ES256 (`oid4vp.x509SigningAlgorithm`).
 * A credential and its Status List Token carry their chain in `x5c`, without
   the Root (`oid4vci.credentialCertificateHeader`).
+* The leaf of that chain names the credential's `iss` as a
+  `uniformResourceIdentifier` subjectAltName (HAIP 1.0 section 6.1.1). See
+  [The credential-signing certificate](#the-credential-signing-certificate).
 * A wallet that asks for an encrypted credential response may give an EC key
   (ECDH-ES on P-256, P-384 or P-521) as well as an RSA one.
 
@@ -817,6 +820,69 @@ ISO mdoc, `x509_hash`, `direct_post.jwt`, `haip-vp` and a `redirect_uri`
 Credentials API's unsigned and multi-signed request forms and
 `transaction_data` are not implemented.
 
+### The credential-signing certificate
+
+A `dc+sd-jwt` credential, a `jwt_vc_json` credential and their Token Status
+List Tokens are signed with a key the realm keeps for credentials alone.
+There is one key for each algorithm family `oid4vci.credentialSigningAlgorithm`
+can name: RSA for every `RS*` and `PS*`, one per curve, and one per
+post-quantum algorithm. A key is made the first time a credential is signed
+with its algorithm. ID Tokens, access tokens and the realm's other tokens are
+never signed with it, and the realm never accepts it for them. It is
+published in `/oauth2/jwks`, which JWT VC Issuer Metadata's `jwks_uri` names,
+and in the realm's DID document.
+
+Its certificate, from the realm's JOSE Issuing CA, carries:
+
+| Extension | Value |
+|---|---|
+| subjectAltName | `uniformResourceIdentifier` only: each issuer identifier the realm answers to, and the `did:web` of each. Never a `dNSName`. |
+| extendedKeyUsage | `id-kp-documentSigning` (1.3.6.1.5.5.7.3.36, RFC 9336) alone. No TLS stack accepts it as a server or client certificate. |
+| keyUsage | `digitalSignature` alone, critical. |
+
+**The issuer identifiers.** A credential's `iss` is the address its request
+arrived at, the realm's prefix included, so the certificate names every
+address the realm answers to:
+
+* **When `global.publicBaseUrl` is set**, or the verifiable-credentials
+  application's advertised listener has a `publicBaseUrl`, every credential
+  carries that one issuer, and the certificate names it and nothing else.
+  This is what a deployment should do.
+* **Otherwise** the certificate names each `tls.hostnames` and `tls.ips`
+  name, plus the host of each custom listener's `publicBaseUrl`, on the main
+  port's scheme and port. These are the names the main port's own
+  certificate already asserts.
+
+A credential whose `iss` the certificate does not name is still issued, with
+its `x5c`. This happens when the request reached the service by a name nobody
+configured, such as a port mapping. The service logs `STS-PKI-0283` once per
+realm and address, and a wallet that compares the two refuses the
+credential. A request's `Host` header is never added to the certificate,
+because this service's Root would then certify a name anybody can send.
+
+**The certificate is re-issued, never left stale.** Before each credential is
+signed, the held certificate is checked. It is used again only if all of
+these hold:
+
+* it is over this key;
+* it is from the Issuing CA the realm holds now;
+* more than a third of its validity remains;
+* it names exactly the identifiers wanted now.
+
+Otherwise a new one is issued. The certificate it replaces is not revoked, so
+credentials issued under it keep verifying.
+
+**A post-quantum key has a certificate over itself.** The ML-DSA keys in the
+`hybrid-groups` signer model share their classical partner's certificate,
+which binds nothing to an ML-DSA signature, so credentials do not use that
+arrangement in either model.
+
+**`keys.credentialSigner`** (`STS_KEYS_CREDENTIAL_SIGNER`) is `dedicated` by
+default. `realm-key` signs credentials with the realm's general JOSE key, as
+1.0.0 did, and binds no issuer. It is for a deployment whose verifiers pinned
+that key. Credentials issued either way stay verifiable. The trusted list is
+signed by its scheme operator, a different role, and does not use this key.
+
 ## Settings
 
 The tables below are the settings most deployments touch. Every
@@ -840,6 +906,7 @@ runs, per realm, except the two marked *restart*.
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | Credential validity (thirty days) |
 | `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | Signs `dc+sd-jwt`, `jwt_vc_json` and the status lists |
 | `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5c` | How a credential carries its chain |
+| `keys.credentialSigner` | `STS_KEYS_CREDENTIAL_SIGNER` | `dedicated` | A key of the credentials' own, whose certificate names the issuer; `realm-key` for 1.0.0's ([The credential-signing certificate](#the-credential-signing-certificate)) |
 | `oid4vci.didHolderBinding` | `OID4VCI_DID_HOLDER_BINDING` | *(empty)* | Configurations bound to a proved `did:jwk` or `did:key` |
 | `oid4vci.keyAttestationTrustedCertificates` | `OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES` | *(empty)* | Wallet providers whose key attestations are believed |
 | `oid4vci.keyAttestationRequired` | `OID4VCI_KEY_ATTESTATION_REQUIRED` | `false` | Require a key attestation |

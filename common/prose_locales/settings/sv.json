@@ -1719,6 +1719,14 @@
     "en": "2cfc3f704d76eaf9",
     "text": "Hur den här sfärens signeringsnycklar är uppdelade. `per-algorithm` — standardvärdet — är en nyckel per JWS-algoritm (en RSA-nyckel, sex kurvnycklar och elva postkvantsäkra nycklar) som delas av varje JOSE-användning, och en RSA-nyckel för varje XML-signatur. `hybrid-groups` ger var och en av fem signerargrupper — OAuth/OIDC-tokener, verifierbara intyg, Security Event Tokens, WS-Trust och GNAP, XML — EGNA nycklar, i en vald uppsättning algoritmer: RSA-3072, P-256 och P-384, var och en certifierad tillsammans med en ML-DSA-nyckel (65, 44 och 87) i ett hybridcertifikat (ITU-T X.509 klausul 9.8), och SLH-DSA-SHA2-128s ensam. En signatur inom en grupps användning signerar med gruppens nyckel för sin algoritm; en algoritm utanför uppsättningen signerar fortfarande med nyckeln per algoritm. Varje nyckel är ett eget nyckelpar; det som hybridcertifikatet delar är certifikatet."
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "Nyckel som autentiseringsuppgifter signeras med"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "Vilken nyckel som signerar den här sfärens dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter och deras Token Status List Tokens. `dedicated` — standardvärdet — är en egen nyckel per algoritmfamilj, som inte används till något annat, under ett certifikat vars subjectAltName anger varje utfärdaridentifierare som sfären svarar på som en URI (inget DNS-namn), med den utökade nyckelanvändningen id-kp-documentSigning (RFC 9336) och inget som en TLS-stack skulle godta, så att en plånbok kan jämföra autentiseringsuppgiftens iss med dess x5c (HAIP 1.0 avsnitt 6.1.1). Certifikatet utfärdas på nytt när utfärdaridentifierarna ändras (global.publicBaseUrl, tls.hostnames, en lyssnare). `realm-key` signerar dem med sfärens allmänna JOSE-nyckel, som 1.0.0 gjorde, vars certifikat inte anger någon utfärdare. Autentiseringsuppgifter som redan utfärdats förblir verifierbara i båda fallen. ldp_vc och mso_mdoc påverkas inte."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Postkvantsäkra / hybrida dekrypteringsnycklar"

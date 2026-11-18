@@ -319,6 +319,14 @@
     "en": "c6d1b0ec68d6e39c",
     "text": "在註冊時送出 `extensions: { credProps: true }`，要求瀏覽器回報其建立的認證是否確實可探索。這是唯一的查明方式：`residentKey: \"preferred\"` 可能會也可能不會產生可探索認證，而證明中沒有任何內容說明是哪一種。本服務會將答案「記錄」在金鑰旁，但不據以做任何決定。關閉此項可觀察客戶端在完全沒有延伸結果時會怎麼做。"
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "憑證簽署密鑰"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "簽署本領域 dc+sd-jwt 及 jwt_vc_json 憑證及其 Token Status List Token 的密鑰。`dedicated`（預設值）是憑證專用的密鑰，每個演算法系列一把，不作其他任何用途，其證書的 subjectAltName 以 URI 形式列出本領域回應的每個簽發者識別碼（不含 DNS 名稱），延伸密鑰用途為 id-kp-documentSigning（RFC 9336），不含任何 TLS 協定堆疊會接受的用途，讓錢包能將憑證的 iss 與其 x5c 比對（HAIP 1.0 第 6.1.1 節）。簽發者識別碼變更時（global.publicBaseUrl、tls.hostnames、監聽器），證書會重新簽發。`realm-key` 以本領域的一般 JOSE 密鑰簽署，與 1.0.0 相同，其證書不列出任何簽發者。無論採用哪一種方式，已簽發的憑證仍可驗證。ldp_vc 及 mso_mdoc 不受影響。"
+  },
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "此領域持有解密金鑰的 ML-KEM 與 HPKE JWE 演算法——每種演算法一組金鑰對，發佈於領域的 JWKS（`use: enc`，附 `alg`），並在 `request_object_encryption_alg_values_supported` 與 `assertion_encryption_alg_values_supported` 中公告，讓客戶端能以後量子或 PQ/T 混合金鑰建立方式，將請求物件或 RFC 7523／7522 斷言加密給此領域。HPKE-10-KE 即 X-Wing（ML-KEM-768 + X25519）。加密「給」已註冊這些演算法之一的客戶端，在此不需任何設定。**預設為空白，由管理員選擇：**這些演算法全部出自 Internet-Draft（draft-ietf-jose-pqc-kem-05、draft-ietf-jose-hpke-encrypt-22、draft-reddy-cose-jose-pqc-hybrid-hpke-11），而 JWKS 中的 AKP 金鑰是許多客戶端 JOSE 程式庫尚無法剖析的金鑰類型——有些會拒絕整個金鑰集。只有在確知讀取此領域 JWKS 的客戶端能夠處理時，才在此指名演算法。移除一個即停止發佈與接受它；再次指名會帶回同一把金鑰。"

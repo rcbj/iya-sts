@@ -1719,6 +1719,14 @@
     "en": "2cfc3f704d76eaf9",
     "text": "Comment les clés de signature de ce domaine sont réparties. `per-algorithm` — la valeur par défaut — correspond à une clé par algorithme JWS (une clé RSA, six clés à courbes et onze clés post-quantiques) partagée par tous les usages JOSE, et une clé RSA pour toutes les signatures XML. `hybrid-groups` donne à chacun des cinq groupes de signataires — jetons OAuth/OIDC, justificatifs vérifiables, Security Event Tokens, WS-Trust et GNAP, XML — des clés qui lui sont PROPRES, dans un ensemble d’algorithmes choisi : RSA-3072, P-256 et P-384, chacun certifié avec une clé ML-DSA (65, 44 et 87) dans un même certificat hybride (ITU-T X.509 clause 9.8), et SLH-DSA-SHA2-128s seul. Une signature dans l’usage d’un groupe signe avec la clé du groupe pour son algorithme ; un algorithme hors de l’ensemble signe toujours avec la clé par algorithme. Chaque clé est une paire de clés à part entière ; ce que partage le certificat hybride, c’est le certificat."
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "Clé de signature des justificatifs"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "La clé qui signe les justificatifs dc+sd-jwt et jwt_vc_json de ce domaine et leurs Token Status List Tokens. `dedicated` — la valeur par défaut — est une clé qui leur est propre, par famille d'algorithmes, utilisée pour rien d'autre, sous un certificat dont le subjectAltName nomme comme URI chaque identifiant d'émetteur auquel le domaine répond (aucun nom DNS), avec l'usage étendu de clé id-kp-documentSigning (RFC 9336) et rien qu'une pile TLS accepterait, afin qu'un portefeuille puisse comparer l'iss du justificatif à son x5c (HAIP 1.0, section 6.1.1). Le certificat est réémis lorsque les identifiants d'émetteur changent (global.publicBaseUrl, tls.hostnames, un écouteur). `realm-key` les signe avec la clé JOSE générale du domaine, comme le faisait la 1.0.0, dont le certificat ne nomme aucun émetteur. Les justificatifs déjà émis restent vérifiables dans les deux cas. ldp_vc et mso_mdoc ne sont pas concernés."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Clés de déchiffrement post-quantiques / hybrides"
