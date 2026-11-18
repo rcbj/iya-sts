@@ -2028,8 +2028,8 @@
     "text": "远程 PEP 在注册和心跳时报告的主机名（#1760）：环境变量 HOSTNAME，否则为内核的，否则为 /etc/hostname —— 容器在其网络上的名称，也是其 HTTPS 监听器证书包含它时 PEP 派生通知 URL 所依据的名称。限定为最多 253 个字符的 DNS 名称，转为小写，绝不是 IP 地址；携带其他内容的注册或心跳会被拒绝（STS-XACML-0261）。领域的默认监听器证书在 PEP 的注册名称和通知主机旁包含它。不含它的注册会删除它，不含它的心跳会保留它。较旧的 PEP 没有此项，其证书名称与以前相同。"
   },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "最近一次提醒的结果——状态，或拒绝的说明语句。这是记录失败提醒的唯一地方，理由与 ssf_streams.js 对被拒绝推送所述相同：根据定义，从接收端是看不到它的。"
+    "en": "a512a007219ee216",
+    "text": "本条目最后一次写入时，最近一次提醒的结果——状态，或拒绝的说明语句。提醒的结果不会写入此处（#1882）：最新的结果保存在条目旁边该 PEP 的活动记录（xacml_pep_registry.liveness）中，控制台显示两者中较新的一个。只有本服务记录失败的提醒，理由与 ssf_streams.js 对被拒绝推送所述相同：根据定义，从接收端是看不到它的。"
   },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",

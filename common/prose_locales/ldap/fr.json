@@ -2028,8 +2028,8 @@
     "text": "Le nom d’hôte que le PEP distant communique à son enregistrement et dans son signal de vie (#1760) : la variable d’environnement HOSTNAME, à défaut celui du noyau, à défaut /etc/hostname — le nom sous lequel le conteneur est connu sur son réseau, et celui dont il dérive son URL de notification quand le certificat de son écouteur HTTPS le porte. Limité à un nom DNS d’au plus 253 caractères, mis en minuscules, jamais une adresse IP ; un enregistrement ou un signal de vie portant autre chose est refusé (STS-XACML-0261). Le certificat d’écoute par défaut du domaine le porte à côté du nom enregistré du PEP et de son hôte de notification. Un enregistrement qui ne le contient pas le supprime, un signal de vie qui ne le contient pas le conserve. Absent pour un PEP plus ancien, dont les noms de certificat sont ceux d’avant."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "Ce qu’il est advenu de la dernière notification — le statut, ou la phrase de refus. LE SEUL ENDROIT OÙ UNE NOTIFICATION ÉCHOUÉE EST CONSIGNÉE, pour la raison que ssf_streams.js donne au sujet d’une poussée refusée : elle est par définition invisible du côté de la réception."
+    "en": "a512a007219ee216",
+    "text": "Ce qu’il est advenu de la dernière notification — le statut, ou la phrase de refus — au moment où cette entrée a été écrite pour la dernière fois. Le résultat d’une notification n’est pas écrit ici (#1882) : le plus récent est conservé dans l’enregistrement d’activité du PEP, à côté de l’entrée (xacml_pep_registry.liveness), et la console affiche le plus récent des deux. Ce service est le seul à consigner une notification échouée, pour la raison que ssf_streams.js donne au sujet d’une poussée refusée : elle est par définition invisible du côté de la réception."
   },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
