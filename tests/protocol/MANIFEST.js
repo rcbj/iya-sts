@@ -2982,7 +2982,12 @@ const JOBS = [
   // connection is TLS as postgres reports it, that the database's certificate
   // is verified, and that a missing database stops the start. Skips where no
   // database is supplied (an AWS target, ./run-coverage.sh).
-  { file: 'sts_persistence_postgres.js', browser: false },
+  // THE WATCHDOG IS RAISED (2026-11-18): it starts and restarts several
+  // iya-sts processes of its own, 219-273 s across the modes on a GitHub
+  // runner against the 300 s default, and run #468's cluster mode killed it
+  // a second after "Test completed successfully".
+  { file: 'sts_persistence_postgres.js', browser: false,
+    timeoutMs: 600000 },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and
