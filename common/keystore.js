@@ -1620,6 +1620,18 @@ function adoptShared(realmId, blob) {
     return false;
   }
   const id = String(realmId || '');
+  // A SET FOR A REALM THIS PROCESS NO LONGER HOLDS IS NOT ADOPTED
+  // (2026-11-18). A key set published by another process while a realm was
+  // being removed — a `signing.rotate` run that finished after the purge —
+  // arrived here after this process had removed the realm, was held again,
+  // and its write failed under the realm's destroyed data keys
+  // (`removedSince()`'s measurement). A realm this process removed and has
+  // not defined again (`realms.acceptsRows()`) takes no set; one that has not
+  // arrived yet still does.
+  if (realmOfRow(id) !== '' && !realms.acceptsRows(id)) {
+    log.debug("Leaving adoptShared(). A realm removed here.");
+    return false;
+  }
   let replacing = shared.has(id) && shared.get(id) !== blob;
   // **AND A SET HELD ONLY AS STORED MATERIAL IS REPLACED TOO (2026-09-14,
   // #46).** A process that RESTORED a realm's keys has nothing in `shared`, so
@@ -5285,11 +5297,37 @@ const failedWrites = new Map();
 let writeSeq = 0;
 const removedRowAt = new Map();  // row key -> writeSeq at its realm's removal
 
-// Whether a write queued at `seq` is of a row whose realm was removed since.
+// The realm a row belongs to: a key set's row is its realm id, a
+// certificate authority's `pki:<scope>`, a data-key row's `dek:<scope>:<realm>`
+// ('default' for the default realm). '' for the default realm and for the
+// service's own scope, which are never removed.
+function realmOfRow(rowKey) {
+  log.debug("Entering realmOfRow().");
+  let id = String(rowKey || '');
+  if (id.indexOf(DEK_ROW_PREFIX) === 0) {
+    id = id.slice(id.lastIndexOf(':') + 1);
+  } else if (id.indexOf(PKI_ROW_PREFIX) === 0) {
+    id = id.slice(PKI_ROW_PREFIX.length);
+  }
+  log.debug("Leaving realmOfRow().");
+  return id === 'default' || id === PKI_SERVICE_SCOPE ||
+         id === realms.DEFAULT_ID ? '' : id;
+}
+
+// Whether a write queued at `seq` is of a row whose realm was removed since
+// — stamped by the purge below — or of a realm this process removed and has
+// not defined again (`realms.acceptsRows()`; a realm not yet ARRIVED here is
+// accepted): a write queued for a realm AFTER its removal here (a delivery or
+// a sweep that reached the realm's keys on its way out) is sealed under a
+// data key the purge has already destroyed, and fails exactly as the queued
+// one did. Measured: 943 STS-KEYS-0035 in five minutes for a realm removed two
+// rounds earlier, and every write on that worker answered 503 again.
 function removedSince(rowKey, seq) {
   log.debug("Entering removedSince().");
+  const realmId = realmOfRow(rowKey);
   log.debug("Leaving removedSince().");
-  return (removedRowAt.get(rowKey) || 0) > seq;
+  return (removedRowAt.get(rowKey) || 0) > seq ||
+         (realmId !== '' && !realms.acceptsRows(realmId));
 }
 const pkiBase = new Map();       // scope id -> ciphertext last read or written
 const pkiLocalGen = new Map();   // scope id -> attachPki() calls so far

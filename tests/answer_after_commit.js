@@ -312,6 +312,15 @@ async function keyRows(t, dir) {
             JSON.stringify({ failingBefore: failingBefore,
                              failing: keystore.failing(),
                              answers: afterRemoval }));
+    // G2: and a key set of that realm published by another process after
+    // the removal — a rotation that finished after the purge — is not
+    // adopted, so nothing is held or written for it again.
+    t.check(keystore.adoptShared('aac-gone', { certB64: 'x' }) === false &&
+            keystore.failing() === false && !keystore.pendingWrites(),
+            'G: a key set of the removed realm published afterwards is not ' +
+            'adopted, held or written', JSON.stringify({
+              failing: keystore.failing(),
+              pending: keystore.pendingWrites() }));
     store.fail = false;
   } finally {
     delete process.env.STS_KEYS_SOURCE;
