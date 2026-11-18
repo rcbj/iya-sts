@@ -479,16 +479,26 @@ async function run(t) {
   });
   registry.setDirectory(full);
   const fullRegister = registry.register({ name: 'pep-2' });
-  const fullHeartbeat = registry.heartbeat('pep-1', { decisions: 1 });
+  // A DURABLE CHANGE, because only that writes the entry (#1882): a
+  // heartbeat that moves the counters alone writes no entry, so a full
+  // ou=peps cannot refuse it — `xacml_pep_heartbeat_writes.js` holds that.
+  const fullHeartbeat = registry.heartbeat('pep-1', { decisions: 1,
+                                                      version: 'full' });
+  const fullCounters = registry.heartbeat('pep-1', { decisions: 2 });
   registry.setDirectory(directory);
   t.check(!fullRegister.ok && fullRegister.status === 507 &&
           errorCodes.codeOf(fullRegister) === 'STS-XACML-0027' &&
           !fullHeartbeat.ok && fullHeartbeat.status === 507 &&
           errorCodes.codeOf(fullHeartbeat) === 'STS-XACML-0027',
           'when the directory refuses the write (ou=peps full), register ' +
-          'and heartbeat are 507 (STS-XACML-0027)',
+          'and a heartbeat that changes something durable are 507 ' +
+          '(STS-XACML-0027)',
           JSON.stringify({ register: fullRegister,
                            heartbeat: fullHeartbeat }));
+  t.check(fullCounters.ok && registry.read('pep-1').decisions === 2,
+          'and a heartbeat that moves only the counters is answered and ' +
+          'read, because it writes no entry (#1882)',
+          JSON.stringify(fullCounters));
 
   // A FAILED NUDGE IS RECORDED AND DOES NOT MOVE `lastSeen`. That distinction
   // is the whole value of the field: a nudge that failed is evidence the PEP

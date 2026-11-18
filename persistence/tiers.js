@@ -299,6 +299,12 @@ const GLOBAL_MINTED = {
   // the certificates are configuration every cell relies on alike.
   'pki.pins.lastAudit': 'what a realm\'s pinned certificate audit last ' +
     'found',
+  // A remote PEP's last heartbeat and counters (#1882), kept beside its
+  // ou=peps entry instead of in it. The entry is global, and every heartbeat
+  // used to rewrite it, so every cell's console saw it; this keeps that. A
+  // row is a component's name, times and counts — nobody's data.
+  'xacml_pep_registry.liveness': 'a remote PEP\'s last heartbeat and ' +
+    'counters',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',
