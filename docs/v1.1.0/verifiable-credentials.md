@@ -938,6 +938,20 @@ these hold:
 Otherwise a new one is issued. The certificate it replaces is not revoked, so
 credentials issued under it keep verifying.
 
+**When the certificate is revoked.** Revoking the live credential-signing
+certificate (from `/admin/pki` or `POST /admin-api/pki/revoke-certificate`)
+takes effect at once: the certificate is no longer published, and the next
+credential does not carry it. What happens next depends on the reason:
+
+| Reason | What happens |
+|---|---|
+| `superseded`, `affiliationChanged`, `cessationOfOperation` | The key is trusted, so it gets a new certificate. Credentials it signed keep verifying. |
+| `keyCompromise`, `cACompromise`, `aACompromise`, `privilegeWithdrawn`, `unspecified`, any other | The key is no longer trusted. The next credential is signed by a **new key** of that algorithm family, under a new certificate. The old key is never certified again. It is not published, and this realm's Verifier refuses what it signed (`STS-PKI-0287`). |
+| `certificateHold` | Treated as the row above while the hold stands: a hold suspends trust, and certifying the same key again at once would undo it. If the hold is released, the old key is published and accepted again for what it signed, but it does not sign again, because a newer key exists. |
+
+There is no scheduled rotation of these keys yet. A revocation is what
+replaces one.
+
 **A post-quantum key has a certificate over itself.** The ML-DSA keys in the
 `hybrid-groups` signer model share their classical partner's certificate,
 which binds nothing to an ML-DSA signature, so credentials do not use that

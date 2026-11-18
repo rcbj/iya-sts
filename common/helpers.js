@@ -6073,41 +6073,22 @@ function credentialSignerForAsync(alg, opts) {
  */
 function credentialPublishedJwks(keys) {
   log.debug("Entering credentialPublishedJwks().");
-  let pki = null;
-  try {
-    pki = require('./pki');
-  } catch (e) {
-    log.debug("Caught in credentialPublishedJwks(): " +
-              ((e && e.message) || e));
-    pki = null;
-  }
-  const out = credentialSigner.membersOf(keys || stsKeysFor())
+  const set = keys || stsKeysFor();
+  // Not a key a revocation distrusts (credential_signer.js, trustOf()).
+  const out = credentialSigner.trustedMembersOf(set)
     .map(function (one) {
       const jwk = Object.assign({}, one.publicJwk);
-      const held = pki ? pki.certificateFor((keys || stsKeysFor()).realm,
-        'jose', credentialSigner.pkiSlotOf(one.slot)) : null;
-      if (held && held.certificatePem &&
-          held.subjectKeyFingerprint === pkiThumbprintOf(one)) {
+      // Never a REVOKED certificate (#1880's follow-up, run #478): see
+      // credential_signer.js's publishableCertificate().
+      const held = credentialSigner.publishableCertificate(
+        String(set.realm || ''), one);
+      if (held) {
         jwk.x5c = x5cOf(held.certificatePem, held.chainPem || []);
       }
       return jwk;
     });
   log.debug("Leaving credentialPublishedJwks(). " + out.length + ".");
   return out;
-}
-
-// The fingerprint `pki.js` records of a credential signer's key, or ''.
-function pkiThumbprintOf(member) {
-  log.debug("Entering pkiThumbprintOf().");
-  try {
-    const pem = credentialSigner.spkiPemOf(member);
-    log.debug("Leaving pkiThumbprintOf().");
-    // `pki.js`'s thumbprintOf(): the SHA-256 of the PEM's DER, in hex.
-    return stsCrypto.certificateThumbprint(pem, { format: 'hex' });
-  } catch (e) {
-    log.debug("Caught in pkiThumbprintOf(): " + ((e && e.message) || e));
-    return '';
-  }
 }
 
 /**

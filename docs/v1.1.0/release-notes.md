@@ -317,6 +317,13 @@ nothing in `x5c` to compare the credential's `iss` with
   `global.publicBaseUrl`, a listener, a host name), at the next credential.
   The certificate it replaces is not revoked, so credentials issued under it
   keep verifying.
+* **Revoking the live certificate takes effect at once.**
+  * After `superseded`, `affiliationChanged` or `cessationOfOperation`, the
+    same key gets a new certificate.
+  * After any other reason, including `keyCompromise` and
+    `certificateHold`, the next credential is signed by a new key. The old
+    key is no longer published or accepted while the revocation stands
+    (`STS-PKI-0287`).
 * **A credential whose `iss` the certificate does not name** is still
   issued with its `x5c`. That happens when a request reaches the service by
   a name nobody configured. The service logs a warning once per realm and
