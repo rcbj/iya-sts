@@ -1349,6 +1349,245 @@ function realmConcurrency() {
   return asked > 0 ? asked : PROFILES.length;
 }
 
+// ===========================================================================
+// THE RUNNER'S CORES: HOW MANY CELLS FUZZ AT ONCE, AND THE HEAVY GATE
+// (2026-11-18). The realms overlap (#1502, above), and on a 4-vCPU GitHub
+// runner that overlap starved the machine. Measured from the runner's
+// resources.log (a vmstat line every 30 s, `docker stats` beside it) in
+// runs #468 and 44070289883:
+//
+//   * THE FIRST HALF HOUR (account, authn, report, protocol and the PEP
+//     control-plane cells of three realms, and the PEP lane beside them:
+//     four Schemathesis processes at once): run queue 7.6-8.3 on four
+//     cores, CPU idle <= 2 % in 14-21 % of the samples, the runner
+//     container (the fuzzers) at 114-152 % and the service at 122-153 %.
+//   * THE THREE admin-api CELLS TOGETHER (131-148 minutes): run queue
+//     8.4-8.6, idle <= 2 % in 47-51 % of the samples, the SERVICE at
+//     259-266 % while the fuzzers used 25-31 %. The work there is the
+//     service's: 674 certificate-hierarchy changes (POST /admin-api/pki/
+//     build, build-scope, recertify ...) in run #468, five to thirteen a
+//     minute across the realms, each a new Intermediate and thirteen
+//     Issuing CAs. Two of them — /admin-api/pki/build and build-scope, one
+//     each in fuzz-9700 and fuzz-21 — passed REQUEST_TIMEOUT_SECONDS'
+//     300 s and were the cells' "Network Error".
+//   * THE SERVICE CELL ALONE (69-75 minutes): the service at 156-168 %,
+//     the same ~76,000 cases a realm cell makes. Alone a cell runs at about
+//     seventeen cases a second; three together at about twenty-seven.
+//
+// rcbj's direction: a timeout on a runner is CPU or memory starvation, no
+// timeout is raised, and the long CPU-heavy work is STAGGERED. Running the
+// three admin-api cells one after another would be three times seventy
+// minutes (~225 minutes, against ~140 overlapped) and the mode would pass
+// its 300-minute bound, so the stagger is finer than a cell, and two-fold:
+//
+//   1. AT MOST processBudget() SCHEMATHESIS PROCESSES AT ONCE, the PEP lane
+//      COUNTED IN that budget rather than beside it: one core is left to the
+//      service. STS_SCHEMATHESIS_PROCESSES overrides; the default is the
+//      cores this container sees, less one (three on a runner, so the first
+//      half hour runs three cells where it ran four; a wider machine keeps
+//      its overlap). STS_SCHEMATHESIS_REALMS still bounds the realm lanes
+//      within it.
+//   2. THE HEAVY GATE: an operation in HEAVY_OPERATIONS is forwarded by a
+//      cell's proxy only while no other cell's heavy operation is in the
+//      service — one CA rebuild, recertification or key generation at a
+//      time across every cell — and every other request of every cell goes
+//      on interleaving. The proxies ask the kit over their IPC channel
+//      (auth_proxy.js, heavyGate()). A request waits at most
+//      HEAVY_WAIT_CAP_SECONDS and is then forwarded anyway, logged and
+//      counted, so the gate can never be what times a request out: 150 s
+//      of waiting leaves the operation 150 s of the 300, about three times
+//      a SLH-DSA-SHAKE-256s rebuild on an idle machine (~50 signatures of
+//      1,087 ms). Each cell's line says how many of its requests the gate
+//      held, the longest wait, and how many went past the cap.
+//
+// Wall time, estimated from the same logs: the first phase ~33 -> ~39
+// minutes (116 slot-minutes of cells in three slots), the admin-api phase
+// about what it was (the work is the same and the CPU stays busy; a cell
+// waiting at the gate leaves its share to the rebuild), the service cell
+// unchanged — ~245-275 minutes for the job, against the mode's bound of
+// 300 (tests.yml, STS_FUZZ_MODE_TIMEOUT 18000) and the job's 330.
+// ===========================================================================
+const HEAVY_OPERATIONS = Object.freeze([
+  // The realm's certificate hierarchy rebuilt or re-certified: a new key
+  // per CA (fourteen RSA-3072 keys in most of run #468's builds) and every
+  // certificate signed again. build and build-scope are the two that timed
+  // out.
+  "POST /admin-api/pki/build",
+  "POST /admin-api/pki/build-scope",
+  "POST /admin-api/pki/recertify",
+  "POST /admin-api/pki/reissue-use-case",
+  "POST /admin-api/pki/import-ca",
+  // Key generation in the Certificate Workbench and a key pair issued.
+  "POST /admin-api/pki/generate-keys",
+  "POST /admin-api/pki/generate-alt-keys",
+  "POST /admin-api/pki/issue",
+  // An authority or a federation key rotated: a key generated and certified.
+  "POST /admin-api/spiffe/rotate",
+  "POST /admin-api/federation/rotate-key"
+]);
+const HEAVY_WAIT_CAP_SECONDS = 150;
+
+// How many Schemathesis processes may run at once, the PEP lane's included.
+function processBudget() {
+  log.debug("Entering processBudget().");
+  const asked = parseInt(process.env.STS_SCHEMATHESIS_PROCESSES || "", 10);
+  if (asked > 0) {
+    log.debug("Leaving processBudget(). Asked for " + asked + ".");
+    return asked;
+  }
+  const cores = (os.cpus() || []).length;
+  log.debug("Leaving processBudget(). " + cores + " core(s).");
+  return Math.max(1, cores - 1);
+}
+
+// A counting gate, FIFO: at most `width` tickets are held at once. request()
+// queues a ticket and calls `onGrant` when it is granted; the ticket's
+// release() frees a held ticket or withdraws a queued one, and is safe to
+// call twice. acquire() is the same as a promise of the release function.
+// `most` is the widest it was ever held, which the tests read.
+function makeGate(width) {
+  log.debug("Entering makeGate(). " + width);
+  const state = { width: Math.max(1, width), running: 0, queue: [],
+    most: 0, granted: 0 };
+  function pump() {
+    log.debug("Entering pump().");
+    while (state.running < state.width && state.queue.length) {
+      const ticket = state.queue.shift();
+      state.running += 1;
+      state.granted += 1;
+      state.most = Math.max(state.most, state.running);
+      ticket.state = "held";
+      ticket.onGrant();
+    }
+    log.debug("Leaving pump().");
+  }
+  function request(onGrant) {
+    log.debug("Entering request().");
+    const ticket = { state: "queued", onGrant: onGrant };
+    ticket.release = function release() {
+      log.debug("Entering release(). " + ticket.state);
+      if (ticket.state === "held") {
+        state.running -= 1;
+        ticket.state = "done";
+        pump();
+      } else if (ticket.state === "queued") {
+        state.queue.splice(state.queue.indexOf(ticket), 1);
+        ticket.state = "done";
+      }
+      log.debug("Leaving release().");
+    };
+    state.queue.push(ticket);
+    pump();
+    log.debug("Leaving request(). " + ticket.state);
+    return ticket;
+  }
+  function acquire() {
+    log.debug("Entering acquire().");
+    return new Promise(function (resolve) {
+      let ticket = null;
+      ticket = request(function () {
+        resolve(function () {
+          ticket.release();
+        });
+      });
+      log.debug("Leaving acquire(). " + ticket.state);
+    });
+  }
+  log.debug("Leaving makeGate().");
+  return { request: request, acquire: acquire,
+    stats: function () {
+      return { width: state.width, running: state.running,
+        queued: state.queue.length, most: state.most,
+        granted: state.granted };
+    } };
+}
+
+// Runs `task` holding one of `gate`'s tickets, and releases it however the
+// task ends.
+async function inGate(gate, task) {
+  log.debug("Entering inGate().");
+  const release = await gate.acquire();
+  try {
+    const answer = await task();
+    log.debug("Leaving inGate().");
+    return answer;
+  } finally {
+    release();
+  }
+}
+
+// The kit's half of the heavy gate for one cell's proxy: the proxy sends
+// { heavy: "acquire" | "release" | "cancel", id } over its IPC channel and
+// is answered { heavy: "granted", id }. A cancel is the proxy giving up at
+// HEAVY_WAIT_CAP_SECONDS; it withdraws a queued ticket or frees one whose
+// grant crossed it. Everything the proxy held is freed when it exits.
+// Answers the cell's counts, which runSurface() reports.
+function serveHeavyGate(child, gate) {
+  log.debug("Entering serveHeavyGate().");
+  const tickets = new Map();
+  const counts = { held: 0, waited: 0, longestMs: 0, pastCap: 0 };
+  // Frees the ticket `id` holds, whether it is held or still queued.
+  function drop(id) {
+    log.debug("Entering drop().");
+    const ticket = tickets.get(id);
+    if (ticket) {
+      tickets.delete(id);
+      ticket.release();
+    }
+    log.debug("Leaving drop().");
+  }
+  child.on("message", function (message) {
+    if (!message || typeof message.heavy !== "string") {
+      return;
+    }
+    const id = message.id;
+    if (message.heavy === "acquire") {
+      const asked = Date.now();
+      counts.held += 1;
+      // The grant may come at once, inside gate.request(), before the
+      // ticket is in the map, so a failure to answer frees it on the next
+      // turn rather than now.
+      tickets.set(id, gate.request(function () {
+        const waitedMs = Date.now() - asked;
+        if (waitedMs > 1000) {
+          counts.waited += 1;
+        }
+        counts.longestMs = Math.max(counts.longestMs, waitedMs);
+        // With a callback a closed channel (the proxy gone) is answered
+        // there rather than as an 'error' event nobody listens for.
+        try {
+          child.send({ heavy: "granted", id: id }, function (err) {
+            if (err) {
+              log.debug("Caught granting the proxy's heavy gate: " +
+                        ((err && err.message) || err));
+              drop(id);
+            }
+          });
+        } catch (e) {
+          log.debug("Caught answering the proxy's heavy gate: " +
+                    ((e && e.message) || e));
+          setImmediate(function () {
+            drop(id);
+          });
+        }
+      }));
+    } else if (message.heavy === "release" || message.heavy === "cancel") {
+      if (message.heavy === "cancel") {
+        counts.pastCap += 1;
+      }
+      drop(id);
+    }
+  });
+  child.on("exit", function () {
+    tickets.forEach(function (ticket) {
+      ticket.release();
+    });
+    tickets.clear();
+  });
+  log.debug("Leaving serveHeavyGate().");
+  return counts;
+}
+
 // Runs `task` over `items`, at most `width` at once. A task that rejects
 // rejects the whole, after the ones already running have settled.
 async function boundedMap(items, width, task) {
@@ -1536,8 +1775,11 @@ function runSchemathesis(bin, args, env, cwd) {
 }
 
 // Runs Schemathesis against one surface of one realm, through a proxy of its
-// own. Resolves { surface, realm, code, status, output }.
-async function runSurface(serviceBase, provisioned, surface, workDir, say) {
+// own. Resolves { surface, realm, code, status, output }. `heavyGate`, when
+// given, is the run's heavy gate (makeGate(1)): the proxy then holds each of
+// HEAVY_OPERATIONS until the gate is its.
+async function runSurface(serviceBase, provisioned, surface, workDir, say,
+                          heavyGate) {
   log.debug("Entering runSurface(). " + surface.key);
   // What a result and the log show for the realm: the default-realm service
   // cell has an empty prefix, so it carries a readable label instead (#1299).
@@ -1604,9 +1846,16 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // (#1299); the fuzz person is added at the proxy from STS_SCHEMA_USER.
     STS_SCHEMA_PROTECTED: PROTECTED_CLIENTS.map(function (one) {
       return one.name;
-    }).join(",") });
+    }).join(","),
+    // The heavy gate (THE RUNNER'S CORES, above): the operations the proxy
+    // holds for it, and how long it waits before forwarding anyway. Empty
+    // without a gate, and then the proxy holds nothing.
+    STS_SCHEMA_HEAVY: heavyGate ? HEAVY_OPERATIONS.join(",") : "",
+    STS_SCHEMA_HEAVY_WAIT_S: String(HEAVY_WAIT_CAP_SECONDS) });
   const proxy = childProcess.spawn(process.execPath, [PROXY_SCRIPT],
-    { env: proxyEnv, stdio: ["ignore", "pipe", "pipe"] });
+    { env: proxyEnv,
+      stdio: ["ignore", "pipe", "pipe"].concat(heavyGate ? ["ipc"] : []) });
+  const heavyCounts = heavyGate ? serveHeavyGate(proxy, heavyGate) : null;
   let proxyOut = "";
   proxy.stdout.on("data", function (chunk) {
     proxyOut += chunk;
@@ -1803,6 +2052,14 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     } catch (e) {
       log.debug("Caught surfacing the proxy log: " + ((e && e.message) || e));
     }
+    if (heavyCounts && heavyCounts.held) {
+      say("[schemathesis] " + surface.key + " @ " + realmShown +
+        ": the heavy gate held " + heavyCounts.held + " request(s), " +
+        heavyCounts.waited + " of them over a second, the longest " +
+        Math.round(heavyCounts.longestMs / 1000) + " s; " +
+        heavyCounts.pastCap + " forwarded past the " +
+        HEAVY_WAIT_CAP_SECONDS + " s cap");
+    }
     proxy.kill();
   }
 }
@@ -1894,6 +2151,22 @@ async function run(serviceBase, options) {
   // realm's cells cannot disturb another's, and `admin-api`'s three cells are
   // nearly all of this mode's time. A realm's OWN surfaces stay in order: the
   // ordering above is what stops one surface breaking the next.
+  // AND THEY OVERLAP WITHIN THE RUNNER'S CORES (above, 2026-11-18): every
+  // cell of every lane, the PEP lane's included, holds one of the budget's
+  // slots while it runs, and every proxy shares the one heavy gate.
+  const slots = makeGate(processBudget());
+  const heavyGate = makeGate(1);
+  say("[schemathesis] at most " + slots.stats().width + " cell(s) at once " +
+    "(STS_SCHEMATHESIS_PROCESSES), the realms " + realmConcurrency() +
+    " at a time (STS_SCHEMATHESIS_REALMS), one heavy operation at a time.");
+  function cellIn(cellProvisioned, cell) {
+    log.debug("Entering cellIn(). " + cell.key);
+    log.debug("Leaving cellIn().");
+    return inGate(slots, function () {
+      return runSurface(serviceBase, cellProvisioned, cell, workDir, say,
+        heavyGate);
+    });
+  }
   async function runRealm(profile) {
     log.debug("Entering runRealm(). " + profile.realm);
     let provisioned = null;
@@ -1918,8 +2191,7 @@ async function run(serviceBase, options) {
       }
       let result;
       try {
-        result = await runSurface(serviceBase, provisioned, cells[s],
-          workDir, say);
+        result = await cellIn(provisioned, cells[s]);
       } catch (e) {
         // runSurface returns its own error results; this is the backstop for
         // an unexpected throw, so one surface never ends the matrix.
@@ -1976,8 +2248,7 @@ async function run(serviceBase, options) {
       for (let c = 0; c < wanted.length; c++) {
         let result;
         try {
-          result = await runSurface(serviceBase, provisioned, wanted[c],
-            workDir, say);
+          result = await cellIn(provisioned, wanted[c]);
         } catch (e) {
           log.warn("the PEP cell " + wanted[c].key + " threw: " +
             ((e && e.message) || e));
@@ -2018,8 +2289,7 @@ async function run(serviceBase, options) {
     const serviceAdmin = await provisionServiceAdmin(serviceBase, say);
     let result;
     try {
-      result = await runSurface(serviceBase, serviceAdmin, SERVICE_CELL,
-        workDir, say);
+      result = await cellIn(serviceAdmin, SERVICE_CELL);
     } catch (e) {
       log.warn("the service cell threw: " + ((e && e.message) || e));
       result = { surface: SERVICE_CELL.key,
@@ -2037,6 +2307,9 @@ async function run(serviceBase, options) {
         "failed: " + ((e && e.message) || e) });
   }
   }
+  say("[schemathesis] the cells ran at most " + slots.stats().most +
+    " at once, and the heavy gate was held " + heavyGate.stats().granted +
+    " time(s), never by more than " + heavyGate.stats().most + ".");
   log.debug("Leaving run(). " + results.length + " result(s)");
   return results;
 }
@@ -2045,6 +2318,12 @@ module.exports = {
   storeProblemOf: storeProblemOf,
   boundedMap: boundedMap,
   realmConcurrency: realmConcurrency,
+  processBudget: processBudget,
+  makeGate: makeGate,
+  inGate: inGate,
+  serveHeavyGate: serveHeavyGate,
+  HEAVY_OPERATIONS: HEAVY_OPERATIONS,
+  HEAVY_WAIT_CAP_SECONDS: HEAVY_WAIT_CAP_SECONDS,
   PROFILES: PROFILES,
   SURFACES: SURFACES,
   SERVICE_CELL: SERVICE_CELL,
