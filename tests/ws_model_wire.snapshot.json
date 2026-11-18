@@ -37,7 +37,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {},
-   "body": "<pem>\r\n"
+   "body": "<pem>"
   },
   {
    "mode": "development",
@@ -1130,7 +1130,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {},
-   "body": "<pem>\r\n"
+   "body": "<pem>"
   },
   {
    "mode": "product",

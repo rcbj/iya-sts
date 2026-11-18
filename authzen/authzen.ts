@@ -1641,8 +1641,15 @@ class AuthzenSurface {
         next();
         return;
       }
-      realms.run(named, function () {
+      // Once the realm's keys are made and certified: the path's prefix
+      // named no realm, so `app.js` prepared none (`runInPreparedRealm()`).
+      self.deps.helpers.runInPreparedRealm(named, function () {
         self.sendMetadata(req, res);
+      }).catch(function (e: any) {
+        log.debug('Caught in GET ' + METADATA_PATH + '/*: ' +
+                  ((e && e.message) || e));
+        // Express's error path; its declared type here takes no argument.
+        (next as any)(e);
       });
       log.debug('Leaving GET ' + METADATA_PATH + '/*.');
     });

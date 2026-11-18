@@ -46,7 +46,14 @@
 // stray-member steps answer as the same request without the member does,
 // and STS-AUTHZEN-0009 is gone from it. And again for #1827 and its
 // follow-up (2026-11-16): the realm seeds `sts-remote-pep` and
-// `sts-xacml-pep-api`, so a search over applications finds two more.
+// `sts-xacml-pep-api`, so a search over applications finds two more. And
+// again on 2026-11-17: the record held a RACE. Each realm's keys are made by
+// its first request, the inserted-form metadata, and certified a moment
+// later, so that fetch was signed without `x5u` and the appended one after it
+// usually with — until GitHub's run 44173065871 fetched the second before the
+// certification landed too. A request now waits for its realm's keys to be
+// certified (`helpers.js`, `certifyLater()` and `runInPreparedRealm()`), so
+// both forms carry `x5u` every time, and the record says so.
 //
 // A CHILD PROCESS, as tests/oauth_model_wire.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.
