@@ -268,6 +268,7 @@ const coverage = require('./coverage-report');
 const SELF_SKIP_EXIT = 42;
 const SELF_SKIP_MARKER = '===== SELF-SKIP: ';
 const adminApiToken = require('./admin-api-token');
+const realmLedger = require('./realm-ledger');
 
 const { testFiles } = require('../run');
 
@@ -1706,6 +1707,64 @@ function skippedLine(j) {
   return 'SKIPPED: ' + j.name + ' — ' + j.why;
 }
 
+// ---------------------------------------------------------------------------
+// A PASSING JOB REMOVES ITS REALMS; A FAILING ONE KEEPS THEM (rcbj,
+// 2026-11-18). The realms `tools/realm-ledger.js` noted for `job` are removed
+// once it PASSED, through the default realm's `/admin-api/realms/remove`, one
+// at a time; a failed, timed-out or declined job keeps every one, because its
+// realm is the record of what it did (tests/CLAUDE.md, *A passing job removes
+// its realms*). `STS_TEST_KEEP_REALM_IDS` and the remote PEP containers'
+// realms are never removed: those containers poll them for the rest of the
+// run. Never fails the job: a realm that could not be removed is said, and
+// stays. Answers the number removed.
+// ---------------------------------------------------------------------------
+async function removeRealmsOfPassedJob(job, result, instance) {
+  log.debug('Entering removeRealmsOfPassedJob(). ' + job.name);
+  if (result.status !== 'passed') {
+    const kept = realmLedger.readLedger(job.realmLedger);
+    if (kept.length) {
+      log.info('    ' + job.name + ' did not pass; its ' + kept.length +
+               ' realm(s) stay as evidence: ' + kept.map(function (row) {
+                 return row.id;
+               }).join(', '));
+    }
+    log.debug('Leaving removeRealmsOfPassedJob(). Kept.');
+    return 0;
+  }
+  const keep = new Set(String(process.env.STS_TEST_KEEP_REALM_IDS || '')
+    .split(',').concat([process.env.XACML_PEP_REALM || '',
+                        process.env.XACML_PEP_CLUSTER_REALM || ''])
+    .map(function (id) {
+      return id.trim();
+    }).filter(Boolean));
+  const done = await realmLedger.removeRecorded({
+    file: job.realmLedger,
+    keep: keep,
+    timeoutMs: 120000,
+    tokenFor: async function (base) {
+      log.debug('Entering tokenFor().');
+      // A token of its own: the job may have revoked every token the
+      // service held, its own and the run's among them.
+      const fresh = await adminApiToken.tokenFor(base ||
+                                                 (instance && instance.url) ||
+                                                 '');
+      log.debug('Leaving tokenFor().');
+      return fresh;
+    }
+  });
+  if (done.removed.length) {
+    log.info('    removed ' + done.removed.length + ' realm(s) ' + job.name +
+             ' created');
+  }
+  if (done.failed.length) {
+    log.warn('    ' + job.name + ' passed and ' + done.failed.length +
+             ' of its realm(s) could not be removed, so they stay: ' +
+             done.failed.join('; '));
+  }
+  log.debug('Leaving removeRealmsOfPassedJob().');
+  return done.removed.length;
+}
+
 async function runScheduled(jobs, runOne, opts) {
   log.debug('Entering runScheduled().');
   const results = new Array(jobs.length);
@@ -2569,6 +2628,22 @@ async function main() {
           ? job.env.NODE_OPTIONS + ' ' + preload : preload;
       }
       // ------------------------------------------------------------------
+      // THE REALMS THIS JOB CREATES, WRITTEN DOWN (rcbj, 2026-11-18: "Delete
+      // realms as we go"). `tools/realm-ledger.js` notes every create the
+      // service accepted in a file beside the job's log, and
+      // removeRealmsOfPassedJob() below removes them once the job PASSED; a
+      // failed job's realms stay as its evidence. Only where this runner can
+      // reach `/admin-api`, and never under STS_TEST_KEEP_REALMS=1.
+      // ------------------------------------------------------------------
+      if (process.env.STS_ADMIN_API_TOKEN &&
+          process.env.STS_TEST_KEEP_REALMS !== '1') {
+        job.realmLedger = job.logFile.replace(/\.log$/, '') + '.realms.jsonl';
+        job.env.STS_TEST_REALM_LEDGER = job.realmLedger;
+        const ledger = '--require ' + path.join(__dirname, 'realm-ledger.js');
+        job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
+          ? job.env.NODE_OPTIONS + ' ' + ledger : ledger;
+      }
+      // ------------------------------------------------------------------
       // A NEW CONNECTION PER REQUEST, IN THE `cluster` MODE (2026-09-14).
       //
       // That mode's load balancer picks a node per CONNECTION, and a job
@@ -2649,10 +2724,14 @@ async function main() {
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
               ' assertion(s)' : '') + ' — ' + job.name);
+    if (job.realmLedger) {
+      result.realmsRemoved = await removeRealmsOfPassedJob(job, result,
+                                                           instance);
+    }
     log.debug('Leaving runOne(). ' + job.name);
     return result;
   }
-  const results = await runScheduled(jobs, runOne, opts);
+  const results = await runScheduled(jobs, runOne, opts);;
   const wallMs = Date.now() - started;
 
   // The service goes down BEFORE the coverage is rendered, because under
@@ -2736,7 +2815,8 @@ async function main() {
                assertionsFailed: j.assertions.filter(function (a) {
                  return !a.ok;
                }).length,
-               failures: j.failures, why: j.why || '', log: j.logName };
+               failures: j.failures, why: j.why || '', log: j.logName,
+               realmsRemoved: j.realmsRemoved || 0 };
     }) }, null, 2) + '\n');
   pointLatestAt(opts.reportDir, runDir);
 

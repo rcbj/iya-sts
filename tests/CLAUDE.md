@@ -48,8 +48,8 @@ edited HERE, and only here.
 `read` and `write` and each hold both on THE NEXT ONE ROUND, a ring rather than
 the complete mesh it built for one day — and it does
 NOT clean up after itself, where every other job that writes anything works in
-a throwaway realm (which nothing removes any more — see *No job removes a
-realm* below, 2026-09-06). That is not an oversight and
+a throwaway realm (which the runner removes once the job passes — see *A
+passing job removes its realms* below, 2026-11-18). That is not an oversight and
 it is not a precedent: what the job produces IS the deliverable, an example
 meant to be read at `/admin/delegation/allowed`, drawn there, and — since
 2026-09-02 — listed under that drawing as ONE GROUP, whose own picture is at
@@ -1033,8 +1033,9 @@ Three rules that are not optional here:
   its own realm, application, person, setting or stream. It never picks up
   something another job left behind, such as "the last realm in the
   switcher", "the first application listed" or "whatever the default realm
-  holds now". Realms are left standing on purpose (*No job removes a realm*,
-  below), so the service a job meets holds whatever every earlier job wrote;
+  holds now". A failed job's realms are left standing on purpose (*A passing
+  job removes its realms*, below), so the service a job meets holds whatever
+  earlier jobs wrote;
   a test that reads that is testing the run order. What forced the rule:
   on 2026-10-07 `sts_admin_api_operations` replayed #472's
   `setListenerApplications` example in its own realm, which moved that
@@ -4254,64 +4255,58 @@ because that is the fact that survives the override being taken away. Reporting
 it the other way round would make `revoke-global-consent` look as though it had
 started asking people who had already agreed.
 
-## NO JOB REMOVES A REALM (2026-09-06)
+## A PASSING JOB REMOVES ITS REALMS; A FAILING ONE KEEPS THEM (2026-11-18)
 
-**A trust realm a test run created STAYS.** Many jobs here create one; not one
-of them removes it any more, and a job added tomorrow must not either. This is
-an operator requirement and it overrides the tidiness argument every one of
-those teardowns used to make.
+(It was *No job removes a realm* until that day, and fifty-odd comments in
+the jobs still cite it by that name: they mean this section.)
 
-**Why:** a realm is a whole logical copy of this service — its own directory
-subtree, its registries, its claim sets, its policies, its tokens, its
-overrides and its audit log. That makes it the ONE place where the whole record
-of what a job actually did survives the job. A teardown that removed it deleted
-that record at exactly the moment somebody wanted it: the run went red, and the
-evidence went with the realm before anybody could read it.
+**rcbj, 2026-11-18: "Delete realms as we go."** From 2026-09-06 until that
+day NO job removed a realm (the rule this section used to state), and the
+cluster mode paid for it: GitHub Actions run #468 ended that mode with 252
+realms held in every one of the ten isolates of its two nodes, 5.1–5.2 GB a
+node, the runner six gigabytes into swap with a run queue of eight, and
+`sts_persistence_postgres` killed by its watchdog in the teardown. **The
+rule is split on the verdict now:**
 
-**What paid for the teardowns is paid for elsewhere, which is why this costs
-nothing:**
+* **A job that PASSED has its realms removed** as soon as it ends, by the
+  RUNNER, not by the job: `tools/realm-ledger.js` is preloaded into every
+  protocol job beside `attach-admin-token.js` (275 jobs create realms and no
+  two share an HTTP client — that file's argument), and writes every
+  `POST /admin-api/realms/create` the service ANSWERED 2xx to a ledger beside
+  the job's log (`NN-<job>.realms.jsonl`). `run-report.js`'s
+  `removeRealmsOfPassedJob()` removes each through the default realm's
+  `/admin-api/realms/remove` with a token of its own, and the summary's
+  `realmsRemoved` counts them. Only an ACCEPTED create is written, so a job
+  refused "already defined" for somebody else's realm cannot put that realm on
+  its list.
+* **A job that FAILED, timed out or declined keeps every realm**, for the
+  reason the old rule gave and which still holds: a realm is a whole logical
+  copy of the service, and the realm of a red job is the one record of what it
+  actually did. The runner names them on its log.
+* **Never removed**: the realms `STS_TEST_KEEP_REALM_IDS` names and the
+  remote PEP containers' (`XACML_PEP_REALM`, `XACML_PEP_CLUSTER_REALM`), which
+  those containers poll for the rest of the run; and every realm of a run
+  under `STS_TEST_KEEP_REALMS=1`, which turns the ledger off.
+* **Not seen**: a realm a BROWSER creates through the console's own
+  `/admin-api` calls is made by Chrome, not by the job's process, and stays.
+* **A removal never fails a job.** A realm that could not be removed is a
+  warning on the runner's log and stays, which is what the suite did before.
 
-* **Collision.** Every realm id carries `names.runStamp()`, so two runs against
-  one long-lived service mint two realms rather than meeting each other's
-  leavings. The teardown was never what made that safe.
-* **Isolation.** A realm reaches nothing outside itself, so a service holding
-  ten of them behaves for every other job exactly as it did holding none —
-  including a realm left with `xacml.enabled: false` or a narrowed application
-  on it, which was the case those teardowns were most afraid of.
-* **Accumulation.** A realm is persisted only where a store is configured, and
-  the suite's stacks keep theirs in a container with no volume, so they go when
-  the stack does. A person who wants them gone restarts the mock or removes
-  them by hand.
+The opt-in `STS_TEST_REMOVE_REALMS=1` many jobs still carry (removal pass or
+fail, for a private probe) is unchanged; a realm such a job removed itself is
+answered "no such realm" to the runner and counted as removed.
 
-**The three things it does cost, all of them recorded where they bite:**
+**What the old rule's three costs became.** `POST /admin-api/realms/remove` is
+now driven by every passing realm-creating job; the console's Remove button is
+still drawn and never pressed (`sts_admin_console.js` creates its realm in the
+browser, so its realm is not on any ledger); and `sts_xacml_remote_pep.js`'s
+fixed realm is `XACML_PEP_REALM`, which the runner never removes, so it still
+cannot run twice against one kept stack.
 
-1. **`POST /admin-api/realms/remove` is driven only by its REFUSAL.**
-   `sts_admin_api_operations.js` asks it to remove the realm the call arrived in
-   and it says no. Its coverage ledger accepts that without an exemption row,
-   because `post()` records a refusal as DRIVEN and not ACCEPTED — and that
-   file says so in a paragraph rather than leaving it to be noticed.
-2. **The console's Remove button is drawn and never pressed.**
-   `sts_admin_console.js` asserts it is THERE, on the realm's own page rather
-   than on the list, and stops short of pressing it. That check lives in the
-   create section and not in the teardown, because an assertion made in a
-   `finally` replaces whatever failure got you there.
-3. **`sts_xacml_remote_pep.js` cannot run twice against one service.** Its realm
-   id is FIXED when a launcher owns the PEP container, so the second run meets
-   "already defined" and fails — with a message that says so and names the way
-   out. That is deliberate: reusing the realm would assert against a previous
-   run's policy documents, and removing it would throw away the record. Both
-   launchers give it a fresh stack, so only a hand-run against `--keep-stack`
-   sees it.
-
-**The one section that used a removal as its INSTRUMENT was rewritten rather
-than dropped.** Section 9 of that same file makes the PDP go away under a
-running container, and it made it go away by deleting the realm. It turns
-`xacml.remotePeps` off in the realm instead: the three `/xacml/pep` endpoints
-answer 501 to that container and to nothing else in the service, `sync.js` takes
-any non-200 through the same `keep()`, and the outage is now REVERSIBLE and
-scoped to the seam under test. It is left off on purpose — turning it back on
-would erase the state the section asserts from a realm somebody is meant to be
-able to read.
+**Collision and isolation are paid for exactly as before** — every realm id
+carries `names.runStamp()`, and a realm reaches nothing outside itself — so a
+job that passes with its realm removed behaves for every later job exactly as
+one that left it.
 
 ## ASSERT AGAINST THE WHOLE LIST, NOT AGAINST PAGE ONE (2026-09-06)
 
