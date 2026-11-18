@@ -70,6 +70,8 @@ const stsSuite = paths.requireSharedModule(
   [path.join(__dirname, "sts_bbs2023.js"),
    paths.mockStsModule("bbs2023.js") || ""],
   "the STS's bbs-2023 cryptosuite");
+// Digital Bazaar's bbs-2023, the second opinion on what was issued (#1878).
+const bbsW3c = require("./bbs_w3c.js");
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var issuerBase = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/,
@@ -400,23 +402,28 @@ async function ldpVcNamesTheDidAndVerifies(meta) {
   assert.ok(resolved.method.publicKeyMultibase,
     "the verificationMethod must resolve to a key with a publicKeyMultibase: " +
     JSON.stringify(resolved.method).slice(0, 200));
-  const pk = stsSuite.multibaseToBytes(resolved.method.publicKeyMultibase);
+  assert.ok(/^zUC7/.test(resolved.method.publicKeyMultibase),
+    "the key is a bls12_381-g2-pub Multikey (vc-di-bbs 2.1.1): base58btc " +
+        "of 0xeb01 and the 96-byte key, which always begins zUC7. Got " +
+        String(resolved.method.publicKeyMultibase).slice(0, 12));
+  const pk = stsSuite.publicKeyFromMultibase(
+    resolved.method.publicKeyMultibase);
   assert.strictEqual(pk.length, 96,
     "a BLS12-381 G2 public key is 96 compressed bytes; got " + pk.length +
-        ". A short key here means " +
-    "the multibase prefix was stripped twice.");
+        ".");
 
-  const verdict = await stsSuite.verifyBase(credential, pk);
-  assert.strictEqual(verdict.ok, true,
-    "the embedded bbs-2023 proof must verify against the key resolved FROM " +
-        "THE DID DOCUMENT. This is " +
-    "the whole chain for this format: the credential names a DID, the DID " +
-        "resolves to a document, the " +
-    "document names the key, and the key verifies the proof.");
+  const verdict = await bbsW3c.deriveAndVerify(credential, resolved.method, {
+    controllerDoc: (await did.resolve(did.parse(vm).did, RESOLVE)).document });
+  assert.strictEqual(verdict.verified, true,
+    "a proof derived from the embedded bbs-2023 base proof by Digital " +
+        "Bazaar's implementation must verify against the key resolved FROM " +
+        "THE DID DOCUMENT, that document as its controller. This is the " +
+        "whole chain for this format: the credential names a DID, the DID " +
+        "resolves to a document, the document names the key, and the key " +
+        "verifies the proof. " + verdict.errors.join("; "));
   log.info("[ldp_vc] OK — issuer " + credential.issuer +
            ", verificationMethod " + vm +
-           ", proof verifies over " + verdict.statements.length +
-               " statements.");
+           ", a derived proof verifies under the DID document's key.");
 
   // Non-regression: the plain ldp_vc configuration keeps the dereferenceable
   // https verificationMethod that tests/ldp_vc_issuance.js fetches directly.

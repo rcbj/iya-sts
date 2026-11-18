@@ -124,6 +124,8 @@ import vcStatus = require('./vc_status');
 // names its holder by, and which key types a proof can be made with. A pure
 // library over `common/` leaves.
 import vcDataIntegrity = require('./vc_data_integrity');
+// bbs-2023, the W3C cryptosuite every ldp_vc is secured with (#1878).
+import vcBbs = require('./vc_bbs');
 // DID RESOLUTION (#199) for a proof whose `kid` names a did:jwk or did:key
 // (#693 phase 2b): the DID document, so the method is checked against its
 // `authentication`. A pure library over `vc_data_integrity` and `vc_did`,
@@ -178,6 +180,7 @@ interface VcIssuerDeps {
   stsCrypto: typeof stsCrypto;
   config: typeof config;
   bbs2023: typeof bbs2023;
+  vcBbs: typeof vcBbs;
   dpop: typeof dpop;
   mode: typeof mode;
   errorCodes: typeof errorCodes;
@@ -519,6 +522,7 @@ class VcIssuer {
       stsCrypto: stsCrypto,
       config: config,
       bbs2023: bbs2023,
+      vcBbs: vcBbs,
       dpop: dpop,
       mode: mode,
       errorCodes: errorCodes,
@@ -827,7 +831,10 @@ class VcIssuer {
       // holder's Data Integrity proof at sign-in is verified against. It said
       // `did:key` while the credential carried a `did:jwk`.
       cryptographic_binding_methods_supported: ['did:jwk'],
-      credential_signing_alg_values_supported: ['bbs-2023'],
+      // `bbs-2023`, or `iya-bbs-2023-legacy` in a realm on the pre-1.1
+      // format (#1878) — never the old format under the W3C name.
+      credential_signing_alg_values_supported:
+        this.deps.vciSigningAlgsFor(VCI_LDP_CONFIG_ID),
       // Only the algorithms a Data Integrity cryptosuite exists for: a key of
       // any other kind could be bound and never proved at presentation, so
       // the credential would verify and never sign its holder in.
@@ -1994,7 +2001,46 @@ class VcIssuer {
     return members;
   }
 
-  // A W3C credential with an EMBEDDED bbs-2023 proof (OID4VCI format ldp_vc).
+  // ---------------------------------------------------------------------------
+  // THE MANDATORY JSON POINTERS of an ldp_vc credential configuration
+  // (#1878): `oid4vci.ldpVcDidMandatoryPointers` for the did:web one,
+  // `oid4vci.ldpVcMandatoryPointers` for the plain one. Each pointer is held
+  // to RFC 6901 here; one that names nothing in the credential is refused
+  // by the cryptosuite as it groups the statements. Either refusal is the
+  // configuration's fault and is STS-VC-0180.
+  // ---------------------------------------------------------------------------
+  private ldpMandatoryPointers(configId: string): string[] {
+    const { log, config, vcBbs, errorCodes } = this.deps;
+    log.debug("Entering VcIssuer.ldpMandatoryPointers(). " + configId);
+    const key = this.deps.VCI_CONFIGS[configId] &&
+      this.deps.VCI_CONFIGS[configId].issuerDid
+      ? 'oid4vci.ldpVcDidMandatoryPointers'
+      : 'oid4vci.ldpVcMandatoryPointers';
+    const raw = config.value(key);
+    const pointers = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (p: any): string { return String(p).trim(); })
+      .filter(function (p: string): boolean { return p.length > 0; });
+    void vcBbs;
+    for (const pointer of pointers) {
+      if (pointer.charAt(0) !== '/') {
+        log.error(errorCodes.tag('STS-VC-0180') + key + ' holds "' +
+                  pointer + '", which is not a JSON pointer (RFC 6901: ' +
+                  'it starts with "/"); no ' + configId + ' credential ' +
+                  'is issued until it is corrected.');
+        log.debug("Leaving VcIssuer.ldpMandatoryPointers(). Not a pointer.");
+        throw errorCodes.mark(new Error(key + ' holds "' + pointer +
+                                        '", which is not a JSON pointer'),
+                              'STS-VC-0180');
+      }
+    }
+    log.debug("Leaving VcIssuer.ldpMandatoryPointers(). " +
+              pointers.length + " pointer(s) from " + key + ".");
+    return pointers;
+  }
+
+  // A W3C credential with an EMBEDDED bbs-2023 proof (OID4VCI format ldp_vc):
+  // W3C Data Integrity BBS Cryptosuites v1.0's base proof since #1878
+  // (`vc_bbs.ts`), the mandatory statements chosen per configuration.
   //
   // Async, unlike the other two, because canonicalization is — which is why
   // buildCredentialFor and the credential endpoint are async as well.
@@ -2006,9 +2052,10 @@ class VcIssuer {
   // (`vc_data_integrity.ts`, rule 3at). This comment said did:key and "no
   // separate signature by the holder" until 2026-09-21, both since changed.
   private async buildLdpVc(subjectClaims, holderJwk, credentialIssuer,
-                            issuerDid, status, holderKid?: string) {
-    const { log, logArtifact, b64u, bbsKeyPair, bbs2023, VCI_JWT_TYPES
-            } = this.deps;
+                            issuerDid, status, holderKid?: string,
+                            configId?: string) {
+    const { log, logArtifact, b64u, bbsKeyPair, bbs2023, vcBbs,
+            VCI_JWT_TYPES } = this.deps;
     // VC Data Model 2.0 is DID-native, so naming the issuer by DID here is
     // ordinary rather than an extension. The verification method moves with it:
     // a DID URL fragment into this issuer's DID document instead of a
@@ -2058,47 +2105,87 @@ class VcIssuer {
       log.debug("Leaving VcIssuer. bbs-2023 is not signed here.");
       throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
     }
-    const issued = await bbs2023.issue(unsecured, {
-      verificationMethod: bbsVerificationMethod,
-      created: new Date(now * 1000).toISOString()
-    }, keys.secretKey, keys.publicKey);
+    // THE PRE-1.1 FORMAT, IN A REALM THAT ASKED FOR IT (#1878, rcbj's
+    // decision): `oid4vc.bbs2023LegacyFormat`, off by default. The
+    // credential is signed as iya-sts 1.0 signed it, under the label
+    // `iya-bbs-2023-legacy`, and each one is logged (STS-VC-0183).
+    if (this.deps.config.value('oid4vc.bbs2023LegacyFormat')) {
+      const old = await bbs2023.legacyIssue(unsecured, {
+        verificationMethod: bbsVerificationMethod,
+        created: new Date(now * 1000).toISOString()
+      }, keys.secretKey, keys.publicKey);
+      const oldCheck = await bbs2023.legacyVerifyBase(old.credential,
+                                                      keys.publicKey);
+      if (!oldCheck.ok) {
+        log.error(errorCodes.tag('STS-VC-0079') + 'vc_issuer: the ldp_vc ' +
+                  'credential this issuer just built in the pre-1.1 format ' +
+                  'does not verify under the key that signed it (' + bbsKid +
+                  ').');
+        log.debug("Leaving VcIssuer.buildLdpVc(). It does not verify.");
+        throw new Error('the ldp_vc credential this issuer just ' +
+                        'built does not verify');
+      }
+      log.warn(errorCodes.tag('STS-VC-0183') + 'an ldp_vc credential was ' +
+               'issued in the pre-1.1 bbs-2023 format (' +
+               bbs2023.LEGACY_CRYPTOSUITE + ') because ' +
+               'oid4vc.bbs2023LegacyFormat is on in this realm.');
+      logArtifact('ldp_vc credential', 'after signing (pre-1.1 format, ' +
+                  old.statements.length + ' statements)', old.credential);
+      log.debug("Leaving VcIssuer.buildLdpVc(). The pre-1.1 format.");
+      return { credential: old.credential, disclosures: [],
+               payload: old.credential,
+               validFrom: unsecured.validFrom,
+               validUntil: unsecured.validUntil };
+    }
+    const pointers = this.ldpMandatoryPointers(
+      String(configId || this.deps.VCI_LDP_CONFIG_ID));
+    let credential: any;
+    try {
+      credential = await vcBbs.createBaseProof(unsecured, {
+        secretKey: keys.secretKey, publicKey: keys.publicKey,
+        verificationMethod: bbsVerificationMethod,
+        mandatoryPointers: pointers, proofPurpose: 'assertionMethod'
+      });
+    } catch (e) {
+      log.debug("Caught in VcIssuer.buildLdpVc(): " +
+                ((e && e.message) || e));
+      // A pointer that names nothing in this credential is the only thing
+      // the cryptosuite refuses a well-formed document for.
+      const why = String((e && e.message) || e);
+      if (/the JSON pointer|is not a JSON pointer|invalid escape/
+            .test(why)) {
+        log.error(errorCodes.tag('STS-VC-0180') + 'the ldp_vc mandatory ' +
+                  'pointers ' + JSON.stringify(pointers) + ' do not fit ' +
+                  'this credential: ' + ((e && e.message) || e));
+        log.debug("Leaving VcIssuer.buildLdpVc(). A pointer refused.");
+        throw errorCodes.mark(new Error('an ldp_vc mandatory pointer does ' +
+                                        'not fit the credential'),
+                              'STS-VC-0180');
+      }
+      log.debug("Leaving VcIssuer.buildLdpVc(). Not signed.");
+      throw e;
+    }
 
     // Verified immediately, by this service, before it is handed out: the
     // requirement is that the STS validate every crypto operation, and an
     // issuer that cannot verify its own output has no business emitting it.
-    const check = await bbs2023.verifyBase(issued.credential, keys.publicKey);
+    // The check regroups the statements with the proof's own HMAC key and
+    // pointers, so it covers the canonical form as well as the signature.
+    const check = await vcBbs.verifyBaseProof(credential, keys.publicKey);
     if (!check.ok) {
-      // WHY IT DID NOT VERIFY, because the two causes need different fixes
-      // and the refusal alone names neither (2026-09-22). `verifyBase()`
-      // re-derives the canonical statements and the header from the SIGNED
-      // document and swallows the library's own error, so a failure is either
-      // the document canonicalising differently than it did at signing — the
-      // statements or the header differ — or the key: same statements, same
-      // header, and a signature that does not verify under this public key.
-      // Both halves are here rather than in bbs2023.js, which was a vendored
-      // copy when this was written and is kept a plain cryptosuite (#663).
-      const signedStatements = (issued.statements || []) as string[];
-      const checkedStatements = (check.statements || []) as string[];
-      const differing = signedStatements.filter(function (one, i) {
-        return checkedStatements[i] !== one;
-      });
-      const headerSame = Buffer.from(issued.header || []).equals(
-        Buffer.from(check.header || []));
+      // WHY IT DID NOT VERIFY, because the causes need different fixes and
+      // the refusal alone names none (2026-09-22): the document hashing to a
+      // different header (it canonicalizes differently than it did at
+      // signing), or the same header and a signature that does not verify
+      // under this public key — the signature or the KEY.
       log.error(errorCodes.tag('STS-VC-0079') +
                 'vc_issuer: the ldp_vc credential this issuer just built ' +
                 'does not verify under the key that signed it (' + bbsKid +
-                '). ' + signedStatements.length + ' statement(s) signed, ' +
-                checkedStatements.length + ' re-derived, ' + differing.length +
-                ' differing; the proof header is ' +
-                (headerSame ? 'the same' : 'DIFFERENT') + '. ' +
-                (differing.length || !headerSame
-                  ? 'The document does not canonicalise the way it did when ' +
-                    'it was signed: ' +
-                    JSON.stringify(differing.slice(0, 3))
-                  : 'The document canonicalises the same and the proof ' +
-                    'header is the same, so what is left is the SIGNATURE ' +
-                    'or the KEY — which need different fixes, so the pair ' +
-                    'was tried against a control document: ' +
+                '): ' + check.detail + ' ' +
+                (check.headerMatches === false
+                  ? 'The document does not canonicalise the way it did ' +
+                    'when it was signed.'
+                  : 'So the pair was tried against a control document: ' +
                     (await this.bbsPairWorks(keys)) + ' Secret ' +
                     (keys.secretKey ? keys.secretKey.length : 0) +
                     ' byte(s), public ' +
@@ -2111,14 +2198,13 @@ class VcIssuer {
     }
 
     logArtifact('ldp_vc credential',
-                'after signing (' + issued.statements.length + ' ' +
-                'statements)',
-                issued.credential);
-    log.debug("Leaving VcIssuer.buildLdpVc(). " + issued.statements.length +
-              " canonical statement(s).");
-    return { credential: issued.credential, disclosures: [],
-             payload: issued.credential,
-             statements: issued.statements,
+                'after signing (' + check.nonMandatory + ' message(s), ' +
+                check.mandatory + ' mandatory statement(s))',
+                credential);
+    log.debug("Leaving VcIssuer.buildLdpVc(). " + check.nonMandatory +
+              " message(s), " + check.mandatory + " mandatory.");
+    return { credential: credential, disclosures: [],
+             payload: credential,
              validFrom: unsecured.validFrom,
              validUntil: unsecured.validUntil };
   }
@@ -2150,11 +2236,11 @@ class VcIssuer {
                         type: ['VerifiableCredential'],
                         issuer: 'did:example:control',
                         credentialSubject: { id: 'did:example:subject' } };
-      const made = await bbs2023.issue(control,
+      const made = await this.deps.vcBbs.createBaseProof(control,
         { verificationMethod: 'did:example:control#bbs',
-          created: new Date().toISOString() },
-        keys.secretKey, keys.publicKey);
-      const ok = await bbs2023.verifyBase(made.credential, keys.publicKey);
+          secretKey: keys.secretKey, publicKey: keys.publicKey,
+          mandatoryPointers: ['/issuer'] });
+      const ok = await this.deps.vcBbs.verifyBaseProof(made, keys.publicKey);
       log.debug("Leaving VcIssuer.bbsPairWorks(). " + !!(ok && ok.ok));
       return (ok && ok.ok)
         ? 'the pair SIGNS AND VERIFIES a control document, so the halves ' +
@@ -2254,7 +2340,7 @@ class VcIssuer {
     if (format === 'ldp_vc') {
       built = await this.buildLdpVc(subjectClaims, holderJwk,
                                     credentialIssuer, issuerDid, status,
-                                    holderKid || '');
+                                    holderKid || '', configId);
     } else if (format === 'jwt_vc_json') {
       built = await this.buildJwtVcJson(subjectClaims, holderJwk,
                                         credentialIssuer, issuerDid, status,
@@ -3468,8 +3554,10 @@ class VcIssuer {
 
     // The BBS public key the ldp_vc proofs are made with. A BBS key is not a
     // JWK — there is no registered kty for BLS12-381 G2 in the JOSE registry —
-    // so it is published as its raw compressed bytes in multibase base64url,
-    // which is what the Data Integrity multikey encoding uses and what
+    // so it is published as a Multikey: since #1878 the encoding vc-di-bbs
+    // section 2.1.1 requires, `z` and the base58btc of the bls12_381-g2-pub
+    // multicodec (0xeb01) and the 96 compressed bytes (it was `u` and the
+    // raw bytes, which no other implementation reads). It is what the
     // verificationMethod above points at. Served no-store because the key is
     // regenerated on every start. Its CORS header is `common/cors.js`'s
     // decision like every other response's; the `*` this route used to set for
@@ -3497,11 +3585,12 @@ class VcIssuer {
         return;
       }
       res.status(200).type('application/json').send(JSON.stringify({
+        '@context': 'https://w3id.org/security/multikey/v1',
         id: baseUrlOf(req) + '/bbs/keys/' + asked,
         type: 'Multikey',
         controller: baseUrlOf(req),
         cryptosuite: bbs2023.CRYPTOSUITE,
-        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(one.publicKey),
+        publicKeyMultibase: bbs2023.publicKeyMultibase(one.publicKey),
         state: one.role
       }));
       log.debug("Leaving the BBS key endpoint.");

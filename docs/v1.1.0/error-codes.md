@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5721** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5728** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 166
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 173
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -4182,6 +4182,13 @@ Raised from: oid4vc/.
 | `STS-VC-0177` | The DID document of a person re-homed to another cell could not be fetched from that cell over the inter-cell channel (#1291). | HTTP 503 {error: temporarily_unavailable} at /users/{rid}/did.json |
 | `STS-VC-0178` | A key a wallet proved for a person's published DID was refused because it is already enrolled for that person as a sign-in key (#775). The document would have been a public copy of a sign-in key. A published DID takes a key that is not enrolled for sign-in. | HTTP 400 refusal at /authn-api/wallet |
 | `STS-VC-0179` | A key was refused as a person's self-issued sign-in subject (did:jwk, did:key or JWK thumbprint) because a version of a DID this realm publishes for that person names it (#775, the reverse of STS-VC-0178). The public document and the sign-in key would have been one key. | HTTP 400 refusal at /authn-api/wallet, or at /admin-api/users/enrol-self-issued-subject |
+| `STS-VC-0180` | An ldp_vc credential was not issued because a bbs-2023 mandatory JSON pointer configured for its credential configuration (oid4vci.ldpVcMandatoryPointers, oid4vci.ldpVcDidMandatoryPointers) is not a JSON pointer or names nothing in the credential (#1878). | server_error (HTTP 500) at the OID4VCI credential endpoint |
+| `STS-VC-0181` | An ldp_vc presentation in the pre-W3C, non-standard bbs-2023 format iya-sts 1.0 used (disclosed statements beside a raw BBS proof) was refused: this realm accepts only W3C bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0), because oid4vc.bbs2023LegacyFormat is off. The holder needs a credential issued since 1.1.0 (#1878). | a failed check in the OpenID4VP Verifier's result |
+| `STS-VC-0182` | An ldp_vc presentation in the pre-W3C bbs-2023 format (iya-bbs-2023-legacy) was read because this realm has oid4vc.bbs2023LegacyFormat on. Not a refusal: recorded so that an operator can see the old format is still in use (#1878). | none: the presentation is checked as 1.0 checked it |
+| `STS-VC-0183` | An ldp_vc credential was issued in the pre-W3C bbs-2023 format (iya-bbs-2023-legacy) because this realm has oid4vc.bbs2023LegacyFormat on. Not a refusal: recorded so that an operator can see the old format is still in use (#1878). | none: the credential is issued |
+| `STS-VC-0184` | A bbs-2023 derived proof was refused because its verificationMethod names no BBS key this realm publishes, so no issuer this Verifier trusts stands behind it (#1878). | a failed check in the OpenID4VP Verifier's result |
+| `STS-VC-0185` | A bbs-2023 derived proof was refused because its presentation header is not this request's nonce: a bare derived proof must carry the nonce, and one inside a Verifiable Presentation may carry the nonce or nothing (#1878). | a failed check in the OpenID4VP Verifier's result |
+| `STS-VC-0186` | A bbs-2023 derived proof did not verify (W3C Data Integrity BBS Cryptosuites v1.0, section 3.3.5): the reveal document, the issuer key, the label map, the indexes or the presentation header is not what it was derived for, or the proof is malformed (#1878). | a failed check in the OpenID4VP Verifier's result |
 
 ## STS-SSF
 

@@ -17,6 +17,17 @@
 #   w3c/vc-bitstring-status-list-test-suite #197  mocha
 #   w3c/vc-jose-cose-test-suite             #198  mocha
 #   w3c/did-test-suite                      #199  jest, lerna
+#   w3c/vc-di-bbs-test-suite               #1878  mocha, + w3c/vc-di-bbs's
+#                                                 TestVectors (the same
+#                                                 arrangement as ECDSA's).
+#                                                 Its lockfile pins
+#                                                 @digitalbazaar/bbs-2023-
+#                                                 cryptosuite 2.0.1, the
+#                                                 SECOND implementation
+#                                                 tests/vc_bbs2023.js holds
+#                                                 vc_bbs.ts to — test
+#                                                 tooling, never a service
+#                                                 dependency
 #
 # Run by the `vc-suites` stage of tests/Dockerfile at IMAGE BUILD TIME; the
 # runner copies <dest> and nothing else. Nothing is vendored and nothing it
@@ -65,6 +76,8 @@ w3c/vc-bitstring-status-list-test-suite 960ab9a3ad275bb5e56dd3f300939f83cba759b7
 w3c/vc-jose-cose-test-suite cf4c93ddf7e1bfef5a3e5db4b9a798b02ea778a9 cfd0ebf7d61bc732eacdd5f39ed4c8bdfad4291bf6c8a6f47da96d9d2187b57b
 w3c/did-test-suite 939b31d07d5b1699340ac0702ec0fa46ffcdef0a c4e464d3f49d265a4023f646a77db7abc0992ff844d3055c180cd1c1c86717bd
 w3c/vc-di-ecdsa 59df72ca8cdb275d97eb496086fea6fac4fa7f0f c53b628f6c189fd23fdab59ce7da430869261326f96aa6067c6ab2690327b3be
+w3c/vc-di-bbs-test-suite 77c9e16996abedbb4bff9c9272ad20cd6e5132d8 06f539e3f9fbcf030d57c49b5cc2fc154d2ec4c52f0d7062b06d78e70bbf65ac
+w3c/vc-di-bbs 495310858ad0b54c4b6cb1423c59a90a22091459 3500d148a628135e14ab64e3aeb2edaa3fc5b1a14baea89247fb397a50daeb3c
 "
 
 fetch() {
@@ -87,7 +100,7 @@ done
 
 for suite in vc-data-model-2.0-test-suite vc-di-eddsa-test-suite \
              vc-di-ecdsa-test-suite vc-bitstring-status-list-test-suite \
-             vc-jose-cose-test-suite; do
+             vc-jose-cose-test-suite vc-di-bbs-test-suite; do
   ( cd "${DEST}/${suite}" \
     && npm ci --ignore-scripts --omit=dev --no-audit --no-fund \
     && npm cache clean --force )
@@ -96,6 +109,12 @@ done
 # The ECDSA suite's vectors, where its postinstall would have cloned them.
 mkdir -p "${DEST}/vc-di-ecdsa-test-suite/tests/input"
 mv "${DEST}/vc-di-ecdsa" "${DEST}/vc-di-ecdsa-test-suite/tests/input/vc-di-ecdsa"
+
+# The BBS suite's vectors, where its postinstall would have cloned them
+# (#1878): the specification repository at the commit of the CRD of
+# 10 September 2026.
+mkdir -p "${DEST}/vc-di-bbs-test-suite/tests/input"
+mv "${DEST}/vc-di-bbs" "${DEST}/vc-di-bbs-test-suite/tests/input/vc-di-bbs"
 
 # The DID suite: its root postinstall bootstraps and builds the packages.
 ( cd "${DEST}/did-test-suite" \

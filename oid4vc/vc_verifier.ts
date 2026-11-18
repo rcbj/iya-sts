@@ -148,6 +148,9 @@ import vcIssued = require('./vc_issued');
 // libraries over `common/`; neither requires this file.
 import vcStatus = require('./vc_status');
 import vcDataIntegrity = require('./vc_data_integrity');
+// bbs-2023, the W3C cryptosuite an ldp_vc presentation is checked with
+// (#1878).
+import vcBbs = require('./vc_bbs');
 // AN ISO mdoc (#935): the fourth format's checks, a library over `common/`,
 // the codec and `authn/webauthn.js`'s COSE_Key reader; it requires nothing
 // in this directory but the codec, and registers nothing.
@@ -2157,8 +2160,12 @@ class VcVerifier {
       'dc+sd-jwt': { 'sd-jwt_alg_values': algs,
                      'kb-jwt_alg_values': algs },
       'jwt_vc_json': { alg_values: algs },
+      // A realm on the pre-1.1 bbs-2023 format (#1878) names it by its own
+      // label beside the W3C one it still accepts — never as `bbs-2023`.
       'ldp_vc': { proof_type_values: ['DataIntegrityProof'],
                   cryptosuite_values: ['bbs-2023'].concat(
+                    config.value('oid4vc.bbs2023LegacyFormat')
+                      ? [bbs2023.LEGACY_CRYPTOSUITE] : [],
                     vcDataIntegrity.SUPPORTED_CRYPTOSUITES) },
       // Appendix B.2.2 (#935): COSE algorithm identifiers, not JOSE names,
       // for the issuer's signature and the device's.
@@ -2981,43 +2988,67 @@ class VcVerifier {
   // proof IS the signature, re-randomised — so "did the issuer sign this" is
   // the derived proof's check.
   //
-  // SHAPE NOTE, a stated simplification: a full bbs-2023 presentation
-  // reconstructs a JSON-LD document from the disclosed statements. This mock is
-  // handed the statements and their indexes directly, beside the proof and the
-  // issuer's proof options. Everything cryptographic is real — the proof is
-  // verified against this service's BBS key over exactly those statements, with
-  // this request's nonce as the presentation header — but another verifier
-  // would expect a document.
+  // **THE W3C CRYPTOSUITE SINCE #1878** (Data Integrity BBS Cryptosuites
+  // v1.0, `vc_bbs.ts`): what arrives is a REVEAL DOCUMENT — the credential
+  // with only what the holder reveals — carrying an embedded bbs-2023
+  // DataIntegrityProof. This Verifier canonicalizes it, relabels its blank
+  // nodes through the proof's label map, re-hashes the mandatory statements
+  // and runs ProofVerify; the statements it reads its facts from are the
+  // ones it rebuilt, never ones a holder listed. Until #1878 it was handed
+  // the statements beside a raw BBS proof — this service's own envelope,
+  // which no other implementation makes or reads; see the legacy note below.
+  //
+  // **THE ISSUER IS ANCHORED AS BEFORE**: the proof's verificationMethod
+  // must name one of this realm's live BBS key generations — `<did>#<kid>`
+  // or `<issuer>/bbs/keys/<kid>` — and the proof is checked under THAT key
+  // (STS-VC-0184 otherwise). A third party's bbs-2023 credential is not a
+  // credential of an issuer this Verifier trusts.
+  //
+  // **THE NONCE IS THE PRESENTATION HEADER** of a bare derived proof: it is
+  // what binds the proof to this request, so it must equal the nonce. Inside
+  // a Verifiable Presentation the VP's own proof binds `challenge` = nonce
+  // and `domain` = the client (OpenID4VP 1.0 B.1.3.2.5), and the header may
+  // be the nonce or empty — never anything else (STS-VC-0185).
   //
   // ---------------------------------------------------------------------------
   // **AND THE HOLDER (#38's follow-ups).** A derived proof is not a holder
-  // binding: bbs-2023 has no holder secret, so anybody holding the base
-  // credential can derive one, and it binds the request's nonce and nothing
-  // about who derived it or for whom. OpenID4VP B.1.3.2.5 says what does: a
-  // W3C VerifiablePresentation whose Data Integrity proof carries
+  // binding: bbs-2023's baseline has no holder secret, so anybody holding the
+  // base credential can derive one, and it binds the request's nonce and
+  // nothing about who derived it or for whom. OpenID4VP B.1.3.2.5 says what
+  // does: a W3C VerifiablePresentation whose Data Integrity proof carries
   // `challenge` = the nonce and `domain` = the Client Identifier (or
   // `origin:<origin>` over the Digital Credentials API). So the presentation
   // may arrive in either of two shapes:
   //
-  //   * the bare envelope above — `{ cryptosuite, proof, disclosedStatements,
-  //     disclosedIndexes, proofOptions }` — which the bar door still accepts,
-  //     and whose query says `require_cryptographic_holder_binding: false`;
+  //   * the bare reveal document, which the bar door still accepts, and
+  //     whose query says `require_cryptographic_holder_binding: false`;
   //   * `{ @context, type: [VerifiablePresentation], holder?,
-  //     verifiableCredential: [<that envelope>], proof: <Data Integrity> }`,
-  //     whose proof `vc_data_integrity.ts` verifies — over the whole
-  //     presentation, envelope included — and whose key must be the one the
-  //     disclosed `credentialSubject` statement names as a did:jwk.
+  //     verifiableCredential: [<that reveal document>], proof: <Data
+  //     Integrity> }`, whose proof `vc_data_integrity.ts` verifies — over
+  //     the whole presentation, credential included — and whose key must be
+  //     the one the revealed `credentialSubject` names as a did:jwk.
   //
   // A sign-in (`ctx.requireHolderBinding`) accepts only the second, and also
-  // needs the credential's `issuer`, `validFrom` and `validUntil` statements
-  // disclosed: the issuer because this service's BBS key is one for every
-  // realm (so the derived proof alone does not say which realm issued it),
-  // and the window because it is what tells a presented credential apart
-  // from its siblings in the sign-in register (`vc_issued.ts`) and whether it
-  // is still valid.
+  // needs the credential's `issuer`, `validFrom` and `validUntil` revealed
+  // (mandatory by default since #1878, `oid4vci.ldpVcMandatoryPointers`):
+  // the issuer because the derived proof alone does not say which realm's
+  // identifier issued it, and the window because it is what tells a
+  // presented credential apart from its siblings in the sign-in register
+  // (`vc_issued.ts`) and whether it is still valid.
+  //
+  // ---------------------------------------------------------------------------
+  // **THE PRE-1.1 FORMAT, REFUSED UNLESS A REALM ASKS FOR IT (#1878, rcbj's
+  // decision).** `{ cryptosuite, proof, disclosedStatements,
+  // disclosedIndexes, proofOptions }` is what iya-sts 1.0 had a holder
+  // present. By default a realm accepts only W3C bbs-2023, and that envelope
+  // is refused BY NAME as the pre-W3C, non-standard format (STS-VC-0181),
+  // whatever it is labelled — a 1.0 wallet labels it `bbs-2023`. A realm
+  // with `oid4vc.bbs2023LegacyFormat` on issues that format and reads it
+  // back, whichever label the wallet put on it (the envelope's shape is
+  // unambiguous), logging each acceptance (STS-VC-0182).
   // ---------------------------------------------------------------------------
   private async verifyLdpVc(presentation: any, record: any, ctx?: any) {
-    const { log, bbsKeyPair, vcDataIntegrity, nowSec } = this.deps;
+    const { log, vcDataIntegrity, nowSec } = this.deps;
     log.debug("Entering VcVerifier.verifyLdpVc().");
     const context = ctx || {};
     const expectedAud = String(context.aud || record.clientId);
@@ -3035,9 +3066,8 @@ class VcVerifier {
       log.debug("Caught in VcVerifier.verifyLdpVc(): " +
                 ((e && e.message) || e));
       this.vpCheck(checks, 'Format', false, 'an ldp_vc presentation here is ' +
-                   'a JSON ' +
-        'object carrying the derived proof and the statements it discloses; ' +
-        'this is not JSON: ' + e.message);
+        'a bbs-2023 reveal document, or a VerifiablePresentation carrying ' +
+        'one; this is not JSON: ' + e.message);
       log.debug("Leaving VcVerifier.verifyLdpVc().");
       return result;
     }
@@ -3045,57 +3075,16 @@ class VcVerifier {
       .indexOf('VerifiablePresentation') >= 0 ? payload : null;
     const envelope = vp ? [].concat(vp.verifiableCredential || [])[0]
                         : payload;
-    if (vp && (!envelope || typeof envelope !== 'object')) {
-      this.vpCheck(checks, 'Format', false, 'the VerifiablePresentation ' +
-                   'carries no derived credential in verifiableCredential.');
-      log.debug("Leaving VcVerifier.verifyLdpVc(). An empty presentation.");
+    if (!envelope || typeof envelope !== 'object' ||
+        Array.isArray(envelope)) {
+      this.vpCheck(checks, 'Format', false, vp
+        ? 'the VerifiablePresentation carries no derived credential in ' +
+          'verifiableCredential.'
+        : 'an ldp_vc presentation here is a bbs-2023 reveal document, or ' +
+          'a VerifiablePresentation carrying one.');
+      log.debug("Leaving VcVerifier.verifyLdpVc(). Nothing to verify.");
       return result;
     }
-    const proofBytes = envelope && typeof envelope.proof === 'string' ?
-      bbs2023.b64uToBytes(envelope.proof) : null;
-    const statements = [].concat((envelope && envelope.disclosedStatements) ||
-                                 []);
-    const indexes = [].concat((envelope && envelope.disclosedIndexes) || []);
-    if (!proofBytes || !statements.length ||
-        statements.length !== indexes.length) {
-      this.vpCheck(checks, 'Format', false,
-        'expected proof, disclosedStatements and disclosedIndexes of equal ' +
-        'length; got ' +
-        statements.length + ' statement(s) and ' + indexes.length +
-        ' index(es).');
-      log.debug("Leaving VcVerifier.verifyLdpVc().");
-      return result;
-    }
-    this.vpCheck(checks, 'Format', true,
-      'a bbs-2023 derived proof disclosing ' + statements.length + ' ' +
-      'canonical statement(s)' + (vp ? ', inside a VerifiablePresentation.' :
-                                       ', with no presentation around it.'));
-
-    // EVERY LIVE GENERATION OF THE REALM'S BBS KEY (#49 P5): the one the
-    // proof options name first, then the rest — a credential issued before a
-    // rotation still verifies through its grace.
-    const generations = this.deps.bbsGenerations
-      ? await this.deps.bbsGenerations()
-      : [{ kid: '', publicKey: (await bbsKeyPair()).publicKey }];
-    const named = String((envelope.proofOptions || {}).verificationMethod ||
-                         '');
-    generations.sort(function (a: any, b: any): number {
-      return (named && named.indexOf(b.kid) >= 0 ? 1 : 0) -
-             (named && named.indexOf(a.kid) >= 0 ? 1 : 0);
-    });
-    let header;
-    try {
-      header = await bbs2023.headerFor(envelope.proofOptions || {});
-    } catch (e) {
-      log.debug("Caught in VcVerifier.verifyLdpVc(): " +
-                ((e && e.message) || e));
-      this.vpCheck(checks, 'Proof options', false,
-              'could not be canonicalized: ' + e.message);
-      log.debug("Leaving VcVerifier.verifyLdpVc().");
-      return result;
-    }
-    this.vpCheck(checks, 'Proof options', true, 'canonicalized to the ' +
-                 'header the base proof was bound to.');
 
     // bbs-2023 is a Data Integrity suite like any other (#1368), and is refused
     // before any key operation.
@@ -3106,25 +3095,33 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.verifyLdpVc(). Not accepted here.");
       return result;
     }
-    let ok = false;
-    for (let g = 0; g < generations.length && !ok; g++) {
-      ok = await bbs2023.verifyDerived(generations[g].publicKey, proofBytes,
-        header, Buffer.from(String(record.nonce), 'utf8'), statements,
-        indexes);
-    }
-    this.vpCheck(checks, 'Derived proof', ok, ok
-      ? "verifies against this issuer's BBS key over exactly the statements " +
-        "disclosed, and against this request's nonce — so it was derived for " +
-        "THIS request and cannot be replayed."
-      : 'does not verify. Either it was not derived from a credential this ' +
-        'issuer signed, the statements do not match what was proved, or it ' +
-        'was derived against a different nonce.');
 
-    statements.forEach((line, i) => {
-      result.claims['statement ' + (indexes[i] + 1)] = String(line).trim();
+    // EVERY LIVE GENERATION OF THE REALM'S BBS KEY (#49 P5): a credential
+    // issued before a rotation still verifies through its grace.
+    const generations = this.deps.bbsGenerations
+      ? await this.deps.bbsGenerations()
+      : [{ kid: '', publicKey: (await this.deps.bbsKeyPair()).publicKey }];
+    const isLegacy = Array.isArray(envelope.disclosedStatements) ||
+      Array.isArray(envelope.disclosedIndexes) ||
+      typeof envelope.proof === 'string';
+    const verified = isLegacy
+      ? await this.verifyLegacyBbsEnvelope(envelope, record, generations,
+                                          checks)
+      : await this.verifyBbsRevealDocument(envelope, record, generations,
+                                          checks, !!vp);
+    if (!verified) {
+      log.debug("Leaving VcVerifier.verifyLdpVc(). Not verified.");
+      return result;
+    }
+    const statements: string[] = verified.statements;
+    const numbers: number[] = verified.numbers || statements.map((l, i) => {
+      return i + 1;
     });
-    result.disclosed = indexes.map((i) => {
-      return 'statement ' + (i + 1);
+    statements.forEach((line, i) => {
+      result.claims['statement ' + numbers[i]] = String(line).trim();
+    });
+    result.disclosed = numbers.map((n) => {
+      return 'statement ' + n;
     });
 
     // What the disclosed statements say about the credential itself.
@@ -3213,6 +3210,184 @@ class VcVerifier {
     log.debug("Leaving VcVerifier.verifyLdpVc(). " +
               (result.ok ? 'accepted' : 'REFUSED'));
     return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A W3C bbs-2023 REVEAL DOCUMENT (#1878): the issuer key its proof names,
+  // the derived proof under that key, and the presentation header. Answers
+  // `{ statements }` — the canonical N-Quads that verified — or null, the
+  // reason in `checks`.
+  // ---------------------------------------------------------------------------
+  private async verifyBbsRevealDocument(document: any, record: any,
+                                        generations: any[], checks: any[],
+                                        inPresentation: boolean):
+    Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.verifyBbsRevealDocument().");
+    const proof = document.proof && typeof document.proof === 'object'
+      ? document.proof : {};
+    if (proof.type !== 'DataIntegrityProof' ||
+        proof.cryptosuite !== vcBbs.CRYPTOSUITE) {
+      this.vpCheck(checks, 'Format', false, 'an ldp_vc presentation here ' +
+        'is a credential with an embedded bbs-2023 DataIntegrityProof; this ' +
+        'one\'s proof is ' + JSON.stringify([proof.type || null,
+                                             proof.cryptosuite || null]) +
+        '.');
+      log.debug("Leaving VcVerifier.verifyBbsRevealDocument(). Not one.");
+      return null;
+    }
+    this.vpCheck(checks, 'Format', true, 'a bbs-2023 reveal document (W3C ' +
+      'Data Integrity BBS Cryptosuites v1.0)' + (inPresentation
+        ? ', inside a VerifiablePresentation.'
+        : ', with no presentation around it.'));
+    // THE ISSUER KEY, by the kid the verification method names.
+    const method = String(proof.verificationMethod || '');
+    const key = generations.filter(function (g: any): boolean {
+      return !!g.kid && (method.endsWith('#' + g.kid) ||
+                         method.endsWith('/bbs/keys/' + g.kid));
+    })[0];
+    if (!key) {
+      log.warn(errorCodes.tag('STS-VC-0184') + 'a bbs-2023 derived proof ' +
+               'names the verification method "' + method.slice(0, 200) +
+               '", which is no BBS key this realm publishes.');
+      this.vpCheck(checks, 'Issuer key', false, 'the verificationMethod "' +
+        method + '" is none of this realm\'s BBS keys, so no issuer this ' +
+        'Verifier trusts stands behind the proof.');
+      log.debug("Leaving VcVerifier.verifyBbsRevealDocument(). No key.");
+      return null;
+    }
+    this.vpCheck(checks, 'Issuer key', true, 'the verificationMethod is ' +
+      'this realm\'s BBS key ' + key.kid + '.');
+    const verdict = await vcBbs.verifyDerivedProof(document, key.publicKey);
+    if (!verdict.ok) {
+      log.warn(errorCodes.tag('STS-VC-0186') + 'a bbs-2023 derived proof ' +
+               'did not verify: ' + verdict.detail);
+    }
+    this.vpCheck(checks, 'Derived proof', !!verdict.ok, verdict.ok
+      ? "verifies against this issuer's BBS key over the mandatory " +
+        "statements and exactly the ones revealed: " + verdict.detail
+      : 'does not verify: ' + verdict.detail);
+    if (!verdict.ok) {
+      log.debug("Leaving VcVerifier.verifyBbsRevealDocument(). Refused.");
+      return null;
+    }
+    // THE PRESENTATION HEADER, which is this request's nonce.
+    const header = Buffer.from(verdict.presentationHeader || []);
+    const nonce = Buffer.from(String(record.nonce), 'utf8');
+    const headerOk = header.equals(nonce) ||
+      (inPresentation && header.length === 0);
+    if (!headerOk) {
+      log.warn(errorCodes.tag('STS-VC-0185') + 'a bbs-2023 derived proof ' +
+               'carries a presentation header that is not this request\'s ' +
+               'nonce.');
+    }
+    this.vpCheck(checks, 'Presentation header', headerOk, headerOk
+      ? (header.length
+        ? "is this request's nonce, so the proof was derived for THIS " +
+          "request and cannot be replayed."
+        : "is empty; the presentation's own proof binds this request's " +
+          "nonce as its challenge.")
+      : (inPresentation
+        ? "is neither this request's nonce nor empty."
+        : "is not this request's nonce, which a derived proof presented " +
+          "on its own must carry: it was derived for another request."));
+    if (!headerOk) {
+      log.debug("Leaving VcVerifier.verifyBbsRevealDocument(). Header.");
+      return null;
+    }
+    log.debug("Leaving VcVerifier.verifyBbsRevealDocument(). " +
+              verdict.statements.length + " statement(s).");
+    return { statements: verdict.statements };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PRE-1.1 ENVELOPE (#1878; `verifyLdpVc()` argues it): refused unless
+  // this realm has `oid4vc.bbs2023LegacyFormat` on, and then checked exactly
+  // as 1.0 checked it, this request's nonce as the presentation header.
+  // Answers `{ statements, numbers }` or null.
+  // ---------------------------------------------------------------------------
+  private async verifyLegacyBbsEnvelope(envelope: any, record: any,
+                                        generations: any[], checks: any[]):
+    Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.verifyLegacyBbsEnvelope().");
+    if (!config.value('oid4vc.bbs2023LegacyFormat')) {
+      log.warn(errorCodes.tag('STS-VC-0181') + 'an ldp_vc presentation in ' +
+               'the pre-W3C bbs-2023 format was refused: this realm ' +
+               'accepts only W3C bbs-2023 (oid4vc.bbs2023LegacyFormat is ' +
+               'off).');
+      this.vpCheck(checks, 'Format', false, 'this is the pre-W3C, ' +
+        'non-standard bbs-2023 format iya-sts 1.0 used (disclosed ' +
+        'statements beside a raw BBS proof, here labelled "' +
+        String(envelope.cryptosuite || '').slice(0, 40) + '"). This realm ' +
+        'accepts only W3C bbs-2023 (W3C Data Integrity BBS Cryptosuites ' +
+        'v1.0): a reveal document with an embedded proof, derived from a ' +
+        'credential issued since 1.1.0. The holder needs a new credential.');
+      log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope(). Refused.");
+      return null;
+    }
+    const proofBytes = typeof envelope.proof === 'string' ?
+      bbs2023.b64uToBytes(envelope.proof) : null;
+    const statements = [].concat(envelope.disclosedStatements || []);
+    const indexes = [].concat(envelope.disclosedIndexes || []);
+    if (!proofBytes || !statements.length ||
+        statements.length !== indexes.length) {
+      this.vpCheck(checks, 'Format', false,
+        'expected proof, disclosedStatements and disclosedIndexes of equal ' +
+        'length; got ' + statements.length + ' statement(s) and ' +
+        indexes.length + ' index(es).');
+      log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope(). Malformed.");
+      return null;
+    }
+    log.warn(errorCodes.tag('STS-VC-0182') + 'an ldp_vc presentation in ' +
+             'the pre-W3C bbs-2023 format (' + bbs2023.LEGACY_CRYPTOSUITE +
+             ') is being read because oid4vc.bbs2023LegacyFormat is on in ' +
+             'this realm.');
+    this.vpCheck(checks, 'Format', true, 'the pre-W3C bbs-2023 format (' +
+      bbs2023.LEGACY_CRYPTOSUITE + ', not the W3C cryptosuite), disclosing ' +
+      statements.length + ' canonical statement(s); read because this ' +
+      'realm has oid4vc.bbs2023LegacyFormat on.');
+    const named = String((envelope.proofOptions || {}).verificationMethod ||
+                         '');
+    const ordered = generations.slice().sort(function (a: any,
+                                                       b: any): number {
+      return (named && named.indexOf(b.kid) >= 0 ? 1 : 0) -
+             (named && named.indexOf(a.kid) >= 0 ? 1 : 0);
+    });
+    let header;
+    try {
+      header = await bbs2023.legacyHeaderFor(envelope.proofOptions || {});
+    } catch (e) {
+      log.debug("Caught in VcVerifier.verifyLegacyBbsEnvelope(): " +
+                ((e && e.message) || e));
+      this.vpCheck(checks, 'Proof options', false,
+              'could not be canonicalized: ' + e.message);
+      log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope().");
+      return null;
+    }
+    let ok = false;
+    for (let g = 0; g < ordered.length && !ok; g++) {
+      ok = await bbs2023.legacyVerifyDerived(ordered[g].publicKey,
+        proofBytes, header, Buffer.from(String(record.nonce), 'utf8'),
+        statements, indexes);
+    }
+    this.vpCheck(checks, 'Derived proof', ok, ok
+      ? "verifies against this issuer's BBS key over exactly the statements " +
+        "disclosed, and against this request's nonce."
+      : 'does not verify. Either it was not derived from a credential this ' +
+        'issuer signed, the statements do not match what was proved, or it ' +
+        'was derived against a different nonce.');
+    if (!ok) {
+      log.warn(errorCodes.tag('STS-VC-0186') + 'a pre-1.1 bbs-2023 ' +
+               'envelope did not verify.');
+      log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope(). Refused.");
+      return null;
+    }
+    log.debug("Leaving VcVerifier.verifyLegacyBbsEnvelope().");
+    return { statements: statements,
+             numbers: indexes.map(function (i: any): number {
+               return Number(i) + 1;
+             }) };
   }
 
   // ---------------------------------------------------------------------------

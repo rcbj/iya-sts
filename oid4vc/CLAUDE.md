@@ -1775,11 +1775,93 @@ its grace outlasts every credential lifetime (`common/signing_rotation.ts`).
 which after a rotation would have resolved to a key the credential was not
 signed with. The DID document and `/bbs/keys/<kid>` publish every live
 generation; `/bbs/keys/1` is kept as the name of the current one. The
-Verifier tries the generation the proof options name first, then the rest.
+Verifier checks a W3C derived proof under the generation its
+`verificationMethod` names by kid, and under no other (STS-VC-0184, #1878);
+it tries the pre-1.1 envelope against the named one first, then the rest.
 **Realms no longer share one BBS key**, which the header note in
 `vc_verifier.ts` about the issuer being disclosed already assumed was not
 needed to tell them apart.
 
+
+---
+
+## bbs-2023 IS W3C's CRYPTOSUITE (#1878, 2026-11-17, rcbj: "Bad to have things that are not spec compliant")
+
+**UNTIL 1.1.0 THIS SERVICE'S `bbs-2023` WAS ITS OWN FORMAT under the W3C
+name**: every canonical statement a BBS message, the header the proof
+options' N-Quads, the proofValue the raw signature, and a presentation an
+envelope `{ cryptosuite, proof, disclosedStatements, disclosedIndexes,
+proofOptions }` beside a raw BBS proof. Nothing else could verify what it
+issued, and it could verify nothing else; every test was a round trip through
+its own code, which is exactly how a private format passes.
+id-proto-debugger's wallet and Verifier had copied it (rcbj/id-proto-debugger
+#470, B1) and move with it.
+
+**`vc_bbs.ts` IS THE CRYPTOSUITE NOW**, W3C Data Integrity BBS Cryptosuites
+v1.0 (CRD 2026-09-10), baseline, step for step: Create Base Proof (3.3.1-2,
+serialized 3.2.1, `0xd95d02`), Add Derived Proof (3.3.3, 3.2.3, `0xd95d03`),
+Verify Derived Proof (3.3.4-5). Its generic steps — skolemize, selectJsonLd,
+canonicalize-and-group, label replacement — are `vc_ecdsa_sd.ts`'s (which
+exports two more of them for it); what is bbs-2023's own is the SHUFFLED
+label map (`b` + the rank of each label's HMAC), the header (proofHash ‖
+mandatoryHash), the two CBOR encodings (the label map compressed to
+integers) and the BBS calls, which are `common/crypto.js`'s door to
+`common/crypto_impl/bbs2023.js` (rule 3r). That file keeps the primitives,
+the Multikey and, READ ONLY, the old format. The at-risk features (headers
+0x04-0x09) are refused by name, not misread.
+
+* **The issuer** (`buildLdpVc()`) signs with mandatory pointers per
+  configuration (`oid4vci.ldpVcMandatoryPointers`,
+  `oid4vci.ldpVcDidMandatoryPointers`, `/issuer,/type,/validFrom,/validUntil`
+  by default — the three statements a sign-in needs, made mandatory rather
+  than left to the holder) and verifies its own base proof before handing it
+  out (`verifyBaseProof()`, which no section defines because no verifier is
+  ever given one). A pointer that names nothing refuses the issuance
+  (STS-VC-0180). **No `created`** (the privacy considerations; Digital
+  Bazaar drops it too) — so two issuances are told apart by `validFrom`, and
+  no two proofs are alike anyway: each draws its own HMAC key.
+* **The key** is vc-di-bbs 2.1.1's Multikey (`z`, base58btc, `0xeb01`,
+  96 bytes — always `zUC7…`), at `/bbs/keys/<kid>` and in the DID document.
+  It was `u` and the raw bytes.
+* **The Verifier** (`verifyLdpVc()` → `verifyBbsRevealDocument()`) reads its
+  facts from the statements IT rebuilt from the reveal document, never from
+  a list the holder sent. A bare derived proof's presentation header must be
+  the nonce (its only replay protection); inside a VP — whose own proof binds
+  challenge and domain, B.1.3.2.5 — it may be the nonce or empty, never
+  anything else (STS-VC-0185).
+
+**THE TRANSITION IS rcbj's DECISION (#1878, 2026-11-17).** By default a
+realm issues and accepts only W3C bbs-2023, and the old envelope is refused
+BY NAME as the pre-W3C, non-standard format (STS-VC-0181), whatever it is
+labelled (a 1.0 wallet labels it `bbs-2023`). Credentials issued by 1.0
+cannot be presented; their holders need a reissue. **`oid4vc.bbs2023LegacyFormat`**
+(per realm, off; "add a flag to use the old format per realm") makes a realm
+USE the old format, which here means BOTH halves: it ISSUES `ldp_vc` in it
+(`bbs2023.legacyIssue()`, self-checked by `legacyVerifyBase()`, STS-VC-0183
+per credential) and ACCEPTS the envelope (`verifyLegacyBbsEnvelope()`,
+STS-VC-0182 per presentation), W3C presentations still accepted beside it.
+Both, because the only reason for the flag is a wallet that speaks only the
+old format, and such a wallet needs a credential it can derive from as much
+as a Verifier that reads what it derives; verify-only would serve nobody
+once the 1.0 credentials (30 days by default) expired. **The old format is
+never named `bbs-2023`**: the credential's proof says `iya-bbs-2023-legacy`,
+and so do the issuer metadata's `credential_signing_alg_values_supported`
+(`vciSigningAlgsFor()`) and the Verifier's `cryptosuite_values` (beside
+`bbs-2023`). A 1.0 wallet that checks the proof's label would not take such a
+credential: the price of that rule, and named in the flag's description.
+
+**THE TESTS ARE AGAINST WHAT NOBODY HERE WROTE** (`tests/vc_bbs2023.js`):
+the specification's TestVectors, byte for byte for everything but the BBS
+proof itself (randomized; the vectors' mocked random scalars could not be
+reproduced through `@digitalbazaar/bbs-signatures`' mock hook with either
+DST the drafts name, so B10 re-serializes the vector's own BBS proof with
+this file's label map and indexes and compares the whole proofValue), and
+Digital Bazaar's `@digitalbazaar/bbs-2023-cryptosuite` both ways — pinned by
+w3c/vc-di-bbs-test-suite's lockfile, in the tests image only. Two vector
+quirks are worth knowing: the `prc` set's `prCredUnsigned.json` at the top of
+TestVectors/ was edited after its intermediate values were made, so the test
+takes the unsigned document from `prc/addSignedSDBase.json`; and the
+vectors' base proofs carry `created`, so the test passes it.
 
 ---
 

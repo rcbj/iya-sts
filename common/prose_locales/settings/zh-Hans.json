@@ -6295,6 +6295,22 @@
     "en": "de851f5fe529cc0b",
     "text": "vc_did.js 在 require 时读取一次，颁发者元数据由其读到的内容构建"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "ldp_vc 强制 JSON 指针"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "IdentityCredentialLdpVc 凭证的每个派生证明都必须披露的陈述的 JSON 指针（RFC 6901）：bbs-2023（W3C Data Integrity BBS Cryptosuites v1.0）将它们哈希进签名头，因此持有者不能省略其中任何一个。默认值指明签发者、类型和有效期。不是 JSON 指针、或在凭证中不指向任何内容的指针会使签发被拒绝（STS-VC-0180）。更改适用于下一个签发的凭证。"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "ldp_vc（did:web）强制 JSON 指针"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "对 IdentityCredentialLdpVcDid 配置同样适用，该配置的签发者以 did:web 标识自身。"
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "验证方客户端 ID"
@@ -6382,6 +6398,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "在 pre-registered、decentralized_identifier、verifier_attestation 和 openid_federation 客户端标识符前缀下，已签名请求对象所用的 JWS 签名算法（x509 前缀使用 oid4vp.x509SigningAlgorithm）。对应的领域密钥就是请求所指明的那把：在 /oauth2/jwks 中、在 DID 文档中、在自签发的 Verifier Attestation 的 cnf 中，以及在 Entity Configuration 的 openid_credential_verifier jwks 中。默认为 RS256，即此设置出现之前所有已签名请求所用的算法。后量子算法和组合算法也提供给接受它们的钱包；oid4vc.walletCompatibility 会拒绝它们，关闭 keys.postQuantumSigning 时也会拒绝。"
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "使用 1.1 之前的 bbs-2023 格式"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "使此领域以 iya-sts 1.0 所用的私有格式签发其 ldp_vc 凭证，并接受该格式的出示，供尚未迁移到 W3C bbs-2023 密码套件（W3C Data Integrity BBS Cryptosuites v1.0）的钱包使用。关闭（默认）：领域只签发和接受 W3C bbs-2023，并按名称拒绝旧格式（STS-VC-0181）。旧格式不是标准，没有其他实现能读取它，它在元数据和凭证中称为 iya-bbs-2023-legacy，绝不称为 bbs-2023。开启时仍接受 W3C 出示。以该格式签发的每个凭证以 STS-VC-0183 记录，以该格式接受的每次出示以 STS-VC-0182 记录。仅在使用此类钱包期间开启；在其开启时签发的凭证在关闭后无法出示，持有者需要新的凭证。"
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",

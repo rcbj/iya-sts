@@ -409,23 +409,21 @@ async function run(t) {
     t.equal(Buffer.from(restoredBbs.publicKey).toString('base64'),
             Buffer.from(madeBbs.publicKey).toString('base64'),
             'and it is the same key that was generated');
-    const signed = await bbs2023.issue(
-      { '@context': ['https://www.w3.org/ns/credentials/v2'],
-        type: ['VerifiableCredential'], issuer: 'did:example:issuer',
-        credentialSubject: { id: 'did:example:subject' } },
-      { verificationMethod: 'did:example:issuer#bbs',
-        created: new Date().toISOString() },
-      restoredBbs.secretKey, restoredBbs.publicKey);
-    const verified = await bbs2023.verifyBase(signed.credential,
-                                              restoredBbs.publicKey);
-    t.check(!!(verified && verified.ok),
+    const header = new TextEncoder().encode('keystore.js round trip');
+    const messages = [new TextEncoder().encode('one'),
+                      new TextEncoder().encode('two')];
+    const signature = await bbs2023.sign({
+      secretKey: restoredBbs.secretKey, publicKey: restoredBbs.publicKey,
+      header: header, messages: messages });
+    const verified = await bbs2023.verifySignature({
+      publicKey: restoredBbs.publicKey, signature: signature,
+      header: header, messages: messages });
+    t.check(!!verified,
             'AND THE RESTORED PAIR SIGNS AND VERIFIES — the halves come from ' +
             'two different places (the blob for the public, ' +
             'privateMaterialFor() for the secret), so only signing shows ' +
             'they are still a pair',
-            JSON.stringify({ ok: verified && verified.ok,
-                             statements: (verified &&
-                                          verified.statements || []).length }));
+            JSON.stringify({ ok: verified }));
 
     // -------------------------------------------------------------------
     // 3. ROTATION, which is destructive and has to be.

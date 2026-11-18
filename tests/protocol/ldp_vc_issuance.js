@@ -18,10 +18,14 @@
 //     compact-serialized string;
 //   * the issuer publishes the BBS key its proofs are made with, and the
 //     credential points at it;
-//   * the base proof actually verifies, and an edited credential does not.
+//   * the proof is the W3C bbs-2023 base proof (#1878) and the key a W3C
+//     Multikey: a proof derived from it by Digital Bazaar's implementation
+//     (bbs_w3c.js) verifies there, and one from an edited credential does
+//     not.
 //
-// tests/bbs2023_cryptosuite.js covers the cryptosuite across two
-// implementations; this covers the ISSUER endpoint and what it advertises.
+// tests/vc_bbs2023.js holds the cryptosuite to the specification's vectors
+// and to that second implementation; this covers the ISSUER endpoint and
+// what it advertises.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
@@ -64,6 +68,8 @@ const stsSuite = paths.requireSharedModule(
 // The wallet's own half of the exchange, loaded so this test covers what the
 // PAGE does with the response and not only what the issuer sends. Both are
 // copied flat into the tests image, hence the two candidate paths.
+// Digital Bazaar's bbs-2023, the second opinion on what was issued (#1878).
+const bbsW3c = require("./bbs_w3c.js");
 const wallet = paths.requireSharedModule(
   [path.join(__dirname, "vci_wallet.js"), path.join(ROOT, "client", "src",
    "vci_wallet.js")],
@@ -130,8 +136,12 @@ async function test() {
     "the proof is EMBEDDED in the credential.");
   assert.strictEqual(cred.proof.cryptosuite, "bbs-2023",
                      "and names the cryptosuite.");
-  assert.ok(/^u/.test(cred.proof.proofValue),
-            "proofValue is multibase base64url ('u').");
+  assert.ok(/^u2V0C/.test(cred.proof.proofValue),
+            "proofValue is multibase base64url ('u') of a bbs-2023 BASE " +
+            "proof, whose header is 0xd9 0x5d 0x02 (vc-di-bbs 3.2.1).");
+  assert.strictEqual(cred.proof.created, undefined,
+    "and carries no `created`, which vc-di-bbs's privacy considerations " +
+    "name as shrinking the anonymity set.");
   assert.ok(cred.proof.verificationMethod, "and says where its key is.");
   assert.ok(cred.credentialSubject && cred.credentialSubject.id,
     "the subject is named — for this format by id, not by a cnf key.");
@@ -145,27 +155,30 @@ async function test() {
         JSON.stringify(km).slice(0, 160));
   assert.strictEqual(km.cryptosuite, "bbs-2023",
                      "and name the cryptosuite it is for.");
-    assert.ok(/^u/.test(km.publicKeyMultibase),
-    "the key should be multibase base64url, which begins with 'u'.");
-  const pk = stsSuite.multibaseToBytes(km.publicKeyMultibase);
+  assert.ok(/^zUC7/.test(km.publicKeyMultibase),
+    "the key is a bls12_381-g2-pub Multikey — base58btc ('z') of 0xeb01 and " +
+        "the 96-byte key, which always begins zUC7 (vc-di-bbs 2.1.1). Got: " +
+        String(km.publicKeyMultibase).slice(0, 12));
+  const pk = stsSuite.publicKeyFromMultibase(km.publicKeyMultibase);
   assert.strictEqual(pk.length, 96,
-    "a BLS12-381 G2 public key is 96 compressed bytes. A short key here " +
-        "means the multibase prefix " +
-    "was stripped twice — a decoder that also strips it, plus a caller that " +
-        "strips it, eats a data " +
-    "character whenever the payload starts with 'u'. That is intermittent: " +
-        "it passes for most keys.");
+    "a BLS12-381 G2 public key is 96 compressed bytes.");
 
-  const verdict = await stsSuite.verifyBase(cred, pk);
-  assert.strictEqual(verdict.ok, true,
-    "the base proof must verify against the key the credential points at. If " +
-        "this fails the issuer is " +
-    "publishing a key it did not sign with.");
-  assert.ok(verdict.statements.length > 4,
-    "the credential should canonicalize to several statements; got " +
-        verdict.statements.length);
-  log.info("[verify] OK — the base proof verifies over " +
-           verdict.statements.length + " statements.");
+  const verdict = await bbsW3c.deriveAndVerify(cred, km);
+  assert.strictEqual(verdict.verified, true,
+    "a proof derived from the credential by Digital Bazaar's bbs-2023 must " +
+        "verify there against the key the credential points at. If this " +
+        "fails the issuer is not making W3C base proofs, or is publishing a " +
+        "key it did not sign with: " + verdict.errors.join("; "));
+  const revealed = verdict.derived;
+  assert.ok(revealed.issuer && revealed.validFrom && revealed.validUntil,
+    "the issuer and the validity window are MANDATORY by default " +
+        "(oid4vci.ldpVcMandatoryPointers), so a derivation that asked for " +
+        "only the subject reveals them anyway. Got: " +
+        JSON.stringify(Object.keys(revealed)));
+  assert.ok(!revealed.credentialSubject.given_name,
+    "and a claim nobody asked for stays hidden.");
+  log.info("[verify] OK — a proof derived by a second implementation " +
+           "verifies, revealing the mandatory statements and the subject.");
 
   log.info("=== What the WALLET makes of that response ===");
   // The section above proves the ISSUER is right. That is not the same as the
@@ -258,13 +271,13 @@ async function test() {
   log.info("=== An edited credential must not verify ===");
   const tampered = JSON.parse(JSON.stringify(cred));
   tampered.credentialSubject.given_name = "Mallory";
-  const tamperedVerdict = await stsSuite.verifyBase(tampered, pk);
-  assert.strictEqual(tamperedVerdict.ok, false,
-    "changing a claim must break the base proof — the control below shows " +
-        "the check is not simply " +
-    "always-false.");
-  const control = await stsSuite.verifyBase(cred, pk);
-  assert.strictEqual(control.ok, true,
+  const tamperedVerdict = await bbsW3c.deriveAndVerify(tampered, km);
+  assert.strictEqual(tamperedVerdict.verified, false,
+    "changing a claim must break the base proof — even one the derivation " +
+        "keeps hidden. The control below shows the check is not simply " +
+        "always-false.");
+  const control = await bbsW3c.deriveAndVerify(cred, km);
+  assert.strictEqual(control.verified, true,
                      "the control: the untouched credential still verifies.");
   log.info("[tamper] OK — an edited claim is refused; the control still " +
            "verifies.");

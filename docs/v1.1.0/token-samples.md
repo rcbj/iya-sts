@@ -2257,9 +2257,12 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…WrQRR1-UqEIz-Gmtg
 
 ### W3C VC with a Data Integrity proof (`ldp_vc`)
 
-VC Data Model 2.0, JSON-LD, signed with a `bbs-2023` Data Integrity proof so
-a holder can derive a selective-disclosure proof from it. The subject `id` is
-the holder's key as a `did:jwk`.
+VC Data Model 2.0, JSON-LD, signed with a `bbs-2023` base proof (W3C Data
+Integrity BBS Cryptosuites v1.0) so a holder can derive a selective-disclosure
+proof from it. The subject `id` is the holder's key as a `did:jwk`. The
+`proofValue` is cut after its prefix: a base proof is the header bytes
+`0xd9 0x5d 0x02` and the CBOR of the BBS signature, the BBS header, the public
+key, the HMAC key and the mandatory pointers.
 
 ```json
 {
@@ -2305,10 +2308,9 @@ the holder's key as a `did:jwk`.
   "proof": {
     "type": "DataIntegrityProof",
     "cryptosuite": "bbs-2023",
-    "proofPurpose": "assertionMethod",
     "verificationMethod": "https://127.0.0.1:38081/bbs/keys/bbs-urHoxY0-JItkTvDkQZ7ODM",
-    "created": "2026-09-22T20:58:09.000Z",
-    "proofValue": "ulY6hpQE-w5iRcHt3KOvIMbcbTpPB-cX7gXT7bedR_amgyOL79FwXBe2PUEL6v4MKRhm_ugm1V-yq9kPZ6n03-c4Z-V_1rLYUzQzEshX8qNk"
+    "proofPurpose": "assertionMethod",
+    "proofValue": "u2V0ChVhQ…"
   }
 }
 ```

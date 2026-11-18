@@ -106,11 +106,18 @@ section 7.3 and OpenID4VP's Key Binding rules):
 
 For **`jwt_vc_json`** the Verifiable Presentation JWT must be signed by the
 credential's `cnf` key and carry this request's `nonce`, `aud`, and a fresh
-`iat`. For **`ldp_vc`** the `bbs-2023` derived proof is verified against the
-issuer's BBS key, and, where the query asks for holder binding, a W3C
+`iat`. For **`ldp_vc`** the presentation is a W3C `bbs-2023` reveal
+document (W3C Data Integrity BBS Cryptosuites v1.0): the Verifier
+canonicalizes it, relabels it with the proof's label map, and verifies the
+derived proof against the realm's BBS key that its `verificationMethod`
+names. Presented on its own, the derived proof's presentation header must be
+the request's nonce. Where the query asks for holder binding, a W3C
 `VerifiablePresentation` around it must carry a
 Data Integrity proof (`challenge` = the nonce, `domain` = the audience) made by
-the holder's `did:jwk`. Three cryptosuites are accepted for that proof:
+the holder's `did:jwk`, and the presentation header may then be the nonce or
+empty. A presentation in the non-standard format iya-sts 1.0 used is refused
+(`STS-VC-0181`) unless the realm has `oid4vc.bbs2023LegacyFormat` on
+([Verifiable credentials](verifiable-credentials.md#credentials-issued-before-110)). Three cryptosuites are accepted for that proof:
 `ecdsa-jcs-2019`, `eddsa-jcs-2022` and `mldsa44-jcs-2024`.
 
 For an **ISO mdoc** (`mso_mdoc`, OpenID4VP Appendix B.2 and ISO/IEC 18013-5
@@ -232,7 +239,7 @@ The exemption covers a missing reference only: a credential that does name a
 status is still checked against it.
 
 An `ldp_vc` is a bbs-2023 derived proof, which discloses only what the holder
-chooses. The Verifier's DCQL query therefore asks for `credentialStatus`, and
+chooses beyond the issuer's mandatory statements. The Verifier's DCQL query therefore asks for `credentialStatus`, and
 a presentation that does not disclose it is refused (`STS-VC-0089`): every
 `ldp_vc` this realm issues carries it, so its absence means it was withheld. A
 wallet sign-in asks for it too, and reads that credential's status from the
