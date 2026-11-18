@@ -3638,6 +3638,19 @@ default realm's audit rows that NAME the removed realm. The test for a new
 module-level `Map` whose key carries a realm id is the same as for a store:
 what removes the entry when the realm goes.
 
+**AND A KEY ROW THAT LANDS AFTER THE PURGE IS NOBODY'S (2026-11-18, GitHub
+Actions run #496).** The keystore's purge deletes a realm's key-set, CA and
+data-key rows and destroys its data keys, but a process that has not yet
+heard of the removal can still finish a key-set write: the row came back,
+sealed under a destroyed key, and every later start refused with
+`STS-KEYS-0029` (the wrong-KEK refusal), so the cluster mode's restarts left
+node A down. Two doors close it, both `STS-KEYS-0199`: a process that removed
+the realm DELETES such a row when its change arrives
+(`keystore.applyStoredChange()`), and a start sets aside and deletes every
+row whose realm the store no longer holds (`storedRealmIds()`, read from
+`sts_realms` before anything is opened). A LIVE realm's row that will not
+open still refuses the start. `tests/removed_realm_key_rows.js`.
+
 ### The HTML rewrite in `app.js`, and its one honest limitation
 
 Every root-relative `href`, `action` and `src` in a `text/html` response is

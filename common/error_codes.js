@@ -3837,6 +3837,12 @@ const CODES = [
       'with the version that wrapped it, so nothing is wrapped and the ' +
       'service does not start.',
     spec: '' },
+  { code: 'STS-KEYS-0199',
+    summary: 'A stored signing-key, certificate-authority or data-key row ' +
+      'belongs to a realm that no longer exists — a write that landed ' +
+      'after the realm was removed — and was skipped and deleted rather ' +
+      'than refusing the start or kept.',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

@@ -1321,6 +1321,60 @@ function start() {
   return startPromise;
 }
 
+// The keys of `rows` whose realm the store no longer holds, or none where
+// the store cannot say which realms it holds (realms not written down, or
+// a store from before `storedRealmIds()`): then every row is read as it
+// always was.
+async function orphanRowsOf(rows) {
+  log.debug("Entering orphanRowsOf().");
+  if (typeof store.storedRealmIds !== 'function') {
+    log.debug("Leaving orphanRowsOf(). The store cannot say.");
+    return [];
+  }
+  let held = null;
+  try {
+    held = new Set((await store.storedRealmIds()) || []);
+  } catch (e) {
+    // Not fatal: the rows are then read as they always were, and a row that
+    // will not open refuses the start as it always did.
+    log.debug("Caught in orphanRowsOf(): " + ((e && e.message) || e));
+    log.debug("Leaving orphanRowsOf(). Unreadable.");
+    return [];
+  }
+  const out = (rows || []).map(function (row) {
+    return String(row.realm || '');
+  }).filter(function (rowKey) {
+    const realmId = realmOfRow(rowKey);
+    return realmId !== '' && !held.has(realmId);
+  });
+  log.debug("Leaving orphanRowsOf(). " + out.length + " row(s).");
+  return out;
+}
+
+// Deletes rows of realms that no longer exist, one at a time, each said once
+// (STS-KEYS-0199). Never throws: a row that could not be deleted is set
+// aside again at the next start.
+async function purgeOrphanRows(rowKeys, when) {
+  log.debug("Entering purgeOrphanRows(). " + rowKeys.length);
+  for (const rowKey of rowKeys) {
+    try {
+      await store.deleteKeys(rowKey);
+      log.warn(errorCodes.tag('STS-KEYS-0199') + 'keystore: the "' + rowKey +
+               '" row belongs to the "' + realmOfRow(rowKey) + '" realm, ' +
+               'which no longer exists — it was written after that realm ' +
+               'was removed, under a data key the removal destroyed — so it ' +
+               'was deleted ' + when + ' rather than read.');
+    } catch (e) {
+      log.debug("Caught in purgeOrphanRows(): " + ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-KEYS-0199') + 'keystore: the "' + rowKey +
+               '" row belongs to a realm that no longer exists and could ' +
+               'not be deleted (' + ((e && e.message) || e) + '); it is ' +
+               'set aside again at the next start.');
+    }
+  }
+  log.debug("Leaving purgeOrphanRows().");
+}
+
 async function startOnce() {
   log.debug('Entering startOnce().');
   if (!persists()) {
@@ -1375,6 +1429,21 @@ async function startOnce() {
   } catch (e) {
     throw new Error(errorCodes.tag('STS-KEYS-0028') +
                     'the stored key material could not be read: ' + e.message);
+  }
+  // A ROW OF A REALM THE STORE NO LONGER HOLDS IS NOT A WRONG KEY (2026-11-18,
+  // GitHub Actions run #496). A key-set write that landed after its realm's
+  // removal outlived the purge, sealed under a data key the purge destroyed,
+  // and every later start of every node refused below with STS-KEYS-0029:
+  // remove a realm, restart a node, and it never came back. Such a row is
+  // set aside here, before anything is opened, and deleted once the start
+  // has succeeded (STS-KEYS-0199). The refusal stays for every realm the
+  // store DOES hold: a live realm whose key will not open is still the wrong
+  // key-encryption key.
+  const orphans = await orphanRowsOf(rows);
+  if (orphans.length) {
+    rows = rows.filter(function (row) {
+      return orphans.indexOf(String(row.realm || '')) < 0;
+    });
   }
   let loaded = 0;
   let pkiLoaded = 0;
@@ -1476,6 +1545,7 @@ async function startOnce() {
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
   started = true;
+  await purgeOrphanRows(orphans, 'at this start');
   log.debug('Leaving startOnce(). ' + loaded + ' realm(s).');
   return { persisting: true, loaded: loaded, pki: pkiLoaded,
            dataKeys: deks.size, provider: secrets.describe().provider };
@@ -6138,6 +6208,21 @@ function applyStoredChange(rowKey, round) {
   log.debug("Entering applyStoredChange(). row=" + rowKey);
   const key = String(rowKey || '');
   const turn = Number(round) || 0;
+  // A ROW OF A REALM REMOVED HERE, WRITTEN BY A PROCESS THAT HAD NOT HEARD
+  // YET (2026-11-18, run #496): a key-set merge in flight on another process
+  // landed after this realm's purge, sealed under a data key the purge
+  // destroyed. Nothing can open it, nothing uses it, and a later start would
+  // have refused over it, so it is deleted here (STS-KEYS-0199). A realm
+  // defined again under the same id is accepted again, and its rows are not
+  // touched.
+  const ownerRealm = realmOfRow(key);
+  if (ownerRealm !== '' && !realms.acceptsRows(ownerRealm) && store &&
+      typeof store.deleteKeys === 'function') {
+    log.debug("Leaving applyStoredChange(). A removed realm's late row.");
+    return purgeOrphanRows([key], 'when it arrived').then(function () {
+      return { kind: 'purged', realm: ownerRealm, adopted: false };
+    });
+  }
   // A DATA-KEY ROW (#391) is a union nobody arbitrates: whatever another
   // process added is adopted, in every mode a store can be shared in.
   if (key.indexOf(DEK_ROW_PREFIX) === 0) {
