@@ -145,6 +145,7 @@ stsModeEnv()
 STS_MODE=development
 STS_PERSISTENCE_MODE=memory
 STS_MARIADB_BUFFER_POOL=128M
+STS_POSTGRES_SHARED_BUFFERS=2GB
 STS_PERSISTENCE_COORDINATE=false
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
@@ -191,6 +192,7 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
+STS_POSTGRES_SHARED_BUFFERS=2GB
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -228,6 +230,7 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=mariadb
 STS_MARIADB_BUFFER_POOL=1G
+STS_POSTGRES_SHARED_BUFFERS=2GB
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -288,6 +291,17 @@ EOF
       # realm's own JWKS missed its 10 s, and the load itself was killed at
       # its watchdog. The bound was right and stays; the overlap goes.
       #
+      # TWO RESTARTS AND A SMALLER POSTGRES CACHE (2026-11-18), for the
+      # one mode that ran its runner into swap: GitHub Actions run #468,
+      # four vCPU and 16 GB, both nodes at 5.1-5.2 GB, postgres at 2.2 GB
+      # and 6 GB of swap by the end. STS_TEST_RESTART_POINTS=2 restarts every
+      # node twice during the protocol half (tests/CLAUDE.md, *The cluster
+      # restarted during the run*), and STS_POSTGRES_SHARED_BUFFERS is 1GB
+      # where the other modes keep docker-compose.yml's 2GB (#630's, for an
+      # operator's server): the database was 179 MB after 180 realm-making
+      # jobs on a local product node, and the kernel's page cache holds
+      # what the buffers do not.
+      #
       # THE BULK SIZES ARE THE SAME IN EVERY MODE (2026-09-27, rcbj's
       # decision after the same run): 1000 people, 10 groups of 100, about a
       # fifth of the library's 5000 / 50 / 100. On the single-node mode the
@@ -301,6 +315,7 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
+STS_POSTGRES_SHARED_BUFFERS=1GB
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -335,6 +350,7 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
+STS_POSTGRES_SHARED_BUFFERS=1GB
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=portable
 STS_WORKERS_REQUEST_COUNT=3
@@ -380,6 +396,7 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
+STS_POSTGRES_SHARED_BUFFERS=2GB
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
@@ -412,6 +429,7 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
+STS_POSTGRES_SHARED_BUFFERS=2GB
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
