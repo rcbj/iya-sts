@@ -36,11 +36,16 @@
 //   E. `keys.credentialSigner=realm-key` is 1.0.0's: the general key and its
 //      certificate. A credential signed either way, and one from before the
 //      address change, is accepted by this realm's Verifier.
-//   F. THE LIVE CERTIFICATE IS NEVER ON ITS CA'S CRL (run #478): revoked by
-//      an administrator — as sts_pki_revocation revokes the first JOSE leaf
-//      by subject, which is now this one — it leaves /oauth2/jwks at once,
-//      and the next credential carries a new certificate over the same key;
-//      and after the JOSE Issuing CA is re-issued and its leaves re-certified,
+//   F. THE LIVE CERTIFICATE IS NEVER ON ITS CA'S CRL (run #478), AND A
+//      COMPROMISED KEY IS NEVER CERTIFIED AGAIN. Revoked keyCompromise — as
+//      sts_pki_revocation revokes the first JOSE leaf by subject, which is
+//      now this one — the key leaves /oauth2/jwks at once, the next
+//      credential is signed by a NEW key under a new certificate, and a
+//      credential the old key signed is refused. Revoked superseded, the
+//      same key gets a new certificate and its credentials still verify.
+//      Put on hold, the key is replaced as for a compromise, and a released
+//      hold makes its credentials verify again (it signs nothing again).
+//      After the JOSE Issuing CA is re-issued and its leaves re-certified,
 //      the certificate published is still one its CA has not revoked.
 // ===========================================================================
 
@@ -448,6 +453,7 @@ function childMain() {
                  }) };
       }
       const live = pki.certificateFor('', 'jose', 'vc-issuer:RSA');
+      const liveKid = String(live.kid || '');
       const revokedLive = revocation.revoke('', 'jose',
         { serialHex: live.serialHex, reason: 'keyCompromise',
           subject: live.subject, note: 'credential_signer_certificate F' });
@@ -466,18 +472,89 @@ function childMain() {
         ? headerOf(reissued.credential) : {};
       const reissuedLeaf = (reissuedHeader.x5c || []).length
         ? new nodeCrypto.X509Certificate(pemOf(reissuedHeader.x5c[0])) : null;
+      note(afterRevoke.leaves.every(function (one) {
+        return spkiOf(one.publicKey) !== spkiA;
+      }) && !(((await w.request('GET', '/oauth2/jwks')).json || {}).keys ||
+              []).some(function (k) {
+        return k.kid === w.inRealm(function () {
+          return m.helpers.publishedKidFor(liveKid);
+        });
+      }),
+           'F1b. a key whose certificate was revoked keyCompromise is not ' +
+           'published at all, bare or otherwise', liveKid);
       note(reissuedLeaf &&
            !revocation.isRevoked('', 'jose', reissuedLeaf.serialNumber) &&
-           spkiOf(reissuedLeaf.publicKey) === spkiA,
-           'F2. and the next credential carries a NEW certificate, not ' +
-           'revoked, over the same key',
-           (reissued.error || '') + ' ' +
-           (reissuedLeaf && reissuedLeaf.serialNumber));
+           spkiOf(reissuedLeaf.publicKey) !== spkiA &&
+           reissuedHeader.kid !== header.kid,
+           'F2. and the next credential is signed by a NEW key (never the ' +
+           'compromised one certified again), under a certificate not ' +
+           'revoked', (reissued.error || '') + ' ' + reissuedHeader.kid +
+           ' ' + (reissuedLeaf && reissuedLeaf.serialNumber));
+      const oldRefused = await presentToBarDoor(pinned.credential, holder);
+      const newAccepted = await presentToBarDoor(reissued.credential, holder);
+      note(oldRefused.status !== 200 && newAccepted.status === 200,
+           'F2b. a credential the compromised key signed is refused by ' +
+           'this realm\'s Verifier; one the new key signed is accepted',
+           oldRefused.status + ' ' + newAccepted.status);
+      const spkiB = reissuedLeaf ? spkiOf(reissuedLeaf.publicKey) : '';
       const afterIssue = await publishedCredentialLeaves();
       note(afterIssue.leaves.length > 0 && afterIssue.revoked.length === 0,
            'F3. which /oauth2/jwks publishes again',
            afterIssue.leaves.length + ' revoked=' +
            JSON.stringify(afterIssue.revoked));
+
+      // SUPERSEDED: the same key, a new certificate.
+      const liveB = pki.certificateFor('', 'jose', 'vc-issuer:RSA~1');
+      revocation.revoke('', 'jose', { serialHex: liveB && liveB.serialHex,
+        reason: 'superseded', subject: liveB && liveB.subject,
+        note: 'credential_signer_certificate F' });
+      const afterSuperseded = await w.issue('cs-alice', holder);
+      const supersededHeader = afterSuperseded.credential
+        ? headerOf(afterSuperseded.credential) : {};
+      const supersededLeaf = (supersededHeader.x5c || []).length
+        ? new nodeCrypto.X509Certificate(pemOf(supersededHeader.x5c[0]))
+        : null;
+      const stillGood = await presentToBarDoor(reissued.credential, holder);
+      note(liveB && supersededLeaf &&
+           spkiOf(supersededLeaf.publicKey) === spkiB &&
+           supersededHeader.kid === reissuedHeader.kid &&
+           !revocation.isRevoked('', 'jose', supersededLeaf.serialNumber) &&
+           stillGood.status === 200,
+           'F3b. revoked superseded, the SAME key gets a new certificate, ' +
+           'and what it signed before still verifies',
+           (liveB && liveB.serialHex) + ' -> ' +
+           (supersededLeaf && supersededLeaf.serialNumber) + ' ' +
+           stillGood.status);
+
+      // ON HOLD: replaced as for a compromise; released, trusted again.
+      const liveC = pki.certificateFor('', 'jose', 'vc-issuer:RSA~1');
+      revocation.revoke('', 'jose', { serialHex: liveC && liveC.serialHex,
+        reason: 'certificateHold', subject: liveC && liveC.subject,
+        note: 'credential_signer_certificate F' });
+      const afterHold = await w.issue('cs-alice', holder);
+      const holdHeader = afterHold.credential
+        ? headerOf(afterHold.credential) : {};
+      const heldRefused = await presentToBarDoor(reissued.credential, holder);
+      note(holdHeader.kid && holdHeader.kid !== reissuedHeader.kid &&
+           heldRefused.status !== 200,
+           'F3c. put on hold, the key signs no more — a new one does — and ' +
+           'what it signed is refused while the hold stands',
+           holdHeader.kid + ' ' + heldRefused.status);
+      const released = revocation.release('', 'jose',
+                                          liveC && liveC.serialHex);
+      const afterRelease = await presentToBarDoor(reissued.credential,
+                                                  holder);
+      const nextAfterRelease = await w.issue('cs-alice', holder);
+      const releaseHeader = nextAfterRelease.credential
+        ? headerOf(nextAfterRelease.credential) : {};
+      note(released && released.ok !== false &&
+           afterRelease.status === 200 &&
+           releaseHeader.kid === holdHeader.kid,
+           'F3d. the hold released, what the held key signed verifies ' +
+           'again, and the newer key goes on signing',
+           JSON.stringify(released && (released.errors || released.ok)) +
+           ' ' + afterRelease.status + ' ' + releaseHeader.kid);
+
       const rebuilt = await pki.reissueUseCase('', 'jose');
       const afterRebuild = await publishedCredentialLeaves();
       const rebuiltCredential = await w.issue('cs-alice', holder);

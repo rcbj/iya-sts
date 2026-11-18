@@ -5292,6 +5292,14 @@ const CODES = [
       'CA refused. It still signs; its credentials carry no x5c until it ' +
       'is certified.',
     spec: 'none: the credential is issued without x5c' },
+  { code: 'STS-PKI-0287',
+    summary: 'A realm\'s live credential-signing certificate was revoked ' +
+      'for a reason that distrusts its key (keyCompromise, cACompromise, ' +
+      'aACompromise, privilegeWithdrawn, certificateHold, unspecified or ' +
+      'an unknown reason), so credentials are signed by a new key of the ' +
+      'family from now on and the old key is neither published nor ' +
+      'accepted while that revocation stands (#1880).',
+    spec: 'none: the credential is issued under the new key' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

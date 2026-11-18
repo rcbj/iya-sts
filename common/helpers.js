@@ -6074,7 +6074,8 @@ function credentialSignerForAsync(alg, opts) {
 function credentialPublishedJwks(keys) {
   log.debug("Entering credentialPublishedJwks().");
   const set = keys || stsKeysFor();
-  const out = credentialSigner.membersOf(set)
+  // Not a key a revocation distrusts (credential_signer.js, trustOf()).
+  const out = credentialSigner.trustedMembersOf(set)
     .map(function (one) {
       const jwk = Object.assign({}, one.publicJwk);
       // Never a REVOKED certificate (#1880's follow-up, run #478): see

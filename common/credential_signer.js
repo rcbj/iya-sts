@@ -501,6 +501,142 @@ function membersOf(keys) {
   return own.concat(extra);
 }
 
+// ---------------------------------------------------------------------------
+// GENERATIONS, AND A KEY THE REALM NO LONGER TRUSTS (#1880's follow-up).
+//
+// A key family's first key is in slot `<family>` (`RSA`, `ES256`, ...), and
+// each key made after it in `<family>~<n>`. A row is never changed once
+// written, so `keystore.decideKeys()`'s join BY SLOT keeps every generation
+// on every process and node, and "which key signs" is a reading, not a
+// write: the HIGHEST generation of the family. The others are RETIRED: they
+// sign nothing, and are published and accepted for the credentials they
+// signed while their certificate's revocation status allows it.
+//
+// **WHAT A REVOCATION OF THE LIVE CERTIFICATE MEANS FOR ITS KEY.** RFC 5280
+// section 5.3.1's reasons split in two:
+//
+//   * `superseded`, `affiliationChanged` and `cessationOfOperation` say the
+//     CERTIFICATE is no longer wanted, not that the key is bad, so the key is
+//     certified again (`ensureCertificate()`, the rule
+//     `pki.heldCertificateCurrent()` applies to a registered key);
+//   * every other reason — `keyCompromise`, `cACompromise`, `aACompromise`,
+//     `privilegeWithdrawn`, `unspecified`, and a reason this table does not
+//     know — DISTRUSTS THE KEY. Certifying it again would vouch for a key
+//     somebody said must not be vouched for, so the next credential is
+//     signed by a NEW key of the family, made under the same cluster claim,
+//     and the distrusted one is neither published nor accepted.
+//   * `certificateHold` distrusts the key too, for as long as the hold
+//     stands. A hold is how an operator suspends trust while something is
+//     looked into (RFC 5280 section 5.3.1: "temporarily invalid"); certifying
+//     the same key again at once would make the hold mean nothing. So it
+//     rotates as a compromise does, and a hold RELEASED puts the old key back
+//     among the verifiers — it signs nothing again, because a newer
+//     generation exists.
+//
+// Only the certificate the slot holds now is asked. A displaced certificate
+// over the same key, revoked later, is not seen here.
+// ---------------------------------------------------------------------------
+/** The revocation reasons that leave a credential signer's key trusted. */
+const RECERTIFIABLE_REASONS = ['superseded', 'affiliationChanged',
+                               'cessationOfOperation'];
+
+/**
+ * The key family a credential signer's slot belongs to.
+ *
+ * @param slot - a slot, `<family>` or `<family>~<n>`
+ * @returns the family's slot
+ */
+function familySlotOf(slot) {
+  log.debug("Entering familySlotOf().");
+  log.debug("Leaving familySlotOf().");
+  return String(slot || '').split('~')[0];
+}
+
+/**
+ * The generation of a credential signer's slot: 0 for `<family>`.
+ *
+ * @param slot - a slot
+ * @returns the generation
+ */
+function generationOf(slot) {
+  log.debug("Entering generationOf().");
+  const n = Number(String(slot || '').split('~')[1]);
+  log.debug("Leaving generationOf().");
+  return n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * The member that signs for a key family: its highest generation.
+ *
+ * @param keys - the realm's key set
+ * @param familySlot - the family's slot
+ * @returns the member, or null where the family has none
+ */
+function currentIn(keys, familySlot) {
+  log.debug("Entering currentIn(). " + familySlot);
+  let found = null;
+  membersOf(keys).forEach(function (one) {
+    if (familySlotOf(one.slot) === familySlot &&
+        (!found || generationOf(one.slot) > generationOf(found.slot))) {
+      found = one;
+    }
+  });
+  log.debug("Leaving currentIn(). " + (found ? found.slot : 'None.'));
+  return found;
+}
+
+/**
+ * Whether a credential signer's key is trusted, by the revocation status of
+ * the certificate its slot holds: `ok`, `recertify` (revoked for a reason
+ * that leaves the key trusted) or `distrusted`.
+ *
+ * @param realmId - the realm
+ * @param member - the credential signer
+ * @returns `{ state, reason }`
+ */
+function trustOf(realmId, member) {
+  log.debug("Entering trustOf(). " + member.slot);
+  let held = null;
+  let entry = null;
+  try {
+    held = require('./pki').certificateFor(realmId, 'jose',
+                                           pkiSlotOf(member.slot));
+    entry = held && held.serialHex
+      ? require('./pki_revocation').isRevoked(realmId, 'jose',
+                                              held.serialHex)
+      : null;
+  } catch (e) {
+    log.debug("Caught in trustOf(): " + ((e && e.message) || e));
+    entry = null;
+  }
+  if (!entry) {
+    log.debug("Leaving trustOf(). ok");
+    return { state: 'ok', reason: '' };
+  }
+  const reason = String(entry.reason || 'unspecified');
+  const state = RECERTIFIABLE_REASONS.indexOf(reason) >= 0 ? 'recertify'
+                                                          : 'distrusted';
+  log.debug("Leaving trustOf(). " + state + " (" + reason + ")");
+  return { state: state, reason: reason };
+}
+
+/**
+ * The credential signers this realm still trusts: every generation whose
+ * key no revocation distrusts — what is published and accepted.
+ *
+ * @param keys - the realm's key set
+ * @returns the members
+ */
+function trustedMembersOf(keys) {
+  log.debug("Entering trustedMembersOf().");
+  const realmId = String((keys && keys.realm) || '');
+  const out = membersOf(keys).filter(function (one) {
+    return trustOf(realmId, one).state !== 'distrusted';
+  });
+  log.debug("Leaving trustedMembersOf(). " + out.length + ".");
+  return out;
+}
+
 // The held member of one slot, or null.
 function memberIn(keys, slot) {
   log.debug("Entering memberIn(). " + slot);
@@ -691,6 +827,15 @@ async function ensureCertificate(realmId, member, uris) {
                    : (member.publicJwk.crv ||
                       ('rsa-' + require('./mode').defaultRsaBits()))
                      .toLowerCase() };
+  // NEVER A KEY A REVOCATION DISTRUSTS (see trustOf()): a new certificate
+  // over it would vouch for it again. signerForAsync() has moved to a new
+  // key before this is reached; this is the guard.
+  const trust = trustOf(realmId, member);
+  if (trust.state === 'distrusted') {
+    log.debug("Leaving ensureCertificate(). The key is distrusted.");
+    return { ok: false, issued: false,
+             why: 'its certificate was revoked (' + trust.reason + ')' };
+  }
   const verdict = pki.credentialSignerCertificateCurrent(realmId, spec);
   if (verdict.current) {
     log.debug("Leaving ensureCertificate(). Current.");
@@ -737,7 +882,24 @@ async function signerForAsync(keys, alg, opts) {
   log.debug("Entering signerForAsync(). alg=" + alg);
   const o = opts || {};
   const family = familyOf(alg, o.curveSpecs);
-  const member = await memberForAsync(keys, family);
+  let member = currentIn(keys, family.slot) ||
+               await memberForAsync(keys, family);
+  const realmId = String(keys.realm || '');
+  const trust = member ? trustOf(realmId, member) : null;
+  if (trust && trust.state === 'distrusted') {
+    // A NEW KEY OF THE FAMILY (see trustOf()), in the next generation's
+    // slot, under the same cluster claim a first key is made under.
+    const next = Object.assign({}, family, {
+      slot: family.slot + '~' + (generationOf(member.slot) + 1) });
+    log.warn(errorCodes.tag('STS-PKI-0287') + 'credential_signer: the "' +
+             (realmId || 'default') + '" realm\'s ' + member.slot +
+             ' credential-signing certificate was revoked (' + trust.reason +
+             '), which distrusts its key ' + member.publicJwk.kid + ', so ' +
+             'credentials are signed by a new key, ' + next.slot + ', from ' +
+             'now on; the old key is neither published nor accepted while ' +
+             'that revocation stands.');
+    member = await memberForAsync(keys, next);
+  }
   if (!member) {
     log.debug("Leaving signerForAsync(). Not made.");
     throw errorCodes.mark(new Error('the "' + keys.realm + '" realm\'s ' +
@@ -788,12 +950,16 @@ function publishableCertificate(realmId, member) {
     log.debug("Leaving publishableCertificate(). Held.");
     return held;
   }
-  // Not awaited: a JWKS is answered with what is publishable now.
-  ensureCertificate(realmId, member, issuerUris()).catch(function (e) {
-    log.debug("Caught in publishableCertificate(): " +
-              ((e && e.message) || e));
-  });
-  log.debug("Leaving publishableCertificate(). Revoked; re-issuing.");
+  // A key the revocation leaves trusted is certified again — not awaited: a
+  // JWKS is answered with what is publishable now. A distrusted one is not
+  // (trustOf()), and `trustedMembersOf()` keeps it out of the JWKS anyway.
+  if (trustOf(realmId, member).state === 'recertify') {
+    ensureCertificate(realmId, member, issuerUris()).catch(function (e) {
+      log.debug("Caught in publishableCertificate(): " +
+                ((e && e.message) || e));
+    });
+  }
+  log.debug("Leaving publishableCertificate(). Revoked.");
   return null;
 }
 
@@ -805,7 +971,7 @@ function publishableCertificate(realmId, member) {
  */
 function verificationRows(keys) {
   log.debug("Entering verificationRows().");
-  const out = membersOf(keys).filter(function (one) {
+  const out = trustedMembersOf(keys).filter(function (one) {
     return one && one.publicJwk;
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: 'credential',
@@ -844,6 +1010,12 @@ module.exports = {
   spkiPemOf: spkiPemOf,
   ensureCertificate: ensureCertificate,
   publishableCertificate: publishableCertificate,
+  RECERTIFIABLE_REASONS: RECERTIFIABLE_REASONS,
+  familySlotOf: familySlotOf,
+  generationOf: generationOf,
+  currentIn: currentIn,
+  trustOf: trustOf,
+  trustedMembersOf: trustedMembersOf,
   signerForAsync: signerForAsync,
   verificationRows: verificationRows
 };

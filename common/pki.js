@@ -8897,8 +8897,9 @@ async function certifyCredentialSigner(realmId, spec, why) {
   const made = await certify(id, 'jose', {
     slot: spec.slot,
     label: 'Credential signing (' + String(spec.alg || '') + ')',
+    // The family's name, whatever generation (`RSA~1`, #1880's follow-up).
     commonName: 'Credential signing (' + String(spec.slot).replace(
-      /^vc-issuer:/, '') + ')',
+      /^vc-issuer:/, '').replace(/~\d+$/, '') + ')',
     alg: String(spec.alg || ''),
     keyAlg: String(spec.keyAlg || ''),
     kid: spec.kid,
