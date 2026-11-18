@@ -409,6 +409,18 @@ async function run(t) {
     t.equal(Buffer.from(restoredBbs.publicKey).toString('base64'),
             Buffer.from(madeBbs.publicKey).toString('base64'),
             'and it is the same key that was generated');
+    // AND IT PUBLISHES THE SAME MULTIKEY (#1878, run #478): the key another
+    // node reads back from the store is what /bbs/keys/<kid> and the DID
+    // document encode, so the restored half must encode — and decode —
+    // exactly as the half that was made.
+    const restoredMultikey = bbs2023.publicKeyMultibase(restoredBbs.publicKey);
+    t.check(restoredMultikey ===
+              bbs2023.publicKeyMultibase(madeBbs.publicKey) &&
+            Buffer.from(bbs2023.publicKeyFromMultibase(restoredMultikey))
+              .equals(Buffer.from(madeBbs.publicKey)),
+            'and the restored key publishes the same vc-di-bbs Multikey as ' +
+            'the one made, which decodes back to it',
+            restoredMultikey.slice(0, 12));
     const header = new TextEncoder().encode('keystore.js round trip');
     const messages = [new TextEncoder().encode('one'),
                       new TextEncoder().encode('two')];

@@ -402,9 +402,11 @@ async function ldpVcNamesTheDidAndVerifies(meta) {
   assert.ok(resolved.method.publicKeyMultibase,
     "the verificationMethod must resolve to a key with a publicKeyMultibase: " +
     JSON.stringify(resolved.method).slice(0, 200));
-  assert.ok(/^zUC7/.test(resolved.method.publicKeyMultibase),
-    "the key is a bls12_381-g2-pub Multikey (vc-di-bbs 2.1.1): base58btc " +
-        "of 0xeb01 and the 96-byte key, which always begins zUC7. Got " +
+  // base58btc of 0xeb01 and the 96-byte key (vc-di-bbs 2.1.1), held to it
+  // by publicKeyFromMultibase() below — not by a prefix: it usually begins
+  // zUC7, and begins zUC6 for a key whose first bytes are low (run #478).
+  assert.ok(/^z/.test(resolved.method.publicKeyMultibase),
+    "the key is base58btc ('z'). Got " +
         String(resolved.method.publicKeyMultibase).slice(0, 12));
   const pk = stsSuite.publicKeyFromMultibase(
     resolved.method.publicKeyMultibase);

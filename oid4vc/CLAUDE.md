@@ -1821,7 +1821,9 @@ the Multikey and, READ ONLY, the old format. The at-risk features (headers
   Bazaar drops it too) — so two issuances are told apart by `validFrom`, and
   no two proofs are alike anyway: each draws its own HMAC key.
 * **The key** is vc-di-bbs 2.1.1's Multikey (`z`, base58btc, `0xeb01`,
-  96 bytes — always `zUC7…`), at `/bbs/keys/<kid>` and in the DID document.
+  96 bytes — `zUC7…` usually, `zUC6…` for a key whose first bytes are
+  low, so a test decodes it rather than matching a prefix, run #478), at
+  `/bbs/keys/<kid>` and in the DID document.
   It was `u` and the raw bytes.
 * **The Verifier** (`verifyLdpVc()` → `verifyBbsRevealDocument()`) reads its
   facts from the statements IT rebuilt from the reveal document, never from
