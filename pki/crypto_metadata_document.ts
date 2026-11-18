@@ -227,10 +227,12 @@ class CryptoMetadataDocument {
       } else if (row.unit === 'xml:RS256') {
         currentPem = xml.selfSignedCertPem;
       } else if (row.kind === 'bbs') {
-        // A BBS key has no JWK; it is published as a Multikey (#49 P5).
+        // A BBS key has no JWK; it is published as a Multikey (#49 P5), in
+        // vc-di-bbs 2.1.1's encoding since #1878: `z`, base58btc of 0xeb01
+        // and the 96-byte key (it was `u` and the raw bytes).
         current.jwk = null;
-        current.publicKeyMultibase = 'u' + Buffer.from(keys.bbsKey.publicKey)
-          .toString('base64url');
+        current.publicKeyMultibase = this.deps.stsCrypto.bbs
+          .publicKeyMultibase(keys.bbsKey.publicKey);
       } else if (row.kind === 'group') {
         // A SIGNER-GROUP CERTIFICATE (#68): its primary key and — rcbj's D5,
         // stated here because the JWKS publishes the partner bare — the

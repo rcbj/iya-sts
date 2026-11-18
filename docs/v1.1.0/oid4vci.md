@@ -72,8 +72,12 @@ The holder binding in the table is the default. Any configuration named in
 the composites are allowed and are signed in the worker pool, unless the realm
 is in [wallet compatibility mode](oid4vp.md#wallet-compatibility-mode), which
 refuses them with `credential_request_denied`). `ldp_vc` is
-signed with the realm's BBS key, which is published at `/bbs/keys/{kid}` and in
-the DID document, and which rotates like any other signing key. A credential
+signed with the realm's BBS key as a W3C `bbs-2023` base proof (W3C Data
+Integrity BBS Cryptosuites v1.0), whose mandatory statements are
+`oid4vci.ldpVcMandatoryPointers` (and `oid4vci.ldpVcDidMandatoryPointers` for
+the `did:web` configuration). The key is published as a Multikey at
+`/bbs/keys/{kid}` and in the DID document, and rotates like any other signing
+key. A credential
 and the Token Status List Token its status names carry the certificate chain
 of their signing key inline, in `x5c` — `oid4vci.credentialCertificateHeader`,
 `x5c` by default since 2026-10-16. SD-JWT VC finds an issuer's key by `x5c`,

@@ -372,7 +372,8 @@ class VcConfigs {
   //     (`vc_did.ts`) and a credential signed with another would name a key
   //     its issuer's DID cannot resolve.
   //   * ldp_vc: bbs-2023, the one cryptosuite its issuance builds — the
-  //     unlinkable derived proof a wallet sign-in rests on.
+  //     unlinkable derived proof a wallet sign-in rests on — or, in a realm
+  //     on the pre-1.1 format, `iya-bbs-2023-legacy` (#1878).
   // ---------------------------------------------------------------------------
   /**
    * Returns the algorithms a configuration's credentials may be signed with,
@@ -390,8 +391,13 @@ class VcConfigs {
       return [];
     }
     if (c.format === 'ldp_vc') {
-      log.debug("Leaving VcConfigs.vciSigningAlgsFor(). bbs-2023.");
-      return ['bbs-2023'];
+      // A realm on the pre-1.1 format (`oid4vc.bbs2023LegacyFormat`, #1878)
+      // names it by its own label: the old format is never advertised as
+      // `bbs-2023`, which is the W3C cryptosuite's name.
+      const legacy = !!this.deps.config.value('oid4vc.bbs2023LegacyFormat');
+      log.debug("Leaving VcConfigs.vciSigningAlgsFor(). " +
+                (legacy ? "The pre-1.1 format." : "bbs-2023."));
+      return [legacy ? 'iya-bbs-2023-legacy' : 'bbs-2023'];
     }
     const configured = String(this.deps.config.value(
       'oid4vci.credentialSigningAlgorithm') || 'RS256');

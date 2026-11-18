@@ -846,6 +846,10 @@ class ProtocolStack {
                'VcDataModel');
     this.build('oid4vc/vc_ecdsa_sd', require('../oid4vc/vc_ecdsa_sd'),
                'VcEcdsaSd');
+    // #1878: bbs-2023, the W3C BBS cryptosuite, over the selective-
+    // disclosure steps of the library above. The issuer and the verifier
+    // reach it; it registers nothing.
+    this.build('oid4vc/vc_bbs', require('../oid4vc/vc_bbs'), 'VcBbs');
     this.build('oid4vc/vc_data_integrity',
                require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
     // #198: VC-JOSE-COSE's envelopes (vc+jwt, vc+sd-jwt, vc+cose and the vp

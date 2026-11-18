@@ -114,6 +114,72 @@ self-issued subjects. A person can also have this realm publish a `did:web`
 for them (`did.personPublishing`, off by default). See
 [Published DIDs](person-dids.md).
 
+### bbs-2023
+
+An `ldp_vc` is secured with `bbs-2023`, as *W3C Data Integrity BBS
+Cryptosuites v1.0* defines it (Candidate Recommendation Draft, 10 September
+2026), in its baseline form. Since 1.1.0 any implementation of that
+specification can derive from and verify what iya-sts issues, and iya-sts
+can verify what such a wallet presents.
+
+* **The issuer** signs a base proof. The statements named by the credential
+  configuration's mandatory JSON pointers are hashed into the BBS header, so
+  every presentation reveals them; the rest are signed as separate messages,
+  which a holder may reveal or withhold one by one. The pointers are
+  `oid4vci.ldpVcMandatoryPointers` for `IdentityCredentialLdpVc` and
+  `oid4vci.ldpVcDidMandatoryPointers` for `IdentityCredentialLdpVcDid`,
+  `/issuer,/type,/validFrom,/validUntil` by default. A pointer that names
+  nothing in the credential refuses the issuance (`STS-VC-0180`). The proof
+  carries no `created`, which the specification's privacy considerations
+  name as narrowing the anonymity set.
+* **The key** is published as a `Multikey` whose `publicKeyMultibase` is the
+  BLS12-381 G2 key in base58btc with the `0xeb01` prefix, at
+  `/bbs/keys/{kid}` and in the issuer's DID document.
+* **A holder presents a reveal document**: the credential with only what it
+  reveals, carrying a derived `DataIntegrityProof` (`cryptosuite`
+  `bbs-2023`). Every presentation is a fresh proof that cannot be linked to
+  another. To a verification that asks for no holder binding it may be
+  presented on its own, with the request's nonce as the derived proof's
+  presentation header. A wallet sign-in asks for holder binding: the reveal
+  document goes inside a `VerifiablePresentation` whose own Data Integrity
+  proof carries the nonce as `challenge` and the client as `domain`
+  (OpenID4VP 1.0 B.1.3.2.5); its presentation header may then be the nonce
+  or empty.
+* **The Verifier** canonicalizes the reveal document, relabels it with the
+  proof's label map, rebuilds the hashes and the messages itself and checks
+  the BBS proof. The proof's `verificationMethod` must name one of the
+  realm's BBS keys (`STS-VC-0184`). A wrong presentation header is
+  `STS-VC-0185`, and a proof that does not verify `STS-VC-0186`.
+
+The optional features the specification marks at risk (anonymous holder
+binding and pseudonyms) are not implemented, and a proof that uses one is
+refused by name.
+
+#### Credentials issued before 1.1.0
+
+iya-sts 1.0 labelled its `ldp_vc` proofs `bbs-2023`, but they were in a
+private format, and its holders presented them as an envelope of disclosed
+statements beside a raw BBS proof. Such a credential cannot be derived into
+a W3C proof. **By default a realm refuses a presentation in that format**,
+naming it as the pre-W3C, non-standard format (`STS-VC-0181`). The holder
+needs the credential issued again: a refresh or a new issuance gives a W3C
+one.
+
+`oid4vc.bbs2023LegacyFormat` (per realm, off by default) makes a realm use
+the old format, for a wallet that has not moved to W3C bbs-2023:
+
+* the realm **issues** its `ldp_vc` credentials in the old format, and logs
+  each one (`STS-VC-0183`);
+* it **accepts** a presentation in it, as well as W3C presentations, and logs
+  each one (`STS-VC-0182`);
+* the old format is named `iya-bbs-2023-legacy` in the issuer and Verifier
+  metadata and in the credential's proof, never `bbs-2023`.
+
+Both halves are switched together because a wallet that speaks only the old
+format needs a credential it can derive from and a Verifier that reads what
+it derives. Turn the setting off once the wallet has moved: a credential
+issued under it cannot be presented after that.
+
 ## Before you start
 
 **The service Root is the one trust anchor.** The service's TLS certificate,

@@ -12635,6 +12635,34 @@ const SETTINGS = [
                  'URL that existing tests dereference, and switching it to a ' +
                  'DID URL breaks them silently.' },
 
+  // THE STATEMENTS A HOLDER CANNOT WITHHOLD (#1878): bbs-2023's mandatory
+  // JSON pointers, per ldp_vc credential configuration. vc-di-bbs hashes the
+  // statements they select into the BBS header, so a derived proof that
+  // leaves one out does not verify. The default is what a verifier of this
+  // credential needs to know which issuer stands behind it, what it is and
+  // whether it is still valid; the subject and the claims stay the holder's
+  // to choose. The specification's privacy considerations are the reason
+  // the list is short: every mandatory statement shrinks the anonymity set.
+  { key: 'oid4vci.ldpVcMandatoryPointers', group: 'OID4VCI',
+    label: 'ldp_vc mandatory JSON pointers',
+    env: 'OID4VCI_LDP_VC_MANDATORY_POINTERS', type: 'csv',
+    dflt: '/issuer,/type,/validFrom,/validUntil', runtime: true,
+    description: 'The JSON pointers (RFC 6901) of the statements every ' +
+                 'derived proof of an IdentityCredentialLdpVc credential ' +
+                 'must reveal: bbs-2023 (W3C Data Integrity BBS ' +
+                 'Cryptosuites v1.0) hashes them into the signature\'s ' +
+                 'header, so a holder cannot leave one out. The default ' +
+                 'names the issuer, the type and the validity window. A ' +
+                 'pointer that is not a JSON pointer, or names nothing in ' +
+                 'the credential, refuses the issuance (STS-VC-0180). A ' +
+                 'change applies to the next credential issued.' },
+  { key: 'oid4vci.ldpVcDidMandatoryPointers', group: 'OID4VCI',
+    label: 'ldp_vc (did:web) mandatory JSON pointers',
+    env: 'OID4VCI_LDP_VC_DID_MANDATORY_POINTERS', type: 'csv',
+    dflt: '/issuer,/type,/validFrom,/validUntil', runtime: true,
+    description: 'The same for the IdentityCredentialLdpVcDid ' +
+                 'configuration, whose issuer names itself by did:web.' },
+
   // --- OID4VP --------------------------------------------------------------
   { key: 'oid4vp.clientId', group: 'OID4VP', label: 'Verifier client ID',
     env: 'OID4VP_CLIENT_ID', type: 'string', dflt: 'sts-verifier',
@@ -12788,6 +12816,38 @@ const SETTINGS = [
                  'for a wallet that accepts them; ' +
                  'oid4vc.walletCompatibility refuses them, and so does ' +
                  'keys.postQuantumSigning off.' },
+
+  // THE PRE-1.1 bbs-2023 FORMAT, PER REALM AND OFF (#1878, rcbj: "add a
+  // flag to use the old format per realm"). Until 1.1.0 this service's
+  // bbs-2023 was a private format; since then it is the W3C cryptosuite, and
+  // a realm issues and accepts only that. A realm with this on ISSUES its
+  // ldp_vc credentials in the old format and also ACCEPTS the old envelope
+  // (as well as W3C presentations): the old format exists only for wallets
+  // that implement it, and such a wallet needs both halves — a credential it
+  // can derive from, and a Verifier that reads what it derives. The old
+  // format is labelled `iya-bbs-2023-legacy` wherever this service names it,
+  // never `bbs-2023`. Every use is logged (STS-VC-0182, STS-VC-0183).
+  // `oid4vc/CLAUDE.md` argues it.
+  { key: 'oid4vc.bbs2023LegacyFormat', group: 'OID4VCI',
+    label: 'Use the pre-1.1 bbs-2023 format',
+    env: 'OID4VC_BBS2023_LEGACY_FORMAT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Makes this realm issue its ldp_vc credentials in the ' +
+                 'private format iya-sts 1.0 used, and accept a ' +
+                 'presentation in it, for a wallet that has not moved to ' +
+                 'the W3C bbs-2023 cryptosuite (W3C Data Integrity BBS ' +
+                 'Cryptosuites v1.0). OFF, the default: the realm issues ' +
+                 'and accepts only W3C bbs-2023, and refuses the old ' +
+                 'format by name (STS-VC-0181). The old format is not a ' +
+                 'standard, no other implementation reads it, and it is ' +
+                 'named iya-bbs-2023-legacy in the metadata and in the ' +
+                 'credential, never bbs-2023. W3C presentations are still ' +
+                 'accepted with it on. Every credential issued in it is ' +
+                 'logged under STS-VC-0183 and every presentation accepted ' +
+                 'in it under STS-VC-0182. Turn it on only while such a ' +
+                 'wallet is in use; a credential issued under it cannot be ' +
+                 'presented once it is off, and its holder needs a new ' +
+                 'one.' },
 
   { key: 'oid4vc.walletCompatibility', group: 'OID4VCI',
     label: 'Wallet compatibility mode',

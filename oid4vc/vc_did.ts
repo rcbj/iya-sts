@@ -710,11 +710,12 @@ class VcDid {
           id: did + '#' + one.kid,
           type: 'Multikey',
           controller: did,
-          // Same encoding as /bbs/keys/<kid>: multibase base64url, which is
-          // "u" and then the raw compressed bytes. A BBS key has no
+          // Same encoding as /bbs/keys/<kid>: vc-di-bbs section 2.1.1's
+          // Multikey, `z` and base58btc of 0xeb01 and the compressed G2
+          // point (#1878; it was `u` and the raw bytes). A BBS key has no
           // registered JOSE kty, so it cannot be a publicKeyJwk however
           // convenient that would be.
-          publicKeyMultibase: 'u' + bbs2023.bytesToB64u(one.publicKey)
+          publicKeyMultibase: bbs2023.publicKeyMultibase(one.publicKey)
         });
       });
     } catch (e) {

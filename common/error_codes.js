@@ -19195,6 +19195,48 @@ const CODES = [
       'would have been one key.',
     spec: 'HTTP 400 refusal at /authn-api/wallet, or at ' +
       '/admin-api/users/enrol-self-issued-subject' },
+  { code: 'STS-VC-0180',
+    summary: 'An ldp_vc credential was not issued because a bbs-2023 ' +
+      'mandatory JSON pointer configured for its credential configuration ' +
+      '(oid4vci.ldpVcMandatoryPointers, oid4vci.ldpVcDidMandatoryPointers) ' +
+      'is not a JSON pointer or names nothing in the credential (#1878).',
+    spec: 'server_error (HTTP 500) at the OID4VCI credential endpoint' },
+  { code: 'STS-VC-0181',
+    summary: 'An ldp_vc presentation in the pre-W3C, non-standard bbs-2023 ' +
+      'format iya-sts 1.0 used (disclosed statements beside a raw BBS ' +
+      'proof) was refused: this realm accepts only W3C bbs-2023 (W3C Data ' +
+      'Integrity BBS Cryptosuites v1.0), because oid4vc.bbs2023LegacyFormat ' +
+      'is off. The holder needs a credential issued since 1.1.0 (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0182',
+    summary: 'An ldp_vc presentation in the pre-W3C bbs-2023 format ' +
+      '(iya-bbs-2023-legacy) was read because this realm has ' +
+      'oid4vc.bbs2023LegacyFormat on. Not a refusal: recorded so that an ' +
+      'operator can see the old format is still in use (#1878).',
+    spec: 'none: the presentation is checked as 1.0 checked it' },
+  { code: 'STS-VC-0183',
+    summary: 'An ldp_vc credential was issued in the pre-W3C bbs-2023 ' +
+      'format (iya-bbs-2023-legacy) because this realm has ' +
+      'oid4vc.bbs2023LegacyFormat on. Not a refusal: recorded so that an ' +
+      'operator can see the old format is still in use (#1878).',
+    spec: 'none: the credential is issued' },
+  { code: 'STS-VC-0184',
+    summary: 'A bbs-2023 derived proof was refused because its ' +
+      'verificationMethod names no BBS key this realm publishes, so no ' +
+      'issuer this Verifier trusts stands behind it (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0185',
+    summary: 'A bbs-2023 derived proof was refused because its ' +
+      'presentation header is not this request\'s nonce: a bare derived ' +
+      'proof must carry the nonce, and one inside a Verifiable ' +
+      'Presentation may carry the nonce or nothing (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0186',
+    summary: 'A bbs-2023 derived proof did not verify (W3C Data Integrity ' +
+      'BBS Cryptosuites v1.0, section 3.3.5): the reveal document, the ' +
+      'issuer key, the label map, the indexes or the presentation header ' +
+      'is not what it was derived for, or the proof is malformed (#1878).',
+    spec: 'a failed check in the OpenID4VP Verifier\'s result' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

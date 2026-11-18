@@ -3194,6 +3194,11 @@ const LOCAL_HELPERS = [
   // with the same binding — what `sts_oid4vp_wallet.js` and `sts_siop.js`
   // drive since the wallet's pages became routes of the sign-in surface.
   'wallet_signin.js',
+  // A second opinion on a bbs-2023 credential (#1878): a proof derived from
+  // it and verified by Digital Bazaar's bbs-2023-cryptosuite, from the tests
+  // image's /opt/vc-suites — ldp_vc_issuance.js, ldp_vc_refresh.js and
+  // vc_did.js check the issuer with it.
+  'bbs_w3c.js',
   // The console's sign-in and a client of the operations its pages are
   // drawn from (#446). Copied from the parent on 2026-09-06 and written here
   // since; the static console (#446) made it a different helper from the

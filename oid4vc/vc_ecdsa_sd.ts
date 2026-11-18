@@ -1007,6 +1007,11 @@ export = {
   parsePointer: slot.forward('parsePointer'),
   selectJsonLd: slot.forward('selectJsonLd'),
   canonicalizeAndGroup: slot.forward('canonicalizeAndGroup'),
+  // The generic selective-disclosure steps bbs-2023 shares (#1878,
+  // `vc_bbs.ts`).
+  labelMapFactory: slot.forward('labelMapFactory'),
+  labelReplacementCanonicalizeJsonLd:
+    slot.forward('labelReplacementCanonicalizeJsonLd'),
   createBaseProof: slot.forward('createBaseProof'),
   parseBaseProofValue: slot.forward('parseBaseProofValue'),
   deriveProof: slot.forward('deriveProof'),

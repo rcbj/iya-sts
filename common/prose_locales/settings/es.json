@@ -6287,6 +6287,22 @@
     "en": "de851f5fe529cc0b",
     "text": "vc_did.js lo lee una sola vez al cargarse con require, y los metadatos del emisor se construyen a partir de lo que leyó"
   },
+  "oid4vci.ldpVcMandatoryPointers|label": {
+    "en": "e98c7ce2b1bc1508",
+    "text": "Punteros JSON obligatorios de ldp_vc"
+  },
+  "oid4vci.ldpVcMandatoryPointers|description": {
+    "en": "f4e6bd1a31cb4d3b",
+    "text": "Los punteros JSON (RFC 6901) de las declaraciones que toda prueba derivada de una credencial IdentityCredentialLdpVc debe revelar: bbs-2023 (W3C Data Integrity BBS Cryptosuites v1.0) los incluye en el hash de la cabecera de la firma, de modo que un titular no puede omitir ninguno. El valor predeterminado nombra el emisor, el tipo y el período de validez. Un puntero que no es un puntero JSON, o que no nombra nada en la credencial, rechaza la emisión (STS-VC-0180). Un cambio se aplica a la siguiente credencial emitida."
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|label": {
+    "en": "6cd8b076c457cb2b",
+    "text": "Punteros JSON obligatorios de ldp_vc (did:web)"
+  },
+  "oid4vci.ldpVcDidMandatoryPointers|description": {
+    "en": "5e7073657a62dae2",
+    "text": "Lo mismo para la configuración IdentityCredentialLdpVcDid, cuyo emisor se nombra a sí mismo mediante did:web."
+  },
   "oid4vp.clientId|label": {
     "en": "54fc949b8b05b803",
     "text": "ID de cliente del verificador"
@@ -6374,6 +6390,14 @@
   "oid4vp.requestObjectSigningAlgorithm|description": {
     "en": "c8e10b889bf92533",
     "text": "El algoritmo JWS con el que se firma un Request Object firmado con los prefijos de Client Identifier pre-registered, decentralized_identifier, verifier_attestation y openid_federation (los prefijos x509 usan oid4vp.x509SigningAlgorithm). La clave del dominio para él es la que nombra la solicitud: en /oauth2/jwks, en el documento DID, en el cnf de una Verifier Attestation autoemitida y en el jwks openid_credential_verifier de la Entity Configuration. RS256 por defecto, que es lo que usaba toda solicitud firmada antes de este ajuste. Los algoritmos poscuánticos y compuestos se ofrecen para una billetera que los acepte; oid4vc.walletCompatibility los rechaza, y también keys.postQuantumSigning desactivado."
+  },
+  "oid4vc.bbs2023LegacyFormat|label": {
+    "en": "48e440849305fead",
+    "text": "Usar el formato bbs-2023 anterior a 1.1"
+  },
+  "oid4vc.bbs2023LegacyFormat|description": {
+    "en": "da02d5f092c9dd36",
+    "text": "Hace que este reino emita sus credenciales ldp_vc en el formato privado que usaba iya-sts 1.0, y acepte una presentación en él, para una billetera que no ha pasado a la suite criptográfica bbs-2023 del W3C (W3C Data Integrity BBS Cryptosuites v1.0). DESACTIVADO, el valor predeterminado: el reino emite y acepta solo bbs-2023 del W3C, y rechaza el formato antiguo por su nombre (STS-VC-0181). El formato antiguo no es un estándar, ninguna otra implementación lo lee, y se llama iya-bbs-2023-legacy en los metadatos y en la credencial, nunca bbs-2023. Con él activado se siguen aceptando presentaciones del W3C. Cada credencial emitida en él se registra con STS-VC-0183 y cada presentación aceptada en él con STS-VC-0182. Actívelo solo mientras se use una billetera así; una credencial emitida con él no puede presentarse una vez desactivado, y su titular necesita una nueva."
   },
   "oid4vc.walletCompatibility|label": {
     "en": "50234c10261cc298",
