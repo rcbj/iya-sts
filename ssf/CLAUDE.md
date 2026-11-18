@@ -2678,6 +2678,21 @@ of this directory needs:
   `ssf.foreign-poll` cluster job, per realm, over every relationship
   streaming by poll; what was received is acknowledged (`ack`) or refused
   (`setErrs`) on the next request.
+  **One poll of a stream at a time (2026-11-18, GitHub Actions run #493).**
+  The job and an administrator's `signals-poll-now` used to reach the
+  partner side by side, and the conformance suite's CAEP interoperability
+  module (release v5.3.1, poll) loses what it generates when a second poll
+  arrives during its one-second wait inside the acknowledgement of its
+  verification: reproduced against the suite's own image with a second
+  poller 30, 300 and 900 ms behind the first (six SETs made and handed to
+  nobody, the module WAITING until it timed out), and at 0 and 5 ms the
+  module died of a NullPointerException. Run #493's `rx-caep-poll` was the
+  job's tick landing in that second. Now `pollOnce()` chains the polls of
+  one `<realm>|<relationship>` in a process, and across processes a poll
+  marks the shared stream row (`pollingBy`, `pollingUntil`, bounded by what
+  one poll may take): the job skips a stream another process is polling,
+  and a poll-now waits for the mark to clear or expire.
+  `tests/ssf_transmitters.js` N1 and N2.
 * **Verification** is done here, against the configuration's `jwks_uri` —
   not the sign-in relationship's keys, which may be another set — reusing
   `oauth-oidc/client_jwks.js`'s cache. Then `typ`, `iss` (the discovered
