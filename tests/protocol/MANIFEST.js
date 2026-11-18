@@ -107,6 +107,13 @@ const log = bunyan.createLogger({ name: 'MANIFEST',
 //                      every other protocol job (STS_TEST_BULK_LAST,
 //                      tools/modes.sh, 2026-09-27): two nodes on one store
 //                      could not carry both loads within the sign-ins' bounds.
+//                      SINCE 2026-11-18 IT IS ALSO THE HEAVY LANE: a job that
+//                      loads the RUNNER rather than the service (it starts
+//                      service processes of its own) runs there too, so it
+//                      and the bulk loads are staggered — one at a time —
+//                      and never beside each other; see
+//                      sts_persistence_postgres.js's entry for the evidence
+//                      and why that is a lane and not `exclusive`.
 //                      `conformance`, `conformance-fapi` and
 //                      `conformance-b` hold the OpenID conformance plans
 //                      (about two and a quarter hours one after another, the
@@ -2982,7 +2989,30 @@ const JOBS = [
   // connection is TLS as postgres reports it, that the database's certificate
   // is verified, and that a missing database stops the start. Skips where no
   // database is supplied (an AWS target, ./run-coverage.sh).
-  { file: 'sts_persistence_postgres.js', browser: false },
+  //
+  // IN THE `bulk` LANE SINCE 2026-11-18: it is the one job that loads the
+  // RUNNER (two iya-sts processes of its own at once, each with a request
+  // worker: the runner container went from ~0.2-0.6 GB to 1.6 GB in it), and
+  // in every mode but cluster it ran beside the bulk loads, which start with
+  // the last segment. GitHub run #468's resources.log: single-node, beside
+  // sts_directory_bulk_load_scim and _ldap, the mode's lowest available
+  // memory (2.5 GB) and the CPU saturated in 14 % of its samples; cells, the
+  // run queue at 7.0 against the mode's 4.0. In the lane it runs before the
+  // three loads, one at a time with them, and beside the `main` lane's one
+  // job; it touches nothing another job reads (its own database, its own
+  // processes), which is what a lane asks. Measured cost, from the same
+  // logs: about +3.5 minutes in single-node, mariadb and cells (the lane,
+  // ~15-18 minutes, is the last segment's long pole), -0.5 in memory, none
+  // in cluster. `exclusive: true` would separate it from the loads too, but
+  // it would push the whole lane past it and cost ~+10.5 minutes there —
+  // single-node's 175 minutes of jobs against its 190-minute bound.
+  //
+  // WHAT THIS DOES NOT FIX: the cluster mode's watchdog kill (#468, 300 s,
+  // one second after "Test completed successfully", its teardown dropping
+  // the database). There the lane is already deferred and the job ran with
+  // nothing beside it; the pressure was the stack itself — both nodes at
+  // 5.1-5.2 GB resident, 6 GB of swap in use, 0.7-0.8 GB available.
+  { file: 'sts_persistence_postgres.js', browser: false, lane: 'bulk' },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and
