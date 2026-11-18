@@ -3085,6 +3085,16 @@ let dekReloadAt = 0;
 let dekReloading = null;
 const dekMissWarned = new Set();
 
+// Whether `dekRealmId` (a data key's realm: 'default' or a realm id) is a
+// realm this process has not removed — `realms.acceptsRows()`, which also
+// accepts a realm that has not arrived here yet.
+function realmAccepted(dekRealmId) {
+  log.debug("Entering realmAccepted().");
+  const id = String(dekRealmId || '');
+  log.debug("Leaving realmAccepted().");
+  return !id || id === 'default' || realms.acceptsRows(id);
+}
+
 function dekRealm(realm) {
   log.debug("Entering dekRealm().");
   log.debug("Leaving dekRealm().");
@@ -3595,6 +3605,17 @@ async function adoptDekRow(rowKey, text, fatal) {
     log.debug("Leaving adoptDekRow(). No row.");
     return 0;
   }
+  // THE DATA KEYS OF A REALM REMOVED HERE ARE NOT ADOPTED BACK (2026-11-18,
+  // GitHub Actions run #493). The purge drops them and deletes their row,
+  // the delete after the removal has answered; a re-read of the data-key
+  // rows in between (`refreshDekRows()`) brought the removed realm's keys
+  // back into this process, where the encryption report listed them as
+  // current and no count ever reached them — `sts_data_keys` waited a
+  // minute for a count of keys of `keys-…`, removed 0.4 s before it began.
+  if (!realmAccepted(row.realm)) {
+    log.debug("Leaving adoptDekRow(). A realm removed here.");
+    return 0;
+  }
   let adopted = 0;
   const classes = new Set();
   const fresh = [];
@@ -4032,6 +4053,11 @@ function dataKeys() {
   log.debug("Entering dataKeys().");
   const rows = [];
   deks.forEach(function (rec) {
+    // Not a removed realm's (see adoptDekRow()): its keys are on their way
+    // out of this process and the store, and are no key anything uses.
+    if (!realmAccepted(rec.realm)) {
+      return;
+    }
     rows.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
                 alg: rec.alg || (rec.key ? crypto.dekAlgOf(rec.key)
                                          : 'aes-256-gcm'),
