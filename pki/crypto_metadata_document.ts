@@ -217,6 +217,10 @@ class CryptoMetadataDocument {
     const scope = String(keys.realm || realmId);
     const xml = helpers.xmlKeyFor(keys);
     const now = this.deps.now();
+    // Read here, not inside the map's `function` below, where `this` is
+    // undefined: #1878's Multikey line read `this.deps` there and every
+    // realm with a BBS key answered 500 (STS-PKI-0187, run #478).
+    const bbsCrypto = this.deps.stsCrypto.bbs;
     const out = helpers.signingUnitsOf(keys).map(function (row: Json): Json {
       const current: Json = { kid: row.kid, state: 'current' };
       let currentPem = '';
@@ -231,8 +235,8 @@ class CryptoMetadataDocument {
         // vc-di-bbs 2.1.1's encoding since #1878: `z`, base58btc of 0xeb01
         // and the 96-byte key (it was `u` and the raw bytes).
         current.jwk = null;
-        current.publicKeyMultibase = this.deps.stsCrypto.bbs
-          .publicKeyMultibase(keys.bbsKey.publicKey);
+        current.publicKeyMultibase =
+          bbsCrypto.publicKeyMultibase(keys.bbsKey.publicKey);
       } else if (row.kind === 'group') {
         // A SIGNER-GROUP CERTIFICATE (#68): its primary key and — rcbj's D5,
         // stated here because the JWKS publishes the partner bare — the
