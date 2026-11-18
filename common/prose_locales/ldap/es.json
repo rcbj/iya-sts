@@ -1992,8 +1992,8 @@
     "text": "Cuándo se registró este PEP por primera vez. Se conserva entre registros sucesivos, porque un componente que se reinicia cada hora es un hecho que vale la pena ver y una entrada cuya antigüedad se reiniciara en cada reinicio nunca podría mostrarlo."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "El último latido u obtención. xacml.pepStaleAfterS es cuánto tiempo desde esto antes de que la consola diga \"obsoleto\" — lo cual no cambia nada de lo que hace este servicio, deliberadamente."
+    "en": "2e8561030cee3201",
+    "text": "El último latido u obtención cuando se escribió esta entrada por última vez. Un latido que no cambia nada duradero no se escribe aquí (#1882): él, los contadores, el estado de las señales y el último aviso se guardan junto a la entrada, y la consola muestra el más reciente de los dos. xacml.pepStaleAfterS es cuánto tiempo desde el último antes de que la consola diga \"obsoleto\" — lo cual no cambia nada de lo que hace este servicio, deliberadamente."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",

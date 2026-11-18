@@ -1992,8 +1992,8 @@
     "text": "La date du premier enregistrement de ce PEP. Conservée lors d’un réenregistrement, car un composant qui redémarre toutes les heures est un fait qui mérite d’être vu, et une entrée dont l’âge serait réinitialisé à chaque redémarrage ne pourrait jamais le montrer."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "Le dernier battement de cœur ou la dernière récupération. xacml.pepStaleAfterS est le délai écoulé depuis celui-ci au-delà duquel la console indique « périmé » — ce qui ne change délibérément rien à ce que fait ce service."
+    "en": "2e8561030cee3201",
+    "text": "Le dernier battement de cœur ou la dernière récupération au moment où cette entrée a été écrite pour la dernière fois. Un battement de cœur qui ne change rien de durable n'est pas écrit ici (#1882) : lui, les compteurs, l'état des signaux et le dernier avertissement sont conservés à côté de l'entrée, et la console affiche le plus récent des deux. xacml.pepStaleAfterS est le délai écoulé depuis le dernier au-delà duquel la console indique « périmé » — ce qui ne change délibérément rien à ce que fait ce service."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",

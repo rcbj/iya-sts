@@ -1992,8 +1992,8 @@
     "text": "此 PEP 首次註冊的時間。重新註冊時保留，因為每小時重新啟動一次的元件是值得看見的事實，而每次重新啟動就重設年齡的項目永遠無法呈現這一點。"
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "最近一次的活動訊號或提取。xacml.pepStaleAfterS 是自此之後經過多久主控台會顯示「stale」——這刻意不改變本服務所做的任何事。"
+    "en": "2e8561030cee3201",
+    "text": "本條目最後一次寫入時的最近一次活動訊號或提取。不改變任何持久內容的活動訊號不會寫入此處（#1882）：它、各計數器、訊號健康狀況和最近一次推送通知都保存在條目旁邊，主控台顯示兩者中較新的一個。xacml.pepStaleAfterS 是自最近一次之後經過多久主控台會顯示「stale」——這刻意不改變本服務所做的任何事。"
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",

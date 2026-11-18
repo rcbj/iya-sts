@@ -74,7 +74,7 @@ model XacmlPep {
   xacmlPepRegisteredAt?: DirectoryTime;
   @attr(#{
     kind: "single",
-    what: "The last heartbeat or pull. xacml.pepStaleAfterS is how long since this before the console says \"stale\" — which changes nothing this service does, deliberately."
+    what: "The last heartbeat or pull when this entry was last written. A heartbeat that changes nothing durable is not written here (#1882): it, the counters, the signal health and the last nudge are kept beside the entry, and the console shows the later of the two. xacml.pepStaleAfterS is how long since the last one before the console says \"stale\" — which changes nothing this service does, deliberately."
   })
   xacmlPepLastSeen?: DirectoryTime;
   @attr(#{

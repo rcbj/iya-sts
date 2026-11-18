@@ -1992,8 +1992,8 @@
     "text": "此 PEP 首次注册的时间。在重新注册时保留，因为每小时重启一次的组件是一个值得看到的事实，而每次重启都重置时间的条目永远无法显示这一点。"
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "最近一次心跳或拉取。xacml.pepStaleAfterS 是自此之后多久控制台会显示“stale”——刻意地，这不会改变本服务的任何行为。"
+    "en": "2e8561030cee3201",
+    "text": "本条目最后一次写入时的最近一次心跳或拉取。不改变任何持久内容的心跳不会写入此处（#1882）：它、各计数器、信号健康状况和最近一次推送通知都保存在条目旁边，控制台显示两者中较新的一个。xacml.pepStaleAfterS 是自最近一次之后多久控制台会显示“stale”——刻意地，这不会改变本服务的任何行为。"
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",

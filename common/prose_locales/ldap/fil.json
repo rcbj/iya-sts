@@ -1992,8 +1992,8 @@
     "text": "Kung kailan unang nag-register ang PEP na ito. Pinapanatili sa muling pag-register, dahil ang component na nagre-restart bawat oras ay katotohanang sulit makita at hindi ito maipapakita ng entry na nare-reset ang edad sa bawat restart."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "Ang huling heartbeat o pull. Ang xacml.pepStaleAfterS ay kung gaano katagal mula rito bago sabihin ng console na \"stale\" — na walang binabago sa ginagawa ng serbisyong ito, nang sadya."
+    "en": "2e8561030cee3201",
+    "text": "Ang huling heartbeat o pull noong huling isinulat ang entry na ito. Ang heartbeat na walang binabagong pangmatagalan ay hindi isinusulat dito (#1882): ito, ang mga counter, ang kalusugan ng signal at ang huling nudge ay itinatabi sa tabi ng entry, at ipinapakita ng console ang mas huli sa dalawa. Ang xacml.pepStaleAfterS ay kung gaano katagal mula sa huli bago sabihin ng console na \"stale\" — na walang binabago sa ginagawa ng serbisyong ito, nang sadya."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",

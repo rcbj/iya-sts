@@ -1992,8 +1992,8 @@
     "text": "När den här PEP:en först registrerade sig. Behålls vid en omregistrering, eftersom en komponent som startar om varje timme är ett faktum värt att se och en post vars ålder nollställdes vid varje omstart aldrig skulle kunna visa det."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "Det senaste pulsslaget eller den senaste hämtningen. xacml.pepStaleAfterS är hur lång tid sedan detta innan konsolen säger \"inaktuell\" — vilket medvetet inte ändrar något som den här tjänsten gör."
+    "en": "2e8561030cee3201",
+    "text": "Det senaste pulsslaget eller den senaste hämtningen när den här posten senast skrevs. Ett pulsslag som inte ändrar något beständigt skrivs inte här (#1882): det, räknarna, signalernas hälsa och den senaste knuffen sparas bredvid posten, och konsolen visar den senare av de två. xacml.pepStaleAfterS är hur lång tid sedan det senaste innan konsolen säger \"inaktuell\" — vilket medvetet inte ändrar något som den här tjänsten gör."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
