@@ -132,6 +132,112 @@ const BUILT_IN_POLICIES = new Set(["role-issuance", "access-control"]);
 const POLICY_SETTINGS = ["xacml.issuancePolicy", "xacml.accessPolicy",
   "xacml.enabled", "xacml.enforceAccess", "roles.enforceIssuance"];
 
+// ===========================================================================
+// THE HEAVY GATE (2026-11-18). The kit runs several cells at once, and a CA
+// rebuild in one beside a rebuild in another starved a 4-vCPU runner until
+// one passed the client's 300 s (schemathesis_kit.js, THE RUNNER'S CORES).
+// So an operation the kit names in STS_SCHEMA_HEAVY ("METHOD /path", comma
+// separated, the path as Schemathesis asks this proxy for it) is forwarded
+// only once the kit has granted this proxy the run's one heavy ticket, asked
+// for over the IPC channel the kit opens; every other request is forwarded
+// at once, as before. After STS_SCHEMA_HEAVY_WAIT_S seconds without a grant
+// the request is forwarded anyway and the kit told (`cancel`), so the gate
+// is never what times a request out. Without the channel (a proxy started
+// by hand) nothing is held.
+// ===========================================================================
+const HEAVY = new Set(String(process.env.STS_SCHEMA_HEAVY || "")
+  .split(",")
+  .map(function (one) {
+    return one.trim();
+  })
+  .filter(function (one) {
+    return one.length > 0;
+  }));
+const HEAVY_WAIT_MS = 1000 *
+  (parseInt(process.env.STS_SCHEMA_HEAVY_WAIT_S || "150", 10) || 150);
+let heavySerial = 0;
+const heavyWaiting = new Map();
+
+// Whether `method` and the proxy-relative `reqUrl` name a heavy operation
+// in `heavy` (a Set of "METHOD /path"). The query and a trailing slash do
+// not count.
+function isHeavy(method, reqUrl, heavy) {
+  log.debug("Entering isHeavy().");
+  const pathname = String(reqUrl || "").split("?")[0].replace(/\/+$/, "");
+  const answer = heavy.has(String(method || "").toUpperCase() + " " +
+    pathname);
+  log.debug("Leaving isHeavy(). " + answer);
+  return answer;
+}
+
+// Hears the kit's grants. Called from main() only, so that requiring this
+// file (tests/schemathesis_plan.js) listens to nothing.
+function listenForGrants() {
+  log.debug("Entering listenForGrants().");
+  if (typeof process.send === "function") {
+    process.on("message", function (message) {
+      if (message && message.heavy === "granted") {
+        const waiting = heavyWaiting.get(message.id);
+        if (waiting) {
+          heavyWaiting.delete(message.id);
+          waiting();
+        }
+      }
+    });
+  }
+  log.debug("Leaving listenForGrants().");
+}
+
+// Waits for the heavy ticket. Resolves a function that gives it back: a
+// no-op when nothing was held, or when the wait ran past the cap and the
+// kit was told so.
+function heavyGate(label) {
+  log.debug("Entering heavyGate(). " + label);
+  if (typeof process.send !== "function") {
+    log.debug("Leaving heavyGate(). No channel.");
+    return Promise.resolve(function () {});
+  }
+  heavySerial += 1;
+  const id = heavySerial;
+  return new Promise(function (resolve) {
+    const timer = setTimeout(function () {
+      heavyWaiting.delete(id);
+      log.info("[schemathesis] heavy gate: forwarding " + label +
+        " past the " + (HEAVY_WAIT_MS / 1000) + " s cap");
+      process.send({ heavy: "cancel", id: id }, function (err) {
+        if (err) {
+          log.debug("Caught cancelling the heavy gate: " +
+                    ((err && err.message) || err));
+        }
+      });
+      resolve(function () {});
+    }, HEAVY_WAIT_MS);
+    heavyWaiting.set(id, function () {
+      clearTimeout(timer);
+      resolve(function giveBack() {
+        log.debug("Entering giveBack(). " + id);
+        process.send({ heavy: "release", id: id }, function (err) {
+          if (err) {
+            log.debug("Caught giving the heavy gate back: " +
+                      ((err && err.message) || err));
+          }
+        });
+        log.debug("Leaving giveBack().");
+      });
+    });
+    process.send({ heavy: "acquire", id: id }, function (err) {
+      if (err) {
+        log.debug("Caught asking for the heavy gate: " +
+                  ((err && err.message) || err));
+        clearTimeout(timer);
+        heavyWaiting.delete(id);
+        resolve(function () {});
+      }
+    });
+    log.debug("Leaving heavyGate(). Asked.");
+  });
+}
+
 // The door a request reaches under /admin-api, as [family, action], or null.
 function adminDoorOf(url) {
   log.debug("Entering adminDoorOf().");
@@ -708,6 +814,8 @@ async function handle(req, res) {
       return;
     }
   }
+  const giveBack = isHeavy(req.method, req.url, HEAVY)
+    ? await heavyGate(req.method + " " + req.url) : null;
   try {
     const answer = await forward(req, url, body);
     const headers = Object.assign({}, answer.headers);
@@ -723,6 +831,10 @@ async function handle(req, res) {
     res.writeHead(502, { "content-type": "text/plain",
       "x-sts-schemathesis-proxy": "forward-failed" });
     res.end("proxy could not forward: " + ((e && e.message) || e));
+  } finally {
+    if (giveBack) {
+      giveBack();
+    }
   }
   log.debug("Leaving handle().");
 }
@@ -733,6 +845,7 @@ async function main() {
     throw new Error("auth_proxy needs STS_SCHEMA_PROXY_PORT, " +
       "STS_SCHEMA_SERVICE_BASE and STS_SCHEMA_SURFACE");
   }
+  listenForGrants();
   await signIn();
   // Well past node's default, so that an oversized request reaches the
   // service and it is the service's answer the run judges (#1500).
@@ -767,6 +880,11 @@ if (require.main === module) {
 } else {
   module.exports = {
     namesProtected: namesProtected,
-    touchesSignInPolicy: touchesSignInPolicy
+    touchesSignInPolicy: touchesSignInPolicy,
+    isHeavy: isHeavy,
+    // For tests/schemathesis_realm_lanes.js, which forks children that hold
+    // the gate the way a cell's proxy does.
+    heavyGate: heavyGate,
+    listenForGrants: listenForGrants
   };
 }
