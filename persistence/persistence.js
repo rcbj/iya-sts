@@ -1383,23 +1383,29 @@ function realmRows() {
   log.debug("Leaving realmRows().");
   return realms.list().filter(function (realm) {
     return !realm.builtin;
-  }).map(function (realm) {
-    return {
-      id: realm.id,
-      name: realm.name,
-      description: realm.description,
-      // Fixed at creation, so it is written with the row and never compared
-      // as a change (realmChangeOf() has nothing to say about it).
-      domain: realm.domain,
-      createdAt: realm.createdAt,
-      overrides: realm.overrides || {},
-      // THE RETIRING MARK (#262): set by `realms.retire()` before it ends
-      // anything, and carried to every other process with the row. Null
-      // for a realm nobody is removing.
-      retiringSince: Number(realm.retiringSince) > 0
-        ? Number(realm.retiringSince) : null
-    };
-  });
+  }).map(liveRealmRow);
+}
+
+// One live realm as the row it would be written as — realmRows()'s, and what
+// restoreRealms() compares a stored row against.
+function liveRealmRow(realm) {
+  log.debug("Entering liveRealmRow().");
+  log.debug("Leaving liveRealmRow().");
+  return {
+    id: realm.id,
+    name: realm.name,
+    description: realm.description,
+    // Fixed at creation, so it is written with the row and never compared
+    // as a change (realmChangeOf() has nothing to say about it).
+    domain: realm.domain,
+    createdAt: realm.createdAt,
+    overrides: realm.overrides || {},
+    // THE RETIRING MARK (#262): set by `realms.retire()` before it ends
+    // anything, and carried to every other process with the row. Null
+    // for a realm nobody is removing.
+    retiringSince: Number(realm.retiringSince) > 0
+      ? Number(realm.retiringSince) : null
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -4090,6 +4096,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
 function restoreRealms(rows, replicated, refused) {
   log.debug('Entering restoreRealms(). ' + rows.length + ' row(s).');
   let made = 0;
+  let unchanged = 0;
   rows.forEach(function (row) {
     const existing = realms.get(row.id);
     if (existing && !replicated) {
@@ -4099,6 +4106,21 @@ function restoreRealms(rows, replicated, refused) {
       // module wrote down during the last one.
       log.warn('persistence: the realm "' + row.id + '" is already defined; ' +
                'the stored row was left alone.');
+      return;
+    }
+    if (existing && replicated &&
+        !realmChangeOf(row, liveRealmRow(existing))) {
+      // AN UNCHANGED ROW IS NOT AN UPDATE (2026-11-18). applyRealmsChange()
+      // hands EVERY stored realm here whenever ANY realm row changes, so
+      // each change cost every process one `realms.update()` per realm —
+      // one `realms.onChange()` round (SPIFFE's and the listeners'
+      // reconciles, the TLS policy, Kerberos, persistence) and one info
+      // line each. The cluster mode of GitHub Actions run #468 logged
+      // 554,190 "updated" lines on node A for 252 realms, about 2,200 per
+      // realm, and that walk's CPU and garbage grew with the square of the
+      // realm count. A row equal to what this process holds changes
+      // nothing, so nobody is told.
+      unchanged++;
       return;
     }
     if (existing) {
@@ -4178,7 +4200,8 @@ function restoreRealms(rows, replicated, refused) {
     }
     made++;
   });
-  log.debug('Leaving restoreRealms(). ' + made + ' restored.');
+  log.debug('Leaving restoreRealms(). ' + made + ' restored, ' + unchanged +
+            ' unchanged.');
   return made;
 }
 

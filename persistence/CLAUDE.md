@@ -1638,6 +1638,19 @@ directory and everything it had minted. Now:
   erased a local change made a moment earlier and left the diff with nothing to
   write. And a realm another node REMOVED is removed here, which nothing did
   before — this process's next save used to write it straight back.
+  **A stored row equal to what this process holds is not applied at all
+  (2026-11-18).** `applyRealmsChange()` loads EVERY realm row whenever any
+  realm row changes and hands them all to `restoreRealms(…, true)`, which
+  called `realms.update()` on each — so one change to one realm was one
+  `realms.onChange()` round per realm in every process: SPIFFE's and the
+  listeners' reconciles, the TLS policy, Kerberos and this module's own
+  watcher, and one info line each. The cluster mode of GitHub Actions run
+  #468 logged 554,190 `realms: "<id>" updated.` lines on node A for 252
+  realms, about 2,200 per realm, and the cost grew with the square of the
+  realm count. `restoreRealms()` now compares the stored row with
+  `liveRealmRow()` through the same `realmChangeOf()` the flush uses, and an
+  unchanged row is counted and skipped (`tests/realm_replicated_overrides.js`
+  B5).
   **The directory applier's base is what a RUNNING flush sent for that key,
   not the shadow (2026-09-23)**: the shadow advances only when the flush
   settles, so a change made while it was out that UNDID the flush's own change
