@@ -1655,17 +1655,7 @@ class ApplicationsPage {
       ];
       // A CREDENTIAL JUST REVEALED (#446): shown once, here, on the page that
       // answered the reveal, and never in a link.
-      const revealed = given.revealed
-        ? '<div class="ok"><strong>' + (given.revealed.secret ===
-            'registration-access-token'
-            ? t.html('consoleApplications.a2.revealedRat')
-            : t.html('consoleApplications.a2.revealedSecret') + '<code>' +
-              kit.esc(given.revealed.secret) +
-              '</code>') + '</strong>: <code>' +
-          kit.esc(given.revealed.value) + '</code> ' +
-          '<span class="sub">' + t.html('consoleApplications.a2.shownOnce') +
-          '</span></div>'
-        : '';
+      const revealed = ApplicationsPage.revealedBanner(given.revealed, t);
       inner = kit.flash(refused + revealed) +
         '<h2><code>' + kit.esc(row.identifier) + '</code></h2>' +
         '<div class="tiles">' +
@@ -6228,6 +6218,33 @@ class ApplicationsPage {
       kit.tip(t.html('consoleApplications.a3.revealTipA') + what +
               t.html('consoleApplications.a3.revealTipB')) +
       '>' + t.html('consoleApplications.a3.reveal') + '</button></form>';
+  }
+
+  // A CREDENTIAL JUST REVEALED (#446): shown once, on the page that answered
+  // the reveal, and never in a link — with a COPY BUTTON beside the value
+  // (rcbj, 2026-11-18): a secret is copied, not retyped, and this banner is
+  // the one place it is shown. The kit's button, which the runtime reveals
+  // and wires.
+  /**
+   * Draws the banner that shows a credential just revealed.
+   *
+   * @param revealed - `{ secret, value }` from the reveal's answer, or empty
+   * @param t - the page's translator (#539)
+   * @returns the banner as HTML, or '' when nothing was revealed
+   */
+  static revealedBanner(revealed, t) {
+    if (!revealed) {
+      return '';
+    }
+    return '<div class="ok"><strong>' +
+      (revealed.secret === 'registration-access-token'
+        ? t.html('consoleApplications.a2.revealedRat')
+        : t.html('consoleApplications.a2.revealedSecret') + '<code>' +
+          kit.esc(revealed.secret) + '</code>') + '</strong>: <code>' +
+      kit.esc(revealed.value) + '</code>' +
+      kit.copyButton(revealed.value, t) + ' ' +
+      '<span class="sub">' + t.html('consoleApplications.a2.shownOnce') +
+      '</span></div>';
   }
 }
 

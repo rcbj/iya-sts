@@ -160,6 +160,25 @@ function run(t) {
   adminActions.applicationsAction({ action: 'forget', application: DYN });
 
   adminActions.applicationsAction({ action: 'forget', application: ID });
+
+  // 7. THE BANNER THAT SHOWS IT carries a Copy button whose value is the
+  // secret, beside the value itself (rcbj, 2026-11-18); nothing revealed
+  // draws nothing.
+  const WebKit = require('../admin-ui/web_kit');
+  const page = require('../admin-ui/web_applications');
+  const tr = WebKit.context().t;
+  const banner = page.revealedBanner({ secret: 'sec-1', value: 'a<b"c' },
+                                     tr);
+  t.check(/<code>a&lt;b&quot;c<\/code> <button type="button" class="copybtn" hidden data-copy="a&lt;b&quot;c"/
+            .test(banner),
+          '7a. the revealed value is followed by a Copy button carrying ' +
+          'exactly that value, escaped', banner);
+  const rat = page.revealedBanner({ secret: 'registration-access-token',
+                                    value: 'rat-value' }, tr);
+  t.check(/data-copy="rat-value"/.test(rat),
+          '7b. a registration access token gets the same button', rat);
+  t.check(page.revealedBanner(null, tr) === '',
+          '7c. nothing revealed draws no banner');
   log.debug("Leaving run().");
 }
 
