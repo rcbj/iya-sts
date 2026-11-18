@@ -5452,6 +5452,9 @@ module.exports = {
   run: run,
   bind: bind,
   get: get,
+  // For `keystore.js` (2026-11-18): a key set or row of a realm this process
+  // removed is neither adopted nor written.
+  acceptsRows: acceptsRows,
   list: list,
   count: count,
   create: create,

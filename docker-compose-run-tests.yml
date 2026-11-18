@@ -698,6 +698,10 @@ services:
       - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}
+      # Each isolate's heap limit (2026-11-18): the cluster modes set it
+      # (tools/modes.sh says why); 0 is the setting's own default, a limit
+      # derived from the container's, which the suite's containers lack.
+      - STS_WORKERS_HEAP_LIMIT_MB=${STS_WORKERS_HEAP_LIMIT_MB:-0}
       # THE PWNED PASSWORDS SCREEN IS OFF IN EVERY SUITE STACK (#62 P6): on,
       # a product-mode stack would send the prefix of every password the
       # suite sets to api.pwnedpasswords.com — a run that depends on the

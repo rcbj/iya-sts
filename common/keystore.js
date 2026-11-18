@@ -1620,6 +1620,18 @@ function adoptShared(realmId, blob) {
     return false;
   }
   const id = String(realmId || '');
+  // A SET FOR A REALM THIS PROCESS NO LONGER HOLDS IS NOT ADOPTED
+  // (2026-11-18). A key set published by another process while a realm was
+  // being removed — a `signing.rotate` run that finished after the purge —
+  // arrived here after this process had removed the realm, was held again,
+  // and its write failed under the realm's destroyed data keys
+  // (`removedSince()`'s measurement). A realm this process removed and has
+  // not defined again (`realms.acceptsRows()`) takes no set; one that has not
+  // arrived yet still does.
+  if (realmOfRow(id) !== '' && !realms.acceptsRows(id)) {
+    log.debug("Leaving adoptShared(). A realm removed here.");
+    return false;
+  }
   let replacing = shared.has(id) && shared.get(id) !== blob;
   // **AND A SET HELD ONLY AS STORED MATERIAL IS REPLACED TOO (2026-09-14,
   // #46).** A process that RESTORED a realm's keys has nothing in `shared`, so
@@ -2748,6 +2760,24 @@ realms.onRemove(function (id) {
   // issued to the applications of a realm that is gone would go on chaining.
   pkiHeld.delete(realmId);
   pkiBase.delete(realmId);
+  // AND EVERY WRITE OF ITS ROWS NOT YET LANDED (2026-11-18) — its key set,
+  // its certificate authority and its data-key rows: queued, running or
+  // waiting for a retry, each is sealed under or names a data key the next
+  // lines destroy — see `removedRowAt` above. A stamp only where a write is
+  // pending, and it goes with the row's last pending write, so a removed
+  // realm leaves nothing here.
+  const ownRows = [realmId, PKI_ROW_PREFIX + realmId,
+                   dekRowKey('service', dekRealm(realmId))];
+  if (cellKek) {
+    ownRows.push(dekRowKey(ownCellScope(), dekRealm(realmId)));
+  }
+  ownRows.forEach(function (rowKey) {
+    failedWrites.delete(rowKey);
+    lastOutcome.delete(rowKey);
+    if (writes.has(rowKey)) {
+      removedRowAt.set(rowKey, ++writeSeq);
+    }
+  });
   // AND ITS DATA ENCRYPTION KEYS (#391): a realm re-created under the same
   // name gets keys of its own, and nothing of the last one's opens under them.
   const dekRealmId = dekRealm(realmId);
@@ -5246,6 +5276,59 @@ const lastOutcome = new Map();   // row key -> what its last write decided
 // until a later write of the row succeeds (#351). `retryFailed()` queues it
 // again; `failing()` says whether any is waiting.
 const failedWrites = new Map();
+// ---------------------------------------------------------------------------
+// A ROW WHOSE REALM WAS REMOVED IS NEVER WRITTEN, AND NEVER RETRIED
+// (2026-11-18). The removal destroys the realm's data encryption keys
+// (`dropDeks()` in the purge below), so a write of its key set or its
+// certificate authority that was queued, running or waiting for a retry
+// cannot be sealed or merged any more: it failed "the data encryption key it
+// names is not held here", was kept in `failedWrites`, and because
+// `persistence.commitThrough()` makes every writing request wait for every
+// failed key row, EVERY request that changed anything was answered 503
+// (STS-STORE-0066) from then on, the token endpoint included. Reproduced on
+// a single product node by removing 74 realms the suite had just made: one
+// realm's key-set write was in flight, and the node answered nothing that
+// wrote until it was restarted. So the removal stamps each of the realm's
+// rows with a sequence number, and a write queued before that stamp is
+// abandoned rather than run, and not kept as a failure if it was already
+// running. A realm defined again under the same id queues writes after the
+// stamp, which run as they always did.
+// ---------------------------------------------------------------------------
+let writeSeq = 0;
+const removedRowAt = new Map();  // row key -> writeSeq at its realm's removal
+
+// The realm a row belongs to: a key set's row is its realm id, a
+// certificate authority's `pki:<scope>`, a data-key row's `dek:<scope>:<realm>`
+// ('default' for the default realm). '' for the default realm and for the
+// service's own scope, which are never removed.
+function realmOfRow(rowKey) {
+  log.debug("Entering realmOfRow().");
+  let id = String(rowKey || '');
+  if (id.indexOf(DEK_ROW_PREFIX) === 0) {
+    id = id.slice(id.lastIndexOf(':') + 1);
+  } else if (id.indexOf(PKI_ROW_PREFIX) === 0) {
+    id = id.slice(PKI_ROW_PREFIX.length);
+  }
+  log.debug("Leaving realmOfRow().");
+  return id === 'default' || id === PKI_SERVICE_SCOPE ||
+         id === realms.DEFAULT_ID ? '' : id;
+}
+
+// Whether a write queued at `seq` is of a row whose realm was removed since
+// — stamped by the purge below — or of a realm this process removed and has
+// not defined again (`realms.acceptsRows()`; a realm not yet ARRIVED here is
+// accepted): a write queued for a realm AFTER its removal here (a delivery or
+// a sweep that reached the realm's keys on its way out) is sealed under a
+// data key the purge has already destroyed, and fails exactly as the queued
+// one did. Measured: 943 STS-KEYS-0035 in five minutes for a realm removed two
+// rounds earlier, and every write on that worker answered 503 again.
+function removedSince(rowKey, seq) {
+  log.debug("Entering removedSince().");
+  const realmId = realmOfRow(rowKey);
+  log.debug("Leaving removedSince().");
+  return (removedRowAt.get(rowKey) || 0) > seq ||
+         (realmId !== '' && !realms.acceptsRows(realmId));
+}
 const pkiBase = new Map();       // scope id -> ciphertext last read or written
 const pkiLocalGen = new Map();   // scope id -> attachPki() calls so far
 
@@ -5341,6 +5424,7 @@ function queueWrite(rowKey, payload, perform) {
   }
   if (slot.queued) {
     slot.queued.payload = payload;
+    slot.queued.seq = ++writeSeq;
     log.debug("Leaving queueWrite(). Coalesced into the waiting write.");
     return slot.queued.promise;
   }
@@ -5348,7 +5432,8 @@ function queueWrite(rowKey, payload, perform) {
   // the store is replaced — a restart in a test, `setStore()` after
   // `reset()` — is abandoned rather than landing in the new store, sealed
   // under data encryption keys that store has never held.
-  const entry = { payload: payload, promise: null, store: store };
+  const entry = { payload: payload, promise: null, store: store,
+                  seq: ++writeSeq };
   slot.queued = entry;
   slot.pending += 1;
   entry.promise = slot.tail.then(function () {
@@ -5358,6 +5443,11 @@ function queueWrite(rowKey, payload, perform) {
     if (entry.store !== store) {
       log.debug("queueWrite(): the store was replaced; " + rowKey +
                 " is not written.");
+      return { ok: true, abandoned: true };
+    }
+    if (removedSince(rowKey, entry.seq)) {
+      log.debug("queueWrite(): the realm of " + rowKey + " was removed; " +
+                "it is not written.");
       return { ok: true, abandoned: true };
     }
     return perform(rowKey, entry.payload);
@@ -5378,7 +5468,8 @@ function queueWrite(rowKey, payload, perform) {
     // only, and a restart generated different keys. A refusal that is an
     // answer — `not-newer`, a merge that decided — carries no `error` and is
     // not a failure.
-    if (outcome && outcome.ok === false && outcome.error) {
+    if (outcome && outcome.ok === false && outcome.error &&
+        !removedSince(rowKey, entry.seq)) {
       failedWrites.set(rowKey, { payload: entry.payload, perform: perform });
     } else {
       failedWrites.delete(rowKey);
@@ -5386,6 +5477,7 @@ function queueWrite(rowKey, payload, perform) {
     slot.pending -= 1;
     if (!slot.pending && writes.get(rowKey) === slot) {
       writes.delete(rowKey);
+      removedRowAt.delete(rowKey);
     }
     return outcome;
   });
@@ -6271,6 +6363,7 @@ function reset() {
   writes.clear();
   lastOutcome.clear();
   failedWrites.clear();
+  removedRowAt.clear();
   pkiBase.clear();
   pkiLocalGen.clear();
   publisher = null;

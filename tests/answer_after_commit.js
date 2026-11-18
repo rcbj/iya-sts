@@ -39,6 +39,8 @@
 //      carries its report.
 //   F. A KEY ROW WHOSE WRITE FAILED fails the commit a response waits for,
 //      and is written again by the retry with what it held.
+//   G. AND ONE OF A REALM THAT HAS SINCE BEEN REMOVED is dropped with it
+//      rather than retried (2026-11-18).
 //
 // IN A CHILD PROCESS, for `cluster_barrier_throughput.js`'s reason: the store
 // modules are one per process, and this file installs stubs on them.
@@ -283,6 +285,43 @@ async function keyRows(t, dir) {
             'F: the retry writes the row it failed with, and nothing is left ' +
             'waiting', JSON.stringify({ rows: store.rows.size,
                                         failing: keystore.failing() }));
+
+    // G (2026-11-18): A REMOVED REALM'S FAILED KEY ROW IS DROPPED, NOT
+    // RETRIED. The removal destroys the realm's data keys, so its row can
+    // never be written again; kept, it failed every commit a writing request
+    // waited for — on a product node every write answered 503
+    // (STS-STORE-0066) for minutes after a batch of realms was removed.
+    t.log.info('=== G. a removed realm\'s failed key row is dropped ===');
+    const realms = require('../common/realms');
+    store.fail = true;
+    realms.create({ id: 'aac-gone', name: 'aac-gone' });
+    realms.run(realms.get('aac-gone'), function () {
+      return helpers.stsKeysFor();
+    });
+    await keystore.settleAll();
+    const failingBefore = keystore.failing();
+    realms.remove('aac-gone');
+    const afterRemoval = await persistence.commitThrough();
+    const stillFailed = (afterRemoval || []).filter(function (one) {
+      return one && one.error;
+    });
+    t.check(failingBefore === true && keystore.failing() === false &&
+            stillFailed.length === 0,
+            'G: a removed realm\'s failed key row is dropped with the realm, ' +
+            'and the next commit does not wait for it',
+            JSON.stringify({ failingBefore: failingBefore,
+                             failing: keystore.failing(),
+                             answers: afterRemoval }));
+    // G2: and a key set of that realm published by another process after
+    // the removal — a rotation that finished after the purge — is not
+    // adopted, so nothing is held or written for it again.
+    t.check(keystore.adoptShared('aac-gone', { certB64: 'x' }) === false &&
+            keystore.failing() === false && !keystore.pendingWrites(),
+            'G: a key set of the removed realm published afterwards is not ' +
+            'adopted, held or written', JSON.stringify({
+              failing: keystore.failing(),
+              pending: keystore.pendingWrites() }));
+    store.fail = false;
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;

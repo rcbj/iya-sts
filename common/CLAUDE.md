@@ -3621,6 +3621,23 @@ redirected into a prefix that stopped existing one instruction earlier.
 Everything else about the removal would have worked, which is what makes it worth
 refusing rather than special-casing.
 
+**AND A CACHE OR A MAP KEYED BY REALM THAT IS NOT A REALM STORE HAS TO BE
+TOLD (2026-11-18).** Measured on a development node: 81 realms the suite had
+made were removed and the heap fell by 86 of the 206 MB they had added. A
+heap snapshot then found what still named them, and two were genuine:
+`revocation_status.js`'s parse memo of CA certificates (keyed by PEM, bounded
+at 8192, never forgetting anything until full — every realm's dozen
+authorities stayed parsed, 664 `X509Certificate`s before the removals and 664
+after) now keeps only what is still held when a realm goes
+(`forgetUnheldTiers()`, on `realms.onChange(…, 'remove')`); and
+`risk/risk_store.ts`'s five in-memory maps of a person's history, keyed by
+realm where there is no database, are purged by `forgetRealm()`. The rest of
+what the snapshot found is bounded and ages out: the scheduler's per-process
+run rows of a removed realm (the history walk's orphans), cluster claims, the
+default realm's audit rows that NAME the removed realm. The test for a new
+module-level `Map` whose key carries a realm id is the same as for a store:
+what removes the entry when the realm goes.
+
 ### The HTML rewrite in `app.js`, and its one honest limitation
 
 Every root-relative `href`, `action` and `src` in a `text/html` response is

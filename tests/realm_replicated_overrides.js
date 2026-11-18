@@ -42,6 +42,8 @@
 //         (STS-STORE-0174);
 //      4. a stored value this process leaves out (STS-CORE-0008) stays in
 //         the store after a flush here, as restorableOverrides() says.
+//      5. a change to one realm's row updates that realm here and no
+//         other (2026-11-18: every realm was updated on every change).
 //
 // Each part in a CHILD PROCESS: B puts a database double in the require
 // cache, and A sets a process-wide override.
@@ -316,6 +318,28 @@ function storeChild() {
     note(db.realms.get(ID).overrides['saml2.assertionLifetimeMin'] === '0',
          'B4b. and stays in the store after a flush here',
          JSON.stringify(db.realms.get(ID).overrides));
+
+    // B5 (2026-11-18): a change to ONE realm's row is an update of that
+    // realm alone. The apply hands every stored row to restoreRealms(), and
+    // until then every realm was updated — one realms.onChange() round per
+    // realm per change, 554,190 "updated" lines on one node of run #468.
+    const QUIET = 'rro-quiet';
+    realms.create({ id: QUIET, name: QUIET });
+    await persistence.flush();
+    const updated = [];
+    realms.onChange(function (id, what) {
+      if (what === 'update') {
+        updated.push(id);
+      }
+    });
+    anotherNodeWrites(ID, function (row) {
+      row.overrides['saml2.publishAlgorithmSupport'] = 'true';
+    });
+    await persistence.syncNow();
+    note(updated.indexOf(ID) >= 0 && updated.indexOf(QUIET) < 0 &&
+         realms.get(ID).overrides['saml2.publishAlgorithmSupport'] === 'true',
+         'B5. a change to one realm\'s row updates that realm here and no ' +
+         'other', JSON.stringify(updated));
 
     await persistence.stop();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
