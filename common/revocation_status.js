@@ -931,6 +931,45 @@ function parsedTier(pem) {
   return cert;
 }
 
+// ---------------------------------------------------------------------------
+// A REMOVED REALM'S AUTHORITIES LEAVE THE MEMO WITH IT (2026-11-18). The memo
+// is keyed by content and bounded at PARSE_MEMO_ENTRIES, so it never
+// forgot anything until it was full: every Intermediate and Issuing CA of
+// every realm ever held — a dozen a realm — stayed parsed, an X509Certificate
+// and its pkijs reading each, after the realm itself had gone. Measured on a
+// development node after 81 realms were removed: 664 X509Certificate objects
+// before the removals and 664 after, while every private key of those realms
+// had been released. So a realm's removal keeps only what is still HELD — a
+// rebuilt tier's old PEM goes the same way — and the next walk parses nothing
+// it did not have to. Fired after every store's purge (`realms.onChange()`),
+// in every process that applies the removal.
+// ---------------------------------------------------------------------------
+function forgetUnheldTiers() {
+  log.debug("Entering forgetUnheldTiers().");
+  const held = new Set();
+  heldAuthorities().forEach(function (one) {
+    const pem = one.tier && one.tier.certificatePem;
+    if (pem) {
+      held.add(String(pem));
+    }
+  });
+  let forgotten = 0;
+  Array.from(parsed.keys()).forEach(function (pem) {
+    if (!held.has(pem)) {
+      parsed.delete(pem);
+      forgotten += 1;
+    }
+  });
+  log.debug("Leaving forgetUnheldTiers(). " + forgotten + " forgotten.");
+  return forgotten;
+}
+
+realms.onChange(function (id, what) {
+  if (what === 'remove') {
+    forgetUnheldTiers();
+  }
+});
+
 function heldAuthorities() {
   log.debug('Entering heldAuthorities().');
   const out = [];
@@ -5805,6 +5844,9 @@ module.exports = {
   // certificate this service issued was issued to be a TLS client identity.
   walk: walk,
   heldAuthorityKey: heldAuthorityKey,
+  // Every held authority's certificate, parsed through the memo; what
+  // tests/realm_removal_memory.js walks to fill it.
+  heldCertificates: heldCertificates,
   annotateRequest: annotateRequest,
   requestVerdict: requestVerdict,
   codeOf: codeOf,
@@ -5812,5 +5854,6 @@ module.exports = {
   ocspRespondersOf: ocspRespondersOf,
   describePolicy: describePolicy,
   cacheReport: cacheReport,
-  resetCache: resetCache
+  resetCache: resetCache,
+  forgetUnheldTiers: forgetUnheldTiers
 };
