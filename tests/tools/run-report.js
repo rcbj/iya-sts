@@ -2335,6 +2335,8 @@ async function main() {
   // ONE JOB, FROM THE DECISION WHETHER IT RUNS TO ITS RESULT. It was the body
   // of a `for` loop until 2026-09-26; runScheduled() decides when each is
   // called. A job that is not run answers its result without spawning.
+  // The realm removals of passed jobs, one after another (runOne()).
+  let removals = Promise.resolve();
   async function runOne(job, n) {
     log.debug('Entering runOne(). ' + job.name);
     // A DELIBERATE EXCLUSION, by an opt-in switch (rcbj, 2026-11-15): first,
@@ -2749,9 +2751,19 @@ async function main() {
              ' in ' + result.ms + 'ms' +
              (result.assertions.length ? ', ' + result.assertions.length +
               ' assertion(s)' : '') + ' — ' + job.name);
+    // QUEUED, NOT AWAITED: the removals run one at a time beside the jobs,
+    // so a lane does not wait out a realm's retirement (up to
+    // realms.removalDeliveryTimeoutS each) before its next job. Drained
+    // before a cluster restart and before the reports are written.
     if (job.realmLedger) {
-      result.realmsRemoved = await removeRealmsOfPassedJob(job, result,
-                                                           instance);
+      removals = removals.then(function () {
+        return removeRealmsOfPassedJob(job, result, instance);
+      }).then(function (n) {
+        result.realmsRemoved = n;
+      }, function (e) {
+        log.warn('    the realms ' + job.name + ' created could not be ' +
+                 'removed: ' + ((e && e.message) || e));
+      });
     }
     log.debug('Leaving runOne(). ' + job.name);
     return result;
@@ -2761,6 +2773,8 @@ async function main() {
     restartPoints: Number(process.env.STS_TEST_RESTART_POINTS) || 0,
     restart: async function (k, of) {
       log.debug('Entering restart().');
+      // No realm removal may be in flight across a restart either.
+      await removals;
       restarts.push(await clusterRestart.restart({
         k: k, of: of, dir: process.env.STS_TEST_RESTART_DIR || '',
         url: (instance && instance.url) || '',
@@ -2775,6 +2789,8 @@ async function main() {
       log.debug('Leaving restart().');
     }
   }));
+  // Every queued realm removal has landed before anything is reported.
+  await removals;
   const wallMs = Date.now() - started;
 
   // The service goes down BEFORE the coverage is rendered, because under
