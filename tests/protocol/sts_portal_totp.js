@@ -752,8 +752,28 @@ async function theSignInDemandsIt(enrolment) {
 
     // RFC 6238 SECTION 5.2, END TO END. The code that CONFIRMED the enrolment
     // is a code, and a code is accepted once.
+    // ONLY WHILE ITS STEP IS CURRENT CAN IT BE TOLD FROM AN OLD CODE
+    // (GitHub run #468, mariadb). On a slow runner the sign-in reached this
+    // screen after the confirmation's thirty-second step had passed, and a
+    // code outside the window is refused as one that is not right or has
+    // expired: the service never gets as far as asking whether it was used,
+    // and saying "expired" is the truth. So the REPLAY wording is required
+    // while the step is still the current one, and after it only a refusal,
+    // with a line saying the wording was not asked. `totp.window` is 0 in
+    // product, so the current step is the one bound both modes share.
+    const sentInStep = Math.floor(Date.now() / 30000);
     let x = await send(enrolment.confirmationCode);
-    replayRefused = x.status === 400 && /already been used/.test(x.text);
+    const refused = x.status === 400;
+    const stillCurrent = sentInStep === enrolment.confirmationStep &&
+      Math.floor(Date.now() / 30000) === enrolment.confirmationStep;
+    if (stillCurrent) {
+      replayRefused = refused && /already been used/.test(x.text);
+    } else {
+      replayRefused = refused;
+      log.info("the confirmation's step had passed when it was replayed, " +
+               "so only a refusal is asserted, not the replay wording (" +
+               x.status + " " + String(x.text).slice(0, 120) + ")");
+    }
     assert.ok(replayRefused,
       "the code that confirmed the enrolment was accepted a second time, or " +
       "was refused with the wrong reason: " + x.status + " " +
