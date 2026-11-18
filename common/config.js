@@ -4067,6 +4067,32 @@ const SETTINGS = [
                  'algorithm; an algorithm outside the set still signs with ' +
                  'the per-algorithm key. Every key is a key pair of its own; ' +
                  'what the hybrid certificate shares is the certificate.' },
+  // THE KEY CREDENTIALS ARE SIGNED WITH (#1880, 1.1.0). `dedicated`, the
+  // default, is the compliant behaviour: `common/credential_signer.js`.
+  // `realm-key` is 1.0.0's, kept as the way back for a deployment whose
+  // verifiers pinned the realm's general key (backwards compatibility from
+  // 1.0.0 on). Per realm, read at every credential.
+  { key: 'keys.credentialSigner', group: 'Key material',
+    label: 'Credential signing key',
+    path: 'keys.credentialSigner', env: 'STS_KEYS_CREDENTIAL_SIGNER',
+    type: 'enum', enumValues: ['dedicated', 'realm-key'],
+    dflt: 'dedicated', runtime: true,
+    description: 'Which key signs this realm\'s dc+sd-jwt and jwt_vc_json ' +
+                 'credentials and their Token Status List Tokens. ' +
+                 '`dedicated` — the default — is a key of their own, per ' +
+                 'algorithm family, used for nothing else, under a ' +
+                 'certificate whose subjectAltName names every issuer ' +
+                 'identifier the realm answers to as a URI (no DNS name), ' +
+                 'with the extended key usage id-kp-documentSigning (RFC ' +
+                 '9336) and nothing a TLS stack would accept, so a wallet ' +
+                 'can match the credential\'s iss against its x5c (HAIP ' +
+                 '1.0 section 6.1.1). The certificate is re-issued when the ' +
+                 'issuer identifiers change (global.publicBaseUrl, ' +
+                 'tls.hostnames, a listener). `realm-key` signs them with ' +
+                 'the realm\'s general JOSE key, as 1.0.0 did, whose ' +
+                 'certificate names no issuer. Credentials already issued ' +
+                 'stay verifiable either way. ldp_vc and mso_mdoc are not ' +
+                 'affected.' },
   // THE REALM'S POST-QUANTUM AND HPKE DECRYPTION KEYS (#82, 2026-09-27).
   // EMPTY BY DEFAULT, deliberately (rcbj's decision on #82): see the
   // description. `common/helpers.js`'s kemEncryptionKeysFor() makes them.

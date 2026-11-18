@@ -288,6 +288,46 @@ has the precedence and the reasons.
   required, and a remote PEP and the service upgrade together. Save each
   route's choice again (or edit the document) after the upgrade.
 
+### Credentials are signed by a key of their own, whose certificate names the issuer
+
+Until now, a `dc+sd-jwt` or `jwt_vc_json` credential and its Token Status
+List Token were signed with the realm's general JOSE key. That key also
+signs ID Tokens, access tokens, metadata and Security Event Tokens, and its
+certificate named no issuer. A wallet following HAIP 1.0 section 6.1.1 had
+nothing in `x5c` to compare the credential's `iss` with
+([Verifiable credentials](verifiable-credentials.md#the-credential-signing-certificate)).
+
+* **Each realm signs its credentials and their status lists with a
+  dedicated key** for each algorithm family (RSA, each curve, each
+  post-quantum algorithm). That key signs nothing else. It is made the first
+  time a credential needs it, is published in `/oauth2/jwks` and in the DID
+  document, and is accepted by this realm's Verifier. It is not accepted
+  for any of the realm's other tokens.
+* **Its certificate binds the issuer.** The subjectAltName holds one
+  `uniformResourceIdentifier` for every issuer identifier the realm answers
+  to, plus the `did:web` of each. With `global.publicBaseUrl` (or the
+  credential application's listener) pinned, that is exactly one issuer.
+  Otherwise it is each `tls.hostnames` and `tls.ips` name on the main port.
+  The extended key usage is `id-kp-documentSigning` (RFC 9336). There is no
+  DNS name and no TLS usage, so no TLS stack takes the certificate for a
+  server certificate. keyUsage is `digitalSignature` alone. A post-quantum
+  key, ML-DSA included, has a certificate over itself, never over a
+  partner's key.
+* **It is re-issued when the issuer identifiers change** (a new
+  `global.publicBaseUrl`, a listener, a host name), at the next credential.
+  The certificate it replaces is not revoked, so credentials issued under it
+  keep verifying.
+* **A credential whose `iss` the certificate does not name** is still
+  issued with its `x5c`. That happens when a request reaches the service by
+  a name nobody configured. The service logs a warning once per realm and
+  address (`STS-PKI-0283`), and a strict wallet refuses the credential. Pin
+  `global.publicBaseUrl`, or add the name to `tls.hostnames`.
+* **`keys.credentialSigner`** (`STS_KEYS_CREDENTIAL_SIGNER`): `dedicated`, the
+  default, or `realm-key`, which keeps 1.0.0's behaviour for a deployment
+  whose verifiers pinned the realm's general key. Credentials already issued
+  verify either way. `ldp_vc` and `mso_mdoc` are not affected, and neither
+  is the trusted list, which its scheme operator signs.
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the

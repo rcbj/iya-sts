@@ -1719,6 +1719,14 @@
     "en": "2cfc3f704d76eaf9",
     "text": "此領域的簽章金鑰如何劃分。`per-algorithm`——預設值——是每種 JWS 演算法一把金鑰（一把 RSA 金鑰、六把曲線金鑰與十一把後量子金鑰），由所有 JOSE 用途共用，另有一把 RSA 金鑰供所有 XML 簽章使用。`hybrid-groups` 讓五個簽署者群組——OAuth/OIDC 權杖、可驗證憑證、Security Event Token、WS-Trust 與 GNAP、XML——各自擁有「自己的」金鑰，採用所選的一組演算法：RSA-3072、P-256 與 P-384，各自與一把 ML-DSA 金鑰（65、44 與 87）一同在一張混合憑證中認證（ITU-T X.509 第 9.8 條），以及單獨的 SLH-DSA-SHA2-128s。屬於某群組用途的簽章，以該群組對應其演算法的金鑰簽署；不在該組內的演算法仍以 per-algorithm 金鑰簽署。每把金鑰都是獨立的金鑰對；混合憑證共用的是憑證。"
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "憑證簽章金鑰"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "簽署本領域 dc+sd-jwt 與 jwt_vc_json 憑證及其 Token Status List Token 的金鑰。`dedicated`（預設值）是憑證專用的金鑰，每個演算法族一把，不作其他任何用途，其憑證的 subjectAltName 以 URI 形式列出本領域回應的每個簽發者識別碼（不含 DNS 名稱），延伸金鑰用途為 id-kp-documentSigning（RFC 9336），不含任何 TLS 協定堆疊會接受的用途，讓錢包能將憑證的 iss 與其 x5c 比對（HAIP 1.0 第 6.1.1 節）。簽發者識別碼變更時（global.publicBaseUrl、tls.hostnames、監聽器），憑證會重新簽發。`realm-key` 以本領域的一般 JOSE 金鑰簽署，與 1.0.0 相同，其憑證不列出任何簽發者。無論哪一種方式，已簽發的憑證都仍可驗證。ldp_vc 與 mso_mdoc 不受影響。"
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "後量子／混合解密金鑰"

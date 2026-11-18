@@ -1719,6 +1719,14 @@
     "en": "2cfc3f704d76eaf9",
     "text": "Cómo se reparten las claves de firma de este dominio. `per-algorithm` — el valor predeterminado — es una clave por algoritmo JWS (una clave RSA, seis claves de curva y once claves poscuánticas) compartida por todos los usos JOSE, y una clave RSA para todas las firmas XML. `hybrid-groups` da a cada uno de cinco grupos de firmantes — tokens OAuth/OIDC, credenciales verificables, Security Event Tokens, WS-Trust y GNAP, XML — claves PROPIAS, en un conjunto elegido de algoritmos: RSA-3072, P-256 y P-384, cada una certificada junto con una clave ML-DSA (65, 44 y 87) en un único certificado híbrido (ITU-T X.509 cláusula 9.8), y SLH-DSA-SHA2-128s sola. Una firma en el uso de un grupo se hace con la clave del grupo para su algoritmo; un algoritmo fuera del conjunto sigue firmando con la clave por algoritmo. Cada clave es un par de claves propio; lo que comparte el certificado híbrido es el certificado."
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "Clave de firma de credenciales"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "Qué clave firma las credenciales dc+sd-jwt y jwt_vc_json de este dominio y sus Token Status List Tokens. `dedicated` — el valor predeterminado — es una clave propia, por familia de algoritmos, que no se usa para nada más, bajo un certificado cuyo subjectAltName nombra como URI cada identificador de emisor al que responde el dominio (sin nombre DNS), con el uso extendido de clave id-kp-documentSigning (RFC 9336) y nada que una pila TLS aceptaría, para que una billetera pueda comparar el iss de la credencial con su x5c (HAIP 1.0, sección 6.1.1). El certificado se vuelve a emitir cuando cambian los identificadores de emisor (global.publicBaseUrl, tls.hostnames, un listener). `realm-key` las firma con la clave JOSE general del dominio, como hacía la 1.0.0, cuyo certificado no nombra a ningún emisor. Las credenciales ya emitidas siguen siendo verificables en ambos casos. ldp_vc y mso_mdoc no se ven afectados."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Claves de descifrado poscuánticas / híbridas"

@@ -1719,6 +1719,14 @@
     "en": "2cfc3f704d76eaf9",
     "text": "Paano hinahati ang mga signing key ng realm na ito. Ang `per-algorithm` — ang default — ay isang key bawat JWS algorithm (isang RSA key, anim na curve key at labing-isang post-quantum key) na pinagsasaluhan ng bawat paggamit ng JOSE, at isang RSA key para sa bawat XML signature. Binibigyan ng `hybrid-groups` ang bawat isa sa limang signer group — OAuth/OIDC token, verifiable credential, Security Event Token, WS-Trust at GNAP, XML — ng SARILI nitong mga key, sa piniling set ng mga algorithm: RSA-3072, P-256 at P-384, bawat isa sinertipikahan kasama ng isang ML-DSA key (65, 44 at 87) sa iisang hybrid certificate (ITU-T X.509 clause 9.8), at SLH-DSA-SHA2-128s nang mag-isa. Ang signature sa paggamit ng isang group ay pumipirma gamit ang key ng group para sa algorithm nito; ang algorithm na wala sa set ay pumipirma pa rin gamit ang per-algorithm key. Bawat key ay sarili nitong key pair; ang pinagsasaluhan ng hybrid certificate ay ang certificate."
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "Key na ipinipirma sa mga credential"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "Kung aling key ang pumipirma sa mga dc+sd-jwt at jwt_vc_json na credential ng realm na ito at sa kanilang mga Token Status List Token. Ang `dedicated` — ang default — ay sariling key nila, bawat pamilya ng algorithm, na hindi ginagamit sa anupaman, sa ilalim ng sertipiko na ang subjectAltName ay nagpapangalan bilang URI sa bawat identifier ng issuer na sinasagot ng realm (walang DNS name), na may extended key usage na id-kp-documentSigning (RFC 9336) at walang tatanggapin ng isang TLS stack, para maihambing ng wallet ang iss ng credential sa x5c nito (HAIP 1.0 seksiyon 6.1.1). Muling inilalabas ang sertipiko kapag nagbago ang mga identifier ng issuer (global.publicBaseUrl, tls.hostnames, isang listener). Pinipirmahan sila ng `realm-key` gamit ang pangkalahatang JOSE key ng realm, gaya ng ginawa ng 1.0.0, na ang sertipiko ay walang pinapangalanang issuer. Nananatiling mabeberipika ang mga credential na nailabas na alinman ang piliin. Hindi apektado ang ldp_vc at mso_mdoc."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Mga post-quantum / hybrid na decryption key"

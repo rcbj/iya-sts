@@ -96,6 +96,11 @@ const mode = require('./mode');
 // which requires this file: a failure logged here leads with
 // `errorCodes.tag()` rather than writing a row.
 const errorCodes = require('./error_codes');
+// THE CREDENTIAL SIGNERS (#1880): the dedicated per-realm key that signs
+// credentials and their status lists, and its certificate. A LEAF below this
+// file (it requires none of it), wired by the functions near
+// `credentialSignerForAsync()`.
+const credentialSigner = require('./credential_signer');
 const cacheRegistry = require('./cache_registry');
 // WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES, per use case and per realm
 // (2026-09-13). It requires `config`, `realms` and `error_codes` and reaches
@@ -1419,6 +1424,12 @@ function plainKeySet(realmId, stored) {
   // publish keys its siblings do not sign with.
   if ((stored.signerGroups || []).length) {
     set.signerGroups = stored.signerGroups;
+  }
+  // AND THE CREDENTIAL SIGNERS (#1880), already parsed, for the same reason:
+  // dropped here, this process would make its own and sign credentials with
+  // keys its siblings do not publish.
+  if ((stored.credentialSigners || []).length) {
+    set.credentialSigners = stored.credentialSigners;
   }
   set.generations = generationsView(realmId, stored.generations, null);
   log.debug("Leaving plainKeySet(). kid=" + set.kid);
@@ -6020,6 +6031,99 @@ function groupJwkEntries(keys) {
 }
 
 // ---------------------------------------------------------------------------
+// THE CREDENTIAL SIGNERS (#1880) — `common/credential_signer.js` argues them.
+//
+// `credentialSignerForAsync()` is what `oid4vc/vc_status.ts`'s `signerAsync()`
+// asks, which is the one answer to "which key signs a credential and its
+// status list". The keys are PUBLISHED in `/oauth2/jwks` (which JWT VC Issuer
+// Metadata's `jwks_uri` names) and in the DID document, each with its own
+// chain in `x5c`; they are found by kid for `publishedKidFor()` and the
+// certificate header. They are NOT among `allVerificationKeys()`: a realm's
+// own access tokens, ID Tokens and Security Event Tokens are never accepted
+// on a credential key, and only the OpenID4VP Verifier's issuer check
+// (`credentialVerificationKeys()`) takes them.
+// ---------------------------------------------------------------------------
+/**
+ * The key the ambient realm signs a credential of `alg` with: its dedicated
+ * credential signer, made and certified where it needs to be (#1880).
+ *
+ * @param alg - the JWS algorithm
+ * @param opts - optionally `issuer`, the credential's `iss`, which is checked
+ *   against what the certificate names
+ * @returns a promise of `{ alg, key, kid, slot, pkiSlot, uris, named }`
+ */
+function credentialSignerForAsync(alg, opts) {
+  log.debug("Entering credentialSignerForAsync(). alg=" + alg);
+  const refused = pqSignatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving credentialSignerForAsync(). Post-quantum is off.");
+    return Promise.reject(refused);
+  }
+  log.debug("Leaving credentialSignerForAsync().");
+  return credentialSigner.signerForAsync(stsKeysFor(), alg, {
+    curveSpecs: CURVE_KEY_SPECS, issuer: (opts && opts.issuer) || '' });
+}
+
+/**
+ * The ambient realm's credential signers as published JWKs, each with its own
+ * certificate chain in `x5c` where it has one (#1880).
+ *
+ * @param keys - the realm's key set
+ * @returns the JWKs
+ */
+function credentialPublishedJwks(keys) {
+  log.debug("Entering credentialPublishedJwks().");
+  let pki = null;
+  try {
+    pki = require('./pki');
+  } catch (e) {
+    log.debug("Caught in credentialPublishedJwks(): " +
+              ((e && e.message) || e));
+    pki = null;
+  }
+  const out = credentialSigner.membersOf(keys || stsKeysFor())
+    .map(function (one) {
+      const jwk = Object.assign({}, one.publicJwk);
+      const held = pki ? pki.certificateFor((keys || stsKeysFor()).realm,
+        'jose', credentialSigner.pkiSlotOf(one.slot)) : null;
+      if (held && held.certificatePem &&
+          held.subjectKeyFingerprint === pkiThumbprintOf(one)) {
+        jwk.x5c = x5cOf(held.certificatePem, held.chainPem || []);
+      }
+      return jwk;
+    });
+  log.debug("Leaving credentialPublishedJwks(). " + out.length + ".");
+  return out;
+}
+
+// The fingerprint `pki.js` records of a credential signer's key, or ''.
+function pkiThumbprintOf(member) {
+  log.debug("Entering pkiThumbprintOf().");
+  try {
+    const pem = credentialSigner.spkiPemOf(member);
+    log.debug("Leaving pkiThumbprintOf().");
+    // `pki.js`'s thumbprintOf(): the SHA-256 of the PEM's DER, in hex.
+    return stsCrypto.certificateThumbprint(pem, { format: 'hex' });
+  } catch (e) {
+    log.debug("Caught in pkiThumbprintOf(): " + ((e && e.message) || e));
+    return '';
+  }
+}
+
+/**
+ * The ambient realm's credential signers as `{ alg, publicJwk, role }` rows,
+ * for the OpenID4VP Verifier's issuer check and nothing else (#1880).
+ *
+ * @returns the rows
+ */
+function credentialVerificationKeys() {
+  log.debug("Entering credentialVerificationKeys().");
+  const out = credentialSigner.verificationRows(stsKeysFor());
+  log.debug("Leaving credentialVerificationKeys(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // MINTING ONE UNIT'S NEXT KEY — off the event loop where there is an async
 // door (RSA, the curves and the post-quantum keys all on libuv's thread
 // pool), with the builders the current keys were made by.
@@ -6230,6 +6334,14 @@ function plainCopyOf(keys, overrides) {
     signerGroups: (keys.signerGroups || []).map(function (one) {
       return { group: one.group, slot: one.slot, alg: one.alg,
                kind: one.kind, pairedSlot: one.pairedSlot || null,
+               privateKey: one.privateKey, publicJwk: one.publicJwk };
+    }),
+    // The credential signers (#1880) carry over a rotation unchanged, as the
+    // VC-API keys do: a credential outlives the realm's token keys, and the
+    // key that signed it is the one its certificate names.
+    credentialSigners: credentialSigner.membersOf(keys).map(function (one) {
+      return { group: one.group, slot: one.slot, alg: one.alg,
+               kind: one.kind, pairedSlot: null,
                privateKey: one.privateKey, publicJwk: one.publicJwk };
     }),
     generations: {
@@ -8166,6 +8278,23 @@ function certificateSignerFor(alg, kid) {
         return pinnedSpki;
       }
     };
+  } else if (credentialSigner.isCredentialKid(kid)) {
+    // A CREDENTIAL SIGNER (#1880): its certificate is its own slot's,
+    // `vc-issuer:<key family>`, and its subjectPublicKeyInfo is this key.
+    const own = credentialSigner.membersOf(keys).filter(function (one) {
+      return one.publicJwk && one.publicJwk.kid === kid;
+    })[0];
+    if (own) {
+      signer = {
+        realm: keys.realm, slot: credentialSigner.pkiSlotOf(own.slot),
+        kid: kid,
+        spkiPem: function () {
+          log.debug("Entering spkiPem().");
+          log.debug("Leaving spkiPem(). A credential signer.");
+          return credentialSigner.spkiPemOf(own);
+        }
+      };
+    }
   } else if (kid === keys.kid) {
     signer = {
       realm: keys.realm, slot: 'RS256', kid: kid,
@@ -8374,6 +8503,9 @@ function publicJwkOfKid(kid) {
     .concat(standbyOf(keys)).concat(groupMembersOf(keys))
     .concat(kid && String(kid).indexOf('sts-pinned-') === 0
       ? pinnedSignersOf(keys) : [])
+    // A credential signer (#1880), asked only for a kid that names one.
+    .concat(credentialSigner.isCredentialKid(kid)
+      ? credentialSigner.membersOf(keys) : [])
     .filter(function (one) {
       return one && one.publicJwk && one.publicJwk.kid === kid;
     })[0];
@@ -9604,6 +9736,9 @@ module.exports = {
   groupSignerFor: groupSignerFor,
   groupJwkEntries: groupJwkEntries,
   groupPublishedJwks: groupPublishedJwks,
+  credentialSignerForAsync: credentialSignerForAsync,
+  credentialPublishedJwks: credentialPublishedJwks,
+  credentialVerificationKeys: credentialVerificationKeys,
   xmlSignatureChoice: xmlSignatureChoice,
   ownXmlSigningCertificates: ownXmlSigningCertificates,
   ownXmlEncryptionCertificates: ownXmlEncryptionCertificates,

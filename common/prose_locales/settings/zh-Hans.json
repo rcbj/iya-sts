@@ -1719,6 +1719,14 @@
     "en": "2cfc3f704d76eaf9",
     "text": "此领域的签名密钥如何划分。`per-algorithm`（默认）为每种 JWS 算法一个密钥（一个 RSA 密钥、六个曲线密钥和十一个后量子密钥），由每种 JOSE 用途共享，并为所有 XML 签名使用一个 RSA 密钥。`hybrid-groups` 为五个签名者组——OAuth/OIDC 令牌、可验证凭据、Security Event Token、WS-Trust 和 GNAP、XML——各自提供专属密钥，采用选定的一组算法：RSA-3072、P-256 和 P-384，每个都与一个 ML-DSA 密钥（65、44 和 87）一起在一张混合证书中认证（ITU-T X.509 第 9.8 条），以及单独的 SLH-DSA-SHA2-128s。组用途中的签名使用该组对应算法的密钥；不在该组算法集中的算法仍使用按算法划分的密钥签名。每个密钥都是独立的密钥对；混合证书共享的是证书。"
   },
+  "keys.credentialSigner|label": {
+    "en": "550ef73b0777ea78",
+    "text": "凭证签名密钥"
+  },
+  "keys.credentialSigner|description": {
+    "en": "80863e8241a6ca0b",
+    "text": "签署本领域 dc+sd-jwt 和 jwt_vc_json 凭证及其 Token Status List Token 的密钥。`dedicated`（默认值）是凭证专用的密钥，每个算法族一把，不用于其他任何用途，其证书的 subjectAltName 以 URI 形式列出本领域响应的每个颁发者标识符（不含 DNS 名称），扩展密钥用法为 id-kp-documentSigning（RFC 9336），不含任何 TLS 协议栈会接受的用法，使钱包能够将凭证的 iss 与其 x5c 进行比对（HAIP 1.0 第 6.1.1 节）。颁发者标识符发生变化时（global.publicBaseUrl、tls.hostnames、监听器），证书会重新签发。`realm-key` 使用本领域的通用 JOSE 密钥签署，与 1.0.0 相同，其证书不列出任何颁发者。无论哪种方式，已签发的凭证都仍可验证。ldp_vc 和 mso_mdoc 不受影响。"
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "后量子 / 混合解密密钥"

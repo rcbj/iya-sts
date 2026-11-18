@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5723** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5728** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 268
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 273
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -1101,6 +1101,11 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0279` | A certificate a deleted person or application still held valid (a TLS client or message-signing certificate, an RFC 7523 or RFC 7522 key pair, an enrolled leaf) could not be revoked (cessationOfOperation) when its holder was deleted. The delete stands; revoke the serial on /admin/pki. | none: a log line; the delete is answered as it was |
 | `STS-PKI-0280` | A deleted person's or application's TLS client or message-signing certificate could not be detached from its name in the certificate register, so a holder made again under that name is listed it. | none: a log line; the delete is answered as it was |
 | `STS-PKI-0281` | A certificate request for a person's RFC 7523 key carries a key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0282` | A credential was to be signed with an algorithm the dedicated credential signer has no key family for (#1880): not an asymmetric JWS algorithm this service holds keys for. | The credential request fails as the credential endpoint fails any signing error (OpenID4VCI 1.0 section 8.3.1) |
+| `STS-PKI-0283` | A credential's iss is not one of the issuer identifiers its credential-signing certificate names (#1880): the request reached the service under a name that neither global.publicBaseUrl nor tls.hostnames, tls.ips or a listener names. The credential is still signed, with its x5c; a wallet that compares iss with the certificate (HAIP 1.0 section 6.1.1) refuses it. Logged once per realm and address. | none: the credential is issued |
+| `STS-PKI-0284` | A realm answers to more issuer identifiers than one credential-signing certificate names (#1880), and the certificate names the first 64. | none: the credential is issued |
+| `STS-PKI-0285` | A realm's credential-signing key could not be made, did not arrive from the process that claimed it in time, or is held encrypted and could not be decrypted (#1880). | The credential request fails as the credential endpoint fails any signing error; a late key is made here instead |
+| `STS-PKI-0286` | A realm's credential-signing key could not be certified (#1880): no issuer identifier or key to name, or the JOSE Issuing CA refused. It still signs; its credentials carry no x5c until it is certified. | none: the credential is issued without x5c |
 
 ## STS-ENROLL
 

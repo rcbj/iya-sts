@@ -672,11 +672,14 @@ class VcIssuer {
   //
   // `chosen` (2026-10-16): the algorithm the credential's offer chose on
   // `/portal/wallet`, or '' for the configured one.
-  private credentialSignerAsync(chosen?: string) {
+  //
+  // `issuer` (#1880): the credential's `iss`, which the credential signer's
+  // certificate is checked against (`common/credential_signer.js`).
+  private credentialSignerAsync(chosen?: string, issuer?: string) {
     const { log, vcStatus } = this.deps;
     log.debug("Entering VcIssuer.credentialSignerAsync().");
     log.debug("Leaving VcIssuer.credentialSignerAsync().");
-    return vcStatus.signerAsync(chosen || '');
+    return vcStatus.signerAsync(chosen || '', issuer || '');
   }
 
   private encValuesFrom(settingKey) {
@@ -1748,7 +1751,7 @@ class VcIssuer {
                                .concat([decoy])
                                .sort();
 
-    const signer = await this.credentialSignerAsync(signingAlg);
+    const signer = await this.credentialSignerAsync(signingAlg, issuerId);
     const times = this.unlinkableTimes(now);
     const payload: Record<string, any> = {
       iss: issuerId,
@@ -1850,7 +1853,7 @@ class VcIssuer {
     const rounded = this.unlinkableTimes(Math.floor(Date.now() / 1000));
     const now = rounded.nbf;
     const exp = rounded.exp;
-    const signer = await this.credentialSignerAsync(signingAlg);
+    const signer = await this.credentialSignerAsync(signingAlg, issuerId);
     // BOUND TO THE PERSON'S DID (#693 phase 2b), the credential IS about the
     // DID: VCDM 1.1's JWT encoding has `sub` "represent the id property
     // contained in the credentialSubject", and a DID there is the VCDM's own
