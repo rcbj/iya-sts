@@ -24,7 +24,14 @@
 # runner lost communication with the server", and nothing in their logs could
 # say whether the disk or the memory ran out; the file goes into the job's
 # test-report artifact, so the next one can. Since the same day it also
-# writes each container's memory every five minutes (`docker stats`).
+# writes each container's memory and CPU (`docker stats`, one line a
+# container: name, memory used / limit, CPU %). That was every tenth snapshot
+# until 2026-11-18, and five minutes could not say which container a
+# job's window belonged to: the fuzz and cluster starvation of runs #468 and
+# 44070289883 had to be matched to the service, postgres or the runner's own
+# processes from a handful of samples. It is every snapshot now. It costs one
+# `docker stats --no-stream` a snapshot (about two seconds, bounded at
+# twenty), and the lines are the format they always were.
 #
 # `harden-memory` (2026-11-14, run 43622250478) is for the fifth loss: the
 # `cluster` runner stopped reporting 105 minutes in, in the middle of
@@ -65,7 +72,7 @@ freeDisk()
 sampleResources()
 {
   echo "Entering sampleResources()."
-  local out="$1" n=0
+  local out="$1"
   mkdir -p "$(dirname "${out}")"
   while :;
   do
@@ -74,13 +81,9 @@ sampleResources()
       free -m
       df -h / /var/lib/docker 2> /dev/null
       vmstat 1 2 | tail -1
-      if [ $(( n % 10 )) -eq 0 ];
-      then
-        timeout 20 docker stats --no-stream \
-          --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' 2> /dev/null
-      fi
+      timeout 20 docker stats --no-stream \
+        --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' 2> /dev/null
     } >> "${out}" 2>&1
-    n=$(( n + 1 ))
     sleep 30
   done
 }
