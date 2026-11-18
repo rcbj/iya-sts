@@ -165,8 +165,8 @@ async function tool(t) {
             done.before['node-a'] && done.after['node-a'] &&
             done.after['node-a'].isolates.length === 1 &&
             done.after['node-a'].cgroupMb === 2048,
-            'C. the broker\'s answer is read, the node is live again, and its ' +
-            'memory is recorded before and after', JSON.stringify(done));
+            'C. the broker\'s answer is read, the node is live again, and ' +
+            'its memory is recorded before and after', JSON.stringify(done));
     clearInterval(timer);
 
     t.log.info('=== D. a broker that could not ===');
