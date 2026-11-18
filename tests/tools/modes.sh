@@ -146,6 +146,7 @@ STS_MODE=development
 STS_PERSISTENCE_MODE=memory
 STS_MARIADB_BUFFER_POOL=128M
 STS_POSTGRES_SHARED_BUFFERS=2GB
+STS_WORKERS_HEAP_LIMIT_MB=0
 STS_PERSISTENCE_COORDINATE=false
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
@@ -193,6 +194,7 @@ STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
 STS_POSTGRES_SHARED_BUFFERS=2GB
+STS_WORKERS_HEAP_LIMIT_MB=0
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -231,6 +233,7 @@ STS_MODE=product
 STS_PERSISTENCE_MODE=mariadb
 STS_MARIADB_BUFFER_POOL=1G
 STS_POSTGRES_SHARED_BUFFERS=2GB
+STS_WORKERS_HEAP_LIMIT_MB=0
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -302,6 +305,18 @@ EOF
       # jobs on a local product node, and the kernel's page cache holds
       # what the buffers do not.
       #
+      # AND EACH ISOLATE IS SIZED (2026-11-18): the suite's containers have
+      # no memory limit, so `process_memory.ts` derived no heap budget and
+      # each of a node's five isolates ran with V8's machine-sized defaults,
+      # a 192 MiB young generation among them. STS_WORKERS_HEAP_LIMIT_MB=1024
+      # is the setting an operator's node derives from its container (a 48
+      # MiB young generation, the old space capped), at about three times
+      # the largest isolate's live heap measured with 74 realms held. A
+      # fresh local product node with 3 + 1 workers: 2426 MB without it,
+      # 1844 MB with it; after 65 realm-making jobs, 3575 MB and 2719 MB
+      # (768 there). MALLOC_ARENA_MAX=2 was measured too and saved 31 MB at
+      # rest, so it is not set.
+      #
       # THE BULK SIZES ARE THE SAME IN EVERY MODE (2026-09-27, rcbj's
       # decision after the same run): 1000 people, 10 groups of 100, about a
       # fifth of the library's 5000 / 50 / 100. On the single-node mode the
@@ -316,6 +331,7 @@ STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
 STS_POSTGRES_SHARED_BUFFERS=1GB
+STS_WORKERS_HEAP_LIMIT_MB=1024
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -351,6 +367,7 @@ STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
 STS_POSTGRES_SHARED_BUFFERS=1GB
+STS_WORKERS_HEAP_LIMIT_MB=1024
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=portable
 STS_WORKERS_REQUEST_COUNT=3
@@ -397,6 +414,7 @@ STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
 STS_POSTGRES_SHARED_BUFFERS=2GB
+STS_WORKERS_HEAP_LIMIT_MB=0
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
@@ -430,6 +448,7 @@ STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_MARIADB_BUFFER_POOL=128M
 STS_POSTGRES_SHARED_BUFFERS=2GB
+STS_WORKERS_HEAP_LIMIT_MB=0
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
