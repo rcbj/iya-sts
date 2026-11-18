@@ -26,6 +26,9 @@
 //      every node is waited for as a live member, and each node's memory is
 //      read before and after (`/admin-api/node-health`).
 //   D. A broker that answers `ok: false` is a FAILED restart.
+//   E. The launcher's broker re-runs the secret store's seeder before each
+//      node's restart (run #493: node A had no start-up token and never
+//      came back).
 // ===========================================================================
 
 const fs = require('fs');
@@ -186,10 +189,31 @@ async function tool(t) {
   log.debug("Leaving tool().");
 }
 
+// E (run #493): the launcher's broker mints each node a fresh start-up
+// token before restarting it. A node takes the secret store's secrets at
+// start through a single-use token, and node A, restarted without one,
+// never came back; the rest of the mode ran on node B alone.
+function broker(t) {
+  log.debug("Entering broker().");
+  const text = fs.readFileSync(path.join(__dirname, '..', 'run-tests.sh'),
+                               'utf8');
+  const start = text.indexOf('clusterRestartBroker()\n{');
+  const body = start < 0 ? '' : text.slice(start, text.indexOf('\n}\n',
+                                                                start));
+  const seed = body.indexOf('start -a "${STS_BAO_SEED_CONTAINER_NAME}"');
+  const restart = body.indexOf('restart -t 60 "${container}"');
+  t.check(seed > 0 && restart > seed &&
+          /dockerBounded \d+ start -a/.test(body),
+          'E. the broker re-runs the secret store\'s seeder, bounded, before ' +
+          'it restarts each node', seed + ' ' + restart);
+  log.debug("Leaving broker().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await schedule(t);
   await tool(t);
+  broker(t);
   log.debug("Leaving run().");
 }
 

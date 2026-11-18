@@ -4278,8 +4278,10 @@ rule is split on the verdict now:**
   `/admin-api/realms/remove` with a token of its own, and the summary's
   `realmsRemoved` counts them. The removals are a QUEUE beside the jobs, one
   at a time and not awaited by the lane (a retirement can wait out
-  `realms.removalDeliveryTimeoutS`), drained before a cluster restart and
-  before the reports are written. Only an ACCEPTED create is written, so a job
+  `realms.removalDeliveryTimeoutS`), drained before the reports are written,
+  and **drained and HELD around every exclusive job and every cluster
+  restart** (`RemovalQueue.hold()`, run #493: `sts_realm_count_limit` saw the
+  realm count move under it in every mode). `tests/realm_removal_queue.js`. Only an ACCEPTED create is written, so a job
   refused "already defined" for somebody else's realm cannot put that realm on
   its list.
 * **A job that FAILED, timed out or declined keeps every realm**, for the
@@ -4838,7 +4840,11 @@ job count, and at each boundary:
 2. `run-tests.sh`'s `clusterRestartBroker()`, a background job of the
    launcher for the length of the detached mode, restarts node A and then
    node B with bounded `docker restart` calls, waits for each to be HEALTHY
-   (`waitForStsHealthy()`, `STS_TEST_READY_SECONDS`) before the next — one at
+   (`waitForStsHealthy()`, `STS_TEST_READY_SECONDS`) before the next, each
+   after a run of the secret store's seeder (`docker start -a` of the
+   one-shot): a node takes its secrets at start through a SINGLE-USE token,
+   and without a fresh one node A did not come back in run #493 and the rest
+   of the mode ran on node B alone. One at
    a time, so the balancer always has a node and the scheduler hands over
    rather than starting cold — and answers `done-<k>.json` with each
    container's `docker stats` before and after.

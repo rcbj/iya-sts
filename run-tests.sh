@@ -1808,6 +1808,24 @@ clusterRestartBroker()
       why=""
       for container in "${STS_CONTAINER_NAME}" "${STS2_CONTAINER_NAME}";
       do
+        # A FRESH START-UP TOKEN FIRST (GitHub Actions run #493). A node
+        # takes the secret store's secrets at start through a SINGLE-USE
+        # wrapping token the seeder left for it (openbao/seed.js, #254), and
+        # its first start used it: restarted without one, node A refused to
+        # start ("the start-up token for sts could not be unwrapped"), was
+        # never healthy, and the rest of the mode ran on node B alone —
+        # sts_ldaps saw one leaf, sts_kerberos_keytab and sts_spiffe_grpc
+        # reached node A's own address. `docker compose up` re-runs the
+        # seeder; `docker restart` does not, so the broker does. The seeder
+        # is idempotent and mints a token per node it names.
+        echo "  a fresh start-up token for ${container}..."
+        if ! dockerBounded 180 start -a "${STS_BAO_SEED_CONTAINER_NAME}" \
+             > /dev/null;
+        then
+          ok=false
+          why="the secret store's seeder did not mint a start-up token"
+          break
+        fi
         echo "  restarting ${container}..."
         if ! dockerBounded 180 restart -t 60 "${container}" > /dev/null;
         then
