@@ -1419,9 +1419,15 @@ pull, a GET, a request the cluster barrier holds.
   here. Global in `persistence/tiers.js`, because the entry is and every
   cell's console saw every heartbeat until then; a row is a component's
   times and counts.
-* **JOURNALLED AT ONCE WHEN THE COUNTERS MOVED, OTHERWISE ONCE AN
-  INTERVAL**: `journalIntervalMs()`, a fifth of `xacml.pepStaleAfterS`
-  between 1 s and 60 s, measured from the newer of the entry's and the
+* **JOURNALLED AT ONCE WHEN THE COUNTERS OR THE SIGNAL HEALTH'S EVENTS
+  MOVED, OTHERWISE ONCE AN INTERVAL.** The events are every count and flag
+  of the snapshot without its `at`, `oldestSuccessAgeMs` and each stream's
+  times and poll count (`signalEvents()`). Counting the four counters alone
+  held a set accepted in the receiving process for up to a minute, so in a
+  dispatched service the worker answering `/admin-api/xacml/peps` drew the
+  older snapshot and `sts_xacml_remote_pep` gave up after 40 s (run #478,
+  single-node, mariadb and cluster). The interval is `journalIntervalMs()`,
+  a fifth of `xacml.pepStaleAfterS` between 1 s and 60 s, measured from the newer of the entry's and the
   journalled record's `lastSeen`, which every process reads, so a node's
   workers and a cluster's nodes share one interval. The receiving process
   holds its newest record in `latest` (per process, per realm, a row per
