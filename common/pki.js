@@ -8807,6 +8807,18 @@ function credentialSignerCertificateCurrent(realmId, spec) {
     log.debug("Leaving credentialSignerCertificateCurrent(). Another key.");
     return { current: false, why: 'its certificate is over another key' };
   }
+  // A REVOKED CERTIFICATE IS NEVER CURRENT (#1880's follow-up, run #478).
+  // An administrator, or sts_pki_revocation, may put the live certificate on
+  // the JOSE Issuing CA's list; it was used again for every credential and
+  // published in /oauth2/jwks, so the realm went on publishing a certificate
+  // its own CRL and OCSP responder call revoked. A new one is issued instead,
+  // over the same key — `heldCertificateCurrent()`'s rule for a registered
+  // key, and the same reason.
+  const revocation = require('./pki_revocation');
+  if (revocation.isRevoked(id, 'jose', held.serialHex)) {
+    log.debug("Leaving credentialSignerCertificateCurrent(). Revoked.");
+    return { current: false, why: 'its certificate is revoked' };
+  }
   const row = rawRowFor(id) || {};
   const issuing = (row.issuing || {}).jose;
   if (!issuing || (held.chainPem || [])[0] !== issuing.certificatePem ||

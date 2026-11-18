@@ -36,6 +36,12 @@
 //   E. `keys.credentialSigner=realm-key` is 1.0.0's: the general key and its
 //      certificate. A credential signed either way, and one from before the
 //      address change, is accepted by this realm's Verifier.
+//   F. THE LIVE CERTIFICATE IS NEVER ON ITS CA'S CRL (run #478): revoked by
+//      an administrator — as sts_pki_revocation revokes the first JOSE leaf
+//      by subject, which is now this one — it leaves /oauth2/jwks at once,
+//      and the next credential carries a new certificate over the same key;
+//      and after the JOSE Issuing CA is re-issued and its leaves re-certified,
+//      the certificate published is still one its CA has not revoked.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -418,6 +424,81 @@ function childMain() {
            [oldAnswer.status, newAnswer.status, firstAnswer.status].join(' ') +
            ' ' + String(oldAnswer.text || '').slice(0, 160) + ' ' +
            String(newAnswer.text || '').slice(0, 160));
+
+      // ================================================================
+      // F. THE LIVE CERTIFICATE IS NEVER ON ITS CA'S CRL
+      // ================================================================
+      // Every credential-signer certificate /oauth2/jwks publishes, and any
+      // of them its issuing authority's register (what its CRL and OCSP
+      // responder answer from) calls revoked.
+      async function publishedCredentialLeaves() {
+        const got = await w.request('GET', '/oauth2/jwks');
+        const leaves = ((got.json && got.json.keys) || [])
+          .filter(function (k) {
+            return /^sts-vc-/.test(String(k.kid)) && k.x5c && k.x5c.length;
+          }).map(function (k) {
+            return new nodeCrypto.X509Certificate(pemOf(k.x5c[0]));
+          });
+        return { leaves: leaves,
+                 revoked: leaves.filter(function (one) {
+                   return !!revocation.isRevoked('', 'jose',
+                                                 one.serialNumber);
+                 }).map(function (one) {
+                   return one.serialNumber;
+                 }) };
+      }
+      const live = pki.certificateFor('', 'jose', 'vc-issuer:RSA');
+      const revokedLive = revocation.revoke('', 'jose',
+        { serialHex: live.serialHex, reason: 'keyCompromise',
+          subject: live.subject, note: 'credential_signer_certificate F' });
+      const afterRevoke = await publishedCredentialLeaves();
+      note(revokedLive.ok && afterRevoke.revoked.length === 0 &&
+           !afterRevoke.leaves.some(function (one) {
+             return one.serialNumber.toLowerCase().replace(/^0+/, '') ===
+                    String(live.serialHex).toLowerCase().replace(/^0+/, '');
+           }),
+           'F1. the live credential-signing certificate revoked, as ' +
+           'sts_pki_revocation does, /oauth2/jwks publishes it no more — no ' +
+           'published certificate is on its CA\'s CRL',
+           live.serialHex + ' revoked=' + JSON.stringify(afterRevoke.revoked));
+      const reissued = await w.issue('cs-alice', holder);
+      const reissuedHeader = reissued.credential
+        ? headerOf(reissued.credential) : {};
+      const reissuedLeaf = (reissuedHeader.x5c || []).length
+        ? new nodeCrypto.X509Certificate(pemOf(reissuedHeader.x5c[0])) : null;
+      note(reissuedLeaf &&
+           !revocation.isRevoked('', 'jose', reissuedLeaf.serialNumber) &&
+           spkiOf(reissuedLeaf.publicKey) === spkiA,
+           'F2. and the next credential carries a NEW certificate, not ' +
+           'revoked, over the same key',
+           (reissued.error || '') + ' ' +
+           (reissuedLeaf && reissuedLeaf.serialNumber));
+      const afterIssue = await publishedCredentialLeaves();
+      note(afterIssue.leaves.length > 0 && afterIssue.revoked.length === 0,
+           'F3. which /oauth2/jwks publishes again',
+           afterIssue.leaves.length + ' revoked=' +
+           JSON.stringify(afterIssue.revoked));
+      const rebuilt = await pki.reissueUseCase('', 'jose');
+      const afterRebuild = await publishedCredentialLeaves();
+      const rebuiltCredential = await w.issue('cs-alice', holder);
+      const rebuiltHeader = rebuiltCredential.credential
+        ? headerOf(rebuiltCredential.credential) : {};
+      const rebuiltLeaf = (rebuiltHeader.x5c || []).length
+        ? new nodeCrypto.X509Certificate(pemOf(rebuiltHeader.x5c[0])) : null;
+      note(rebuilt && rebuilt.ok !== false &&
+           afterRebuild.revoked.length === 0 && rebuiltLeaf &&
+           !revocation.isRevoked('', 'jose', rebuiltLeaf.serialNumber),
+           'F4. after the JOSE Issuing CA is re-issued and its leaves ' +
+           're-certified, neither /oauth2/jwks nor the next credential ' +
+           'carries a certificate its CA has revoked',
+           JSON.stringify(rebuilt && (rebuilt.errors || rebuilt.ok)) + ' ' +
+           JSON.stringify(afterRebuild.revoked));
+      const recertified = await pki.recertifyUseCase('', 'jose');
+      const afterRecertify = await publishedCredentialLeaves();
+      note(recertified && afterRecertify.revoked.length === 0,
+           'F5. and the same after its leaves are re-certified in place',
+           JSON.stringify(afterRecertify.revoked));
+
       await w.inRealm(function () {
         m.config.clearOverride('global.publicBaseUrl');
       });

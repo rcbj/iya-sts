@@ -754,6 +754,50 @@ async function signerForAsync(keys, alg, opts) {
 }
 
 /**
+ * The certificate a credential signer's published JWK may carry in `x5c`:
+ * the held one while it is over this key and NOT revoked. A revoked one is
+ * published by no document — the realm's own CRL calls it revoked — so the
+ * JWK goes out bare and a new certificate is asked for, in the background,
+ * for the next reader (#1880's follow-up, run #478).
+ *
+ * @param realmId - the realm
+ * @param member - the credential signer
+ * @returns the certificate record, or null
+ */
+function publishableCertificate(realmId, member) {
+  log.debug("Entering publishableCertificate(). " + member.slot);
+  let pki = null;
+  let spkiPem = '';
+  try {
+    pki = require('./pki');
+    spkiPem = spkiPemOf(member);
+  } catch (e) {
+    log.debug("Caught in publishableCertificate(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving publishableCertificate(). Unreadable.");
+    return null;
+  }
+  const held = pki.certificateFor(realmId, 'jose', pkiSlotOf(member.slot));
+  if (!held || !held.certificatePem || held.subjectKeyFingerprint !==
+      stsCrypto.certificateThumbprint(spkiPem, { format: 'hex' })) {
+    log.debug("Leaving publishableCertificate(). None over this key.");
+    return null;
+  }
+  if (!require('./pki_revocation').isRevoked(realmId, 'jose',
+                                             held.serialHex)) {
+    log.debug("Leaving publishableCertificate(). Held.");
+    return held;
+  }
+  // Not awaited: a JWKS is answered with what is publishable now.
+  ensureCertificate(realmId, member, issuerUris()).catch(function (e) {
+    log.debug("Caught in publishableCertificate(): " +
+              ((e && e.message) || e));
+  });
+  log.debug("Leaving publishableCertificate(). Revoked; re-issuing.");
+  return null;
+}
+
+/**
  * The credential signers as rows a verifier finds by `kid`.
  *
  * @param keys - the realm's key set
@@ -799,6 +843,7 @@ module.exports = {
   memberForAsync: memberForAsync,
   spkiPemOf: spkiPemOf,
   ensureCertificate: ensureCertificate,
+  publishableCertificate: publishableCertificate,
   signerForAsync: signerForAsync,
   verificationRows: verificationRows
 };
