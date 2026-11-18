@@ -50,7 +50,11 @@
 //      receiver-supplied property and moves the push header, the status is
 //      read, a stream-updated is recorded, a stateless verification is
 //      acknowledged and verifies nothing, and a session-revoked a policy
-//      initiated ends the session.
+//      initiated ends the session;
+//   N. one poll of a stream at a time (GitHub Actions run #493): a poll-now
+//      and the poll job together reach the partner one after the other, and
+//      a stream another process is polling is skipped by the job and waited
+//      for by a poll-now.
 // ===========================================================================
 
 const fs = require('fs');
@@ -762,6 +766,152 @@ function childMain() {
     note(ended.indexOf('s5') >= 0,
          'L6. a session-revoked whose initiating_entity is policy ends the ' +
          'session it names', JSON.stringify(ended));
+
+    // --- N. one poll of a stream at a time (run #493) ----------------------
+    // The conformance suite's CAEP interoperability module, by poll: the
+    // acknowledgement of its verification makes it generate the profile's
+    // events, a wait inside that very request, and a second poll in that
+    // wait left them with nobody. This partner keeps the same shape and
+    // counts a poll that arrives while another is still being answered.
+    const SV = 'https://sv.test';
+    const svQueue = [];
+    const svAcked = [];
+    const svMade = [];
+    let svBusy = 0;
+    let svOverlaps = 0;
+    let svVerification = '';
+    const svSet = function (uri, payload) {
+      const jti = crypto.randomBytes(8).toString('hex');
+      return { jti: jti, token: sign({ iss: SV, aud: 'realm-sv', jti: jti,
+        iat: Math.floor(Date.now() / 1000),
+        sub_id: { format: 'opaque', id: 'sv-1' },
+        events: { [uri]: payload } }) };
+    };
+    const svWait = function (ms) {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, ms);
+      });
+    };
+    const svPoll = async function (body) {
+      svBusy += 1;
+      if (svBusy > 1) {
+        svOverlaps += 1;
+      }
+      try {
+        for (const jti of [].concat(body.ack || [])) {
+          svAcked.push(jti);
+          if (jti === svVerification && svMade.length === 0) {
+            await svWait(60);
+            [CAEP + 'session-revoked', CAEP + 'credential-change']
+              .forEach(function (uri) {
+                const one = svSet(uri, { initiating_entity: 'policy' });
+                svMade.push(one.jti);
+                svQueue.push(one);
+              });
+          }
+        }
+        await svWait(15);
+        const sets = {};
+        svQueue.splice(0, Number(body.maxEvents) || 0)
+          .forEach(function (one) {
+            sets[one.jti] = one.token;
+          });
+        return await answer(200, { sets: sets,
+                                   moreAvailable: svQueue.length > 0 });
+      } finally {
+        svBusy -= 1;
+      }
+    };
+    const svDoc = { issuer: SV, jwks_uri: SV + '/jwks',
+      configuration_endpoint: SV + '/stream', status_endpoint: SV + '/status',
+      verification_endpoint: SV + '/verify',
+      delivery_methods_supported: ['urn:ietf:rfc:8936'] };
+    const realFetch = fedHttp.fetchPublished;
+    let svPolled = 0;
+    fedHttp.fetchPublished = function (url, opts) {
+      const o = opts || {};
+      if (!/^https:\/\/sv\.test\//.test(url)) {
+        return realFetch(url, opts);
+      }
+      const body = o.body && o.body.charAt(0) === '{' ? JSON.parse(o.body)
+                                                     : {};
+      if (/\/\.well-known\/ssf-configuration/.test(url)) {
+        return answer(200, svDoc);
+      }
+      if (url === SV + '/token') {
+        return answer(200, { access_token: 'sv-token', expires_in: 3600 });
+      }
+      if (url === SV + '/stream' && o.method === 'POST') {
+        return answer(201, { stream_id: 'sv-1', aud: 'realm-sv',
+          delivery: { method: 'urn:ietf:rfc:8936',
+                      endpoint_url: SV + '/poll?stream_id=sv-1' } });
+      }
+      if (url === SV + '/verify') {
+        const one = svSet(SSF + 'verification', { state: body.state });
+        svVerification = one.jti;
+        svQueue.push(one);
+        return answer(204, null);
+      }
+      if (url === SV + '/poll?stream_id=sv-1') {
+        svPolled += 1;
+        return svPoll(body);
+      }
+      return answer(404, { error: 'not here' });
+    };
+    federation.create({ fedId: 'sv', fedRole: 'service-provider',
+                        fedProtocol: 'ssf', fedPeer: SV });
+    [['fedEnabled', 'TRUE'], ['fedSignalsTokenUrl', SV + '/token'],
+     ['fedSignalsClientId', 'sv-rx'], ['fedSignalsClientSecret', 'sv-s'],
+     ['fedSignalsDelivery', 'poll']].forEach(function (one) {
+      setField('sv', one[0], one[1]);
+    });
+    await rx.act({ action: 'signals-discover', id: 'sv' }, ctx);
+    const svStream = await rx.act({ action: 'signals-create-stream',
+                                    id: 'sv' }, ctx);
+    const svVerify = await rx.act({ action: 'signals-verify', id: 'sv' },
+                                  ctx);
+    // The administrator's poll-now and the scheduler job's run, together.
+    const together = await Promise.all([
+      rx.act({ action: 'signals-poll-now', id: 'sv' }, ctx),
+      rx.pollAll()]);
+    await rx.act({ action: 'signals-poll-now', id: 'sv' }, ctx);
+    note(svStream.ok && svVerify.ok && together[0].ok && svOverlaps === 0 &&
+         svMade.length === 2 && svQueue.length === 0 &&
+         svMade.every(function (jti) {
+           return svAcked.indexOf(jti) >= 0;
+         }),
+         'N1. a poll-now and the poll job together poll the stream one at a ' +
+         'time, so the events the partner makes on the verification\'s ' +
+         'acknowledgement are all received and acknowledged',
+         JSON.stringify([svStream.errors, svVerify.errors,
+                         together[0].errors, svOverlaps, svMade, svAcked,
+                         svQueue.length]));
+
+    // ANOTHER PROCESS'S poll, as its mark on the shared row: the job leaves
+    // the stream to its next run, and a poll-now waits for the mark to go.
+    const marked = rx.stateOf('sv');
+    marked.pollingBy = 'another-process';
+    marked.pollingUntil = Date.now() + 60000;
+    rx.save(marked);
+    svPolled = 0;
+    await rx.pollAll();
+    const skipped = svPolled === 0;
+    const held = rx.stateOf('sv');
+    held.pollingUntil = Date.now() + 400;
+    rx.save(held);
+    const waitedFrom = Date.now();
+    const afterMark = await rx.act({ action: 'signals-poll-now', id: 'sv' },
+                                   ctx);
+    const waited = Date.now() - waitedFrom;
+    const cleared = rx.stateOf('sv');
+    note(skipped && afterMark.ok && svPolled > 0 && waited >= 300 &&
+         !cleared.pollingBy,
+         'N2. a stream another process is polling is skipped by the job, ' +
+         'and a poll-now waits for that process\'s mark to end, then polls ' +
+         'and leaves no mark of its own',
+         JSON.stringify([skipped, afterMark.errors, svPolled, waited,
+                         cleared.pollingBy, cleared.pollingUntil]));
+    fedHttp.fetchPublished = realFetch;
 
     // --- J. forgetting ------------------------------------------------------
     fedBlocks.block('partner', 'ft-alice', { event: 'test' });
