@@ -3668,6 +3668,24 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         log.debug("Leaving saveKeys().");
         return driver.saveKeys(realmId, ciphertext);
       },
+      // THE REALMS THE STORE HOLDS (2026-11-18), for the keystore's start:
+      // a key row of a realm that is not among them was written after the
+      // realm's removal and names a destroyed data key, and is skipped and
+      // deleted rather than stopping the start (keystore.js, STS-KEYS-0199).
+      // Offered only where realms are written down; read before
+      // `restoreRealms()`, which runs after the keystore has started.
+      storedRealmIds: persistsRealms() &&
+                      typeof driver.loadRealms === 'function'
+        ? function () {
+          log.debug("Entering storedRealmIds().");
+          log.debug("Leaving storedRealmIds().");
+          return driver.loadRealms().then(function (rows) {
+            return (rows || []).map(function (row) {
+              return String(row.id);
+            });
+          });
+        }
+        : undefined,
       deleteKeys: function (realmId) {
         log.debug("Entering deleteKeys().");
         log.debug("Leaving deleteKeys().");

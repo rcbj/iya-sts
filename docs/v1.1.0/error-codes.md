@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5729** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5730** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 188
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 274
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
@@ -824,6 +824,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0196` | An XML element whose key is wrapped with OAEP over SHA-1 was refused: crypto.allowLegacyHashes is off (#1469). | — |
 | `STS-KEYS-0197` | The service did not start because, in product mode, a key-encryption key was to be read from a file rather than a secret store or a key management service. | ASVS 5.0.0 13.3.1 |
 | `STS-KEYS-0198` | The Azure Key Vault or Managed HSM key named as the key-encryption key (azure-keys) was answered with no key version, or one that is not letters and digits. A wrapped data key is stored with the version that wrapped it, so nothing is wrapped and the service does not start. | — |
+| `STS-KEYS-0199` | A stored signing-key, certificate-authority or data-key row belongs to a realm that no longer exists — a write that landed after the realm was removed — and was skipped and deleted rather than refusing the start or kept. | — |
 
 ## STS-PKI
 
