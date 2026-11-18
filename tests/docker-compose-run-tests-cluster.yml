@@ -153,6 +153,11 @@ services:
       - STS_TEST_CLUSTER_NODES=${STS_TEST_CLUSTER_NODES:-2}
       - STS_TEST_NODE_URLS=${STS_TEST_NODE_URLS:-https://sts:8081,https://sts2:8081}
       - STS_TEST_BULK_LAST=${STS_TEST_BULK_LAST:-1}
+      # The cluster restarted part way through the run (2026-11-18): how
+      # many times, and the directory the launcher's broker answers in
+      # (run-tests.sh, clusterRestartBroker(); tools/cluster-restart.js).
+      - STS_TEST_RESTART_POINTS=${STS_TEST_RESTART_POINTS:-0}
+      - STS_TEST_RESTART_DIR=${STS_TEST_RESTART_DIR:-}
       # THE DEFAULT REALM'S SPIFFE SOCKETS ARE NODE A'S (2026-09-21), for the
       # reason in this file's header — node B adds no SPIFFE address, so the
       # balancer carries neither port and sts_spiffe_grpc.js dialled

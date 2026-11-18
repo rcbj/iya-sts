@@ -269,6 +269,7 @@ const SELF_SKIP_EXIT = 42;
 const SELF_SKIP_MARKER = '===== SELF-SKIP: ';
 const adminApiToken = require('./admin-api-token');
 const realmLedger = require('./realm-ledger');
+const clusterRestart = require('./cluster-restart');
 
 const { testFiles } = require('../run');
 
@@ -1837,6 +1838,23 @@ async function runScheduled(jobs, runOne, opts) {
     const deferred = indexed.filter(function (i) {
       return i.job.suite !== 'unit' && bulkLast && i.job.lane === 'bulk';
     });
+    // ------------------------------------------------------------------
+    // THE CLUSTER RESTARTED PART WAY THROUGH, WHERE THE MODE SAYS SO (rcbj,
+    // 2026-11-18: "Restart the cluster a couple of times during the test
+    // run"). STS_TEST_RESTART_POINTS (tools/modes.sh: the cluster modes
+    // only) splits this half into that many plus one stretches of equal
+    // job count; at each boundary the lanes drain, so no job is running,
+    // and opts.restart() has the launcher restart every node and waits for
+    // it. The bulk lane deferred above runs after the last stretch.
+    // ------------------------------------------------------------------
+    const points = typeof opts.restart === 'function'
+      ? Math.max(0, Math.floor(Number(opts.restartPoints) || 0)) : 0;
+    const marks = [];
+    for (let k = 1; k <= points; k++) {
+      marks.push(Math.floor(protocol.length * k / (points + 1)));
+    }
+    let dispatched = 0;
+    let nextMark = 0;
     let segment = [];
     async function runSegment() {
       log.debug('Entering runSegment(). ' + segment.length + ' job(s).');
@@ -1853,6 +1871,13 @@ async function runScheduled(jobs, runOne, opts) {
       log.debug('Leaving runSegment().');
     }
     for (const item of protocol) {
+      if (nextMark < marks.length && marks[nextMark] > 0 &&
+          dispatched >= marks[nextMark]) {
+        await runSegment();
+        await opts.restart(nextMark + 1, points);
+        nextMark += 1;
+      }
+      dispatched += 1;
       if (item.job.exclusive) {
         await runSegment();
         log.info('[' + item.n + '/' + jobs.length + '] ' + item.job.name +
@@ -2731,7 +2756,25 @@ async function main() {
     log.debug('Leaving runOne(). ' + job.name);
     return result;
   }
-  const results = await runScheduled(jobs, runOne, opts);;
+  const restarts = [];
+  const results = await runScheduled(jobs, runOne, Object.assign({}, opts, {
+    restartPoints: Number(process.env.STS_TEST_RESTART_POINTS) || 0,
+    restart: async function (k, of) {
+      log.debug('Entering restart().');
+      restarts.push(await clusterRestart.restart({
+        k: k, of: of, dir: process.env.STS_TEST_RESTART_DIR || '',
+        url: (instance && instance.url) || '',
+        nodes: Number(process.env.STS_TEST_CLUSTER_NODES) || 1,
+        tokenFor: function (base) {
+          log.debug('Entering tokenFor().');
+          log.debug('Leaving tokenFor().');
+          return adminApiToken.tokenFor(base);
+        },
+        log: log
+      }));
+      log.debug('Leaving restart().');
+    }
+  }));
   const wallMs = Date.now() - started;
 
   // The service goes down BEFORE the coverage is rendered, because under
@@ -2800,6 +2843,9 @@ async function main() {
     serviceKind: instance ? (instance.external ? 'container' : 'in-process')
                           : '',
     protocolWhy: protocolWhy,
+    // The cluster restarts of this run (STS_TEST_RESTART_POINTS), each with
+    // every node's memory before and after; tools/cluster-restart.js.
+    restarts: restarts,
     coverage: coverageLink,
     commandLine: [path.basename(process.argv[0])].concat(
       process.argv.slice(1).map(function (a) {
@@ -2838,9 +2884,18 @@ async function main() {
   skipped.forEach(function (j) {
     log.warn(skippedLine(j));
   });
+  // A RESTART THAT DID NOT COME BACK FAILS THE RUN: every job after it ran
+  // against a cluster that was not the one the mode describes.
+  const restartsFailed = restarts.filter(function (one) {
+    return !one.ok;
+  });
+  restartsFailed.forEach(function (one) {
+    log.error('FAILED: cluster restart ' + one.k + ' of ' + one.of + ' — ' +
+              one.why);
+  });
   log.info('report: ' + path.join(runDir, 'report.html'));
   log.debug('Leaving main().');
-  process.exit(failed.length ? 1 : 0);
+  process.exit(failed.length || restartsFailed.length ? 1 : 0);
   log.debug("Leaving main().");
 }
 
@@ -2870,4 +2925,7 @@ module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
                    optInSwitches: optInSwitches, unitOptIn: unitOptIn,
                    switchedOffWhy: switchedOffWhy,
                    switchedOffResult: switchedOffResult,
-                   skippedLine: skippedLine, UNIT_OPT_IN: UNIT_OPT_IN };
+                   skippedLine: skippedLine, UNIT_OPT_IN: UNIT_OPT_IN,
+                   // EXPORTED FOR tests/cluster_restart_points.js
+                   // (2026-11-18): where the cluster restarts fall.
+                   runScheduled: runScheduled };

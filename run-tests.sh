@@ -1737,6 +1737,105 @@ riskInstallCheck()
 # ---------------------------------------------------------------------------
 # THE SCHEDULER SURVIVES A CRASHED LEADER (#49, rcbj's D10(a), 2026-09-22).
 #
+# THE CLUSTER RESTARTED PART WAY THROUGH THE RUN (rcbj, 2026-11-18: "Restart
+# the cluster a couple of times during the test run").
+#
+# The runner is a container with no docker, so it ASKS: at each of the mode's
+# STS_TEST_RESTART_POINTS (tools/modes.sh: the cluster modes only) it drains
+# its lanes, writes request-<k>.json into the restart directory (the report
+# tree, bind-mounted), and waits (tests/tools/cluster-restart.js). This
+# broker, a background job of the launcher for the length of the mode,
+# answers: it restarts node A and then node B — one at a time, each waited for
+# until healthy, so the balancer always has a node and the scheduler hands
+# over rather than stopping — and writes done-<k>.json with each container's
+# memory (`docker stats`) before and after. Every docker call is bounded
+# (tests/teardown_bounds.js's rule) and nothing here is a timeout raised: a
+# node that is not healthy within STS_TEST_READY_SECONDS is a failed restart,
+# and the runner fails the run on it.
+#
+# It is killed once the runner has exited (the caller holds its pid), and
+# writes broker.ready only once it is listening, so a runner that reaches a
+# restart point with no broker goes on without one.
+# ---------------------------------------------------------------------------
+# One of the mode's own values (tools/modes.sh), '' when it names none.
+modeValue()
+{
+  local key="$1" line
+  for line in ${MODE_ENV[@]+"${MODE_ENV[@]}"};
+  do
+    case "${line}" in
+      "${key}="*)
+        printf '%s' "${line#*=}"
+        return 0
+        ;;
+    esac
+  done
+  return 0
+}
+
+containerMemory()
+{
+  dockerBounded 60 stats --no-stream \
+    --format '{"name":"{{.Name}}","mem":"{{.MemUsage}}","cpu":"{{.CPUPerc}}"}' \
+    "$@" 2> /dev/null | paste -sd, -
+}
+
+clusterRestartBroker()
+{
+  local mode="$1"
+  local dir="${CURRENT_DIR}/tests/report/${mode}/restarts"
+  local request k done before after ok why started container
+  mkdir -p "${dir}" 2> /dev/null || true
+  rm -f "${dir}"/request-* "${dir}"/done-* "${dir}/broker.ready" \
+    2> /dev/null || true
+  : > "${dir}/broker.ready"
+  while true;
+  do
+    for request in "${dir}"/request-*.json;
+    do
+      [ -f "${request}" ] || continue
+      k="$(basename "${request}" .json)"
+      k="${k#request-}"
+      done="${dir}/done-${k}.json"
+      [ -f "${done}" ] && continue
+      started="$(date +%s)"
+      echo ""
+      echo "Mode ${mode}: the runner asked for cluster restart ${k}; no job" \
+           "is running."
+      before="$(containerMemory "${STS_CONTAINER_NAME}" \
+                                "${STS2_CONTAINER_NAME}")"
+      ok=true
+      why=""
+      for container in "${STS_CONTAINER_NAME}" "${STS2_CONTAINER_NAME}";
+      do
+        echo "  restarting ${container}..."
+        if ! dockerBounded 180 restart -t 60 "${container}" > /dev/null;
+        then
+          ok=false
+          why="docker restart ${container} failed"
+          break
+        fi
+        if ! waitForStsHealthy "${container}";
+        then
+          ok=false
+          why="${container} was not healthy after its restart"
+          break
+        fi
+      done
+      after="$(containerMemory "${STS_CONTAINER_NAME}" \
+                               "${STS2_CONTAINER_NAME}")"
+      echo "  restart ${k}: ok=${ok} in $(( $(date +%s) - started ))s"
+      echo "    before: ${before}"
+      echo "    after:  ${after}"
+      printf '{"k":%s,"ok":%s,"why":"%s","seconds":%s,%s}\n' \
+        "${k}" "${ok}" "${why}" "$(( $(date +%s) - started ))" \
+        "\"before\":[${before}],\"after\":[${after}]" > "${done}.tmp"
+      mv "${done}.tmp" "${done}"
+    done
+    sleep 2
+  done
+}
+
 # The LAST step of the `cluster` mode, because it removes a node: the runner
 # has finished, the stack is still up (the mode runs detached for this), and
 # `tests/tools/scheduler-takeover.js` names the scheduler's leader, this
@@ -2411,6 +2510,9 @@ do
   # the path is the one inside it and the report lands in the host tree beside
   # every other mode's.
   MODE_ENV+=("STS_TEST_REPORT_DIR=/usr/src/sts/tests/report/${MODE}")
+  # Where the runner asks for a cluster restart and clusterRestartBroker()
+  # answers (the cluster modes' STS_TEST_RESTART_POINTS), inside the runner.
+  MODE_ENV+=("STS_TEST_RESTART_DIR=/usr/src/sts/tests/report/${MODE}/restarts")
 
   # THE MODE'S OWN JOB FILTER, FOR THIS MODE ALONE (2026-11-14). The base
   # environment carries the operator's STS_TEST_ARGS; this later assignment
@@ -2816,6 +2918,15 @@ do
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
     else
+      # The cluster restarts' broker (clusterRestartBroker(), above), for
+      # the mode's restart points; listening before the runner can ask.
+      RESTART_BROKER_PID=""
+      if [ "$(modeValue STS_TEST_RESTART_POINTS)" -gt 0 ] 2> /dev/null &&
+         [ "${KEEP_THIS_MODE}" = "0" ];
+      then
+        clusterRestartBroker "${MODE}" &
+        RESTART_BROKER_PID=$!
+      fi
       docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up -d
       MODE_RC=$?
       if [ "${MODE_RC}" -eq 0 ];
@@ -2829,6 +2940,13 @@ do
           wait tests
         MODE_RC=$?
         wait "${KEEP_LOG_PID}" 2> /dev/null || true
+      fi
+      if [ -n "${RESTART_BROKER_PID}" ];
+      then
+        kill "${RESTART_BROKER_PID}" 2> /dev/null || true
+        wait "${RESTART_BROKER_PID}" 2> /dev/null || true
+        rm -f "${CURRENT_DIR}/tests/report/${MODE}/restarts/broker.ready" \
+          2> /dev/null || true
       fi
     fi
     if [ "${MODE_RC}" -ge 124 ];

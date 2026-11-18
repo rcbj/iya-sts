@@ -4815,6 +4815,43 @@ a real database when `STS_TEST_POSTGRES_URL` names one.
 * (It listed **workers inside a node, and product mode** here until
   2026-09-21; both are what each node runs now.)
 
+### The cluster restarted during the run (2026-11-18)
+
+**rcbj, 2026-11-18: "Restart the cluster a couple of times during the test
+run."** The cluster mode is the one mode that ran its runner out of memory
+(GitHub Actions run #468: both nodes at 5.1–5.2 GB late in the run, six
+gigabytes of swap, `sts_persistence_postgres` killed by its watchdog in the
+teardown), and it is also the mode whose store is the one that has to carry
+everything across a node going away. So `STS_TEST_RESTART_POINTS` — a mode
+value in `tools/modes.sh`, **2 in `cluster` and `cluster-portable` and 0 in
+every other mode** — splits the protocol half into three stretches of equal
+job count, and at each boundary:
+
+1. `run-report.js` drains the lanes (no job is running) and calls
+   `tools/cluster-restart.js`, which reads every node's own memory through
+   `/admin-api/node-health` — each isolate's heap, which nothing outside the
+   process can see — and writes `request-<k>.json` into
+   `STS_TEST_RESTART_DIR` (`tests/report/<mode>/restarts/`, bind-mounted).
+2. `run-tests.sh`'s `clusterRestartBroker()`, a background job of the
+   launcher for the length of the detached mode, restarts node A and then
+   node B with bounded `docker restart` calls, waits for each to be HEALTHY
+   (`waitForStsHealthy()`, `STS_TEST_READY_SECONDS`) before the next — one at
+   a time, so the balancer always has a node and the scheduler hands over
+   rather than starting cold — and answers `done-<k>.json` with each
+   container's `docker stats` before and after.
+3. The runner waits until every node is a live member again, reads each
+   node's memory again, logs both, and carries on. `summary.json`'s
+   `meta.restarts` holds every restart with its numbers.
+
+**A RESTART THAT DID NOT COME BACK FAILS THE RUN** (`FAILED: cluster restart
+k of n`): every job after it would be measuring a cluster that is not the one
+the mode describes. A job that passed before a restart and fails after one is
+a PERSISTENCE finding — something a node held only in memory — and is triaged
+as such. **No broker, no restart**: a runner that reaches a point with no
+`broker.ready` (a hand-run `run-report.js`, an AWS target, `--keep-stack`)
+says so and goes on. `STS_TEST_RESTART_BOUND_S` (900) bounds the wait for the
+broker's answer; nothing here raised an existing bound.
+
 ### What its first runs found (2026-09-14)
 
 **THE FIRST RUN FAILED 42 OF 58 PROTOCOL JOBS FOR ONE REASON**: a development
