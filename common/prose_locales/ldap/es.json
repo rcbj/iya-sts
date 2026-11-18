@@ -1992,8 +1992,8 @@
     "text": "Cuándo se registró este PEP por primera vez. Se conserva entre registros sucesivos, porque un componente que se reinicia cada hora es un hecho que vale la pena ver y una entrada cuya antigüedad se reiniciara en cada reinicio nunca podría mostrarlo."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "El último latido u obtención. xacml.pepStaleAfterS es cuánto tiempo desde esto antes de que la consola diga \"obsoleto\" — lo cual no cambia nada de lo que hace este servicio, deliberadamente."
+    "en": "2e8561030cee3201",
+    "text": "El último latido u obtención cuando se escribió esta entrada por última vez. Un latido que no cambia nada duradero no se escribe aquí (#1882): él, los contadores, el estado de las señales y el último aviso se guardan junto a la entrada, y la consola muestra el más reciente de los dos. xacml.pepStaleAfterS es cuánto tiempo desde el último antes de que la consola diga \"obsoleto\" — lo cual no cambia nada de lo que hace este servicio, deliberadamente."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
@@ -2028,8 +2028,8 @@
     "text": "El nombre de host que el PEP remoto comunica al registrarse y en su latido (#1760): la variable de entorno HOSTNAME, si no la del kernel, si no /etc/hostname — el nombre con el que se conoce al contenedor en su red, y del que deriva su URL de notificación cuando el certificado de su escucha HTTPS lo incluye. Limitado a un nombre DNS de 253 caracteres como máximo, en minúsculas, nunca una dirección IP; un registro o latido que lleve otra cosa se rechaza (STS-XACML-0261). El certificado de escucha predeterminado del dominio lo incluye junto al nombre registrado del PEP y su host de notificación. Un registro sin él lo elimina, un latido sin él lo conserva. Ausente en un PEP más antiguo, cuyos nombres de certificado son los de antes."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "Qué le ocurrió al último aviso — el estado, o la frase de rechazo. EL ÚNICO LUGAR DONDE SE REGISTRA UN AVISO FALLIDO, por la razón que da ssf_streams.js sobre un envío rechazado: por definición es invisible desde el extremo receptor."
+    "en": "a512a007219ee216",
+    "text": "Qué le ocurrió al último aviso — el estado, o la frase de rechazo — cuando se escribió esta entrada por última vez. El resultado de un aviso no se escribe aquí (#1882): el más reciente se guarda en el registro de actividad del PEP junto a la entrada (xacml_pep_registry.liveness), y la consola muestra el más reciente de los dos. Este servicio es el único que registra un aviso fallido, por la razón que da ssf_streams.js sobre un envío rechazado: por definición es invisible desde el extremo receptor."
   },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",

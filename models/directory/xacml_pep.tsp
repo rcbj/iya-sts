@@ -74,7 +74,7 @@ model XacmlPep {
   xacmlPepRegisteredAt?: DirectoryTime;
   @attr(#{
     kind: "single",
-    what: "The last heartbeat or pull. xacml.pepStaleAfterS is how long since this before the console says \"stale\" — which changes nothing this service does, deliberately."
+    what: "The last heartbeat or pull when this entry was last written. A heartbeat that changes nothing durable is not written here (#1882): it, the counters, the signal health and the last nudge are kept beside the entry, and the console shows the later of the two. xacml.pepStaleAfterS is how long since the last one before the console says \"stale\" — which changes nothing this service does, deliberately."
   })
   xacmlPepLastSeen?: DirectoryTime;
   @attr(#{
@@ -119,7 +119,7 @@ model XacmlPep {
   xacmlPepHostname?: string;
   @attr(#{
     kind: "single",
-    what: "What happened to the last nudge — the status, or the refusal sentence. THE ONLY PLACE A FAILED NUDGE IS RECORDED, for the reason ssf_streams.js gives about a refused push: it is invisible from the receiving end by definition."
+    what: "What happened to the last nudge — the status, or the refusal sentence — when this entry was last written. A nudge's outcome is not written here (#1882): the newest is kept in the PEP's liveness record beside the entry (xacml_pep_registry.liveness), and the console shows the later of the two. This service is the only one that records a failed nudge, for the reason ssf_streams.js gives about a refused push: it is invisible from the receiving end by definition."
   })
   xacmlPepLastNotify?: string;
   @attr(#{

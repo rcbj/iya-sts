@@ -1373,6 +1373,76 @@ Three decisions on the row that each prevent a specific wrong reading:
   ways: an older PEP sends no member, and an older service's heartbeat reads
   the members it names and ignores this one.
 
+## A heartbeat writes the entry only when something durable changed (#1882)
+
+**rcbj: "not every PEP heartbeat needs a directory write".** Until
+2026-11-17 every heartbeat, and every pull naming a registered PEP (which
+calls `heartbeat(name, {})`), REPLACED the whole entry: at the PEP's defaults
+(a pull every 15 s, a heartbeat every 60 s) five rewrites a minute per PEP,
+each a directory write, a persistence flush, a change-log row every node
+applies and an audit `entry.update` row — about 1,900 of them on 8081, nearly
+all changing nothing but `lastSeen` and the counters. And the write made a
+pull, a GET, a request the cluster barrier holds.
+
+* **DURABLE, in the entry, written when one changes**: identity, certificate
+  subject, thumbprint, authenticated, notify URL, bias, resource, version,
+  hostname, enabled, registration date, description, the administrator's
+  proxy, settings and listener definitions, the sync token and policy count
+  the PEP holds (being current is a fact an operator acts on, and it moves
+  only when the repository does), the settings in force without their
+  arrival stamp, and each listener's state, reason, address, port, renewal
+  and certificate. `PepRegistry.durableOf()` is the comparison; it is made
+  against the ENTRY as stored, never the joined row.
+* **VOLATILE, in the minted store `xacml_pep_registry.liveness`**
+  (`VOLATILE_ATTRIBUTES`): `lastSeen`, the four counters, the signal-stream
+  health (counts and ages), the in-use reports' stamps, per-listener pool
+  and connection figures, memory and path counts, and the last nudge's
+  outcome — `recordNotify()` writes the store, never the entry, since a nudge
+  goes to every PEP on every policy change. These move on every heartbeat
+  of a PEP serving traffic, and none of them is a change to what the PEP is.
+* **EVERY READER IS UNCHANGED**: `all()` and `read()` join the entry with
+  the newest record of the SAME registration (`registeredAt`) seen LATER
+  than the entry was written (`withLiveness()`); a tie is the entry's, so a
+  registration in the same millisecond still drops what a new process has
+  not reported, and a heartbeat in the same millisecond as the last is
+  stamped a millisecond on. The console's PEP pages, `/admin-api/xacml/peps`,
+  the clusters, the monitor, `notifiable()` and `stale` all read the join.
+  The LDAP browser's `/admin/ldap/peps` puts the joined values over the
+  entry's (`ldap_server.js`'s `withPepLiveness()`); `ldapsearch` on 389
+  reads the entry as stored, as of its last durable write.
+* **THE STORE IS AN OBSERVATION, MERGED BY RECORD, AND GLOBAL-TIER.**
+  `observation: true`, so a heartbeat no longer makes a pull a writing
+  request (`cluster/CLAUDE.md`, *A decision counted is not a write
+  either*); `mergeRow` (`mergeLiveness()`) keeps the later registration's
+  record whole, else the later-seen half and the later nudge, and
+  `mergeOnApply` keeps an older arrival from going over a newer record held
+  here. Global in `persistence/tiers.js`, because the entry is and every
+  cell's console saw every heartbeat until then; a row is a component's
+  times and counts.
+* **JOURNALLED AT ONCE WHEN THE COUNTERS MOVED, OTHERWISE ONCE AN
+  INTERVAL**: `journalIntervalMs()`, a fifth of `xacml.pepStaleAfterS`
+  between 1 s and 60 s, measured from the newer of the entry's and the
+  journalled record's `lastSeen`, which every process reads, so a node's
+  workers and a cluster's nodes share one interval. The receiving process
+  holds its newest record in `latest` (per process, per realm, a row per
+  PEP) and reads it exactly; any other reads a `lastSeen` at most one
+  interval old, a fifth of the stale threshold, which is why **the stale
+  determination does not move** — it is still `(now - lastSeen) >
+  xacml.pepStaleAfterS`, over the newest record. Derived rather than a
+  setting, so the two cannot be set against each other. No timer flushes
+  `latest`: the next heartbeat or pull journals it once due, and a process
+  that stops takes at most the last interval's `lastSeen` with it.
+* **Measured** (`tests/xacml_pep_heartbeat_writes.js`): 25 heartbeats and 5
+  pulls that change nothing durable are 0 entry writes and 0 journalled rows
+  (were 30 entry writes and 30 audit rows); a counter change is 1 minted
+  row; a version, listener-state or sync-token change is exactly 1 entry
+  write.
+* **Backwards compatible**: an entry written before is read as it was until
+  its PEP's next heartbeat, an older PEP's heartbeat is unchanged on the
+  wire, a durable write still carries the newest volatile values into the
+  entry, and no setting was added or renamed. A refused write is still 507,
+  now only for a heartbeat that changed something durable.
+
 ## The sync token is a digest of what would be SENT
 
 `syncToken()` hashes the documents of every ENABLED policy plus which one is the

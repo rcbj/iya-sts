@@ -268,6 +268,31 @@ interface PepResult {
   status?: number;
 }
 
+// WHAT A HEARTBEAT THAT CHANGED NOTHING DURABLE LEAVES BEHIND (#1882): the
+// volatile half of a row, kept in the minted store `liveness` and in this
+// process's `latest`, never in the entry. `registeredAt` ties it to the
+// registration it describes; `seenAt` is '' on a record that holds only a
+// nudge's outcome.
+interface LivenessRow {
+  registeredAt: string;
+  seenAt: string;
+  decisions: number;
+  allowed: number;
+  refused: number;
+  undischargeable: number;
+  signals: PepSignals | null;
+  settingsInUse: any;
+  listenersInUse: any;
+  lastNotify: string;
+}
+
+// The parts of a `realms.map()` store the liveness record is kept in.
+interface LivenessStore {
+  get(name: string): LivenessRow | undefined;
+  set(name: string, row: LivenessRow): unknown;
+  delete(name: string): boolean;
+}
+
 // The parts of the policy repository the sync token reads.
 interface PolicyRepository {
   root(): { name: string } | null;
@@ -293,6 +318,10 @@ interface PepRegistryDeps {
   };
   store: PolicyRepository;
   sha256Base64(text: string): string;
+  // The heartbeat's record (#1882): the journalled store every process
+  // reads, and this process's newest, journalled or not.
+  liveness: LivenessStore;
+  latest: LivenessStore;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +342,72 @@ const SCHEMA = ModelTables.schema('xacmlPep');
 // `PepRegistry.setDirectory()`).
 let directory: PepDirectory | null = null;
 let warnedAboutNoDirectory = false;
+
+// ---------------------------------------------------------------------------
+// A HEARTBEAT IS NOT A DIRECTORY WRITE (#1882, rcbj: "not every PEP heartbeat
+// needs a directory write").
+//
+// Until then every heartbeat — and every pull that named a registered PEP,
+// which calls `heartbeat(name, {})` — REPLACED the whole entry through
+// `writePep()`. At the PEP's defaults (a pull every 15 s, a heartbeat every
+// 60 s) that was five rewrites a minute per PEP, each a directory write, a
+// persistence flush, a change-log row every node pulls and an audit
+// `entry.update` row; 8081's audit log held about 1,900 of them, nearly all
+// changing nothing but the last-seen time and the counters. And a pull is a
+// GET, which the write made a request the cluster barrier holds.
+//
+// **THE ENTRY IS WRITTEN WHEN SOMETHING DURABLE CHANGES**, and only then:
+// what the PEP is (identity, certificate, version, hostname, bias, resource,
+// notify URL), what it holds (sync token, policy count, the settings in
+// force, the listeners and their certificates), and everything an
+// administrator set. `VOLATILE_ATTRIBUTES` and `durableOf()` say which.
+//
+// **WHAT IS NOT DURABLE IS KEPT HERE**: last seen, the four counters, the
+// signal-stream health, the in-use reports with their stamps and per-listener
+// figures, and the last nudge's outcome. `liveness` is a MINTED store —
+// journalled, flushed and replicated like any other, so another node reads
+// it within one flush — declared `observation: true`, because a heartbeat
+// counted is a tally of what a request did and not a thing it did: the
+// barrier no longer holds a pull for it (`cluster/CLAUDE.md`, *A decision
+// counted is not a write either*). `mergeRow` keeps the newer record of each
+// half, and `mergeOnApply` keeps an arriving older row from going over a
+// newer one held here.
+//
+// **AND IT IS JOURNALLED AT MOST ONCE AN INTERVAL** unless the counters
+// moved (`journalIntervalMs()`): a fifth of `xacml.pepStaleAfterS`, at most
+// a minute. `latest` holds this process's newest record, journalled or not,
+// so a read here is exact and a read in another process is at most one
+// interval behind on `lastSeen` — a fifth of the stale threshold, which is
+// why the stale determination does not move. It is per process because what
+// it holds is reachable from no other until it is journalled, and it holds
+// one small row per registered PEP (`xacml.maxPeps` bounds it); a process
+// that stops loses at most the last interval's `lastSeen`.
+//
+// **A READER SEES THE NEWER OF THE TWO** (`withLiveness()`): the entry, or a
+// record of the same registration seen later. So every reader of `all()` —
+// the console's PEP pages, `/admin-api/xacml/peps`, the clusters, the
+// monitor, the nudge — is unchanged, an entry written before this change is
+// read exactly as it was until its PEP's next heartbeat, and a durable write
+// still carries the newest volatile values into the entry.
+// ---------------------------------------------------------------------------
+const VOLATILE_ATTRIBUTES: readonly string[] = Object.freeze([
+  'xacmlPepLastSeen', 'xacmlPepDecisions', 'xacmlPepAllowed',
+  'xacmlPepRefused', 'xacmlPepUndischargeable', 'xacmlPepSignals',
+  'xacmlPepLastNotify'
+]);
+
+const liveness: any = realms.map({
+  persist: 'xacml_pep_registry.liveness',
+  observation: true,
+  mergeRow: function (mine: LivenessRow, theirs: LivenessRow): LivenessRow {
+    return PepRegistry.mergeLiveness(mine, theirs);
+  },
+  mergeOnApply: true
+});
+
+// This process's newest record per PEP, journalled or not. Per realm at its
+// declaration, as every store is; not persisted, by design (see above).
+const latest: any = realms.map();
 
 /**
  * The register of remote Policy Enforcement Points, kept as entries under
@@ -381,7 +476,9 @@ class PepRegistry {
       store: store as unknown as PolicyRepository,
       sha256Base64: function (text) {
         return crypto.digest('sha256', text, 'base64');
-      }
+      },
+      liveness: liveness as LivenessStore,
+      latest: latest as LivenessStore
     };
   }
 
@@ -504,6 +601,96 @@ class PepRegistry {
     const value = config.value('xacml.pepStaleAfterS');
     log.debug("Leaving PepRegistry.staleAfterS().");
     return typeof value === 'number' && value > 0 ? value : 300;
+  }
+
+  // -------------------------------------------------------------------------
+  // HOW OFTEN A HEARTBEAT THAT MOVED ONLY `lastSeen` IS JOURNALLED (#1882).
+  //
+  // DERIVED FROM THE STALE THRESHOLD RATHER THAN A SETTING OF ITS OWN, so
+  // the two cannot be set against each other: another process reads a
+  // `lastSeen` at most this far behind, and at a fifth of the threshold a
+  // PEP that is heartbeating can never be called stale for it. At the
+  // default 300 s it is a minute; never under a second, never over a
+  // minute, so a long threshold does not leave the other nodes' view of a
+  // quiet PEP an hour old.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the longest a heartbeat whose counters did not move is held in
+   * this process before the liveness record is journalled: a fifth of
+   * `xacml.pepStaleAfterS`, between one second and one minute.
+   * @returns the interval in milliseconds
+   */
+  journalIntervalMs(): number {
+    const { log } = this.deps;
+    log.debug("Entering PepRegistry.journalIntervalMs().");
+    const fifth = Math.floor(this.staleAfterS() * 1000 / 5);
+    log.debug("Leaving PepRegistry.journalIntervalMs().");
+    return Math.max(1000, Math.min(60000, fifth));
+  }
+
+  // No Entering/Leaving pair: it runs for every candidate record of every
+  // row read, and a pair would drown the log. '' and junk are -Infinity, so
+  // "never" is older than any instant.
+  private static instant(text: unknown): number {
+    const at = typeof text === 'string' && text ? Date.parse(text) : NaN;
+    return isNaN(at) ? -Infinity : at;
+  }
+
+  // The members of a record's SEEN half, as one string: what a tie between
+  // two records seen in the same millisecond is broken on, so the merge
+  // below answers the same whichever side it is handed first.
+  private static seenKey(row: LivenessRow): string {
+    helpers.log.debug("Entering PepRegistry.seenKey().");
+    helpers.log.debug("Leaving PepRegistry.seenKey().");
+    return JSON.stringify([row.seenAt, row.decisions, row.allowed,
+                           row.refused, row.undischargeable, row.signals,
+                           row.settingsInUse, row.listenersInUse]);
+  }
+
+  // -------------------------------------------------------------------------
+  // TWO PROCESSES' RECORDS OF ONE PEP, MERGED (#1882): the store's
+  // `mergeRow`, so pure and convergent. A later REGISTRATION wins whole,
+  // because the earlier one's record describes a process that has gone;
+  // otherwise the seen half comes from the record seen later and the nudge
+  // half is the later outcome (each is stamped with an ISO instant at its
+  // front, so the text compares as the time does).
+  // -------------------------------------------------------------------------
+  /**
+   * Merges two liveness records of one PEP: the later registration's whole,
+   * else the later-seen record's counters and reports with the later
+   * nudge outcome of the two.
+   * @param mine - the record held here
+   * @param theirs - the record arriving or stored
+   * @returns the merged record
+   */
+  static mergeLiveness(mine: LivenessRow, theirs: LivenessRow): LivenessRow {
+    helpers.log.debug("Entering PepRegistry.mergeLiveness().");
+    if (!mine || typeof mine !== 'object') {
+      helpers.log.debug("Leaving PepRegistry.mergeLiveness(). Theirs.");
+      return theirs;
+    }
+    if (!theirs || typeof theirs !== 'object') {
+      helpers.log.debug("Leaving PepRegistry.mergeLiveness(). Mine.");
+      return mine;
+    }
+    if (String(mine.registeredAt || '') !==
+        String(theirs.registeredAt || '')) {
+      helpers.log.debug("Leaving PepRegistry.mergeLiveness(). The later " +
+                        "registration.");
+      return String(mine.registeredAt || '') >
+        String(theirs.registeredAt || '') ? mine : theirs;
+    }
+    const a = PepRegistry.instant(mine.seenAt);
+    const b = PepRegistry.instant(theirs.seenAt);
+    const seen = a > b ? mine : b > a ? theirs
+      : (PepRegistry.seenKey(mine) >= PepRegistry.seenKey(theirs)
+          ? mine : theirs);
+    const mineNotify = String(mine.lastNotify || '');
+    const theirNotify = String(theirs.lastNotify || '');
+    helpers.log.debug("Leaving PepRegistry.mergeLiveness().");
+    return Object.assign({}, seen, {
+      lastNotify: mineNotify >= theirNotify ? mineNotify : theirNotify
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -813,12 +1000,107 @@ class PepRegistry {
    * @returns the rows; empty when there is no directory
    */
   all(): PepRow[] {
+    const self = this;
     const { log } = this.deps;
     log.debug('Entering PepRegistry.all().');
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.all(). No directory.');
       return [];
     }
+    const now = Date.now();
+    const stale = this.staleAfterS() * 1000;
+    const rows = this.entryRows().map(function (row) {
+      return self.withLiveness(row, now, stale);
+    });
+    log.debug('Leaving PepRegistry.all(). ' + rows.length +
+              ' registered PEP(s).');
+    return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ENTRY AND THE HEARTBEAT'S RECORD, JOINED (#1882). The volatile half
+  // of the row is the newest of three: the entry's, the journalled record
+  // every process reads, and this process's own. A record counts only for
+  // the registration it was made under (`registeredAt`), and only when SEEN
+  // LATER than the entry was written — a tie is the entry's, so a
+  // registration in the same millisecond as a heartbeat drops what a new
+  // process has not reported yet, as it always did. The nudge's outcome is
+  // the latest of the three on its own, because a nudge moves no `lastSeen`.
+  // -------------------------------------------------------------------------
+  private withLiveness(row: PepRow, now: number, staleMs: number): PepRow {
+    const { log, liveness, latest } = this.deps;
+    log.debug('Entering PepRegistry.withLiveness(). name=' + row.name);
+    const records = [latest.get(row.name), liveness.get(row.name)]
+      .filter(function (one) {
+        return !!one && typeof one === 'object' &&
+          String(one.registeredAt || '') === row.registeredAt;
+      });
+    // A loop rather than forEach, so the checker sees `newest` assigned.
+    let newest: LivenessRow | null = null;
+    let newestAt = PepRegistry.instant(row.lastSeen);
+    let lastNotify = row.lastNotify;
+    for (const one of records) {
+      const at = PepRegistry.instant(one.seenAt);
+      if (at > newestAt) {
+        newest = one;
+        newestAt = at;
+      }
+      if (String(one.lastNotify || '') > lastNotify) {
+        lastNotify = String(one.lastNotify);
+      }
+    }
+    if (!newest) {
+      log.debug('Leaving PepRegistry.withLiveness(). The entry\'s.');
+      return lastNotify === row.lastNotify ? row
+        : Object.assign({}, row, { lastNotify: lastNotify });
+    }
+    const seen: LivenessRow = newest;
+    log.debug('Leaving PepRegistry.withLiveness(). Seen ' + seen.seenAt);
+    return Object.assign({}, row, {
+      lastSeen: seen.seenAt,
+      decisions: seen.decisions || 0,
+      allowed: seen.allowed || 0,
+      refused: seen.refused || 0,
+      undischargeable: seen.undischargeable || 0,
+      signals: seen.signals || null,
+      settingsInUse: seen.settingsInUse || null,
+      listenersInUse: seen.listenersInUse || null,
+      lastNotify: lastNotify,
+      stale: (now - newestAt) > staleMs
+    });
+  }
+
+  // The journalled record of this registration of a PEP, or null.
+  private storedFor(entry: PepRow): LivenessRow | null {
+    const { log, liveness } = this.deps;
+    log.debug('Entering PepRegistry.storedFor(). name=' + entry.name);
+    const stored = liveness.get(entry.name);
+    const mine = !!stored && typeof stored === 'object' &&
+      String(stored.registeredAt || '') === entry.registeredAt;
+    log.debug('Leaving PepRegistry.storedFor(). ' +
+              (mine ? 'Held.' : 'None.'));
+    return mine ? stored : null;
+  }
+
+  // One PEP's ENTRY as it is stored, without the heartbeat's record (#1882):
+  // what a heartbeat compares against to decide whether it changed anything
+  // durable.
+  private readEntry(name: string): PepRow | null {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.readEntry(). name=' + name);
+    const found = this.entryRows().filter(function (row) {
+      return row.name === name;
+    })[0] || null;
+    log.debug('Leaving PepRegistry.readEntry(). ' +
+              (found ? 'Found.' : 'Not found.'));
+    return found;
+  }
+
+  // Every entry under ou=peps as a row, as it is STORED — `all()` without
+  // the heartbeat's record (#1882). The caller has checked the directory.
+  private entryRows(): PepRow[] {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.entryRows().');
     const current = this.syncToken();
     const now = Date.now();
     const stale = this.staleAfterS() * 1000;
@@ -865,8 +1147,8 @@ class PepRegistry {
         stale: !(seenAt > 0) || (now - seenAt) > stale
       };
     });
-    log.debug('Leaving PepRegistry.all(). ' + rows.length +
-              ' registered PEP(s).');
+    log.debug('Leaving PepRegistry.entryRows(). ' + rows.length +
+              ' entry/entries.');
     return rows;
   }
 
@@ -1036,6 +1318,10 @@ class PepRegistry {
                     'maximum of ' + config.value('xacml.maxPeps') +
                     ' (xacml.maxPeps).' }, 'STS-XACML-0027');
     }
+    // THE ENTRY IS NOW THE NEWEST RECORD (#1882): it carries the counters
+    // kept above and a `lastSeen` of now, so this process's held record is
+    // dropped; a journalled one is older and is not read.
+    this.deps.latest.delete(name);
     log.info('xacml: remote PEP "' + name + '" ' +
              (existing ? 're-registered' : 'registered') +
              (given.authenticated && !given.certificateSubject
@@ -1066,7 +1352,9 @@ class PepRegistry {
   // -------------------------------------------------------------------------
   /**
    * Records a PEP's heartbeat: last seen, its sync token and its cumulative
-   * counters, which are set rather than added to.
+   * counters, which are set rather than added to. The entry is written only
+   * when something durable changed; otherwise the heartbeat's record is
+   * held and journalled in the minted liveness store (#1882).
    * @param name - the PEP's entry name
    * @param report - what the PEP reports; an absent member keeps the value
    * @returns `{ ok: true, name, current }` with the current sync token, or
@@ -1074,7 +1362,7 @@ class PepRegistry {
    * directory refuses the entry
    */
   heartbeat(name: string, report?: any): PepResult {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, liveness, latest } = this.deps;
     log.debug('Entering PepRegistry.heartbeat(). name=' + name);
     if (!this.haveDirectory()) {
       log.debug('Leaving PepRegistry.heartbeat(). No directory.');
@@ -1083,8 +1371,14 @@ class PepRegistry {
                                why: 'There is no embedded directory.' },
                              'STS-XACML-0026');
     }
-    const existing = this.read(name);
-    if (!existing) {
+    // THE ENTRY AS STORED, AND THE ROW AS READ (#1882): an absent member
+    // keeps the value a reader sees, the newest; whether to write the entry
+    // is decided against what the entry holds.
+    const entry = this.readEntry(name);
+    const existing = entry
+      ? this.withLiveness(entry, Date.now(), this.staleAfterS() * 1000)
+      : null;
+    if (!entry || !existing) {
       log.debug('Leaving PepRegistry.heartbeat(). Not registered.');
       // error-code: none — the code is the mark()'s, after the reason.
       return errorCodes.mark({ ok: false, status: 404,
@@ -1105,11 +1399,16 @@ class PepRegistry {
       log.debug('Leaving PepRegistry.heartbeat(). A bad hostname.');
       return host as PepResult;
     }
+    // `lastSeen` NEVER GOES BACK OR STANDS STILL across a heartbeat: one in
+    // the same millisecond as the last is stamped a millisecond after it,
+    // so it is the newest record and a tie never hides it (#1882).
+    const floor = PepRegistry.instant(existing.lastSeen);
+    const clock = Date.now();
+    const now = new Date(clock > floor ? clock : floor + 1).toISOString();
     // THE SIGNAL HEALTH (#1760): an absent member keeps the last snapshot,
     // as every member here does (the pull's own `heartbeat(name, {})` sends
     // none), null clears it (a PEP whose proxy is off), and an object
     // replaces it, normalised and stamped with when it arrived.
-    const now = new Date().toISOString();
     const signals = said.signals === undefined ? existing.signals
       : PepRegistry.signalsOf(said.signals, now);
     // THE SETTINGS IN FORCE AT THE PEP (#1760), the signal health's rule:
@@ -1147,14 +1446,118 @@ class PepRegistry {
       xacmlPepUndischargeable: String(said.undischargeable === undefined
         ? existing.undischargeable : this.number(said.undischargeable))
     });
+    // NOTHING DURABLE CHANGED (#1882): no entry write, no audit row, no
+    // directory change-log row. The record is held here and journalled
+    // when `journalNow()` says so.
+    if (this.durableOf(attributes as Record<string, unknown>) ===
+        this.durableOf(this.attributesOf(entry) as Record<string, unknown>)) {
+      const record: LivenessRow = {
+        registeredAt: entry.registeredAt,
+        seenAt: now,
+        decisions: this.number((attributes as any).xacmlPepDecisions),
+        allowed: this.number((attributes as any).xacmlPepAllowed),
+        refused: this.number((attributes as any).xacmlPepRefused),
+        undischargeable:
+          this.number((attributes as any).xacmlPepUndischargeable),
+        signals: signals,
+        settingsInUse: inUse,
+        listenersInUse: listening,
+        lastNotify: existing.lastNotify
+      };
+      latest.set(name, record);
+      const journalled = this.journalNow(entry, record);
+      if (journalled) {
+        liveness.set(name, record);
+      }
+      log.debug('Leaving PepRegistry.heartbeat(). Nothing durable changed; ' +
+                (journalled ? 'journalled.' : 'held.'));
+      return { ok: true, name: name, current: this.syncToken() };
+    }
     const written = directory.writePep(name, attributes);
     log.debug('Leaving PepRegistry.heartbeat(). ' +
               (written ? 'Recorded.' : 'Refused.'));
     if (written) {
+      // The entry is the newest record now, as after a registration.
+      latest.delete(name);
       return { ok: true, name: name, current: this.syncToken() };
     }
     return errorCodes.mark({ ok: false, status: 507, why: 'The directory ' +
                              'refused the entry.' }, 'STS-XACML-0027');
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER A HEARTBEAT THAT CHANGED NOTHING DURABLE IS JOURNALLED (#1882).
+  //
+  // AT ONCE WHEN THE COUNTERS MOVED, because they are what the PEP did and
+  // another node's page should not show a number a minute old; they move
+  // only on the PEP's own heartbeat, so a busy PEP costs one minted row a
+  // heartbeat interval (a minute by default) and never a directory write.
+  // OTHERWISE ONCE AN INTERVAL (`journalIntervalMs()`), measured from the
+  // newer of the entry's `lastSeen` and the journalled record's, which every
+  // process reads, so the request workers of one node and the nodes of a
+  // cluster share the one interval rather than each journalling its own.
+  // -------------------------------------------------------------------------
+  private journalNow(entry: PepRow, record: LivenessRow): boolean {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.journalNow(). name=' + entry.name);
+    const stored = this.storedFor(entry);
+    const storedAt = stored ? PepRegistry.instant(stored.seenAt) : -Infinity;
+    const entryAt = PepRegistry.instant(entry.lastSeen);
+    const held: { decisions: number; allowed: number; refused: number;
+                  undischargeable: number } =
+      stored && storedAt > entryAt ? stored : entry;
+    if (held.decisions !== record.decisions ||
+        held.allowed !== record.allowed ||
+        held.refused !== record.refused ||
+        held.undischargeable !== record.undischargeable) {
+      log.debug('Leaving PepRegistry.journalNow(). The counters moved.');
+      return true;
+    }
+    const due = PepRegistry.instant(record.seenAt) -
+      Math.max(storedAt, entryAt) >= this.journalIntervalMs();
+    log.debug('Leaving PepRegistry.journalNow(). ' +
+              (due ? 'Due.' : 'Not due.'));
+    return due;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PART OF AN ENTRY A HEARTBEAT HAS TO WRITE (#1882), as one string.
+  //
+  // Every attribute but `VOLATILE_ATTRIBUTES`, and of the two in-use reports
+  // only what they say rather than when they said it: the settings in force
+  // without their arrival stamp, and each listener's state, reason, address,
+  // port, renewal and certificate without its pool and connection figures,
+  // and without the process's memory and per-path counts. Those figures move
+  // on every heartbeat of a PEP serving traffic, and a listener that stops
+  // listening or is given a new certificate does not.
+  // -------------------------------------------------------------------------
+  private durableOf(attributes: Record<string, unknown>): string {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.durableOf().');
+    const kept: Record<string, unknown> = {};
+    Object.keys(attributes).sort().forEach(function (key) {
+      if (VOLATILE_ATTRIBUTES.indexOf(key) < 0) {
+        kept[key] = attributes[key];
+      }
+    });
+    const settings = pepSettings.inUseOf(
+      String(attributes.xacmlPepSettingsInUse || ''));
+    if (settings) {
+      kept.xacmlPepSettingsInUse = { token: settings.token,
+                                     values: settings.values };
+    }
+    const listeners: any = pepListeners.inUseOf(
+      String(attributes.xacmlPepListenersInUse || ''));
+    if (listeners) {
+      kept.xacmlPepListenersInUse = (listeners.listeners || [])
+        .map(function (one: any) {
+          const copy = Object.assign({}, one);
+          delete copy.stats;
+          return copy;
+        });
+    }
+    log.debug('Leaving PepRegistry.durableOf().');
+    return JSON.stringify(kept);
   }
 
   // What happened to the last nudge, written back onto the row. Separate from
@@ -1176,17 +1579,26 @@ class PepRegistry {
       log.debug('Leaving PepRegistry.recordNotify(). No directory.');
       return false;
     }
-    const existing = this.read(name);
-    if (!existing) {
+    const entry = this.readEntry(name);
+    if (!entry) {
       log.debug('Leaving PepRegistry.recordNotify(). Not registered.');
       return false;
     }
-    const written = directory.writePep(name, this.attributesOf(existing, {
-      xacmlPepLastNotify: new Date().toISOString() + ' — ' + String(sentence)
+    // INTO THE HEARTBEAT'S RECORD, NOT THE ENTRY (#1882): a nudge goes to
+    // every PEP on every policy change, and its outcome is what this service
+    // did rather than anything durable about the PEP. A record that holds
+    // only this has no `seenAt`, so it moves no `lastSeen` — the rule above.
+    const stored = this.storedFor(entry);
+    const base: LivenessRow = stored || {
+      registeredAt: entry.registeredAt, seenAt: '', decisions: 0,
+      allowed: 0, refused: 0, undischargeable: 0, signals: null,
+      settingsInUse: null, listenersInUse: null, lastNotify: ''
+    };
+    this.deps.liveness.set(name, Object.assign({}, base, {
+      lastNotify: new Date().toISOString() + ' — ' + String(sentence)
     }));
-    log.debug('Leaving PepRegistry.recordNotify(). ' +
-              (written ? 'Recorded.' : 'Refused.'));
-    return written;
+    log.debug('Leaving PepRegistry.recordNotify(). Recorded.');
+    return true;
   }
 
   /**
@@ -1393,6 +1805,10 @@ class PepRegistry {
       return false;
     }
     const removed = directory.deletePep(name);
+    // And the heartbeat's record (#1882): a registration made again under
+    // the name is a new one, and an older record is never read for it.
+    this.deps.liveness.delete(name);
+    this.deps.latest.delete(name);
     log.debug('Leaving PepRegistry.remove(). ' +
               (removed ? 'Removed.' : 'Not there.'));
     return removed;
@@ -1469,6 +1885,10 @@ export = {
   certificateIdentity: slot.forward('certificateIdentity'),
   syncToken: slot.forward('syncToken'),
   staleAfterS: slot.forward('staleAfterS'),
+  // How long a heartbeat that moved only `lastSeen` is held before it is
+  // journalled (#1882), and how two processes' records of one PEP merge.
+  journalIntervalMs: slot.forward('journalIntervalMs'),
+  mergeLiveness: PepRegistry.mergeLiveness,
   nameFrom: slot.forward('nameFrom'),
   all: slot.forward('all'),
   // Which OTHER realms hold a registration. See its header: an empty list in

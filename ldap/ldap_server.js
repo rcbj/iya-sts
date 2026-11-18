@@ -31227,9 +31227,66 @@ function ldapPoliciesView(req) {
 // registering is what buys it the nudge and a row on the console. So policy
 // distribution can be working perfectly with nothing in here.
 // ---------------------------------------------------------------------------
+// THE HEARTBEAT'S RECORD ON THIS PAGE (#1882). A heartbeat that changes
+// nothing durable no longer rewrites the entry: its last-seen time, its
+// counters, its signal health and its in-use reports are kept in
+// `xacml_pep_registry.ts`'s liveness store. This page draws ENTRIES, so the
+// newer values are put over the entry's own here, through the register's
+// `all()`, which joins the two exactly as every other page of PEPs does —
+// otherwise this page alone would show a PEP last seen at its last durable
+// change. `ldapsearch` on 389 reads the entry as stored, and that is what
+// the schema's `xacmlPepLastSeen` says.
+function withPepLiveness(rows) {
+  log.debug('Entering withPepLiveness().');
+  let live = [];
+  try {
+    live = typeof xacmlPepRegistry.all === 'function'
+      ? xacmlPepRegistry.all() : [];
+  } catch (e) {
+    // The page draws the entries as stored rather than failing over the
+    // overlay; nothing is written here.
+    log.debug('Caught in withPepLiveness(): ' + ((e && e.message) || e));
+    live = [];
+  }
+  const byName = new Map();
+  live.forEach(function (one) {
+    byName.set(one.name, one);
+  });
+  rows.forEach(function (row) {
+    const one = byName.get(row.name);
+    if (!one || !one.lastSeen || !row.attributes) {
+      return;
+    }
+    const attributes = row.attributes;
+    attributes[canonicalName('xacmlpeplastseen')] = [one.lastSeen];
+    attributes[canonicalName('xacmlpepdecisions')] = [String(one.decisions)];
+    attributes[canonicalName('xacmlpepallowed')] = [String(one.allowed)];
+    attributes[canonicalName('xacmlpeprefused')] = [String(one.refused)];
+    attributes[canonicalName('xacmlpepundischargeable')] =
+      [String(one.undischargeable)];
+    if (one.lastNotify) {
+      attributes[canonicalName('xacmlpeplastnotify')] = [one.lastNotify];
+    }
+    if (one.signals) {
+      attributes[canonicalName('xacmlpepsignals')] =
+        [JSON.stringify(one.signals)];
+    }
+    if (one.settingsInUse) {
+      attributes[canonicalName('xacmlpepsettingsinuse')] =
+        [JSON.stringify(one.settingsInUse)];
+    }
+    if (one.listenersInUse) {
+      attributes[canonicalName('xacmlpeplistenersinuse')] =
+        [JSON.stringify(one.listenersInUse)];
+    }
+  });
+  log.debug('Leaving withPepLiveness(). ' + byName.size + ' record(s).');
+  return rows;
+}
+
 function ldapPepsView(req) {
   log.debug('Entering ldapPepsView().');
-  const all = allPeps();
+  const all = withPepLiveness(allPeps());
   const wantedText = String(req.query.q || '').trim();
   const needle = wantedText.toLowerCase();
   const filtered = all.filter(function (row) {

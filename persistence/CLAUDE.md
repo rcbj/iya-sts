@@ -1498,12 +1498,14 @@ sections 2 and 4.
 
 **AND AN OBSERVATION IS COUNTED APART (2026-09-15, #46).** A store declared
 `observation: true` at `realms.map()` (`common/realms.js`) holds tallies of what
-requests did — `xacml_monitor.counters` is the one — and `persistence_minted.js`'s
-`note()` counts its keys in `observedGeneration` as well as `generation`, cached
-per handle because `note()` is on every store write. `writeGeneration()` carries
-it as `observed`; the barrier subtracts it before asking whether a request WROTE
-(`cluster/CLAUDE.md`, *What the barrier cost*). The rows are journalled, flushed
-and replicated exactly like any other; only the barrier's question changes.
+requests did — `xacml_monitor.counters`, and since #1882 a remote PEP's
+last heartbeat, `xacml_pep_registry.liveness` (`xacml/CLAUDE.md`) — and
+`persistence_minted.js`'s `note()` counts its keys in `observedGeneration` as
+well as `generation`, cached per handle because `note()` is on every store
+write. `writeGeneration()` carries it as `observed`; the barrier subtracts it
+before asking whether a request WROTE (`cluster/CLAUDE.md`, *What the barrier
+cost*). The rows are journalled, flushed and replicated exactly like any
+other; only the barrier's question changes.
 `tests/cluster_observation_counters.js` section 2.
 
 **AND `syncNow()` NO LONGER READS THE LOG'S HEAD.** A pull that STARTED after the

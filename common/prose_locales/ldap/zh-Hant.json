@@ -1992,8 +1992,8 @@
     "text": "此 PEP 首次註冊的時間。重新註冊時保留，因為每小時重新啟動一次的元件是值得看見的事實，而每次重新啟動就重設年齡的項目永遠無法呈現這一點。"
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "最近一次的活動訊號或提取。xacml.pepStaleAfterS 是自此之後經過多久主控台會顯示「stale」——這刻意不改變本服務所做的任何事。"
+    "en": "2e8561030cee3201",
+    "text": "本條目最後一次寫入時的最近一次活動訊號或提取。不改變任何持久內容的活動訊號不會寫入此處（#1882）：它、各計數器、訊號健康狀況和最近一次推送通知都保存在條目旁邊，主控台顯示兩者中較新的一個。xacml.pepStaleAfterS 是自最近一次之後經過多久主控台會顯示「stale」——這刻意不改變本服務所做的任何事。"
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
@@ -2028,8 +2028,8 @@
     "text": "遠端 PEP 在註冊和心跳時回報的主機名稱（#1760）：環境變數 HOSTNAME，否則為核心的，否則為 /etc/hostname —— 容器在其網路上的名稱，也是其 HTTPS 監聽器憑證包含它時 PEP 推導通知 URL 所依據的名稱。限定為最多 253 個字元的 DNS 名稱，轉為小寫，絕不是 IP 位址；攜帶其他內容的註冊或心跳會被拒絕（STS-XACML-0261）。領域的預設監聽器憑證在 PEP 的註冊名稱和通知主機旁包含它。不含它的註冊會刪除它，不含它的心跳會保留它。較舊的 PEP 沒有此項，其憑證名稱與以前相同。"
   },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "最近一次通知的結果——狀態，或拒絕的語句。「這是唯一記錄通知失敗的地方」，理由如 ssf_streams.js 對被拒絕之推送的說明：從接收端來看，它依定義就是看不見的。"
+    "en": "a512a007219ee216",
+    "text": "本條目最後一次寫入時，最近一次通知的結果——狀態，或拒絕的語句。通知的結果不會寫入此處（#1882）：最新的結果保存在條目旁邊該 PEP 的活動記錄（xacml_pep_registry.liveness）中，主控台顯示兩者中較新的一個。只有本服務記錄通知失敗，理由如 ssf_streams.js 對被拒絕之推送的說明：從接收端來看，它依定義就是看不見的。"
   },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",

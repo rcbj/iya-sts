@@ -1992,8 +1992,8 @@
     "text": "Kung kailan unang nag-register ang PEP na ito. Pinapanatili sa muling pag-register, dahil ang component na nagre-restart bawat oras ay katotohanang sulit makita at hindi ito maipapakita ng entry na nare-reset ang edad sa bawat restart."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
-    "en": "eca573eaea822db7",
-    "text": "Ang huling heartbeat o pull. Ang xacml.pepStaleAfterS ay kung gaano katagal mula rito bago sabihin ng console na \"stale\" — na walang binabago sa ginagawa ng serbisyong ito, nang sadya."
+    "en": "2e8561030cee3201",
+    "text": "Ang huling heartbeat o pull noong huling isinulat ang entry na ito. Ang heartbeat na walang binabagong pangmatagalan ay hindi isinusulat dito (#1882): ito, ang mga counter, ang kalusugan ng signal at ang huling nudge ay itinatabi sa tabi ng entry, at ipinapakita ng console ang mas huli sa dalawa. Ang xacml.pepStaleAfterS ay kung gaano katagal mula sa huli bago sabihin ng console na \"stale\" — na walang binabago sa ginagawa ng serbisyong ito, nang sadya."
   },
   "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
     "en": "44708a3c15a93cf6",
@@ -2028,8 +2028,8 @@
     "text": "Ang hostname na iniuulat ng remote PEP sa pagrehistro at heartbeat nito (#1760): ang environment variable na HOSTNAME, kung wala ay ang sa kernel, kung wala ay /etc/hostname — ang pangalang kilala ang container sa network nito, at ang pinagmumulan ng notify URL nito kapag pinapangalanan ito ng certificate ng HTTPS listener nito. Limitado sa isang DNS name na hindi hihigit sa 253 character, naka-lowercase, hindi kailanman IP address; tinatanggihan ang pagrehistro o heartbeat na may iba pa (STS-XACML-0261). Pinapangalanan ito ng default na listener certificate ng realm katabi ng nakarehistrong pangalan ng PEP at ng notify host nito. Inaalis ito ng pagrehistrong wala nito, pinananatili ng heartbeat na wala nito. Wala sa mas lumang PEP, na ang mga pangalan sa certificate ay gaya ng dati."
   },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
-    "en": "a4283bfe7916574e",
-    "text": "Ano ang nangyari sa huling nudge — ang status, o ang pangungusap ng pagtanggi. ANG TANGING LUGAR KUNG SAAN ITINATALA ANG NABIGONG NUDGE, sa dahilang ibinibigay ng ssf_streams.js tungkol sa tinanggihang push: hindi ito nakikita mula sa tumatanggap na dulo ayon sa depinisyon."
+    "en": "a512a007219ee216",
+    "text": "Ano ang nangyari sa huling nudge — ang status, o ang pangungusap ng pagtanggi — noong huling isinulat ang entry na ito. Ang kinalabasan ng nudge ay hindi isinusulat dito (#1882): ang pinakabago ay itinatabi sa liveness record ng PEP sa tabi ng entry (xacml_pep_registry.liveness), at ipinapakita ng console ang mas huli sa dalawa. Ang serbisyong ito lamang ang nagtatala ng nabigong nudge, sa dahilang ibinibigay ng ssf_streams.js tungkol sa tinanggihang push: hindi ito nakikita mula sa tumatanggap na dulo ayon sa depinisyon."
   },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",

@@ -381,6 +381,16 @@ A remote PEP holds its own copy of the engine and decides in its own process.
 * **Heartbeats** (`POST /xacml/pep/heartbeat`) report the PEP's own
   cumulative counts. They *set* the row's counters rather than add to them, so
   a PEP that restarts makes its row go down.
+* **A heartbeat rewrites the `ou=peps` entry only when something durable
+  changed** (#1882): the PEP's version, hostname, notify URL, bias, the
+  policies it holds, the settings in force or a listener's state or
+  certificate. Its last-seen time, its counters and its statistics are kept
+  beside the entry instead, so an unchanged heartbeat adds no directory write
+  and no audit `entry.update` row. Every console page and `/admin-api` answer
+  shows the newest values. Another node of a cluster sees a PEP's last-seen
+  time at most a fifth of `xacml.pepStaleAfterS` late (a minute at the
+  default), so it calls a PEP stale exactly when the node that heard it
+  does. `ldapsearch` shows the entry as of its last durable change.
 * **The nudge.** When the repository changes, the service POSTs a small
   notice to every registered PEP that gave a notify URL: something changed,
   pull now. The notice carries no policy and no token, so losing one only
