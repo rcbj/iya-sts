@@ -4276,7 +4276,10 @@ rule is split on the verdict now:**
   the job's log (`NN-<job>.realms.jsonl`). `run-report.js`'s
   `removeRealmsOfPassedJob()` removes each through the default realm's
   `/admin-api/realms/remove` with a token of its own, and the summary's
-  `realmsRemoved` counts them. Only an ACCEPTED create is written, so a job
+  `realmsRemoved` counts them. The removals are a QUEUE beside the jobs, one
+  at a time and not awaited by the lane (a retirement can wait out
+  `realms.removalDeliveryTimeoutS`), drained before a cluster restart and
+  before the reports are written. Only an ACCEPTED create is written, so a job
   refused "already defined" for somebody else's realm cannot put that realm on
   its list.
 * **A job that FAILED, timed out or declined keeps every realm**, for the
