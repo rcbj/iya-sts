@@ -1324,7 +1324,8 @@ function start() {
 // The keys of `rows` whose realm the store no longer holds, or none where
 // the store cannot say which realms it holds (realms not written down, or
 // a store from before `storedRealmIds()`): then every row is read as it
-// always was.
+// always was. A row of the default realm or of an internal scope (`*service`,
+// `*process`) is never one: `realmOfRow()` answers '' for it.
 async function orphanRowsOf(rows) {
   log.debug("Entering orphanRowsOf().");
   if (typeof store.storedRealmIds !== 'function') {
@@ -5395,8 +5396,27 @@ const removedRowAt = new Map();  // row key -> writeSeq at its realm's removal
 
 // The realm a row belongs to: a key set's row is its realm id, a
 // certificate authority's `pki:<scope>`, a data-key row's `dek:<scope>:<realm>`
-// ('default' for the default realm). '' for the default realm and for the
-// service's own scope, which are never removed.
+// ('default' for the default realm). '' for the default realm and for every
+// INTERNAL SCOPE, which are never removed — and this is the ONE predicate
+// every door that deletes or refuses a row "of a removed realm" asks
+// (`orphanRowsOf()` at a start, `applyStoredChange()` on arrival,
+// `removedSince()`, `adoptShared()`), so they cannot disagree.
+//
+// **AN INTERNAL SCOPE IS NOT A REALM (2026-11-18, #1900's regression).** This
+// named only `*service`, which is why the service Root survived #1900; the
+// process branch, `pki.js`'s PROCESS_SCOPE `*process`, was read as a realm
+// `sts_realms` does not hold, so every start of a product instance deleted
+// `pki:*process` and `dek:service:*process` (STS-KEYS-0199) and built a new
+// Intermediate and TLS Issuing CA — a new listener certificate per restart,
+// and in a cluster each node deleting the other's. A scope is recognised by
+// its leading `*`, which no realm id can carry (`realms.js`'s ID_PATTERN is
+// `[a-z0-9][a-z0-9-]*`), so a scope added later is covered without a list.
+function isInternalScope(id) {
+  log.debug("Entering isInternalScope().");
+  log.debug("Leaving isInternalScope().");
+  return String(id || '').charAt(0) === '*';
+}
+
 function realmOfRow(rowKey) {
   log.debug("Entering realmOfRow().");
   let id = String(rowKey || '');
@@ -5407,7 +5427,7 @@ function realmOfRow(rowKey) {
   }
   log.debug("Leaving realmOfRow().");
   return id === 'default' || id === PKI_SERVICE_SCOPE ||
-         id === realms.DEFAULT_ID ? '' : id;
+         isInternalScope(id) || id === realms.DEFAULT_ID ? '' : id;
 }
 
 // Whether a write queued at `seq` is of a row whose realm was removed since

@@ -27,7 +27,12 @@
 //      (STS-KEYS-0029): the protection against the wrong key-encryption key
 //      is unchanged for a live realm;
 //   D. a running process that removed the realm deletes the late row when
-//      the change reaches it, rather than keeping it for a later start.
+//      the change reaches it, rather than keeping it for a later start;
+//   E. the internal scopes are not realms: a start beside a live realm and
+//      a removed one deletes only the removed realm's row, and the
+//      `*process` and `*service` rows are read — the process branch keeps
+//      its Intermediate and Issuing CAs across the restart;
+//   F. an arriving `*process` or `*service` row is adopted, never purged.
 //
 // In a CHILD PROCESS: it sets the keystore's process-wide state.
 // ===========================================================================
@@ -77,6 +82,10 @@ function keyRowsChild() {
       saveKeys: function (realm, material) {
         store.rows.set(realm, material);
         return Promise.resolve();
+      },
+      loadKey: function (realm) {
+        return Promise.resolve(store.rows.has(realm)
+          ? store.rows.get(realm) : null);
       },
       deleteKeys: function (realm) {
         store.rows.delete(realm);
@@ -161,6 +170,83 @@ function keyRowsChild() {
       note(applied && applied.kind === 'purged' && !store.rows.has(LATE),
            'D. a process that removed the realm deletes its late row when ' +
            'the change arrives', JSON.stringify(applied));
+
+      // E–F: THE INTERNAL SCOPES ARE NOT REALMS (2026-11-18, #1900's
+      // regression). The process branch (`*process`) and the service Root
+      // (`*service`) keep `pki:` and `dek:` rows no `sts_realms` row will
+      // ever name; a start that called them orphans destroyed the process's
+      // Intermediate and TLS Issuing CA on every restart of a product
+      // instance, and each node of a cluster deleted the other's.
+      const pki = require(ROOT + '/common/pki');
+      const LIVE = 'rrk-live';
+      realms.create({ id: LIVE, name: LIVE });
+      held.add(LIVE);
+      realms.run(realms.get(LIVE), function () {
+        return helpers.stsKeysFor();
+      });
+      await pki.ensureScope(pki.PROCESS_SCOPE);
+      await keystore.settleAll();
+      const scopeRows = function () {
+        return Array.from(store.rows.keys()).filter(function (k) {
+          return k.indexOf('*') >= 0;
+        }).sort();
+      };
+      const identity = function () {
+        const row = pki.rawRowFor(pki.PROCESS_SCOPE);
+        return row && row.intermediate
+          ? JSON.stringify({
+            intermediate: row.intermediate.certificatePem,
+            issuing: Object.keys(row.issuing || {}).sort()
+              .map(function (uc) {
+                return uc + '=' + (row.issuing[uc].certificatePem || '');
+              })
+          })
+          : '';
+      };
+      const scopesBefore = scopeRows();
+      const caBefore = identity();
+      note(scopesBefore.indexOf('pki:*process') >= 0 &&
+           scopesBefore.indexOf('pki:*service') >= 0 &&
+           scopesBefore.some(function (k) {
+             return /^dek:[^:]+:\*process$/.test(k);
+           }) && caBefore !== '',
+           '(the process branch and the service Root are written, with ' +
+           'their data-key rows)', scopesBefore.join(','));
+      // A removed realm's late row beside them, so the start has an orphan
+      // to delete in the same pass.
+      const GONE = 'rrk-gone-2';
+      store.rows.set(GONE, late);
+      let again = null;
+      try {
+        again = await restart();
+      } catch (e) {
+        again = { error: e.message };
+      }
+      const scopesAfter = scopeRows();
+      note(again && !again.error && !store.rows.has(GONE) &&
+           store.rows.has(LIVE) &&
+           JSON.stringify(scopesAfter) === JSON.stringify(scopesBefore),
+           'E. a start deletes only the removed realm\'s row: the live ' +
+           'realm\'s and every *process and *service row are kept',
+           JSON.stringify(again).slice(0, 200) + ' ' + scopesAfter.join(','));
+      note(identity() !== '' && identity() === caBefore,
+           'E. the process branch keeps its Intermediate and Issuing CAs ' +
+           'across the restart', identity() === '' ? 'no process branch'
+             : 'a different one');
+      const processDek = scopesAfter.filter(function (k) {
+        return /^dek:[^:]+:\*process$/.test(k);
+      });
+      const arrivals = [];
+      for (const rowKey of ['pki:*process', 'pki:*service']
+        .concat(processDek)) {
+        arrivals.push(await keystore.applyStoredChange(rowKey));
+      }
+      note(arrivals.every(function (a) {
+        return !(a && a.kind === 'purged');
+      }) && JSON.stringify(scopeRows()) === JSON.stringify(scopesBefore) &&
+           identity() === caBefore,
+           'F. an arriving *process or *service row is adopted, never purged',
+           JSON.stringify(arrivals).slice(0, 400));
     } catch (e) {
       note(false, 'the child ran to the end', e && e.stack);
     }
