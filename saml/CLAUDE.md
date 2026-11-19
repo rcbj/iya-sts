@@ -58,8 +58,8 @@ portal, and the Diagnostics: the service provider or `providerId`, the ACS URL
 or `shire`, the binding or profile, `RelayState` or `TARGET`, who is signed
 in, and the caller's English title and detail AS DATA. No error value sits in
 the box: these pages send no protocol error, and the STS code is never shown.
-**A new refusal code here owes a `samlErrors.refusal.<code>` sentence in all
-seven base catalogs**; without one the general sentence is drawn, which says
+**A new refusal code here owes a `samlErrors.refusal.<code>` sentence in every
+base catalog**; without one the general sentence is drawn, which says
 less. The text/plain 404 of `refusedUnregistered()` (a scoped path for an
 unregistered service provider, shared with metadata) is not a page and is
 unchanged. `tests/saml_initiation.js` A2b and C1b hold the shape.

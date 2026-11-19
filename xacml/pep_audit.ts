@@ -57,8 +57,9 @@
 // on the way back sends the batch again. Every row names the PEP, the
 // process `instance` and the record's `seq`, which together identify one
 // decision; a mark suppressing repeats would need a new attribute on the
-// `ou=peps` entry (a model, an OID and seven catalogs) to be right across
-// the nodes of a cluster, and was left out on that cost (#1827).
+// `ou=peps` entry (a model, an OID and a catalog in every language) to
+// be right across the nodes of a cluster, and was left out on that cost
+// (#1827).
 //
 // **THE ERROR CODE IS THE PEP'S**, carried on the row where it is one the
 // table knows (`STS-AUTHZEN-0028` for an evaluation that faulted), so a

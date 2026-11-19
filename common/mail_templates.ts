@@ -673,7 +673,7 @@ class MailTemplates {
 
   // The catalog tags to read for a language tag, most specific first, and
   // never English (which is `BUILT_IN`): `zh-tw` is `zh-Hant`, `zh-hk` is
-  // `zh-Hant-HK` then `zh-Hant`, `de` is nothing.
+  // `zh-Hant-HK` then `zh-Hant`, `ja` is nothing.
   /**
    * Lists the translation files to read for a language tag, overlay first,
    * English left out; empty when no catalog answers the tag.

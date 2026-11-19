@@ -1,0 +1,298 @@
+{
+  "secretstore.providers.file.label": {
+    "en": "5d423a594813c53f",
+    "text": "ملف مُركَّب في الحاوية"
+  },
+  "secretstore.providers.aws.label": {
+    "en": "b408912d14ae552b",
+    "text": "AWS Secrets Manager"
+  },
+  "secretstore.providers.gcp.label": {
+    "en": "7e2de75385b32f92",
+    "text": "Google Cloud Secret Manager"
+  },
+  "secretstore.providers.azure.label": {
+    "en": "549cdeb99f387d7d",
+    "text": "Azure Key Vault"
+  },
+  "secretstore.providers.vault.label": {
+    "en": "0fc7b1598470c4ea",
+    "text": "HashiCorp Vault"
+  },
+  "secretstore.providers.vault-transit.label": {
+    "en": "ecabc21234f2d967",
+    "text": "Vault أو OpenBao Transit (لا يغادره المفتاح أبدًا)"
+  },
+  "secretstore.providers.aws-kms.label": {
+    "en": "79c782926c157220",
+    "text": "AWS KMS (لا يغادره المفتاح أبدًا)"
+  },
+  "secretstore.providers.gcp-kms.label": {
+    "en": "5e27bcfd042a293d",
+    "text": "Google Cloud KMS (لا يغادره المفتاح أبدًا)"
+  },
+  "secretstore.providers.azure-keys.label": {
+    "en": "20bde19870bf41f3",
+    "text": "مفتاح Azure Key Vault أو Managed HSM (لا يغادره المفتاح أبدًا)"
+  },
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "من أين تقرأ هذه الخدمة أسرارها الأولية — مفتاح تشفير المفاتيح الذي يُختم تحته كل ما تختمه، وكلمة مرور قاعدة البيانات — وما إذا كانت قد قرأتها فعلًا، وما الذي يفعله المخزن في الطرف الآخر."
+  },
+  "secretstore.source.notConfigured": {
+    "en": "9f33f06843e745c0",
+    "text": "غير مُعد"
+  },
+  "secretstore.source.noPath": {
+    "en": "4749999e2e7aae1a",
+    "text": "(لم يُعد مسار)"
+  },
+  "secretstore.source.noSecretId": {
+    "en": "6e2d129e5e03f51c",
+    "text": "(لم يُعد معرف سر)"
+  },
+  "secretstore.source.noResourceName": {
+    "en": "92425929b094ca5f",
+    "text": "(لم يُعد اسم مورد)"
+  },
+  "secretstore.source.noSecretName": {
+    "en": "5fe472c605935f3f",
+    "text": "(لم يُعد اسم سر)"
+  },
+  "secretstore.source.noVaultUrl": {
+    "en": "1213793d12fc8ff3",
+    "text": "(لم يُعد عنوان URL للمخزن)"
+  },
+  "secretstore.source.noKey": {
+    "en": "f2e233d8f6b89e13",
+    "text": "(لم يُعد مفتاح)"
+  },
+  "secretstore.source.noKeyName": {
+    "en": "1bceca3f70d1b52c",
+    "text": "(لم يُعد اسم مفتاح)"
+  },
+  "secretstore.source.sdkDefault": {
+    "en": "9c42a3a3ea6636b0",
+    "text": "(الافتراضي في SDK)"
+  },
+  "secretstore.source.sdkDefaultEndpoint": {
+    "en": "7f0c4b72aea358e9",
+    "text": "(نقطة النهاية الافتراضية في SDK)"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "كل مفتاح تشفير بيانات، في KMS"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "كل مفتاح تشفير بيانات، في المخزن"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "شهادة عميل ({{cert}})"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "شهادة عميل"
+  },
+  "secretstore.source.byToken": {
+    "en": "e3316e2bafebb610",
+    "text": "رمز"
+  },
+  "secretstore.source.byConfiguredToken": {
+    "en": "ffc120dd37b9491d",
+    "text": "رمز مُعد"
+  },
+  "secretstore.source.bySdkToken": {
+    "en": "eb9992956e4e8a67",
+    "text": "VAULT_TOKEN الخاص بـ SDK"
+  },
+  "secretstore.source.noRole": {
+    "en": "fc62ddb2080607e0",
+    "text": "(لم يُسمَّ)"
+  },
+  "secretstore.source.fileNotObject": {
+    "en": "ae3e838b14eb115f",
+    "text": "الملف ليس كائن JSON، لذا يُؤخذ كل ما فيه كاملًا. هكذا يكون ملف المفتاح الخام."
+  },
+  "secretstore.source.memberNames": {
+    "en": "d5d75498f77116c1",
+    "text": "أسماء الأعضاء فقط. وأي واحد يأخذه السر هو إعداد حقله الخاص."
+  },
+  "secretstore.source.noField": {
+    "en": "c8104810832fdb73",
+    "text": "لم يُعد أي حقل، لذا فإن الملف كله هو هذا السر."
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "يشترك هذا السر في ملف مفتاح تشفير المفاتيح، وذلك الملف ليس كائن JSON — لذا فإن ما فيه هو المفتاح، وتُرفض قراءة هذا السر بدلًا من تسليم ذلك المفتاح إلى قاعدة بيانات."
+  },
+  "secretstore.source.fileNotJson": {
+    "en": "c4715a803e2b6189",
+    "text": "الملف ليس JSON، لذا فإن الملف كله هو هذا السر ولا يُستخدم الحقل."
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "لم تُعد شهادة عميل، لذا لم يُجرَ تسجيل دخول: الرمز هو ما يوفّره {{token}} أو VAULT_TOKEN الخاص بـ SDK."
+  },
+  "secretstore.source.canWrite": {
+    "en": "f0edb7f12492f535",
+    "text": "يمكن لهذه الهوية الكتابة. يمكنها استبدال مفتاح تشفير المفاتيح، فيصبح كل ما خُتم تحت المفتاح القديم غير قابل للقراءة."
+  },
+  "secretstore.source.readOnly": {
+    "en": "571684d367b80ab7",
+    "text": "للقراءة فقط على كل مسار سُئلت عنه، وهو ما يُفترض أن تقوله السياسة."
+  },
+  "secretstore.source.reachesNothing": {
+    "en": "0b12560836d0a934",
+    "text": "لا يجوز لهذه الهوية بلوغ أي مسار من المسارات المُعدّة لقراءتها. وستُرفض القراءة عند بدء التشغيل."
+  },
+  "secretstore.source.connectionString": {
+    "en": "769a73d1e1b8e994",
+    "text": "سلسلة الاتصال"
+  },
+  "secretstore.password.passwordFrom.file": {
+    "en": "e1f3b6d1cacc5e2c",
+    "text": "ملف مُركَّب في الحاوية ({{from}})"
+  },
+  "secretstore.password.passwordShared.file": {
+    "en": "758f5df5caeb2761",
+    "text": "ملف مُركَّب في الحاوية، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFromShared.file": {
+    "en": "64f25900eac9925d",
+    "text": "ملف مُركَّب في الحاوية ({{from}})، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFrom.aws": {
+    "en": "8421d2245730320b",
+    "text": "AWS Secrets Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.aws": {
+    "en": "74182258302f0676",
+    "text": "AWS Secrets Manager، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFromShared.aws": {
+    "en": "d5b70defc93014cf",
+    "text": "AWS Secrets Manager ({{from}})، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFrom.gcp": {
+    "en": "64d2a620e56a463c",
+    "text": "Google Cloud Secret Manager ({{from}})"
+  },
+  "secretstore.password.passwordShared.gcp": {
+    "en": "6e1c9a52cb2ee8eb",
+    "text": "Google Cloud Secret Manager، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFromShared.gcp": {
+    "en": "950ccddbb5aef8f4",
+    "text": "Google Cloud Secret Manager ({{from}})، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFrom.azure": {
+    "en": "6e8b2a5c28325d00",
+    "text": "Azure Key Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.azure": {
+    "en": "7a53268d08952f71",
+    "text": "Azure Key Vault، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFromShared.azure": {
+    "en": "f97349b05904e291",
+    "text": "Azure Key Vault ({{from}})، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFrom.vault": {
+    "en": "dfe6c58e804c494a",
+    "text": "HashiCorp Vault ({{from}})"
+  },
+  "secretstore.password.passwordShared.vault": {
+    "en": "e655c15d0f441caf",
+    "text": "HashiCorp Vault، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.password.passwordFromShared.vault": {
+    "en": "b6d6b5c32d3b9a93",
+    "text": "HashiCorp Vault ({{from}})، مشترك مع مفتاح تشفير المفاتيح"
+  },
+  "secretstore.probe.file/file": {
+    "en": "f41c931e5680cbfa",
+    "text": "الملف نفسه: ما إذا كان موجودًا، ومن يستطيع قراءته، ومتى تغيّر آخر مرة."
+  },
+  "secretstore.probe.file/members": {
+    "en": "5778d7760aeb7443",
+    "text": "ما إذا كان الملف يحمل كائن JSON، وأي أعضاء فيه — الأسماء وليس القيم أبدًا."
+  },
+  "secretstore.probe.file/field": {
+    "en": "9b658c3ec485be4b",
+    "text": "ما إذا كان العضو الذي أُعدّ هذا السر ليأخذه موجودًا فعلًا في الملف."
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "الشهادة التي تقدّمها هذه الخدمة إلى المخزن، ومتى تنتهي صلاحيتها."
+  },
+  "secretstore.probe.vault/store-ca": {
+    "en": "3fdf0ee5468250ab",
+    "text": "المرساة التي تتحقق بها هذه الخدمة من مستمع المخزن نفسه."
+  },
+  "secretstore.probe.vault/seal-status": {
+    "en": "4bdb1036ad2931e1",
+    "text": "ما إذا كان المخزن مهيّأً، وما إذا كان مختومًا، ونوع الختم الذي يستخدمه، وأي بنية هو."
+  },
+  "secretstore.probe.vault/health": {
+    "en": "1b177a8aea40f139",
+    "text": "ملخص صحة المخزن نفسه: ساعته، وعنقوده، وما إذا كان هذا العقد هو النشط."
+  },
+  "secretstore.probe.vault/leader": {
+    "en": "2319cbe40ec5f3d7",
+    "text": "التوافر العالي: ما إذا كان هذا العقد هو القائد، وأين القائد."
+  },
+  "secretstore.probe.vault/authentication": {
+    "en": "ee13e40f32b9fffb",
+    "text": "تسجيل الدخول بالطريقة التي تفعلها قراءة بدء التشغيل، وما أعاده المخزن."
+  },
+  "secretstore.probe.vault/token": {
+    "en": "14a03524c0fb9140",
+    "text": "ما يقوله المخزن عن الرمز الذي أنتجه تسجيل الدخول، بسؤاله للمخزن بدلًا من قراءته من رد تسجيل الدخول."
+  },
+  "secretstore.probe.vault/capabilities": {
+    "en": "0f220dde7a5da29c",
+    "text": "ما يجوز لهذه الهوية فعله فعلًا، بسؤال المخزن: المسارات التي تقرأها، وكتابة يجب ألا تقدر على تنفيذها."
+  },
+  "secretstore.probe.vault/mounts": {
+    "en": "3126483e397ac716",
+    "text": "محركات الأسرار التي تستطيع هذه الهوية رؤيتها — وهي أقل مما يملكه المخزن، وينبغي أن تكون كذلك."
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "بيانات KV الوصفية لهذا السر: متى كُتب، وكم إصدارًا يوجد، وأي إصدار تحصل عليه القراءة."
+  },
+  "secretstore.probe.aws/describe": {
+    "en": "6707e380066ebbee",
+    "text": "كل ما يعرفه AWS Secrets Manager عن هذا السر ما عدا قيمته: التدوير، ومفتاح KMS، والإصدارات وتسميات تجهيزها."
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "ما يقوله Transit عن المفتاح الذي يغلّف مفاتيح البيانات: نوعه، وإصداراته، وما إذا كان يجوز له مغادرة KMS يومًا."
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "ما يقوله AWS KMS عن المفتاح الذي يغلّف مفاتيح البيانات: حالته، وما إذا كان AWS يدوّره."
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "ما يقوله Cloud KMS عن المفتاح الذي يغلّف مفاتيح البيانات: غرضه، وإصداره الأساسي، وجدول تدويره."
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "ما يقوله المخزن عن المفتاح الذي يغلّف مفاتيح البيانات: نوعه، وحجمه، وعملياته، وإصداره، وتدويره."
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "البيانات الوصفية للسر نفسه: النسخ المتماثل، والتسميات، والتدوير، وانتهاء الصلاحية."
+  },
+  "secretstore.probe.gcp/version": {
+    "en": "206e4669d7f025e4",
+    "text": "الإصدار الذي ستحصل عليه القراءة: ما إذا كان مفعّلًا أو معطّلًا أو مدمَّرًا."
+  },
+  "secretstore.probe.azure/versions": {
+    "en": "9d0074a0c77ba2f9",
+    "text": "كل إصدار من هذا السر وخصائصه — التفعيل، والإنشاء، والتحديث، وانتهاء الصلاحية — وليس القيمة أبدًا."
+  }
+}

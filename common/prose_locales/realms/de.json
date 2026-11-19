@@ -1,0 +1,218 @@
+{
+  "realms.support.oauth-2-0-oidc.family": {
+    "en": "b91523811462ec54",
+    "text": "OAuth 2.0 / OIDC"
+  },
+  "realms.support.oauth-2-0-oidc.note": {
+    "en": "ca6a3e0c45f09554",
+    "text": "Ein eigener Aussteller, ein eigener Signierschlüssel, eigene Autorisierungscodes, eigene Zugriffs- und Aktualisierungstoken, eigene Aktualisierungsfamilien, eigener DPoP-Replay- und Nonce-Zustand, eigener Replay-Zustand für Client-Assertions und eigene benannte Autorisierungsserver. Die CLIENT-REGISTRIERUNGEN sind seit dem 2026-08-25 pro Bereich, weil es das Verzeichnis ist: Ein unter einem Bereich registrierter Client lebt in ou=applications dieses Bereichs und ist jedem anderen unbekannt. Diese Zeile sagte bis dahin das Gegenteil. AUCH DER MODUS NACH RFC 9700 IST PRO BEREICH — `oauth2.rfc9700` und `oauth2.oauth21`, das ihn impliziert, sind für den Prozess nur mit einem Neustart wirksam und an einem Bereich setzbar, weil ein Bereich keinen Socket bindet — sodass ein Prozess unter /oauth2/authorize permissiv antworten und die BCP an dem eines Bereichs durchsetzen kann. Was ein Bereich nicht mitbringen kann, ist ein SCHEMA: Der Hauptport ist https oder er ist es nicht, für jeden Bereich zugleich, und GET /oauth2/rfc9700 meldet, welches."
+  },
+  "realms.support.authentication-service.family": {
+    "en": "72f0c79fe76b583e",
+    "text": "Authentifizierungsdienst"
+  },
+  "realms.support.authentication-service.note": {
+    "en": "9a873e6d5aa52ccb",
+    "text": "Eigene Sitzungen und zweite Faktoren — WebAuthn-Anmeldedaten, TOTP-Geheimnisse und Wiederherstellungscodes —, sodass die Anmeldung bei einem Bereich Sie nur bei diesem Bereich anmeldet. Das ist der Sinn eines Bereichs und nicht eine seiner Grenzen. Als WEN Sie sich anmelden dürfen, ist nur insofern gemeinsam, als dieser Dienst nirgends ein Passwort prüft — die PERSON ist ein Eintrag im eigenen Verzeichnis des Bereichs. Die Administratorkonsole ist der EINE Leser, der diese Grenze überschreitet: Sie meldet eine Person über den Bereich an, in dem sie erreicht wird, und hält ihre EIGENE Sitzung im STANDARD-Bereich, sodass eine Konsolensitzung von jedem Bereich aus gefunden werden kann. Die Zeile darunter sagt, wen diese Sitzung verwalten darf."
+  },
+  "realms.support.saml-2-0-saml-1-1.family": {
+    "en": "e56ec33fb3bd7bd5",
+    "text": "SAML 2.0 / SAML 1.1"
+  },
+  "realms.support.saml-2-0-saml-1-1.note": {
+    "en": "7e9175bdd8dd3808",
+    "text": "Eine eigene entityID und eine eigene providerID (beim Anlegen des Bereichs verschieden vorbelegt), ein eigener Signierschlüssel, eigener Anfragezustand, eigene Artefakte und eigene Metadaten je Dienstanbieter — deren URL daher den Bereich ebenso trägt wie den Digest des SP. Die DIENSTANBIETER-EINTRÄGE sind pro Bereich, aus demselben Grund wie die OAuth-Clients: Sie sind Anwendungen im eigenen Verzeichnis des Bereichs."
+  },
+  "realms.support.ws-trust.family": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "realms.support.ws-trust.note": {
+    "en": "bcd3a33cadffbf2f",
+    "text": "Ein eigener Token-Aussteller und ein eigener Signierschlüssel."
+  },
+  "realms.support.ws-federation.family": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "realms.support.ws-federation.note": {
+    "en": "30e2050715958d86",
+    "text": "Eine eigene entityID und ein eigener Signierschlüssel. Die Einmalanmeldung mit OAuth bleibt INNERHALB eines Bereichs erhalten und überschreitet keine Bereiche, weil die Sitzung, auf der sie beruht, es nicht tut."
+  },
+  "realms.support.openid4vci-openid4vp-did.family": {
+    "en": "e544a89450409208",
+    "text": "OpenID4VCI / OpenID4VP / DID"
+  },
+  "realms.support.openid4vci-openid4vp-did.note": {
+    "en": "7c25e8039a79a632",
+    "text": "Eigene Credential-Angebote, vorautorisierte Codes, aufgeschobene Transaktionen, Ausstellungs-Nonces und Präsentationstransaktionen — und eine eigene Antwort darauf, was ein Credential zusichert und was der Prüfer verlangt. Die Kennung did:web trägt das Segment des Bereichs, und das hält die DID-Dokumente zweier Bereiche auseinander."
+  },
+  "realms.support.gnap.family": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "realms.support.gnap.note": {
+    "en": "fe3bcb6ce4779bc4",
+    "text": "Ein Autorisierungsserver pro Bereich (RFC 9635), mit eigenen Grants, Fortsetzungen, Interaktionen, Benutzercodes, Token, Verwaltungs-Handles, Replay-Zustand für Schlüsselbeweise und Verbindungen zu Ressourcenservern (RFC 9767) — zwölf Speicher, jeder pro Bereich und mit ihm entfernt. Ein GNAP-Client ist eine Anwendung im eigenen Verzeichnis des Bereichs, und `gnap.enabled` ist eine Einstellung eines Bereichs, sodass ein Bereich unter /gnap antworten kann, während ein anderer ablehnt."
+  },
+  "realms.support.shared-signals-ssf-caep-risc.family": {
+    "en": "6420ea91cc8c6f7f",
+    "text": "Shared Signals (SSF, CAEP, RISC)"
+  },
+  "realms.support.shared-signals-ssf-caep-risc.note": {
+    "en": "fa36979b00dee444",
+    "text": "Ein eigener Transmitter: Streams, ihre Subjekte, ihre Warteschlangen und unzustellbaren Nachrichten, und das Sitzungsregister von CAEP sowie das Kontenregister von RISC sind pro Bereich. Ein Ereignis wird in dem Bereich ausgesendet, in dem es geschehen ist, und die eigene Konsole und das eigene Portal dieses Dienstes sind in jedem Bereich als Empfänger vorbelegt, sodass jeder nur seinen eigenen Bereich hört."
+  },
+  "realms.support.xacml-3-0-alfa.family": {
+    "en": "d6e8ac2f943bbdd6",
+    "text": "XACML 3.0 / ALFA"
+  },
+  "realms.support.xacml-3-0-alfa.note": {
+    "en": "6965ae9cced8a957",
+    "text": "Ein eigenes Richtlinien-Repository (ou=policies) und ein Register entfernter PEPs (ou=peps), beide im Verzeichnis des Bereichs. Das Repository eines neuen Bereichs beginnt LEER und fällt nie auf das des Standardbereichs zurück, was zwei Bereiche koppeln würde: Die zwei Richtlinien, mit denen dieser Dienst seine eigene Ausstellung und seinen eigenen Zugriff entscheidet, sind eingebaut und werden AUFGERUFEN, sodass sie in jedem Bereich entscheiden, und ein Repository-Eintrag in einem Bereich hebt sie nur dort auf. Ein entfernter PEP gehört dem Bereich, in dem er registriert ist, und das Zertifikat seines HTTPS-Listeners stellt die ausstellende CA pep-tls dieses Bereichs aus."
+  },
+  "realms.support.authzen.family": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "realms.support.authzen.note": {
+    "en": "8477ecf26c38a2a6",
+    "text": "Der Bereich ist der Mandant von AuthZEN: Ein Aufrufer wird im eigenen Verzeichnis des Bereichs nachgeschlagen, sodass der Aufrufer eines anderen Bereichs hier niemand ist, und eine Frage wird gegen die eigene Wurzelrichtlinie des Bereichs entschieden. Der Attributkatalog ist das Objekt sts-authzen-api des Bereichs, und jede Einstellung authzen.* gehört dem Bereich."
+  },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "Der Bereich ist der Mandant von UMA: Seine Ressourcenserver sind die für uma erklärten Anwendungen des Bereichs, sein Token der Protection API ist das eigene Zugriffstoken des Bereichs, seine sechs Speicher — die registrierten Ressourcen, die Dokumente der Eigentümer, die Tickets, die PCTs, die RPTs und die ausstehenden Genehmigungen — gehören dem Bereich, seine Richtlinie auf Bereichsebene ist der Eintrag uma-authorization des Bereichs oder die eingebaute Vorlage, und jede Einstellung uma.* gehört dem Bereich."
+  },
+  "realms.support.federation.family": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Föderation"
+  },
+  "realms.support.federation.note": {
+    "en": "abe4d8cd1ff6af78",
+    "text": "Eigene Beziehungen — ou=federations liegt im Verzeichnis des Bereichs — und eigene laufende Anmeldungen, je Bereich gedeckelt, sodass die Flut eines Bereichs nicht die eines anderen verdrängen kann. Ein in einem Bereich begonnener Ablauf kann nicht unter /federation/acs/{id} eines anderen Bereichs enden: Die Assertion wird gegen das Zertifikat einer Beziehung in dem Bereich geprüft, in dem sie ankommt."
+  },
+  "realms.support.user-portal.family": {
+    "en": "00cf214ba77e7497",
+    "text": "Benutzerportal"
+  },
+  "realms.support.user-portal.note": {
+    "en": "f4b474a8d20ad298",
+    "text": "Das eigene Konto einer Person in dem Bereich, in dem sie sich befindet: Das Portal meldet sich über den eigenen Autorisierungsserver des Bereichs als ein in jedem Bereich vorbefüllter Client an, und jede Seite liest und schreibt den Eintrag der Person im Verzeichnis dieses Bereichs, gehalten an die Passwortrichtlinie dieses Bereichs."
+  },
+  "realms.support.reporting.family": {
+    "en": "b1fa104b9bf0635e",
+    "text": "Berichte"
+  },
+  "realms.support.reporting.note": {
+    "en": "ca64742fe52ce6b3",
+    "text": "Die Anwendung und ihre API werden unter dem Pfad des Bereichs erreicht. Definitionen und Aufträge bleiben in den Maps dieses Bereichs, und eine Freigabe ist eine Gruppe im Verzeichnis dieses Bereichs."
+  },
+  "realms.support.global-logout.family": {
+    "en": "1b4192fb739d93e9",
+    "text": "Globale Abmeldung"
+  },
+  "realms.support.global-logout.note": {
+    "en": "d3320c4e59424581",
+    "text": "Kein eigener Zustand: /logout, /admin/logout und /admin/sessions lesen die Speicher des Bereichs, in dem sie erreicht werden, sodass eine Abmeldung die Sitzung dieses Bereichs und das, was an ihr hängt, beendet, und nichts in einem anderen Bereich."
+  },
+  "realms.support.statistics-and-the-audit-log.family": {
+    "en": "8f2960c701e2a7ec",
+    "text": "Statistiken und das Audit-Protokoll"
+  },
+  "realms.support.statistics-and-the-audit-log.note": {
+    "en": "a4e6e9e283c25d0b",
+    "text": "Jeder Bereich zählt und zeichnet auf, was unter seinem eigenen Präfix geschehen ist. Die Laufnummern des Audits sind ebenfalls pro Bereich, sodass die Zeilen eines Bereichs zusammenhängend sind."
+  },
+  "realms.support.scim-2-0.family": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "realms.support.scim-2-0.note": {
+    "en": "d506e39413c1c9d6",
+    "text": "Die Endpunkte UND der Speicher. Ein Benutzer, der über /scim/v2 eines Bereichs angelegt wird, ist ein Eintrag in ou=users dieses Bereichs und existiert sonst nirgends — diese Zeile las `partial` und sagte bis zum 2026-08-25 das Gegenteil, als das Verzeichnis pro Bereich wurde. SCIM trifft darüber weiterhin keine eigene Entscheidung: Es provisioniert in das Verzeichnis, und das Verzeichnis ist das, was partitioniert ist."
+  },
+  "realms.support.admin-console-and-management-api.family": {
+    "en": "9aa33ceabfd73434",
+    "text": "Administratorkonsole und Verwaltungs-API"
+  },
+  "realms.support.admin-console-and-management-api.note": {
+    "en": "105373cf625fc0e8",
+    "text": "Jede Seite und jede Operation ist pro Bereich — /admin/config LIEST und SCHREIBT den Bereich, in dem sie erreicht wird, und /admin/users listet die eigenen Personen des Bereichs. Die ADMIN-ROLLEN werden seit dem 2026-09-14 (#32) absichtlich ZWEIMAL gehalten: cn=admin-read und cn=admin-write des STANDARD-Bereichs sind die DIENST-LISTE und verwalten jeden Bereich, und jeder andere Bereich hat dieselben zwei Gruppen in seinem eigenen ou=groups, vorbefüllt mit einem Konto `admin`, deren Mitglieder NUR DIESEN Bereich verwalten — jede Seite und jede Operation zum ganzen Prozess (der Speicher, die Datenbank, der Geheimnisspeicher, die Listener, der Debugger, der Explorer), das Anlegen oder Entfernen eines Bereichs, das Ersetzen der Root des Dienstes und die Einstellungen je Prozess werden ihnen verweigert. Die eigene Liste eines Bereichs gewährt daher nichts außerhalb des Bereichs, und das machte es sicher, sie hinzuzufügen. Die Konsole meldet eine Person über den Bereich an, in dem sie erreicht wird, und die schlichten /admin und /portal fragen zuerst nach dem Bereich, wenn Bereiche definiert sind. /admin-api akzeptiert überall das Token des Standardbereichs und das eigene sts-api-client-Token eines Bereichs nur in diesem Bereich."
+  },
+  "realms.support.ldap-389-636.family": {
+    "en": "651360794c5f87fc",
+    "text": "LDAP (389 / 636)"
+  },
+  "realms.support.ldap-389-636.note": {
+    "en": "1e061e6f4bab09ac",
+    "text": "EIN VERZEICHNIS PRO BEREICH hinter einem Socket — ein eigener Speicher, kein Teilbaum eines gemeinsamen, seit dem 2026-08-25. Das DN-Layout ist das, was ein Client sieht: JEDER BEREICH IST EIN EIGENER BAUM, verwurzelt in der Abbildung nach RFC 2247 der DOMÄNE des Bereichs (seit dem 2026-09-18) — der Standardbereich bei der von global.domain (dc=example,dc=com), ein Bereich, dessen Domäne iyasec.io ist, bei dc=iyasec,dc=io, und einer, der ohne Domäne angelegt wurde, bei <id>.<global.domain>, was das dc=<id> unter der Basis des Standardbereichs ist, das zuvor jeder Bereich hatte. Eine Domäne innerhalb der eines anderen Bereichs ist zulässig und ein eigener Naming Context. So gibt es ou=users, ou=groups, ou=applications, ou=federations und die zwei SPIFFE-Container einmal pro Bereich, und sie teilen nichts — diese Zeile las `none` und sagte bis zum 2026-08-25, jeder Bereich sehe dieselben Personen. Der Bereich steht im DN und nicht in einem partitionierten Speicher, WEIL der Socket keinen Pfad hat, in den ein Segment gesetzt werden könnte: Ein ldapsearch trifft mit einem Base-DN und sonst nichts ein, also ist `-b dc=acme,dc=example,dc=com` der einzige Weg, auf dem ein Client jemals einen Bereich benennen konnte, und er funktioniert. JEDE OPERATION WIRD AUS DEM SPEICHER BEANTWORTET, DEN DER DN NENNT, seit dem 2026-08-25 und auf Wunsch von rcbj — diese Zeile sagte, eine Teilbaumsuche vom Naming Context gebe die Einträge jedes Bereichs zurück, mit dem Argument, ein Naming Context IST der ganze Baum. Damit blieb Port 389 die eine Tür, durch die ein Bereich die Personen, Gruppen und Anwendungen eines anderen Bereichs sehen konnte, während die Konsole, /scim/v2 und der Gruppen-Claim jedem Bereich nur das Seine zeigten. Also ist `-b dc=example,dc=com` das Verzeichnis des Standardbereichs, `-b dc=acme,dc=example,dc=com` das von acme, und die Root-DSE veröffentlicht je Bereich einen namingContexts-Wert, sodass ein Client sie entdecken kann. Ein Anlegen, eine Änderung, ein Löschen, ein Vergleich oder eine Suche im Base-Scope wird in dem Bereich beantwortet, den sein DN nennt, weil das Ausschreiben des DN die Art ist, wie ein Client einen Bereich auf einem Socket benennt, der sonst keinen Ort dafür hat; ein modifyDN, der einen Bereich überschritte, wird mit LDAP_AFFECTS_MULTIPLE_DSAS (71) abgewiesen, denn zwei Bereiche sind hier zwei Verzeichnisse."
+  },
+  "realms.support.kerberos-v5.family": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "realms.support.kerberos-v5.note": {
+    "en": "3a0d2e06a69e5eda",
+    "text": "Ein KDC je Vertrauensbereich auf dem GEMEINSAMEN Port 88, auseinandergehalten durch den Kerberos-Realm-Namen in jeder Anfrage — das Unterscheidungsmerkmal, das das Protokoll bereits trägt. Ein Bereich wird mit krb5.enabled AUS angelegt; setzen Sie einen eigenen krb5.realm (keine zwei Bereiche dürfen auf einen Namen antworten) und schalten Sie ihn ein, dann baut dieser Bereich aus seinen eigenen Einstellungen eine eigene Principal-Datenbank, eigene Langzeitschlüssel und ein eigenes krbtgt. Seine Personen sind die Personen in seinem eigenen Verzeichnis-Teilbaum. Rohes UDP/TCP 88 und ein bloßes /KdcProxy leiten nach dem Namen; das eigene /realm/<id>/KdcProxy eines Bereichs ist auf diesen Bereich festgelegt und weist den Namen eines anderen Bereichs mit KDC_ERR_WRONG_REALM ab. Was weiterhin dem PROZESS gehört: die zwei Sockets. Ein Kerberos-Vertrauen ist ein Datensatz im eigenen Verzeichnis des Bereichs (ou=kerberosTrusts), sodass zwei Vertrauensbereiche dem Kerberos des anderen durch einen Datensatz auf jeder Seite vertrauen dürfen. Vor dem 2026-09-15 gab es ein KDC, eine Principal-Datenbank und einen Realm-Namen für den ganzen Prozess. SPNEGO trägt dieselben Tickets über HTTP, daher antworten seine Routen unter dem Pfadpräfix jedes Bereichs wie jede andere."
+  },
+  "realms.support.certificate-authority-crl-ocsp.family": {
+    "en": "1a5d99f237a9a182",
+    "text": "Zertifizierungsstelle (CRL, OCSP)"
+  },
+  "realms.support.certificate-authority-crl-ocsp.note": {
+    "en": "23dc7902c5fa2e83",
+    "text": "EINE ROOT FÜR DEN DIENST, EINE INTERMEDIATE JE BEREICH und unter jeder Intermediate eine ausstellende CA je Anwendungsfall, sodass ein Zertifikat, das ein Bereich ausgestellt hat, nicht an die Intermediate eines anderen Bereichs kettet. Gemeinsam ist die Root, die keinem Bereich gehört. Die CRLs, die OCSP-Responder und die Ketten werden durch ein Segment {scope} in /pki/... benannt und nicht durch das Präfix des Bereichs, weil diese Adressen IN die Zertifikate gehen und von Clients geholt werden, die von den Bereichen dieses Dienstes nichts wissen — und die Root gehört keinem Bereich, also ließe sie sich nicht mit einem schreiben."
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.family": {
+    "en": "915e2b4c1add7b8d",
+    "text": "Zertifikatsregistrierung (ACME, EST, SCEP)"
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.note": {
+    "en": "8eb76fc39d2c3029",
+    "text": "Jedes der drei hat unter der Intermediate jedes Bereichs eine eigene ausstellende CA und eigene Speicher je Bereich — die Konten, Orders, Autorisierungen und Nonces von ACME (eine Nonce ist ein MAC über den Bereich, daher wird die eines Bereichs von einem anderen abgewiesen), das RA-Zertifikat von SCEP und seine Transaktionen. Wer ein Zertifikat haben darf, wird gegen das eigene Verzeichnis des Bereichs entschieden: Ein Schlüssel für ACME External Account Binding, EST-Anmeldedaten und eine SCEP-Challenge sind jeweils an einen Eintrag in einem Bereich gebunden, und ein Zertifikat, das ein anderer Bereich ausgestellt hat, besteht die Prüfung der Intermediate nicht. EST wird über das Pfadpräfix erreicht, ODER indem der Bereich an der EST-Label-Position genannt wird, /.well-known/est/<realm>/..., weil ein EST-Client keinen Pfad vor eine Well-Known-URI setzen kann (#251). Gemeinsam ist das Ratenlimit von EST je Adresse, geschlüsselt nach der Adresse des Clients und nicht nach dem Bereich."
+  },
+  "realms.support.openid-federation.family": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "realms.support.openid-federation.note": {
+    "en": "afd1986b1784cb9c",
+    "text": "Jeder Bereich ist eine eigene Föderationsentität: Sein Entity Identifier ist sein Aussteller, seine Federation Entity Keys, seine Untergeordneten, seine Trust Anchors und seine Trust Marks sind Einträge in seinem eigenen ou=oidfed, und seine Endpunkte liegen unter seinem eigenen Präfix. Was Bereiche überschreitet, ist ABSICHTLICH und signiert: Mit oidfed.realmsAreSubordinates an bürgt der Standardbereich für jeden anderen Bereich, und sie vertrauen ihm, jede Kette geprüft wie jede andere — im Prozess aufgelöst statt über HTTP."
+  },
+  "realms.support.tls-certificate.family": {
+    "en": "da0469bf71710144",
+    "text": "TLS-Zertifikat"
+  },
+  "realms.support.tls-certificate.note": {
+    "en": "ae9138672494fb4a",
+    "text": "EIN ZERTIFIKAT FÜR DEN PROZESS, vorgelegt vom Hauptport, von LDAPS 636 und vom Listener des eingebetteten Debuggers. Was ein Socket vorlegt, ist eine Eigenschaft des Sockets und nicht eines Bereichs, und die ersten beiden tragen jeden Bereich. Diese Zeile las `TLS (8443 / 9443)` bis zum 2026-09-16, als diese zwei Listener gelöscht wurden: Was ein Client-Zertifikat wert ist, wird dort entschieden, wo es GENUTZT wird, und das ist der Bereich, in dem die Anfrage ankam."
+  },
+  "realms.support.spiffe.family": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "realms.support.spiffe.note": {
+    "en": "713aeaa8ddb6320e",
+    "text": "EINE TRUST DOMAIN, EINE AUTORITÄT, EIN REGISTER UND EIN PAAR gRPC-SOCKETS PRO BEREICH seit dem 2026-09-12 — diese Zeile las bis dahin `none` und sagte eine Trust Domain, eine Signierautorität und vier gemeinsame Sockets. **DAS UNTERSCHEIDUNGSMERKMAL IST DIE ENDPUNKTADRESSE, UND ES HÄTTE NICHTS ANDERES SEIN KÖNNEN**: gRPC hat einen Pfad, und der ist die METHODE — `/SpiffeWorkloadAPI/FetchX509SVID` ist durch jene Spezifikation festgelegt und die SPIRE-APIs durch ihre —, sodass ein Bereichssegment darin eine Methode wäre, die kein konformer Client aufruft. Ein Bereich wird mit `spiffe.trustDomain` auf seine DOMÄNE gesetzt angelegt (seit dem 2026-09-18; es war `<realm>.<the process's>`, bevor Bereiche eine hatten) und mit SPIFFE AUS; das Einschalten baut die Autoritäten dieses Bereichs und bindet eine eigene Workload API und eine eigene SPIRE Server API, auf Unix-Socket-Pfaden, die beim Anlegen des Bereichs vorbelegt wurden — und auf TCP erst, sobald jemand ihm eine Adresse (`spiffe.grpcHost`) und Ports gibt, die ein Bereich bei der Anlage nicht hat, weil die, die er erben würde, dem Standardbereich gehören und bereits gebunden sind. Auch Join-Token sind pro Bereich, weil ein Join-Token als Anmeldedaten für den Beitritt zu einer Trust Domain gilt. **WAS NOCH GEMEINSAM IST, SIND DIE EIGENEN VIER SOCKETS DES PROZESSES**, die dem Standardbereich gehören und gebunden bleiben, was auch immer `spiffe.enabled` sagt — ein Socket, der verschwände, läse sich als ein Dienst, der angehalten hätte. Die FÖDERIERTEN Bündel gehören seit dem 2026-09-12 dem jeweiligen Bereich, und keines darf unter einer Trust Domain registriert werden, die irgendein Bereich dieses Dienstes bedient."
+  },
+  "realms.support.embedded-debugger.family": {
+    "en": "13158755ebc78c86",
+    "text": "Eingebetteter Debugger"
+  },
+  "realms.support.embedded-debugger.note": {
+    "en": "6e1c9e3c0274c058",
+    "text": "Ein Listener für den Prozess (`debugger.port`), die Anmeldung läuft über den Autorisierungsserver des STANDARD-Bereichs, und er steht nur den Konsolenadministratoren dieses Bereichs offen. Die eigenen Administratoren eines Bereichs werden abgewiesen, weil er eine Oberfläche des Prozesses ist und nicht die eines Bereichs."
+  },
+  "realms.support.persistence-and-cluster.family": {
+    "en": "7fedc81f18af1420",
+    "text": "Persistenz und Cluster"
+  },
+  "realms.support.persistence-and-cluster.note": {
+    "en": "568ad713451c3e0b",
+    "text": "Ein Speicher für den Prozess — memory, eine LDIF-Datei je Bereich oder eine postgres-Datenbank — und eine Cluster-Mitgliedschaft, ein Lease und ein Fencing-Token. Jeder oben genannte Speicher je Bereich hält seine Zeilen unter seinem Bereich in diesem Speicher und wird mit dem Bereich entfernt; gemeinsam sind der Speicher selbst, die Verbindung zu ihm und die Knoten, die ihn teilen."
+  }
+}

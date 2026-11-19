@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "هذا العقد لا يعمل على Linux ({{platform}})، لذا لا توجد ملفات cgroup لقراءتها."
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "لا يوجد cgroup عند {{root}}: لا cgroup v2 ({{why}}) ولا متحكّم ذاكرة أو cpuacct لإصدار cgroup v1."
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "لا يوجد cgroup."
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "لا يمكن قراءة زمن CPU للحاوية: {{source}} — {{why}}."
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "أمكن قراءة زمن CPU للحاوية مرة واحدة لا مرة ثانية: {{why}}."
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "يجوز للحاوية استخدام {{vcpus}} vCPU ({{version}}، {{file}})، والنسبة المئوية من ذلك."
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "لا يحتوي cgroup هذا ({{version}}) على {{file}}، لذا ليست له حصة CPU خاصة به؛ والنسبة المئوية من وحدات CPU البالغ عددها {{cpus}} التي يُبلغ node أنها متاحة (os.availableParallelism())."
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "لا حصة CPU ({{version}}، يقول {{file}} إنه لا يوجد شيء): يجوز للحاوية استخدام كل CPU يمنحه لها المضيف، والنسبة المئوية من وحدات CPU البالغ عددها {{cpus}} التي يُبلغ node أنها متاحة (os.availableParallelism())."
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "ليس لدى cgroup عدادات خنق: فمن دون حصة لا يوجد ما يُخنق مقابله."
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "ليس لدى مضيف cgroup v1 هذا متحكّم ذاكرة لهذه العملية."
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "لا يمكن قراءة ذاكرة الحاوية: {{source}} — {{why}}."
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "يجوز للحاوية استخدام {{mib}} MiB ({{version}}، {{file}})."
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "لا يحتوي cgroup هذا ({{version}}) على {{file}}، لذا ليس له حد ذاكرة خاص به ولا توجد نسبة مئوية تُعطى."
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "لا حد للذاكرة ({{version}}، يقول {{file}} إنه لا يوجد شيء)، لذا لا توجد نسبة مئوية تُعطى."
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "{{anon}} هي ذاكرة العمليات نفسها؛ و{{file}} هي ذاكرة الصفحات المؤقتة التي تستردها النواة تحت الضغط قبل أن تقتل أي شيء."
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "لا يمكن قراءة memory.stat، لذا لا يُعرف ممّ تتكون الذاكرة."
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "من وكيل ECS (/task/stats)، لأن cgroup لا يمكن قراءته هنا. الحد هو حد الحاوية، كما يُبلغه الوكيل."
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "من وكيل ECS (/task/stats)، لأن cgroup لا يمكن قراءته هنا. ليس للحاوية حد خاص بها، لذا الحد هو حد مهمة ECS، {{mib}} MiB."
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "من وكيل ECS (/task/stats)، لأن cgroup لا يمكن قراءته هنا. لا يوجد حد يُقاس مقابله."
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "لا يُبلغ وكيل ECS إلا عن الإجمالي."
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "ليس للحاوية حد ذاكرة خاص بها (cgroup v{{version}})، لذا الحد هو حد مهمة ECS، {{mib}} MiB (/task Limits.Memory)، والنسبة المئوية من ذلك."
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "من وكيل ECS (/task/stats)، بين آخر عيّنتين له، لأن cgroup لا يمكن قراءته هنا؛ والنسبة المئوية من {{vcpus}} vCPU لمهمة ECS."
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "من وكيل ECS (/task/stats)، بين آخر عيّنتين له، لأن cgroup لا يمكن قراءته هنا؛ لا تسمّي المهمة حد CPU، لذا لا توجد نسبة مئوية."
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "لا يُبلغ وكيل ECS عن الخنق."
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "ليس للحاوية حصة CPU خاصة بها (cgroup v{{version}})، لذا النسبة المئوية من {{vcpus}} vCPU لمهمة ECS (/task Limits.CPU)."
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "تعذرت قراءة {{file}} ({{why}})"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "ليس في ملف حالته VmRSS"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "حجم إقامة الخيط وزمن CPU له هما للعملية كلها، لذا فهما في صف العملية الأمامية (pid {{pid}}) ولا يُكرران هنا"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "حجم إقامته وزمن CPU له هما للعملية كلها، بما يشمل كل خيط عامل؛ وأرقام كومته هي لخيطه الرئيسي"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "العملية الأمامية"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "api مصحح البروتوكول"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "خيط عامل السطح المستضاف {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "خيط عامل البروتوكول {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "أجاب من دون ذاكرته، لذا يُعرض حجم إقامته فقط، من /proc"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}، لذا يُعرض حجم إقامته فقط، من /proc"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "لم يجب خلال {{ms}}ms (تحميله المسبق للذاكرة، debugger_api_status.js، يجيب عندما يكون مثبتًا)"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "لم يجب خلال {{ms}}ms"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}؛ ليس للخيط قيد /proc خاص به، لذا لا يمكن قراءة كومته من خارجه"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "تعذر طلب pid من عملية api لمصحح البروتوكول: {{error}}."
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "عمال الطلبات وعمال السطح المستضاف خيوط للعملية الأمامية (#364)، لذا فإن حجم الإقامة وزمن CPU لكل منهم هما رقما العملية الأمامية نفسها ويُحسبان مرة واحدة، في صفها. إجمالي الإقامة هو مجموع العمليات البالغ عددها {{rss}} التي أمكن قراءة حجمها — العملية الأمامية والعملية الابنة api للمصحح — لذا تُحسب الصفحات التي يتشاركها الاثنان (ومنها كود node نفسه) مرة لكل منهما، ويمكن أن يتجاوز ذلك memory.current للحاوية. أرقام الكومة هي عوازل V8 البالغ عددها {{heap}} التي أبلغت process.memoryUsage() بنفسها: الخيط الرئيسي للعملية الأمامية، وكل خيط عامل، والعملية الابنة؛ وتُعرض عملية ابنة لم تجب في الوقت بحجم إقامتها من /proc ومن دون كومة، ويُدرج خيط عامل لم يجب بوصفه بلا إجابة، لأن الخيط ليس له قيد /proc خاص به. لم يعد لتوقيع ما بعد الكم ولـ scrypt عمليات خاصة بهما منذ #363: فهما يعملان على تجمع خيوط libuv، وتُحسب ذاكرتهما في العملية التي طلبت."
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "لم يُضبط ECS_CONTAINER_METADATA_URI_V4: هذا العقد ليس مهمة Amazon ECS (ليس على Fargate ولا على مثيل حاوية ECS)، لذا لا توجد نقطة نهاية لبيانات المهمة الوصفية لمراجعة cgroup مقابلها."
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 مضبوط، لكن نقطة نهاية بيانات المهمة الوصفية لم تجب خلال {{ms}}ms: {{why}}."
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "جزء من نقطة النهاية لم يجب: {{whys}}. "
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "جزء من نقطة النهاية لم يجب: {{whys}}. لا توجد إحصاءات لهذه الحاوية في /task/stats."
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "جزء من نقطة النهاية لم يجب: {{whys}}. لا توجد إحصاءات لهذه الحاوية في /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "لا توجد إحصاءات لهذه الحاوية في /task/stats."
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "لا توجد إحصاءات لهذه الحاوية في /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "أرقام وكيل ECS نفسه لهذه الحاوية، بوصفها مراجعة لـ cgroup: يأخذ الوكيل العيّنات وفق جدوله الخاص، لذا لن تتطابق في البايت ولا في النسبة المئوية."
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "هذه أرقام العقد {{node}} — حاوِيته — ترسمها عمليته الأمامية، pid {{pid}}. كل عقد في العنقود حاوية خاصة به، بأرقامه الخاصة."
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "الآلة التي تعمل عليها هذه الحاوية — على Fargate، الآلة الافتراضية المصغّرة؛ وعلى محطة عمل، محطة العمل كلها. ليست الحاوية: لا تقول ذاكرتها الحرة وحملها شيئًا عن حد الحاوية."
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "عبر العقد البالغ عددها {{count}} التي لم تختفِ ولها لقطة، والقديمة منها مشمولة ومعلَّمة. لا تُجمع الحدود إلا عندما يملك كل عقد حدًا."
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "إنه غير موجود"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "إنه ليس رقمًا"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "ليس فيه usage_usec"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "لا يوجد متحكّم cpuacct لإصدار cgroup v1"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "أجاب من دون ذاكرته"
+  }
+}

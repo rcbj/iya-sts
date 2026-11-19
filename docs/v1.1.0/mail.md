@@ -201,16 +201,16 @@ into a mail cannon (`STS-MAIL-0010`). A notice about one act is sent once in
 Each message has a built-in wording in every language this service has a
 catalog for (#539): English, French (and Canadian French), Spanish (and
 Spanish as written in Spain), Simplified and Traditional Chinese (and Hong
-Kong), Filipino and Swedish. Everything but English was machine-written and
-has not been reviewed by a native speaker yet.
+Kong), Filipino, Swedish, German, Arabic and Hindi. Everything but English
+was machine-written and has not been reviewed by a native speaker yet.
 
 - **Which language:** the recipient's `preferredLanguage` (an Accept-Language
   value such as `de-CH, de;q=0.8`), then the realm's
   [locale policy](languages.md#the-locale-policy) default, then English. A
   regional tag reads its region's wording where it differs and its
   language's otherwise. `zh-TW` and `zh-HK` are sent Traditional Chinese and
-  never Simplified, and a language with no catalog (`de`) passes to the
-  next one in the list.
+  never Simplified, `de-CH` is sent German, and a language with no catalog
+  (`ja`) passes to the next one in the list.
 - **A realm's own wording wins.** A realm may reword any message, in any
   language, on `/admin/mail`, and its wording in a language always wins
   over the built-in wording in it.

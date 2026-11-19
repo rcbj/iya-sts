@@ -1,0 +1,15 @@
+{
+  "heading": "Verbundene Konten",
+  "sub": "Verbinden Sie ein Konto, das Sie bei einem dieser Anbieter haben, und melden Sie sich hier damit an. Eine Verbindung gehört Ihnen: Niemand sonst kann eine für Sie herstellen, und das Trennen beendet die Sitzungen, die sie begonnen hat.",
+  "none": "Dieser Bereich bietet keinen Anbieter zum Verbinden.",
+  "connected": "Verbunden — Sie können sich hier damit anmelden.",
+  "connect": "Verbinden",
+  "disconnect": "Trennen",
+  "notConnected": "Sie haben keine Verbindung zu diesem Anbieter.",
+  "doneDisconnected": "Getrennt.",
+  "doneConnected": "{provider} ist mit Ihrem Konto verbunden.",
+  "noSession": "Dieser Dienst weiß nicht mehr, zu welcher Anmeldung diese Seite gehört, daher konnte eine davon aus gestartete Verbindung nicht abgeschlossen werden. Melden Sie sich erneut an und verbinden Sie von dort aus.",
+  "riskRefused": "Von dieser Anmeldung aus kann kein Konto verbunden werden. Melden Sie sich erneut an und verbinden Sie von dort aus.",
+  "notConnectable": "Dieser Anbieter kann jetzt nicht verbunden werden.",
+  "onlyWayIn": "Diese Verbindung ist die einzige Möglichkeit, sich bei diesem Konto anzumelden, daher kann sie nicht getrennt werden. Fügen Sie zuerst eine weitere Anmeldemöglichkeit hinzu — ein Passwort, einen Passkey oder ein weiteres verbundenes Konto — und trennen Sie sie danach."
+}

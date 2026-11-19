@@ -1,0 +1,2546 @@
+{
+  "endpoints.route./xacml.name": {
+    "en": "1184e17250970dab",
+    "text": "ما هو سطح XACML"
+  },
+  "endpoints.route./xacml/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "البرنامج النصي لصفحة الوصف"
+  },
+  "endpoints.route./xacml/pdp.name": {
+    "en": "a372155e5808a3ef",
+    "text": "قرار"
+  },
+  "endpoints.route./xacml/policies.name": {
+    "en": "beb8ca12489eec05",
+    "text": "مستودع السياسات"
+  },
+  "endpoints.route./xacml/pep/register.name": {
+    "en": "042b865d703aee20",
+    "text": "يسجّل PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/policies.name": {
+    "en": "d7b1a01d26f2cc80",
+    "text": "المستودع، كي يحمّله PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "كتالوج AuthZEN، كي يحمّله PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "مستدعو AuthZEN، كي يقبلهم PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "تكوين الوكيل العكسي، كي ينفّذه PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/settings.name": {
+    "en": "6bae1b3fbf022a6d",
+    "text": "الإعدادات المُدارة لـ PEP بعيد، كي يطبّقها"
+  },
+  "endpoints.route./xacml/pep/listener-certificate.name": {
+    "en": "96d34844bd14ca01",
+    "text": "شهادة مستمع PEP بعيد، عبر مفتاحه الخاص"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "استبطان الرمز، لوكيل PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic، مُتحقَّق منه لوكيل PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "تأكيد SAML 2.0، مُتحقَّق منه لوكيل PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "هل جلسة تسجيل الدخول نشطة، لوكيل PEP بعيد"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "ما يمرّره مسار PEP بعيد إلى تطبيقه"
+  },
+  "endpoints.route./xacml/pep/heartbeat.name": {
+    "en": "9570c5ba15aef084",
+    "text": "ما أنفذه PEP بعيد"
+  },
+  "endpoints.route./xacml/pip.name": {
+    "en": "b0b1791a44311248",
+    "text": "نقطة معلومات السياسة، عبر HTTP"
+  },
+  "endpoints.route./access/v1/evaluation.name": {
+    "en": "5cd6a5386c4d1353",
+    "text": "تقييم وصول"
+  },
+  "endpoints.route./access/v1/evaluations.name": {
+    "en": "71ce33d985a6eced",
+    "text": "دفعة من تقييمات الوصول"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "بحث الموضوع"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "بحث المورد"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "بحث الإجراء"
+  },
+  "endpoints.route./access/v1/access-requests.name": {
+    "en": "4b0c4feb0af59f04",
+    "text": "تقديم طلب وصول"
+  },
+  "endpoints.route./access/v1/access-requests/:id.name": {
+    "en": "c8bcbb33d07cfb8f",
+    "text": "حالة مهمة طلب وصول"
+  },
+  "endpoints.route./access/v1/access-requests/:id/cancel.name": {
+    "en": "90087f975ac5dec9",
+    "text": "إلغاء طلب وصول"
+  },
+  "endpoints.route./.well-known/authzen-configuration.name": {
+    "en": "2b5f43e5618bacac",
+    "text": "بيانات PDP الوصفية"
+  },
+  "endpoints.route./.well-known/authzen-configuration/*.name": {
+    "en": "c2eadd486305d29d",
+    "text": "بيانات PDP الوصفية (معرّف بمسار)"
+  },
+  "endpoints.route./gnap.name": {
+    "en": "33b8b1fd38b28a51",
+    "text": "نقطة نهاية المنحة"
+  },
+  "endpoints.route./:as/gnap.name": {
+    "en": "4e8b789cccef4597",
+    "text": "نقطة نهاية المنحة لخادم تفويض مُسمّى"
+  },
+  "endpoints.route./gnap/continue/:grant.name": {
+    "en": "db55ac21174c6f99",
+    "text": "متابعة المنحة"
+  },
+  "endpoints.route./gnap/token/:handle.name": {
+    "en": "741af09dc62e9a62",
+    "text": "إدارة الرمز"
+  },
+  "endpoints.route./gnap/interact/:id.name": {
+    "en": "94671ff4687a0e0b",
+    "text": "بدء التفاعل بإعادة التوجيه"
+  },
+  "endpoints.route./gnap/app/:id.name": {
+    "en": "271e2b3bb99d4e34",
+    "text": "بدء تفاعل التطبيق"
+  },
+  "endpoints.route./gnap/code.name": {
+    "en": "8882b6b5d7dd547f",
+    "text": "إدخال رمز المستخدم"
+  },
+  "endpoints.route./gnap/approve/:id.name": {
+    "en": "7224d2fd77b49df7",
+    "text": "موافقة مالك المورد"
+  },
+  "endpoints.route./gnap/interaction.js.name": {
+    "en": "50effd29342dd164",
+    "text": "البرنامج النصي لصفحات التفاعل"
+  },
+  "endpoints.route./gnap-api.name": {
+    "en": "7a180f1f38b7e340",
+    "text": "فهرس واجهة API للتفاعل"
+  },
+  "endpoints.route./gnap-api/code.name": {
+    "en": "438612a8b0200673",
+    "text": "إدخال رمز مستخدم GNAP"
+  },
+  "endpoints.route./gnap-api/approve/:id.name": {
+    "en": "6bde2975aeb9128a",
+    "text": "الإجابة عن موافقة GNAP"
+  },
+  "endpoints.route./.well-known/gnap-as-rs.name": {
+    "en": "0fd056c79efdd3a0",
+    "text": "اكتشاف خادم الموارد"
+  },
+  "endpoints.route./.well-known/gnap-as-rs/:as.name": {
+    "en": "6df94c58d2c4986a",
+    "text": "اكتشاف خادم الموارد لخادم تفويض مُسمّى"
+  },
+  "endpoints.route./gnap/introspect.name": {
+    "en": "7e194fb9c34129c7",
+    "text": "استبطان الرمز"
+  },
+  "endpoints.route./gnap/resource.name": {
+    "en": "541dc030fa6fb91c",
+    "text": "تسجيل مجموعة الموارد"
+  },
+  "endpoints.route./gnap/keys.name": {
+    "en": "c0d78f3392b95c6b",
+    "text": "مادة التحقق لتنسيقات الرموز"
+  },
+  "endpoints.route./gnap/biscuit/revocations.name": {
+    "en": "337581d2c9bece04",
+    "text": "رموز Biscuit المُبطَلة"
+  },
+  "endpoints.route./gnap/zcap/controller.name": {
+    "en": "6757bf6175282a42",
+    "text": "وثيقة المتحكّم في ZCAP"
+  },
+  "endpoints.route./admin-api/gnap.name": {
+    "en": "c34c3f89f048c143",
+    "text": "صفحة GNAP في وحدة التحكم عبر JSON"
+  },
+  "endpoints.route./admin-api/gnap/monitor.name": {
+    "en": "369d3bf3a6c7b46f",
+    "text": "منح GNAP عبر JSON"
+  },
+  "endpoints.route./admin-api/gnap/:action.name": {
+    "en": "812de4df596c12ef",
+    "text": "إبطال منحة أو حذف مجموعة موارد"
+  },
+  "endpoints.route./uma/rreg.name": {
+    "en": "b93e9a83c0d09d9a",
+    "text": "تسجيل الموارد: إنشاء، وسرد"
+  },
+  "endpoints.route./uma/rreg/:id.name": {
+    "en": "34337892864217b3",
+    "text": "تسجيل الموارد: قراءة، وتحديث، وحذف"
+  },
+  "endpoints.route./uma/perm.name": {
+    "en": "8896272faf315717",
+    "text": "نقطة نهاية الإذن"
+  },
+  "endpoints.route./uma/claims.name": {
+    "en": "87870b4a58a75d4d",
+    "text": "نقطة نهاية تفاعل المطالبات"
+  },
+  "endpoints.route./.well-known/uma2-configuration.name": {
+    "en": "1600a854e8ebe343",
+    "text": "اكتشاف UMA"
+  },
+  "endpoints.route./.well-known/uma2-configuration/*.name": {
+    "en": "146531da4c5d6ba9",
+    "text": "اكتشاف UMA (صيغة المسار المُدرَج)"
+  },
+  "endpoints.route./uma.name": {
+    "en": "11e030203eddc757",
+    "text": "صفحة وصف UMA"
+  },
+  "endpoints.route./uma/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "البرنامج النصي لصفحة الوصف"
+  },
+  "endpoints.route./admin-api/uma.name": {
+    "en": "a706278ce3603ad8",
+    "text": "صفحة UMA في وحدة التحكم عبر JSON"
+  },
+  "endpoints.route./admin-api/uma/monitor.name": {
+    "en": "09df5f116b3c0624",
+    "text": "أعداد PEP لـ UMA عبر JSON"
+  },
+  "endpoints.route./admin-api/uma/:action.name": {
+    "en": "af591f6b600855e2",
+    "text": "أفعال وحدة تحكم UMA التسعة"
+  },
+  "endpoints.route./pki/crl/:scope/:ca.name": {
+    "en": "8d20c59eb134e55e",
+    "text": "قائمة إبطال الشهادات لسلطة واحدة"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca.name": {
+    "en": "26e09611c77104e2",
+    "text": "مستجيب OCSP لسلطة واحدة (POST)"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca/*.name": {
+    "en": "78daac5586a16467",
+    "text": "مستجيب OCSP لسلطة واحدة (GET)"
+  },
+  "endpoints.route./pki/ca/:scope/:ca.name": {
+    "en": "674689732e065344",
+    "text": "شهادة سلطة شهادات واحدة نفسها"
+  },
+  "endpoints.route./pki/chain/:scope/:certificate.name": {
+    "en": "7f1f6b207986210f",
+    "text": "سلسلة الشهادات التي يسمّيها x5u لرمز موقّع"
+  },
+  "endpoints.route./crypto/metadata.name": {
+    "en": "a5ecf797eaf091e5",
+    "text": "وثيقة بيانات التشفير الوصفية، حسب Accept"
+  },
+  "endpoints.route./crypto/metadata.json.name": {
+    "en": "4890cf97903b2272",
+    "text": "وثيقة بيانات التشفير الوصفية، بصيغة JSON"
+  },
+  "endpoints.route./crypto/metadata.xml.name": {
+    "en": "7e192a5658a57fa6",
+    "text": "وثيقة بيانات التشفير الوصفية، بصيغة XML"
+  },
+  "endpoints.route./crypto/metadata.jwt.name": {
+    "en": "a39f662681268cc8",
+    "text": "وثيقة بيانات التشفير الوصفية، موقَّعة كـ JWS"
+  },
+  "endpoints.route./crypto/metadata.signed.xml.name": {
+    "en": "c11085a7c69631a5",
+    "text": "وثيقة بيانات التشفير الوصفية، بصيغة XML موقَّع"
+  },
+  "endpoints.route./crypto/metadata.xsd.name": {
+    "en": "9d94529b9b2f3464",
+    "text": "مخطط XML لوثيقة بيانات التشفير الوصفية"
+  },
+  "endpoints.route./pki/revocation.name": {
+    "en": "f399711ce1261bf4",
+    "text": "كل CRL وكل مستجيب OCSP تنشرهما هذه الخدمة"
+  },
+  "endpoints.route./admin-api/xacml.name": {
+    "en": "d3b1d402a612012c",
+    "text": "صفحة XACML في وحدة التحكم عبر JSON"
+  },
+  "endpoints.route./admin-api/xacml/policies.name": {
+    "en": "8e1fec42df374e4c",
+    "text": "مستودع السياسات عبر JSON"
+  },
+  "endpoints.route./admin-api/xacml/editor.name": {
+    "en": "97c8bc015f73b3f1",
+    "text": "سياسة واحدة كشجرة قابلة للتحرير"
+  },
+  "endpoints.route./admin-api/xacml/decide.name": {
+    "en": "17f8129044f6440e",
+    "text": "طرح سؤال على PDP عبر JSON"
+  },
+  "endpoints.route./admin-api/xacml/peps.name": {
+    "en": "7f8ea0c37cf4776c",
+    "text": "نقاط الإنفاذ البعيدة عبر JSON"
+  },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "عناقيد PEP البعيدة عبر JSON"
+  },
+  "endpoints.route./admin-api/xacml/monitor.name": {
+    "en": "c31e79f61be7e43b",
+    "text": "ما يفعله التفويض، عبر JSON"
+  },
+  "endpoints.route./admin-api/xacml/:action.name": {
+    "en": "264e6d022675cd79",
+    "text": "تغيير سياسة، أو المستودع، أو PEP بعيد"
+  },
+  "endpoints.route./.well-known/ssf-configuration.name": {
+    "en": "357ed4e8aed9b636",
+    "text": "بيانات تكوين المُرسِل الوصفية"
+  },
+  "endpoints.route./.well-known/ssf-configuration/*.name": {
+    "en": "95c75b212ca6850f",
+    "text": "بيانات تكوين المُرسِل الوصفية، صيغة المسار المُدرَج"
+  },
+  "endpoints.route./ssf.name": {
+    "en": "29eb248f16235183",
+    "text": "ما هو سطح Shared Signals"
+  },
+  "endpoints.route./ssf/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "البرنامج النصي لصفحة الوصف"
+  },
+  "endpoints.route./ssf/stream.name": {
+    "en": "b0a8d86b9e533735",
+    "text": "واجهة API لإدارة التدفق"
+  },
+  "endpoints.route./ssf/status.name": {
+    "en": "60416f189a3afec0",
+    "text": "حالة تدفق"
+  },
+  "endpoints.route./ssf/subjects/add.name": {
+    "en": "65df983c69cc22ac",
+    "text": "إضافة موضوع إلى تدفق"
+  },
+  "endpoints.route./ssf/subjects/remove.name": {
+    "en": "e963dffef9e3d06b",
+    "text": "إزالة موضوع من تدفق"
+  },
+  "endpoints.route./ssf/verify.name": {
+    "en": "9394a228c5271a2d",
+    "text": "طلب حدث تحقق"
+  },
+  "endpoints.route./federation/signals/:id.name": {
+    "en": "b041f89b9c1dbd10",
+    "text": "نقطة نهاية الدفع لإشارات Shared Signals لشريك اتحاد (RFC 8935)"
+  },
+  "endpoints.route./ssf/poll.name": {
+    "en": "ac4ccca804188b23",
+    "text": "تسليم بالاستطلاع (RFC 8936)"
+  },
+  "endpoints.route./scim.name": {
+    "en": "56accbf45038167b",
+    "text": "ما هو سطح SCIM"
+  },
+  "endpoints.route./scim/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "البرنامج النصي لصفحة الوصف"
+  },
+  "endpoints.route./scim/v2/ServiceProviderConfig.name": {
+    "en": "e7267904e2f73e0c",
+    "text": "ما يدعمه خادم SCIM هذا"
+  },
+  "endpoints.route./scim/v2/ResourceTypes.name": {
+    "en": "c4842dd1549d02ce",
+    "text": "أنواع الموارد"
+  },
+  "endpoints.route./scim/v2/ResourceTypes/:id.name": {
+    "en": "f50850744e5d0035",
+    "text": "نوع مورد واحد"
+  },
+  "endpoints.route./scim/v2/Schemas.name": {
+    "en": "b290eec1709feb6f",
+    "text": "المخططات"
+  },
+  "endpoints.route./scim/v2/Schemas/:id.name": {
+    "en": "5034a0e2cbb7b12b",
+    "text": "مخطط واحد"
+  },
+  "endpoints.route./scim/v2/Users.name": {
+    "en": "85d63fe6b3d4f8c4",
+    "text": "المستخدمون: سرد وإنشاء"
+  },
+  "endpoints.route./scim/v2/Users/.search.name": {
+    "en": "2419ec93d320dc47",
+    "text": "المستخدمون: البحث عبر POST"
+  },
+  "endpoints.route./scim/v2/Users/:id.name": {
+    "en": "ac119777bcacd2ba",
+    "text": "مستخدم واحد: قراءة، واستبدال، وتعديل، وحذف"
+  },
+  "endpoints.route./scim/v2/Groups.name": {
+    "en": "365b6120828199b6",
+    "text": "المجموعات: سرد وإنشاء"
+  },
+  "endpoints.route./scim/v2/Groups/.search.name": {
+    "en": "c0618941d836a76f",
+    "text": "المجموعات: البحث عبر POST"
+  },
+  "endpoints.route./scim/v2/Groups/:id.name": {
+    "en": "31e2cc7e078de787",
+    "text": "مجموعة واحدة: قراءة، واستبدال، وتعديل، وحذف"
+  },
+  "endpoints.route./scim/v2/.search.name": {
+    "en": "ad4bb06fc5614a1c",
+    "text": "البحث عبر نوعي الموارد كليهما"
+  },
+  "endpoints.route./scim/v2/*.name": {
+    "en": "09fc8d6021972a82",
+    "text": "أي مسار آخر تحت الأساس"
+  },
+  "endpoints.route./scim/v2/Me.name": {
+    "en": "bfb6c6f542c0607b",
+    "text": "/Me، الموضوع المُصادَق عليه"
+  },
+  "endpoints.route./.well-known/hoba/register.name": {
+    "en": "b95adde7badbdef3",
+    "text": "تسجيل مفتاح HOBA العام"
+  },
+  "endpoints.route./tls/sign-in.name": {
+    "en": "a670f321ddd2f009",
+    "text": "تسجيل الدخول بشهادة عميل"
+  },
+  "endpoints.route./tls/server-certificate.name": {
+    "en": "9458f47a8a347911",
+    "text": "شهادة الخادم (PEM)"
+  },
+  "endpoints.route./.name": {
+    "en": "a064be014d290217",
+    "text": "الصفحة الأمامية"
+  },
+  "endpoints.route./home.js.name": {
+    "en": "130dd402d6eade90",
+    "text": "البرنامج النصي للصفحة الأمامية"
+  },
+  "endpoints.route./home.css.name": {
+    "en": "84434cd1bd304a7d",
+    "text": "ورقة أنماط الصفحة الأمامية"
+  },
+  "endpoints.route./home-api.name": {
+    "en": "8789cae956543b36",
+    "text": "فهرس واجهة API للباب الأمامي"
+  },
+  "endpoints.route./home-api/front.name": {
+    "en": "14949c8a6af6f6d4",
+    "text": "عرض الصفحة الأمامية"
+  },
+  "endpoints.route./logo.png.name": {
+    "en": "5d9164ce79341469",
+    "text": "الشعار على الصفحة الأمامية"
+  },
+  "endpoints.route./realms.name": {
+    "en": "3bc74315dcf2fb5e",
+    "text": "دليل نطاقات الثقة"
+  },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "أيقونة الخدمة"
+  },
+  "endpoints.route./web/card.css.name": {
+    "en": "96ed2387e40a779a",
+    "text": "ورقة أنماط بطاقات الأسطح العامة"
+  },
+  "endpoints.route./web/footer.css.name": {
+    "en": "b1ae9012425d7c77",
+    "text": "ورقة أنماط تذييل الصفحة"
+  },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "ورقة أنماط مظهر تسجيل الدخول لنطاق ثقة"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "شعار تسجيل الدخول لنطاق ثقة"
+  },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "صورة الملف الشخصي لشخص"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "معاينة مظهر تسجيل الدخول"
+  },
+  "endpoints.route./web/locales/catalogs.json.name": {
+    "en": "54bbd31e0a5afc5b",
+    "text": "فهرس كتالوجات اللغات"
+  },
+  "endpoints.route./web/locales/:ns/:file.name": {
+    "en": "a51cf2baa37af68c",
+    "text": "رسائل فضاء أسماء واحد في كتالوج واحد"
+  },
+  "endpoints.route./healthcheck.name": {
+    "en": "14290e1d06812977",
+    "text": "فحص الصحة"
+  },
+  "endpoints.route./docs.name": {
+    "en": "a7091d45b01e0e30",
+    "text": "وثائق الخدمة"
+  },
+  "endpoints.route./policy.name": {
+    "en": "c134e729e1cc3153",
+    "text": "سياسة المشغّل"
+  },
+  "endpoints.route./tos.name": {
+    "en": "e69e06144877d81c",
+    "text": "شروط الخدمة"
+  },
+  "endpoints.route.*.name": {
+    "en": "4898865b52c1132a",
+    "text": "طلب CORS التمهيدي"
+  },
+  "endpoints.route./spiffe.name": {
+    "en": "04302eb70b6b3d39",
+    "text": "ما هي أسطح SPIFFE"
+  },
+  "endpoints.route./spiffe/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "البرنامج النصي لصفحة الوصف"
+  },
+  "endpoints.route./spiffe/bundle.name": {
+    "en": "dfc63f78fe42ef9e",
+    "text": "حزمة الثقة"
+  },
+  "endpoints.route./spiffe/federated/:trustDomain.name": {
+    "en": "9f481b0436f86e81",
+    "text": "حزمة نطاق ثقة متّحد، كما هي محفوظة"
+  },
+  "endpoints.route./admin/api-explorer/explorer.js.name": {
+    "en": "a580f8533000172f",
+    "text": "البرنامج النصي لمستكشف API"
+  },
+  "endpoints.route./admin.name": {
+    "en": "ddf870cabeb295ab",
+    "text": "وحدة تحكم المسؤول"
+  },
+  "endpoints.route./admin/*.name": {
+    "en": "e146f5e15e76dfe5",
+    "text": "كل صفحة من وحدة التحكم"
+  },
+  "endpoints.route./admin/signals/receive.name": {
+    "en": "d68ad816a1dfc9a9",
+    "text": "نقطة نهاية استقبال Shared Signals في وحدة التحكم"
+  },
+  "endpoints.route./admin/console.js.name": {
+    "en": "9932c00e39f5d470",
+    "text": "البرنامج النصي لوحدة التحكم"
+  },
+  "endpoints.route./admin/console.css.name": {
+    "en": "cd6aeb9c9e8ebf8a",
+    "text": "ورقة أنماط وحدة التحكم"
+  },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "حدود البلدان في خريطة وحدة التحكم"
+  },
+  "endpoints.route./portal.name": {
+    "en": "5212610fe0e7c89a",
+    "text": "حساب الشخص الخاص"
+  },
+  "endpoints.route./portal/*.name": {
+    "en": "5b81a7e12cca9cd3",
+    "text": "كل صفحة من البوابة"
+  },
+  "endpoints.route./portal/portal.js.name": {
+    "en": "acb6735807c66205",
+    "text": "البرنامج النصي للبوابة"
+  },
+  "endpoints.route./portal/portal.css.name": {
+    "en": "3b05a0008cdc0eb1",
+    "text": "ورقة أنماط البوابة"
+  },
+  "endpoints.route./report/signals/receive.name": {
+    "en": "ab329d399f348d73",
+    "text": "نقطة نهاية استقبال Shared Signals لتطبيق التقارير"
+  },
+  "endpoints.route./report.name": {
+    "en": "f8876dead2cd7bc2",
+    "text": "تطبيق التقارير"
+  },
+  "endpoints.route./report/*.name": {
+    "en": "9e3bc85701ea48c1",
+    "text": "صفحة تقارير"
+  },
+  "endpoints.route./report/report.js.name": {
+    "en": "ce2cc0bd6254aff1",
+    "text": "البرنامج النصي للتقارير"
+  },
+  "endpoints.route./report/report.css.name": {
+    "en": "b4df466797766b01",
+    "text": "ورقة أنماط التقارير"
+  },
+  "endpoints.route./report-api.name": {
+    "en": "41449550893ebaa2",
+    "text": "واجهة API للتقارير"
+  },
+  "endpoints.route./report-api/openapi.json.name": {
+    "en": "cbe083af297afd0a",
+    "text": "وثيقة OpenAPI للتقارير"
+  },
+  "endpoints.route./report-api/catalog.name": {
+    "en": "721b162ec29218a7",
+    "text": "كتالوج التقارير"
+  },
+  "endpoints.route./report-api/catalog/:id.name": {
+    "en": "f4a97ac800f661e8",
+    "text": "مصدر تقرير واحد"
+  },
+  "endpoints.route./report-api/realms.name": {
+    "en": "c555ac10c13fd091",
+    "text": "نطاقات الثقة، لتطبيق التقارير"
+  },
+  "endpoints.route./report-api/signals.name": {
+    "en": "fa5ff98584c701fb",
+    "text": "صندوق وارد Shared Signals لتطبيق التقارير"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "ما ترسمه قائمة المستخدم في تطبيق التقارير"
+  },
+  "endpoints.route./report-api/announcements.name": {
+    "en": "3adb83b8075c6a3a",
+    "text": "إعلانات لتطبيق التقارير"
+  },
+  "endpoints.route./report-api/groups.name": {
+    "en": "e30ed85f8fa2f141",
+    "text": "البحث في المجموعات، لتطبيق التقارير"
+  },
+  "endpoints.route./report-api/schedules.name": {
+    "en": "25a6618403794275",
+    "text": "تعريفات التقارير المجدوَلة"
+  },
+  "endpoints.route./report-api/queries.name": {
+    "en": "ba718855c8f4548d",
+    "text": "تشغيل استعلام تقرير"
+  },
+  "endpoints.route./report-api/definitions.name": {
+    "en": "b85da01b72f0f901",
+    "text": "تعريفات التقارير المحفوظة"
+  },
+  "endpoints.route./report-api/definitions/:id.name": {
+    "en": "24d4a9eb8522c787",
+    "text": "تعريف تقرير واحد"
+  },
+  "endpoints.route./report-api/definitions/:id/share.name": {
+    "en": "381aa8592d526281",
+    "text": "مشاركة تعريف تقرير"
+  },
+  "endpoints.route./report-api/definitions/:id/run.name": {
+    "en": "2a41162da14e8aed",
+    "text": "تشغيل تقرير محفوظ"
+  },
+  "endpoints.route./report-api/jobs.name": {
+    "en": "792c052635196abd",
+    "text": "مهام التقارير"
+  },
+  "endpoints.route./report-api/jobs/:id.name": {
+    "en": "4c2954e7f55686cb",
+    "text": "مهمة تقرير واحدة"
+  },
+  "endpoints.route./report-api/jobs/:id/cancel.name": {
+    "en": "8b217a98c1410cd2",
+    "text": "إلغاء مهمة تقرير"
+  },
+  "endpoints.route./report-api/jobs/:id/result.name": {
+    "en": "31b5367e2efd2049",
+    "text": "نتيجة تقرير"
+  },
+  "endpoints.route./portal/signals/receive.name": {
+    "en": "657c84b412c86001",
+    "text": "نقطة نهاية استقبال Shared Signals في البوابة"
+  },
+  "endpoints.route./portal/claim-sources/callback.name": {
+    "en": "152919279ecea855",
+    "text": "مصادر المطالبات المتصلة — إجابة المزوّد"
+  },
+  "endpoints.route./admin-api.name": {
+    "en": "eb75193bc8755faa",
+    "text": "فهرس واجهة API للإدارة"
+  },
+  "endpoints.route./admin-api/logout.name": {
+    "en": "b068dc8553d2b4f2",
+    "text": "الجلسات النشطة، وإنهاؤها"
+  },
+  "endpoints.route./admin-api/logout/:action.name": {
+    "en": "6c2dc375eee8253d",
+    "text": "الجلسات النشطة: إنهاؤها"
+  },
+  "endpoints.route./admin-api/openapi.json.name": {
+    "en": "ef18228535f6e74f",
+    "text": "وثيقة OpenAPI"
+  },
+  "endpoints.route./admin-api/account-api.name": {
+    "en": "1ae155ffa9680b4a",
+    "text": "وثيقة OpenAPI لواجهة API للحساب"
+  },
+  "endpoints.route./admin-api/console/language.name": {
+    "en": "40be2295e7d1766a",
+    "text": "لغة وحدة التحكم، لك أنت"
+  },
+  "endpoints.route./admin-api/console/api-explorer.name": {
+    "en": "dc472022273007e2",
+    "text": "ما يقرأه مستكشف وحدة التحكم"
+  },
+  "endpoints.route./admin-api/console/delegation/map.name": {
+    "en": "58e1aa37ecc8aa2b",
+    "text": "صورة التفويض"
+  },
+  "endpoints.route./admin-api/console/delegation/chain.name": {
+    "en": "2f4c2883e0a7367a",
+    "text": "علاقة تفويض واحدة، مرسومة"
+  },
+  "endpoints.route./admin-api/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "تفويضات تطبيق واحد، مرسومة"
+  },
+  "endpoints.route./admin-api/console/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "تفويضات تطبيق واحد، مرسومة"
+  },
+  "endpoints.route./admin-api/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "كل ما جرى باسم شخص واحد، مرسوم"
+  },
+  "endpoints.route./admin-api/console/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "كل ما جرى باسم شخص واحد، مرسوم"
+  },
+  "endpoints.route./admin-api/console/delegation/allowed.name": {
+    "en": "8ae675640fa7d934",
+    "text": "الأذونات المفوَّضة المُكوَّنة، مرسومة"
+  },
+  "endpoints.route./admin-api/console/delegation/cluster.name": {
+    "en": "ad732f8760d744ba",
+    "text": "مجموعة واحدة من التطبيقات التي تصلها الأذونات، مرسومة"
+  },
+  "endpoints.route./admin-api/console/delegation-settings.name": {
+    "en": "502fcd0e4edaea72",
+    "text": "سجل الأذونات المُكوَّنة، كما تعرضه صفحته"
+  },
+  "endpoints.route./admin-api/tokens/credential.name": {
+    "en": "f45c68ae09f2d7fc",
+    "text": "بيانات اعتماد واحدة وكل جيل وراءها"
+  },
+  "endpoints.route./admin-api/console/federation/map.name": {
+    "en": "99866b83425ba5c7",
+    "text": "علاقات الاتحاد لنطاق الثقة هذا، مرسومة"
+  },
+  "endpoints.route./admin-api/console.name": {
+    "en": "f166c0c9b6ef8c18",
+    "text": "ما ترسمه وحدة التحكم حول كل صفحة"
+  },
+  "endpoints.route./admin-api/keys/history/certificate.name": {
+    "en": "c4293d2be95a4d6e",
+    "text": "سلسلة شهادات مفتاح توقيع واحد"
+  },
+  "endpoints.route./admin-api/sts-metadata.name": {
+    "en": "88b4c8d5056bd368",
+    "text": "كل بروتوكول ونقطة نهاية ومواصفة تخدمها هذه"
+  },
+  "endpoints.route./admin-api/me.name": {
+    "en": "548b8ddef38a8823",
+    "text": "المستدعي"
+  },
+  "endpoints.route./admin-api/status.name": {
+    "en": "cce5eda33f91d11c",
+    "text": "حالة الخدمة"
+  },
+  "endpoints.route./admin-api/console/dashboard.name": {
+    "en": "9b5ccd90b2944d73",
+    "text": "الصفحة الأمامية لوحدة التحكم"
+  },
+  "endpoints.route./admin-api/console/operations.name": {
+    "en": "09b6da5088de6afb",
+    "text": "كل عملية، لنماذج وحدة التحكم"
+  },
+  "endpoints.route./admin-api/console/openapi.json.name": {
+    "en": "c5b582c6e41c78dd",
+    "text": "وثيقة OpenAPI لعمليات وحدة التحكم"
+  },
+  "endpoints.route./admin-api/console/pki/:action.name": {
+    "en": "91b14d0429eaa0bc",
+    "text": "مساعدات نموذج الشهادة"
+  },
+  "endpoints.route./admin-api/console/applications/:action.name": {
+    "en": "18ea7bf0d0fcc0d4",
+    "text": "مساعد نموذج التطبيق الجديد"
+  },
+  "endpoints.route./admin-api/console/applications/new.name": {
+    "en": "226595ce0d487761",
+    "text": "نموذج التطبيق الجديد، كما ترتّبه وحدة التحكم"
+  },
+  "endpoints.route./admin-api/keys.name": {
+    "en": "b50a1f343114c6fa",
+    "text": "أزواج المفاتيح"
+  },
+  "endpoints.route./admin-api/keys/history.name": {
+    "en": "13b97697b4e1e2b0",
+    "text": "تاريخ مفاتيح التوقيع"
+  },
+  "endpoints.route./admin-api/keys/:action.name": {
+    "en": "02bd417f55c9790f",
+    "text": "تصدير زوج مفاتيح، أو تدوير مفاتيح التوقيع"
+  },
+  "endpoints.route./admin-api/pki.name": {
+    "en": "bc458d477b4de7d9",
+    "text": "سلطة الشهادات التي يحتفظ بها نطاق الثقة هذا"
+  },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "وضع PKI المتشكّك، ومخزن ثقة الموقّعين، وما هو مُثبَّت"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "تغيير مخزن ثقة الموقّعين، أو صفًا متشكّكًا، أو إعادة فحص التثبيتات"
+  },
+  "endpoints.route./admin-api/pki/:action.name": {
+    "en": "c17f40560a0a857f",
+    "text": "بناء تسلسل هرمي، وإصدار زوج مفاتيح، وتأليف شهادة"
+  },
+  "endpoints.route./admin-api/certificates.name": {
+    "en": "df89d301f57f6ace",
+    "text": "كل شهادة يحتفظ بها نطاق الثقة هذا، أو واحدة منها كاملة"
+  },
+  "endpoints.route./admin-api/secrets.name": {
+    "en": "d13ef7e84b6dc8bb",
+    "text": "مخزن الأسرار، وما إذا كانت هذه العملية قد قرأت منه"
+  },
+  "endpoints.route./admin-api/debugger.name": {
+    "en": "542e5e1c1841299c",
+    "text": "مستمع مُصحِّح البروتوكول المضمّن وعملية api"
+  },
+  "endpoints.route./admin-api/database.name": {
+    "en": "30f6100d283f4d80",
+    "text": "مقاييس PostgreSQL وإحصاءات المخطط"
+  },
+  "endpoints.route./admin-api/risk/metrics.name": {
+    "en": "740320b44f69683c",
+    "text": "مقاييس تقييم المخاطر"
+  },
+  "endpoints.route./admin-api/risk/upload.name": {
+    "en": "49a3e164fdbf7c12",
+    "text": "رفع مجموعة بيانات المخاطر"
+  },
+  "endpoints.route./admin-api/risk/:action.name": {
+    "en": "caad559e549e3108",
+    "text": "إجراءات المخاطر"
+  },
+  "endpoints.route./admin-api/vc-status.name": {
+    "en": "ced60a751fc82211",
+    "text": "حالة بيانات الاعتماد"
+  },
+  "endpoints.route./admin-api/vc-status/:action.name": {
+    "en": "be2f7ebc85c75b68",
+    "text": "إجراءات حالة بيانات الاعتماد"
+  },
+  "endpoints.route./admin-api/scheduler/:action.name": {
+    "en": "3483d9e9aab04915",
+    "text": "إجراءات المُجدوِل"
+  },
+  "endpoints.route./admin-api/broadcast.name": {
+    "en": "7ca7feaebe5215c0",
+    "text": "إعلان البث"
+  },
+  "endpoints.route./admin-api/broadcast/:action.name": {
+    "en": "6e79d056a66502f2",
+    "text": "إجراءات إعلان البث"
+  },
+  "endpoints.route./admin-api/announcements.name": {
+    "en": "c4061b1ad0320a47",
+    "text": "إعلانات وحدة التحكم"
+  },
+  "endpoints.route./admin-api/mail/:action.name": {
+    "en": "cff7055c2db49c6a",
+    "text": "إجراءات البريد"
+  },
+  "endpoints.route./admin-api/mail/outbox.name": {
+    "en": "d40abea9379f4e22",
+    "text": "صندوق صادر البريد"
+  },
+  "endpoints.route./admin-api/mail/outbox/:action.name": {
+    "en": "0311fbdb2c996481",
+    "text": "إجراءات صندوق صادر البريد"
+  },
+  "endpoints.route./admin-api/worker-pools.name": {
+    "en": "8bf5d84f5ee5dd08",
+    "text": "مجمّعات العاملين"
+  },
+  "endpoints.route./admin-api/node-health.name": {
+    "en": "6a14636c8aef5de3",
+    "text": "سلامة العقدة"
+  },
+  "endpoints.route./admin-api/node-health/:action.name": {
+    "en": "00f328f6105fa2a9",
+    "text": "إجراءات سلامة العقدة"
+  },
+  "endpoints.route./admin-api/encryption.name": {
+    "en": "eb626f73d72649aa",
+    "text": "التشفير أثناء التخزين"
+  },
+  "endpoints.route./admin-api/encryption/:action.name": {
+    "en": "74f8245296e5a5ed",
+    "text": "الأفعال الأربعة لمفاتيح تشفير البيانات"
+  },
+  "endpoints.route./admin-api/users/:action.name": {
+    "en": "33634352212a8e51",
+    "text": "إجراءات المستخدم"
+  },
+  "endpoints.route./admin-api/groups.name": {
+    "en": "c1524c47a0c5db15",
+    "text": "مجموعات الدليل"
+  },
+  "endpoints.route./admin-api/groups/:action.name": {
+    "en": "aa987cf14daa872f",
+    "text": "إجراءات المجموعة"
+  },
+  "endpoints.route./admin-api/backup-codes.name": {
+    "en": "58306d7221d1bf72",
+    "text": "إعدادات رمز الاسترداد"
+  },
+  "endpoints.route./admin-api/totp.name": {
+    "en": "947a66c0238e7e56",
+    "text": "إعدادات TOTP MFA"
+  },
+  "endpoints.route./admin-api/webauthn.name": {
+    "en": "dcc6aecb3740fef3",
+    "text": "إعدادات WebAuthn"
+  },
+  "endpoints.route./admin-api/mfa.name": {
+    "en": "63fc7f058d95883b",
+    "text": "من يحمل عاملًا ثانيًا"
+  },
+  "endpoints.route./admin-api/mfa/:action.name": {
+    "en": "725b36f8b92fded4",
+    "text": "مسح عامل ثانٍ"
+  },
+  "endpoints.route./admin-api/rbac.name": {
+    "en": "85d2e32f951ee980",
+    "text": "أدوار وحدة تحكم المسؤول"
+  },
+  "endpoints.route./admin-api/rbac/:action.name": {
+    "en": "de7f185fcea232a6",
+    "text": "إجراءات دور المسؤول"
+  },
+  "endpoints.route./admin-api/sessions.name": {
+    "en": "366487a11e4c5380",
+    "text": "الجلسات النشطة"
+  },
+  "endpoints.route./admin-api/sessions/:action.name": {
+    "en": "f1fa288cb9378ffc",
+    "text": "الجلسات النشطة: إنهاء واحدة"
+  },
+  "endpoints.route./admin-api/tokens.name": {
+    "en": "7d8ad8a77751253f",
+    "text": "الرموز والتأكيدات والتذاكر الصادرة، مجمّعة حسب الإصدار"
+  },
+  "endpoints.route./admin-api/tokens/set.name": {
+    "en": "8db1ad0da0eb0cd8",
+    "text": "إصدار واحد، وكل بيانات اعتماد حملها"
+  },
+  "endpoints.route./admin-api/tokens/:action.name": {
+    "en": "70ffb2afdb826704",
+    "text": "إجراءات الرمز"
+  },
+  "endpoints.route./admin-api/applications/:action.name": {
+    "en": "f78d20689fac7101",
+    "text": "إجراءات التطبيق"
+  },
+  "endpoints.route./admin-api/users/app-passwords.name": {
+    "en": "dbce87b518a55c12",
+    "text": "كلمات مرور التطبيقات لشخص واحد"
+  },
+  "endpoints.route./admin-api/users/devices.name": {
+    "en": "cbd7e46575f64db6",
+    "text": "أجهزة شخص واحد"
+  },
+  "endpoints.route./admin-api/users/certificates.name": {
+    "en": "12293a2c63e7d8fb",
+    "text": "الشهادات المخزَّنة لشخص واحد"
+  },
+  "endpoints.route./admin-api/devices.name": {
+    "en": "2785787c7598b5f2",
+    "text": "سجل الأجهزة"
+  },
+  "endpoints.route./admin-api/devices/:action.name": {
+    "en": "82d6c528e12bbe02",
+    "text": "إجراءات سجل الأجهزة"
+  },
+  "endpoints.route./admin-api/device-compliance.name": {
+    "en": "1b28ca2ff0e0999f",
+    "text": "موجز امتثال الأجهزة (MDM / الوضعية)"
+  },
+  "endpoints.route./admin-api/pep-audit.name": {
+    "en": "df3ac1026eab32fe",
+    "text": "سجلات قرارات PEP بعيد"
+  },
+  "endpoints.route./admin-api/device-registration.name": {
+    "en": "f8fcb8ceb53f6ebf",
+    "text": "تسجيل الأجهزة"
+  },
+  "endpoints.route./admin-api/service-accounts.name": {
+    "en": "330b2e1630d653b8",
+    "text": "حسابات الخدمة وتدويرها"
+  },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "من يملك كائنًا، وما إذا كان لمالكيه أن يديروه"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "قصر كائن على مالكيه، أو فتحه مجددًا"
+  },
+  "endpoints.route./admin-api/devices/monitor.name": {
+    "en": "8a3269dd4401ce60",
+    "text": "سجل الأجهزة، معدودًا"
+  },
+  "endpoints.route./admin-api/users/self-issued-subjects.name": {
+    "en": "ec5770a23a0c10c0",
+    "text": "موضوعات شخص واحد ذاتية الإصدار (SIOPv2)"
+  },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "معرّفات DID المنشورة لشخص واحد"
+  },
+  "endpoints.route./admin-api/users/verifications.name": {
+    "en": "aa12d03c659af2a0",
+    "text": "عمليات التحقق من هوية شخص واحد"
+  },
+  "endpoints.route./admin-api/users/new.name": {
+    "en": "911ac7f1d87d5691",
+    "text": "نموذج مستخدم جديد"
+  },
+  "endpoints.route./admin-api/applications/new.name": {
+    "en": "46a0fea8394de3a4",
+    "text": "نموذج تطبيق جديد"
+  },
+  "endpoints.route./admin-api/authorization-servers.name": {
+    "en": "7c36031d3ab3bdc8",
+    "text": "خوادم التفويض"
+  },
+  "endpoints.route./admin-api/authorization-servers/:action.name": {
+    "en": "2bab6ab3f36adca7",
+    "text": "إجراءات خادم التفويض"
+  },
+  "endpoints.route./admin-api/risc/accounts.name": {
+    "en": "ac79739f3e78bebc",
+    "text": "حسابات RISC"
+  },
+  "endpoints.route./admin-api/risc/:action.name": {
+    "en": "31d09cc1241351d4",
+    "text": "إصدار حدث RISC، أو إعادة ضبط حالة RISC لحساب"
+  },
+  "endpoints.route./admin-api/scim/monitor.name": {
+    "en": "6d0d6f35a18900e9",
+    "text": "حركة مرور SCIM"
+  },
+  "endpoints.route./admin-api/ssf/transmitters.name": {
+    "en": "bc790602233f8949",
+    "text": "إشارات من الشركاء"
+  },
+  "endpoints.route./admin-api/deliveries.name": {
+    "en": "2175d3f98d233447",
+    "text": "التسليمات الصادرة"
+  },
+  "endpoints.route./admin-api/deliveries/:action.name": {
+    "en": "870b99f43bcd07a3",
+    "text": "إعادة محاولة تسليم صادر"
+  },
+  "endpoints.route./admin-api/ssf/dead-letters.name": {
+    "en": "3f2fb3008f53f3c8",
+    "text": "الرسائل الميتة"
+  },
+  "endpoints.route./admin-api/signals.name": {
+    "en": "5a70784a76f04344",
+    "text": "الإشارات المستلَمة"
+  },
+  "endpoints.route./admin-api/signals/:action.name": {
+    "en": "abf5e7e60e98fa56",
+    "text": "إفراغ صندوق وارد Shared Signals في وحدة التحكم"
+  },
+  "endpoints.route./admin-api/caep/sessions.name": {
+    "en": "646dc38ef308df94",
+    "text": "جلسات CAEP"
+  },
+  "endpoints.route./admin-api/caep/:action.name": {
+    "en": "ba2a3add441f2808",
+    "text": "إصدار حدث CAEP، أو إعادة ضبط حالة CAEP لجلسة"
+  },
+  "endpoints.route./admin-api/ssf/:action.name": {
+    "en": "d83510d002423a7b",
+    "text": "تغيير تدفق، أو إرسال حدث"
+  },
+  "endpoints.route./admin-api/spiffe.name": {
+    "en": "dbcb7b6226a620be",
+    "text": "نطاق ثقة SPIFFE"
+  },
+  "endpoints.route./admin-api/spiffe/:action.name": {
+    "en": "e59d04e51fdc2e77",
+    "text": "تدوير سلطة، أو تعيين حزمة متّحدة"
+  },
+  "endpoints.route./admin-api/spiffe/entries.name": {
+    "en": "3bf5e6f5489f682c",
+    "text": "إدخالات التسجيل"
+  },
+  "endpoints.route./admin-api/spiffe/entries/:action.name": {
+    "en": "74d79cc22326e3cd",
+    "text": "إنشاء إدخال تسجيل أو تغييره أو حذفه"
+  },
+  "endpoints.route./admin-api/spiffe/agents.name": {
+    "en": "d5576daf0ffe1c68",
+    "text": "الوكلاء المُثبَتون"
+  },
+  "endpoints.route./admin-api/spiffe/agents/:action.name": {
+    "en": "db7439843e5d6273",
+    "text": "حظر وكيل أو رفع الحظر عنه أو نسيانه، أو سكّ رمز انضمام"
+  },
+  "endpoints.route./admin-api/spiffe/brokers.name": {
+    "en": "3afd6d3f274707ff",
+    "text": "وسطاء SPIFFE Broker API"
+  },
+  "endpoints.route./admin-api/spiffe/brokers/:action.name": {
+    "en": "6c08f9dc74c0d0b9",
+    "text": "تفويض وسيط SPIFFE أو إزالته"
+  },
+  "endpoints.route./admin-api/delegation/policy.name": {
+    "en": "f062ac9572a07d80",
+    "text": "سياسة التفويض (WS-Trust وتبادل الرموز)"
+  },
+  "endpoints.route./admin-api/permissions.name": {
+    "en": "cce5e2f6b790b802",
+    "text": "الأذونات المفوَّضة"
+  },
+  "endpoints.route./admin-api/permissions/groups.name": {
+    "en": "c20e5fba08d328a5",
+    "text": "أي التطبيقات موصولة ببعضها"
+  },
+  "endpoints.route./admin-api/permissions/:action.name": {
+    "en": "d6d712ed91d38438",
+    "text": "تعريف الأذونات المفوَّضة ومنحها"
+  },
+  "endpoints.route./admin-api/attribute-sources.name": {
+    "en": "c5a898cd54934862",
+    "text": "مصادر السمات"
+  },
+  "endpoints.route./admin-api/attribute-sources/:action.name": {
+    "en": "df8c7ea77b91b6af",
+    "text": "تغيير مصادر السمات"
+  },
+  "endpoints.route./admin-api/secret-destinations.name": {
+    "en": "4daa34966ee9102d",
+    "text": "وجهات دفع الأسرار"
+  },
+  "endpoints.route./admin-api/secret-destinations/:action.name": {
+    "en": "f8f3c83e76dc9f4c",
+    "text": "تغيير وجهات دفع الأسرار"
+  },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "كتالوج واجهة AuthZEN API ومستدعوها"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "تغيير كتالوج AuthZEN أو نطاق صلاحية مستدعٍ"
+  },
+  "endpoints.route./admin-api/passkey-report.name": {
+    "en": "9c856324242bc19b",
+    "text": "من يحمل أي خوارزمية لمفتاح المرور"
+  },
+  "endpoints.route./admin-api/passkey-report/export.name": {
+    "en": "058eb7c31724a848",
+    "text": "تصدير الأشخاص وراء عدد مفاتيح المرور"
+  },
+  "endpoints.route./admin-api/passkey-report/evidence.name": {
+    "en": "e9eb776b6513e45f",
+    "text": "سجل أدلة RFC 4998 لمفتاح مرور واحد"
+  },
+  "endpoints.route./admin-api/passkey-report/:action.name": {
+    "en": "738bbc740bd914fc",
+    "text": "إعادة عدّ مفاتيح المرور في نطاق الثقة"
+  },
+  "endpoints.route./admin-api/post-login-activities.name": {
+    "en": "d37435b7e29d739b",
+    "text": "أنشطة ما بعد تسجيل الدخول التي بُدئت"
+  },
+  "endpoints.route./admin-api/post-login-activities/:action.name": {
+    "en": "6bfc2bea96fee884",
+    "text": "بدء نشاط ما بعد تسجيل الدخول أو إيقافه مؤقتًا أو استئنافه أو إنهاؤه"
+  },
+  "endpoints.route./admin-api/scim/clients.name": {
+    "en": "63c8ee9a6d93cb89",
+    "text": "عملاء SCIM الصادرون"
+  },
+  "endpoints.route./admin-api/scim/clients/:action.name": {
+    "en": "af52f5017d9fd21b",
+    "text": "تغيير عملاء SCIM الصادرين"
+  },
+  "endpoints.route./admin-api/roles/preview.name": {
+    "en": "c2e62734c4466542",
+    "text": "هل سيُصدَر هذا؟"
+  },
+  "endpoints.route./admin-api/roles/:action.name": {
+    "en": "1baadaaa0e1df852",
+    "text": "إنشاء الأدوار وتغييرها"
+  },
+  "endpoints.route./admin-api/policies/:action.name": {
+    "en": "a5461fc6541725a3",
+    "text": "تغيير سياسة"
+  },
+  "endpoints.route./admin-api/policies/transfer.name": {
+    "en": "d0e1c015c9f2a694",
+    "text": "عرض نقل السياسات"
+  },
+  "endpoints.route./admin-api/policies/transfer/:action.name": {
+    "en": "bc0714219f3243c3",
+    "text": "تصدير السياسات واستيرادها"
+  },
+  "endpoints.route./admin-api/consent/:action.name": {
+    "en": "a7acd63ff9b05a72",
+    "text": "منح الموافقة وإبطالها"
+  },
+  "endpoints.route./admin-api/used-assertions.name": {
+    "en": "73611edaf06c6db9",
+    "text": "التأكيدات المستخدَمة"
+  },
+  "endpoints.route./admin-api/error-codes.name": {
+    "en": "b485a2ff39ac01b5",
+    "text": "رموز الأخطاء"
+  },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "تصدير التدقيق"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "تغيير وجهات تصدير التدقيق"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "مظهر تسجيل الدخول"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "رفع شعار تسجيل الدخول"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "تغيير مظهر تسجيل الدخول"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "التحقق من سلامة سجل التدقيق"
+  },
+  "endpoints.route./admin-api/audit.name": {
+    "en": "e4d36f9a4e22d3a2",
+    "text": "سجل التدقيق"
+  },
+  "endpoints.route./admin-api/realms.name": {
+    "en": "6dd313699a1bc23c",
+    "text": "نطاقات الثقة"
+  },
+  "endpoints.route./admin-api/realms/:action.name": {
+    "en": "2e89e91f0984a5ce",
+    "text": "إجراءات نطاق الثقة"
+  },
+  "endpoints.route./admin-api/cells/:action.name": {
+    "en": "e801f925c59521a5",
+    "text": "إعادة تسكين شخص"
+  },
+  "endpoints.route./admin-api/cells/people.name": {
+    "en": "3487e884b7bb0884",
+    "text": "قاطنو الخلية"
+  },
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "فحص البرمجيات الخبيثة"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "اختبار فاحص البرمجيات الخبيثة"
+  },
+  "endpoints.route./admin-api/listeners/:action.name": {
+    "en": "f35429cc1bbc09a8",
+    "text": "تعريف مستمعين مخصّصين، أو ربط التطبيقات بهم"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "تفريغ التكوين"
+  },
+  "endpoints.route./admin-api/config/:action.name": {
+    "en": "7e8873a02dca9738",
+    "text": "إجراءات التكوين"
+  },
+  "endpoints.route./admin-api/oauth2.name": {
+    "en": "e39e74c6a9c77af0",
+    "text": "إعدادات OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./admin-api/oid4vci-settings.name": {
+    "en": "82c9b9b35fc23789",
+    "text": "إعدادات OpenID4VCI"
+  },
+  "endpoints.route./admin-api/oid4vp-settings.name": {
+    "en": "87b67f1b979a04d8",
+    "text": "إعدادات OpenID4VP"
+  },
+  "endpoints.route./admin-api/kerberos.name": {
+    "en": "288b1e0163e753a9",
+    "text": "إعدادات Kerberos"
+  },
+  "endpoints.route./admin-api/ldap.name": {
+    "en": "b4b5794e4fe30cc2",
+    "text": "إعدادات LDAP / LDAPS"
+  },
+  "endpoints.route./admin-api/ldap/directory.name": {
+    "en": "f02a3e57dc2e468e",
+    "text": "كل إدخال في الدليل"
+  },
+  "endpoints.route./admin-api/ldap/applications.name": {
+    "en": "47e8fc7f73cf7414",
+    "text": "سجل التطبيقات كما يحتفظ به الدليل"
+  },
+  "endpoints.route./admin-api/ldap/federations.name": {
+    "en": "834988ab8b5b6754",
+    "text": "سجل الاتحاد كما يحتفظ به الدليل"
+  },
+  "endpoints.route./admin-api/ldap/spiffe.name": {
+    "en": "6d82cdc8d7fb4c53",
+    "text": "حاويات SPIFFE كما يحتفظ بها الدليل"
+  },
+  "endpoints.route./admin-api/ldap/roles.name": {
+    "en": "b0619c49a1d25fe7",
+    "text": "إدخالات الأدوار كما يحتفظ بها الدليل"
+  },
+  "endpoints.route./admin-api/ldap/policies.name": {
+    "en": "05f1b17e20b06c12",
+    "text": "مستودع السياسات كما يحتفظ به الدليل"
+  },
+  "endpoints.route./admin-api/ldap/devices.name": {
+    "en": "69b995f018f2f463",
+    "text": "سجل الأجهزة كما يحتفظ به الدليل"
+  },
+  "endpoints.route./admin-api/ldap/peps.name": {
+    "en": "c36d4e8180e7ccbf",
+    "text": "نقاط PEP البعيدة المسجَّلة كما يحتفظ بها الدليل"
+  },
+  "endpoints.route./admin-api/ldap/service.name": {
+    "en": "f6c749e9d414c44e",
+    "text": "ما هو الدليل فعلًا، الآن"
+  },
+  "endpoints.route./admin-api/wstrust.name": {
+    "en": "9f6a673422101370",
+    "text": "إعدادات WS-Trust"
+  },
+  "endpoints.route./admin-api/wsfed.name": {
+    "en": "87ba4432c64fb34a",
+    "text": "إعدادات WS-Federation"
+  },
+  "endpoints.route./admin-api/tls.name": {
+    "en": "96b20b887882a558",
+    "text": "إعدادات TLS / TLS المتبادل"
+  },
+  "endpoints.route./admin-api/tls/trust.name": {
+    "en": "7afb6aac81a9a73c",
+    "text": "مخزن ثقة شهادات العملاء"
+  },
+  "endpoints.route./admin-api/tls/trust/:action.name": {
+    "en": "a1951930186f3dee",
+    "text": "إضافة مرتكز ثقة لشهادة عميل أو إزالته"
+  },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "ما رأته هذه الخدمة من اتصال TLS للطلب"
+  },
+  "endpoints.route./admin-api/kerberos/claims.name": {
+    "en": "5033ca8bef02346f",
+    "text": "مطالبات PAC في Kerberos"
+  },
+  "endpoints.route./admin-api/kerberos/claims/:action.name": {
+    "en": "4c12463f13744211",
+    "text": "إضافة مطالبة PAC في Kerberos أو إزالتها أو مسحها أو استبدالها"
+  },
+  "endpoints.route./admin-api/kerberos/principals.name": {
+    "en": "2832cf5b58397e32",
+    "text": "أسماء Kerberos الرئيسية"
+  },
+  "endpoints.route./admin-api/kerberos/principals/:action.name": {
+    "en": "e3b666e9c2cf04a5",
+    "text": "إنشاء اسم خدمة رئيسي أو تدويره أو حذفه، أو مسح مفاتيح شخص، أو حذف إصدارات المفاتيح السابقة، أو تدوير مفتاح krbtgt"
+  },
+  "endpoints.route./admin-api/kerberos/trusts.name": {
+    "en": "e92d42c7c01ab222",
+    "text": "علاقات ثقة Kerberos"
+  },
+  "endpoints.route./admin-api/kerberos/trusts/:action.name": {
+    "en": "15792a8aae11b100",
+    "text": "إضافة علاقة ثقة Kerberos أو تغييرها أو تمكينها أو تعطيلها أو تدويرها أو إزالتها أو إقرانها"
+  },
+  "endpoints.route./admin-api/token-lifetimes.name": {
+    "en": "ddad2319f680d9f9",
+    "text": "مُدَد صلاحية الرموز"
+  },
+  "endpoints.route./admin-api/token-lifetimes/:action.name": {
+    "en": "b4ceed5378a53501",
+    "text": "إجراءات مُدَد صلاحية الرموز"
+  },
+  "endpoints.route./admin-api/saml-assertions.name": {
+    "en": "baa38758f2ab7660",
+    "text": "تأكيدات SAML"
+  },
+  "endpoints.route./admin-api/saml-assertions/:action.name": {
+    "en": "37942134597c5c23",
+    "text": "إجراءات تأكيد SAML"
+  },
+  "endpoints.route./admin-api/claims.name": {
+    "en": "65b9df09c075b30c",
+    "text": "المطالبات المخصّصة"
+  },
+  "endpoints.route./admin-api/claims/:action.name": {
+    "en": "cff4a3fe8d0b0994",
+    "text": "إجراءات المطالبة المخصّصة"
+  },
+  "endpoints.route./admin-api/userinfo-claims.name": {
+    "en": "ba426b442708b016",
+    "text": "مطالبات UserInfo"
+  },
+  "endpoints.route./admin-api/userinfo-claims/:action.name": {
+    "en": "a538bc346df5c3ee",
+    "text": "إجراءات مطالبة UserInfo"
+  },
+  "endpoints.route./admin-api/federation.name": {
+    "en": "ec49c08ccb8dd325",
+    "text": "علاقات الاتحاد"
+  },
+  "endpoints.route./admin-api/federation/:action.name": {
+    "en": "ae7246fdf8a72fad",
+    "text": "تكوين علاقة اتحاد"
+  },
+  "endpoints.route./admin-api/saml2.name": {
+    "en": "fad22d219a6fe6f3",
+    "text": "موفّر هوية SAML 2.0"
+  },
+  "endpoints.route./admin-api/saml2/:action.name": {
+    "en": "81efebabec383a15",
+    "text": "إجراءات موفّر خدمة SAML 2.0"
+  },
+  "endpoints.route./admin-api/saml11.name": {
+    "en": "cb7331a7d83104ee",
+    "text": "موفّر هوية SAML 1.1"
+  },
+  "endpoints.route./admin-api/saml11/:action.name": {
+    "en": "f507cdd5e7327df3",
+    "text": "إجراءات الطرف المعتمد في SAML 1.1"
+  },
+  "endpoints.route./admin-api/saml-idp-initiated.name": {
+    "en": "70297dbc6d423d65",
+    "text": "تطبيقات SAML التي قد يبدأ تسجيل الدخول من هنا لأجلها"
+  },
+  "endpoints.route./admin-api/saml-attributes.name": {
+    "en": "e9808df4bc485128",
+    "text": "سمات SAML المخصّصة"
+  },
+  "endpoints.route./admin-api/saml-attributes/:action.name": {
+    "en": "98f2c7dbe4c6c89c",
+    "text": "إجراءات سمة SAML المخصّصة"
+  },
+  "endpoints.route./admin-api/credential-claims.name": {
+    "en": "b3466196455ff65d",
+    "text": "مطالبات بيانات الاعتماد"
+  },
+  "endpoints.route./admin-api/credential-claims/:action.name": {
+    "en": "c6f0e9281179a739",
+    "text": "إجراءات مطالبة بيانات الاعتماد"
+  },
+  "endpoints.route./admin-api/verifier-request.name": {
+    "en": "41b747157d916a8b",
+    "text": "طلب المُحقِّق (باب الحانة)"
+  },
+  "endpoints.route./admin-api/verifier-request/:action.name": {
+    "en": "6b2d5671c824f225",
+    "text": "إجراءات طلب المُحقِّق"
+  },
+  "endpoints.route./admin-api/verifications/:action.name": {
+    "en": "2eacfd95342c2fd3",
+    "text": "بدء عملية تحقق"
+  },
+  "endpoints.route./admin-api/verifications.name": {
+    "en": "1a34e870e6381c91",
+    "text": "نتيجة عملية تحقق"
+  },
+  "endpoints.route./admin-api/oid4vci/last-request.name": {
+    "en": "ccc72f51fb477e25",
+    "text": "آخر طلب بيانات اعتماد"
+  },
+  "endpoints.route./admin-api/oid4vci/notifications.name": {
+    "en": "a7bb4ad24eb592cf",
+    "text": "إشعار بيانات اعتماد"
+  },
+  "endpoints.route./sts.name": {
+    "en": "974efec49bd38548",
+    "text": "خدمة رموز الأمان"
+  },
+  "endpoints.route./sts/metadata.name": {
+    "en": "6d139ba55ee24788",
+    "text": "بيانات WS-Trust الوصفية"
+  },
+  "endpoints.route./sts/metadata/capabilities.name": {
+    "en": "5976fe018c7df889",
+    "text": "قدرات رمز WS-Trust"
+  },
+  "endpoints.route./sts/metadata/capabilities.xsd.name": {
+    "en": "c89390ca99682b92",
+    "text": "مخطط قدرات رمز WS-Trust"
+  },
+  "endpoints.route./sts/cert.name": {
+    "en": "a8e401846d25c111",
+    "text": "شهادة STS"
+  },
+  "endpoints.route./wsfed.name": {
+    "en": "174e4d79e29b5d71",
+    "text": "نقطة نهاية الطالب السلبي"
+  },
+  "endpoints.route./wsfed/autopost.js.name": {
+    "en": "2a2ec46d4b275f3f",
+    "text": "البرنامج النصي للنشر التلقائي لاستجابة تسجيل الدخول"
+  },
+  "endpoints.route./FederationMetadata/2007-06/FederationMetadata.xml.name": {
+    "en": "57daca724d75f812",
+    "text": "بيانات الاتحاد الوصفية"
+  },
+  "endpoints.route./wsfed/metadata/:rp.name": {
+    "en": "17543ed2ad8f5b73",
+    "text": "بيانات الاتحاد الوصفية لطرف معتمد واحد"
+  },
+  "endpoints.route./wsfed/initiate/:rp.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "تسجيل دخول يبدأه موفّر الهوية"
+  },
+  "endpoints.route./wsfed/initiate.name": {
+    "en": "fe8976709b142424",
+    "text": "تسجيل دخول يبدأه موفّر الهوية، حسب wtrealm"
+  },
+  "endpoints.route./saml2.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "ما هو ملف التعريف"
+  },
+  "endpoints.route./saml2/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "البرنامج النصي لصفحة الوصف"
+  },
+  "endpoints.route./saml2/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "بيانات موفّر الهوية الوصفية"
+  },
+  "endpoints.route./saml2/metadata/:sp.name": {
+    "en": "a9ae2cff7346229c",
+    "text": "بيانات موفّر الهوية الوصفية لموفّر خدمة واحد"
+  },
+  "endpoints.route./saml2/sso.name": {
+    "en": "e16a38fa8fbc04a0",
+    "text": "خدمة تسجيل الدخول الموحّد"
+  },
+  "endpoints.route./saml2/sso/:sp.name": {
+    "en": "004995b3099eff0b",
+    "text": "خدمة تسجيل الدخول الموحّد لموفّر خدمة واحد"
+  },
+  "endpoints.route./saml2/unsolicited.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "تسجيل دخول يبدأه موفّر الهوية"
+  },
+  "endpoints.route./saml2/unsolicited/:sp.name": {
+    "en": "2a237a561e4bdb89",
+    "text": "تسجيل دخول يبدأه موفّر الهوية لموفّر خدمة واحد"
+  },
+  "endpoints.route./saml2/aa.name": {
+    "en": "162f9d403c0bae47",
+    "text": "سلطة السمات"
+  },
+  "endpoints.route./saml2/aa/:sp.name": {
+    "en": "fddab449328f6e63",
+    "text": "سلطة السمات لموفّر خدمة واحد"
+  },
+  "endpoints.route./saml2/ars.name": {
+    "en": "46cbd4aa352d2c6d",
+    "text": "خدمة حلّ Artifact"
+  },
+  "endpoints.route./saml2/ars/:sp.name": {
+    "en": "4ef0f8d60c58078a",
+    "text": "خدمة حلّ Artifact لموفّر خدمة واحد"
+  },
+  "endpoints.route./saml2/slo.name": {
+    "en": "4edb185d6016b03e",
+    "text": "خدمة تسجيل الخروج الموحّد"
+  },
+  "endpoints.route./saml2/slo/:sp.name": {
+    "en": "98b9e34fbd53cb3f",
+    "text": "خدمة تسجيل الخروج الموحّد لموفّر خدمة واحد"
+  },
+  "endpoints.route./saml2/autopost.js.name": {
+    "en": "3046cc7181c4dedb",
+    "text": "البرنامج النصي للنشر التلقائي لربط HTTP POST"
+  },
+  "endpoints.route./saml11.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "ما هو ملف التعريف"
+  },
+  "endpoints.route./saml11/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "البرنامج النصي لصفحة الوصف"
+  },
+  "endpoints.route./saml11/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "بيانات موفّر الهوية الوصفية"
+  },
+  "endpoints.route./saml11/metadata/:rp.name": {
+    "en": "e65a9fe2331190e7",
+    "text": "بيانات موفّر الهوية الوصفية لطرف معتمد واحد"
+  },
+  "endpoints.route./saml11/sso.name": {
+    "en": "bf8583daf48f7e2b",
+    "text": "خدمة النقل بين المواقع"
+  },
+  "endpoints.route./saml11/sso/:rp.name": {
+    "en": "9fe980e24e7a8dfd",
+    "text": "خدمة النقل بين المواقع لطرف معتمد واحد"
+  },
+  "endpoints.route./saml11/responder.name": {
+    "en": "4c0c301abdc81459",
+    "text": "مستجيب SAML (SOAP)"
+  },
+  "endpoints.route./saml11/responder/:rp.name": {
+    "en": "fff6a87d7e14a3a4",
+    "text": "مستجيب SAML لطرف معتمد واحد"
+  },
+  "endpoints.route./saml11/autopost.js.name": {
+    "en": "1c2c5f913f3bd033",
+    "text": "البرنامج النصي للنشر التلقائي لملف تعريف Browser/POST"
+  },
+  "endpoints.route./federation.name": {
+    "en": "c025c7c05450031b",
+    "text": "ما هو الاتحاد هنا"
+  },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "البرنامج النصي لصفحات الاتحاد"
+  },
+  "endpoints.route./federation/login/:id.name": {
+    "en": "561e36f4539a01de",
+    "text": "بدء تسجيل دخول متّحد"
+  },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "تسجيل دخول يبدأه الشريك (initiate_login_uri)"
+  },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "كائن طلب بالمرجع"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "العثور على موفّر OpenID لشخص عبر WebFinger"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "البرنامج النصي للجزء في خدمة مستهلِك التأكيد"
+  },
+  "endpoints.route./federation/acs/:id.name": {
+    "en": "fff6118cbd019f5e",
+    "text": "خدمة مستهلِك التأكيد / wreply / redirect_uri"
+  },
+  "endpoints.route./federation/link/:handle.name": {
+    "en": "b1f3d17607ed42ee",
+    "text": "ربط موضوع الشريك عند أول تسجيل دخول"
+  },
+  "endpoints.route./federation/stepup/:handle.name": {
+    "en": "1b454ff71565d1ab",
+    "text": "إتمام تسجيل دخول متّحد بعد تصعيد بسبب المخاطر"
+  },
+  "endpoints.route./federation/profile/:handle.name": {
+    "en": "6f866f6622379301",
+    "text": "تقديم التفاصيل التي لم يرسلها موفّر المستهلك (#729)"
+  },
+  "endpoints.route./federation/notifications/:id.name": {
+    "en": "4111365a4c05f259",
+    "text": "إشعار موفّر من خادم إلى خادم (#565)"
+  },
+  "endpoints.route./federation/slo/:id.name": {
+    "en": "4974c5129575d272",
+    "text": "تسجيل خروج شريك، في متصفح (#167)"
+  },
+  "endpoints.route./federation/backchannel-logout/:id.name": {
+    "en": "27265e6379adee8c",
+    "text": "تسجيل خروج القناة الخلفية في OpenID Connect، كطرف معتمد (#167)"
+  },
+  "endpoints.route./federation/frontchannel-logout/:id.name": {
+    "en": "f0ccc33fe373786e",
+    "text": "تسجيل خروج القناة الأمامية في OpenID Connect، كطرف معتمد (#167)"
+  },
+  "endpoints.route./federation/metadata/:id.name": {
+    "en": "1bd56e73b838da2d",
+    "text": "بيانات SAML الوصفية الخاصة بهذه الخدمة، لكل شريك"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "بيانات العميل الوصفية لعلاقة Bluesky (#746)"
+  },
+  "endpoints.route./federation/jwks/:id.name": {
+    "en": "56f010e78f399989",
+    "text": "مفتاح تشفير علاقة OpenID Connect (#168)"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server.name": {
+    "en": "6339737b371a7f8e",
+    "text": "بيانات خادم التفويض الوصفية"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server/*.name": {
+    "en": "846fc2797e4d73f5",
+    "text": "بيانات خادم التفويض الوصفية (مُصدِر بمسار)"
+  },
+  "endpoints.route./.well-known/webfinger.name": {
+    "en": "4ee1f8cf469f5a7d",
+    "text": "اكتشاف المُصدِر عبر WebFinger"
+  },
+  "endpoints.route./.well-known/openid-configuration.name": {
+    "en": "4f19360f1fe5690d",
+    "text": "تكوين موفّر OpenID"
+  },
+  "endpoints.route./.well-known/openid-configuration/*.name": {
+    "en": "34de55b655967e89",
+    "text": "تكوين موفّر OpenID (صيغة المسار المُدرَج في RFC 8414)"
+  },
+  "endpoints.route./*/.well-known/openid-configuration.name": {
+    "en": "4cd225c57c9e9ff5",
+    "text": "تكوين موفّر OpenID (مُصدِر بمسار)"
+  },
+  "endpoints.route./oauth2/authorize.name": {
+    "en": "91ef8dd96110c183",
+    "text": "نقطة نهاية التفويض"
+  },
+  "endpoints.route./launch/:app.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "تسجيل دخول يبدأه موفّر الهوية"
+  },
+  "endpoints.route./logout.name": {
+    "en": "1228edbd8a552e3b",
+    "text": "تسجيل الخروج من كل شيء"
+  },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "البرنامج النصي لصفحة تسجيل الخروج"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "ورقة أنماط صفحة تسجيل الخروج"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "صفحة ما بعد تسجيل الخروج"
+  },
+  "endpoints.route./authn/login.name": {
+    "en": "cff20aed466d99d5",
+    "text": "شاشة تسجيل الدخول"
+  },
+  "endpoints.route./authn/select-idp.name": {
+    "en": "afae7eb3e60fb142",
+    "text": "منتقي شريك الاتحاد"
+  },
+  "endpoints.route./authn/accounts.name": {
+    "en": "c3b323e274fa067a",
+    "text": "منتقي الحساب"
+  },
+  "endpoints.route./authn/spnego.name": {
+    "en": "0a014fa4b2685cd7",
+    "text": "تسجيل الدخول بتذكرة Kerberos"
+  },
+  "endpoints.route./authn/wallet.name": {
+    "en": "762000c7e5e841a9",
+    "text": "تسجيل الدخول بمحفظة"
+  },
+  "endpoints.route./authn/wallet/wait.name": {
+    "en": "b5fe1c58e2d72833",
+    "text": "تسجيل الدخول بالمحفظة: الانتظار، ثم الإنهاء"
+  },
+  "endpoints.route./authn/password-factor.name": {
+    "en": "153eb47c253809aa",
+    "text": "كلمة المرور عاملًا ثانيًا"
+  },
+  "endpoints.route./authn/webauthn.name": {
+    "en": "5bebca79ee720f59",
+    "text": "خطوة مفتاح أمان WebAuthn"
+  },
+  "endpoints.route./authn/backup-code.name": {
+    "en": "305d816e110db5e1",
+    "text": "خطوة العامل الثاني برمز الاسترداد"
+  },
+  "endpoints.route./authn/dbsc/register.name": {
+    "en": "5577cc2228ead966",
+    "text": "تسجيل الجلسة المرتبطة بالجهاز"
+  },
+  "endpoints.route./authn/dbsc/refresh.name": {
+    "en": "3defb4fd7920ec00",
+    "text": "تحديث الجلسة المرتبطة بالجهاز"
+  },
+  "endpoints.route./authn/email-code.name": {
+    "en": "f889f4695b9ab9f3",
+    "text": "خطوة الرمز المُرسَل بالبريد"
+  },
+  "endpoints.route./authn/email-link.name": {
+    "en": "28e6a6472025060a",
+    "text": "رابط تسجيل الدخول المُرسَل بالبريد: صفحة الانتظار"
+  },
+  "endpoints.route./authn/email-link/open.name": {
+    "en": "be8ae41916803885",
+    "text": "رابط تسجيل الدخول المُرسَل بالبريد: حيث يصل"
+  },
+  "endpoints.route./authn/language.name": {
+    "en": "33466e5d338f55b0",
+    "text": "منتقي اللغة"
+  },
+  "endpoints.route./authn/password-change.name": {
+    "en": "7e99dc1a87faaf46",
+    "text": "خطوة تغيير كلمة المرور الإجباري"
+  },
+  "endpoints.route./authn/mfa-setup.name": {
+    "en": "48e0b4bbb949a879",
+    "text": "خطوة إعداد العامل الثاني المطلوب"
+  },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "خطوة نشاط ما بعد تسجيل الدخول"
+  },
+  "endpoints.route./authn/totp.name": {
+    "en": "a89de574ee2c21ab",
+    "text": "خطوة العامل الثاني بالرمز لمرة واحدة"
+  },
+  "endpoints.route./authn/signin.js.name": {
+    "en": "9eb3a8726ead14bf",
+    "text": "البرنامج النصي لشاشة تسجيل الدخول"
+  },
+  "endpoints.route./authn-api.name": {
+    "en": "37f607930889c3f0",
+    "text": "فهرس واجهة API لتسجيل الدخول"
+  },
+  "endpoints.route./authn-api/openapi.json.name": {
+    "en": "95a08b95fbad641e",
+    "text": "وثيقة OpenAPI لواجهة API لتسجيل الدخول"
+  },
+  "endpoints.route./authn-api/pending/:id.name": {
+    "en": "25b5fd300153bbe4",
+    "text": "ما تعرضه شاشة تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/pending/:id/partners.name": {
+    "en": "cb0f4ae92fef3ded",
+    "text": "شركاء الاتحاد للاختيار من بينهم"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts.name": {
+    "en": "23c7f520afd7c0cb",
+    "text": "الحسابات التي قد يتابع بها تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/select.name": {
+    "en": "4c05cbd10261e5fe",
+    "text": "المتابعة بأحد حسابات المتصفح"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/another.name": {
+    "en": "8ffce6dab3c9d713",
+    "text": "تسجيل الدخول بحساب آخر"
+  },
+  "endpoints.route./authn-api/pending/:id/accounts/forget.name": {
+    "en": "ee74996a1d01a953",
+    "text": "نسيان حساب سُجِّل خروجه"
+  },
+  "endpoints.route./authn-api/accounts.name": {
+    "en": "e263821d69f3f785",
+    "text": "الحسابات التي يحتفظ بها هذا المتصفح"
+  },
+  "endpoints.route./authn-api/pending/:id/password.name": {
+    "en": "673a50377a1ff20b",
+    "text": "تسجيل الدخول بكلمة المرور"
+  },
+  "endpoints.route./authn-api/pending/:id/cancel.name": {
+    "en": "117e271d03b64b31",
+    "text": "رفض تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/pending/:id/anonymous.name": {
+    "en": "5468076a514d8abf",
+    "text": "المتابعة دون تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "المتابعة بشهادتك"
+  },
+  "endpoints.route./authn-api/pending/:id/email.name": {
+    "en": "108905ece8873211",
+    "text": "تسجيل الدخول برمز أو رابط مُرسَل بالبريد"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey/options.name": {
+    "en": "9f5f54d890bd7637",
+    "text": "تجهيز مراسم مفتاح المرور"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey.name": {
+    "en": "d358470d455e8a4f",
+    "text": "تسجيل الدخول بمفتاح مرور ودون اسم مستخدم"
+  },
+  "endpoints.route./authn-api/wallet.name": {
+    "en": "80406ee6193d32ad",
+    "text": "بدء تسجيل دخول بمحفظة"
+  },
+  "endpoints.route./authn-api/wallet/:state.name": {
+    "en": "48bf057dc942be93",
+    "text": "ما ترسمه صفحة انتظار تسجيل الدخول بالمحفظة"
+  },
+  "endpoints.route./authn-api/wallet/:state/status.name": {
+    "en": "8aa2eb39b24d76cc",
+    "text": "استلام تسجيل دخول بالمحفظة"
+  },
+  "endpoints.route./authn-api/wallet/:state/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "تسجيل الدخول بالمحفظة: إجابة Digital Credentials API"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "ما سينهِيه تسجيل الخروج، وتسجيل الخروج"
+  },
+  "endpoints.route./authn-api/logout/accounts.name": {
+    "en": "ee44950fe4f4a290",
+    "text": "لأي حساب يكون تسجيل الخروج"
+  },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "ما تطلبه شاشة الموافقة، والإجابة"
+  },
+  "endpoints.route./authn-api/password-change/:id.name": {
+    "en": "f2d18b738357010b",
+    "text": "تغيير إجباري لكلمة المرور"
+  },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "بدء تسجيل الدخول من جديد انطلاقًا من تغيير كلمة المرور"
+  },
+  "endpoints.route./authn-api/mfa/:id.name": {
+    "en": "b881ffb2600f827e",
+    "text": "ما تعرضه صفحة خطوة تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/mfa/:id/totp.name": {
+    "en": "22a350cbbceaa429",
+    "text": "التحقق من رمز لمرة واحدة"
+  },
+  "endpoints.route./authn-api/mfa/:id/backup-code.name": {
+    "en": "f3e3fe66753f9114",
+    "text": "استهلاك رمز استرداد"
+  },
+  "endpoints.route./authn-api/mfa/:id/password.name": {
+    "en": "e59ea53b9b75ba40",
+    "text": "التحقق من كلمة المرور عاملًا ثانيًا"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn/options.name": {
+    "en": "f11cdfd17fc8a238",
+    "text": "تجهيز مراسم خطوة مفتاح المرور"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn.name": {
+    "en": "243864657b195912",
+    "text": "إنهاء خطوة مفتاح المرور"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/totp.name": {
+    "en": "09679d4354c9ec13",
+    "text": "بدء إعداد تطبيق مصادقة"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/confirm.name": {
+    "en": "34a1798b4970fcf5",
+    "text": "تأكيد تطبيق مصادقة"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/webauthn.name": {
+    "en": "731e67b177c594f5",
+    "text": "اختيار مفتاح مرور في خطوة الإعداد"
+  },
+  "endpoints.route./authn-api/mfa/:id/skip.name": {
+    "en": "d412e3d8a9215328",
+    "text": "تجاهل عامل ثانٍ معروض"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "تسجيل مفتاح المرور الذي يطلبه نشاط ما بعد تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "تأجيل نشاط ما بعد تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/send.name": {
+    "en": "f974b23b7838f712",
+    "text": "إرسال رمز أو رابط تسجيل دخول بالبريد"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/code.name": {
+    "en": "73fb62565006f03f",
+    "text": "التحقق من رمز مُرسَل بالبريد"
+  },
+  "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
+    "en": "7d4cd6f48237ebb7",
+    "text": "استهلاك رابط تسجيل دخول مُرسَل بالبريد"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "بدء تسجيل الدخول من جديد انطلاقًا من خطوة"
+  },
+  "endpoints.route./authn/fingerprint.js.name": {
+    "en": "e79a24977ac0a595",
+    "text": "البرنامج النصي لبصمة المتصفح (اختياري)"
+  },
+  "endpoints.route./oauth2/check_session.name": {
+    "en": "267337fd3ad0ab7f",
+    "text": "إطار OP المضمّن (check_session_iframe)"
+  },
+  "endpoints.route./oauth2/logout.name": {
+    "en": "9901e3b8fd763f16",
+    "text": "إنهاء الجلسة (end_session_endpoint)"
+  },
+  "endpoints.route./oauth2/token.name": {
+    "en": "f60f44154acbc444",
+    "text": "نقطة نهاية الرمز"
+  },
+  "endpoints.route./oauth2/consent.name": {
+    "en": "f38b4a6b64fec408",
+    "text": "شاشة الموافقة"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "البرنامج النصي لشاشة الموافقة"
+  },
+  "endpoints.route./oauth2/autopost.js.name": {
+    "en": "509aa57b5e9572d6",
+    "text": "البرنامج النصي لاستجابة form-post"
+  },
+  "endpoints.route./:as/oauth2/authorize.name": {
+    "en": "35a6a7905bcfc924",
+    "text": "نقطة نهاية التفويض (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/token.name": {
+    "en": "eff543132d567c86",
+    "text": "نقطة نهاية الرمز (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/userinfo.name": {
+    "en": "448a4f61fc7b0310",
+    "text": "نقطة نهاية UserInfo (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/introspect.name": {
+    "en": "d1e650a8a10a9e1f",
+    "text": "الاستبطان (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/par.name": {
+    "en": "1540774db9722dee",
+    "text": "طلبات التفويض المدفوعة (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/revoke.name": {
+    "en": "5f15734899e15325",
+    "text": "الإبطال (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/register.name": {
+    "en": "20e51292a909bb24",
+    "text": "التسجيل (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/register/:client_id.name": {
+    "en": "e9e266200b93ee8c",
+    "text": "إدارة العميل المسجّل (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/logout.name": {
+    "en": "9f3e0399c82bb2d2",
+    "text": "إنهاء الجلسة (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./:as/oauth2/jwks.name": {
+    "en": "da3c9537b549c3a3",
+    "text": "JWKS (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./oauth2/rfc9700.name": {
+    "en": "d1dfc6ccb5d6f5ab",
+    "text": "تقرير وضع RFC 9700 (ليست نقطة نهاية في المواصفة)"
+  },
+  "endpoints.route./oauth2/fapi.name": {
+    "en": "c0f8666df47dcdde",
+    "text": "تقرير ملف تعريف FAPI (ليست نقطة نهاية في المواصفة)"
+  },
+  "endpoints.route./:as/oauth2/fapi.name": {
+    "en": "2db6a31fbce294e3",
+    "text": "تقرير ملف تعريف FAPI (خادم تفويض مُسمّى)"
+  },
+  "endpoints.route./oauth2/oauth21.name": {
+    "en": "632451480bda3aec",
+    "text": "تقرير وضع OAuth 2.1 (ليست نقطة نهاية في المواصفة)"
+  },
+  "endpoints.route./oauth2/userinfo.name": {
+    "en": "aebc2aa96e6b1b70",
+    "text": "نقطة نهاية UserInfo"
+  },
+  "endpoints.route./oauth2/introspect.name": {
+    "en": "328dfd36fb81f446",
+    "text": "نقطة نهاية الاستبطان"
+  },
+  "endpoints.route./status-lists/access-tokens.name": {
+    "en": "f059bd82cb3acaac",
+    "text": "قائمة حالة رمز الوصول"
+  },
+  "endpoints.route./status-lists.name": {
+    "en": "187ac505c7e39fc8",
+    "text": "تجميع قوائم حالة رمز الوصول"
+  },
+  "endpoints.route./oauth2/challenge.name": {
+    "en": "2058075cb9955db9",
+    "text": "نقطة نهاية تحدي إثبات العميل"
+  },
+  "endpoints.route./oauth2/par.name": {
+    "en": "59993176c4a0e4a5",
+    "text": "نقطة نهاية طلب التفويض المدفوع"
+  },
+  "endpoints.route./admin-api/oauth2/monitor.name": {
+    "en": "21eb6990b9a90996",
+    "text": "نشاط OAuth 2.0 / OIDC عبر JSON"
+  },
+  "endpoints.route./admin-api/oauth2/monitor/:action.name": {
+    "en": "b9d72b1b82f53e0d",
+    "text": "إجراء مراقبة OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./oauth2/grants/:grantId.name": {
+    "en": "c949ed02f1ba90a5",
+    "text": "واجهة API لإدارة المنح"
+  },
+  "endpoints.route./admin-api/grants.name": {
+    "en": "b0eb5b67d86e7f62",
+    "text": "صفحة المنح في وحدة التحكم عبر JSON"
+  },
+  "endpoints.route./admin-api/grants/:action.name": {
+    "en": "d78e7d6c27003500",
+    "text": "إبطال منحة"
+  },
+  "endpoints.route./admin-api/commands.name": {
+    "en": "88006178bfa3632d",
+    "text": "صفحة أوامر موفّر OpenID في وحدة التحكم عبر JSON"
+  },
+  "endpoints.route./admin-api/commands/:action.name": {
+    "en": "b784156dac51ba48",
+    "text": "إرسال أمر، أو إعادة المحاولة"
+  },
+  "endpoints.route./oauth2/commands/callback.name": {
+    "en": "077e67ad034f4945",
+    "text": "نقطة نهاية رد النداء لأوامر موفّر OpenID"
+  },
+  "endpoints.route./admin-api/claim-providers.name": {
+    "en": "263c769f55b58ee3",
+    "text": "صفحة موفّري المطالبات في وحدة التحكم عبر JSON"
+  },
+  "endpoints.route./admin-api/claim-providers/:action.name": {
+    "en": "51791ee150e7550c",
+    "text": "تغيير سجل موفّر المطالبات"
+  },
+  "endpoints.route./oauth2/device_authorization.name": {
+    "en": "17f9953de35f59f9",
+    "text": "نقطة نهاية تفويض الجهاز"
+  },
+  "endpoints.route./oauth2/bc-authorize.name": {
+    "en": "8abae32691ff0227",
+    "text": "نقطة نهاية المصادقة عبر القناة الخلفية (CIBA)"
+  },
+  "endpoints.route./oauth2/revoke.name": {
+    "en": "9033948292614d8a",
+    "text": "نقطة نهاية الإبطال"
+  },
+  "endpoints.route./oauth2/register.name": {
+    "en": "d53075a18dfd9972",
+    "text": "التسجيل الديناميكي للعملاء"
+  },
+  "endpoints.route./oauth2/register/:client_id.name": {
+    "en": "36b03c4cf456a0ad",
+    "text": "إدارة العميل المسجّل"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer.name": {
+    "en": "1f08d181c3c4f31b",
+    "text": "بيانات مُصدِر بيانات الاعتماد الوصفية"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer/*.name": {
+    "en": "dcd93dd68bb234ec",
+    "text": "بيانات مُصدِر بيانات الاعتماد الوصفية (مُصدِر بمسار)"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer.name": {
+    "en": "f08112b1d485cfb0",
+    "text": "بيانات مُصدِر JWT VC الوصفية"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer/*.name": {
+    "en": "1080905b09dbe51c",
+    "text": "بيانات مُصدِر JWT VC الوصفية (مُصدِر بمسار)"
+  },
+  "endpoints.route./oid4vci/nonce.name": {
+    "en": "64d7b165db23d809",
+    "text": "نقطة نهاية Nonce"
+  },
+  "endpoints.route./oid4vci/credential.name": {
+    "en": "f1a74c0c1d1a9142",
+    "text": "نقطة نهاية بيانات الاعتماد"
+  },
+  "endpoints.route./oid4vci/status-lists/1.name": {
+    "en": "6bc2372d3bb214c3",
+    "text": "قائمة حالة الرمز"
+  },
+  "endpoints.route./oid4vci/status-lists.name": {
+    "en": "b7c39aa8efc43f99",
+    "text": "تجميع قوائم الحالة"
+  },
+  "endpoints.route./oid4vci/status-lists/bitstring/:purpose.name": {
+    "en": "69e5a2172fd0dff1",
+    "text": "بيانات اعتماد قائمة الحالة Bitstring"
+  },
+  "endpoints.route./oid4vci/trusted-list.name": {
+    "en": "9d8d4bfb47367165",
+    "text": "القائمة الموثوقة (قائمة الكيانات الموثوقة)"
+  },
+  "endpoints.route./oid4vci/deferred_credential.name": {
+    "en": "b64bd315376ba1ef",
+    "text": "نقطة نهاية بيانات الاعتماد المؤجَّلة"
+  },
+  "endpoints.route./oid4vci/notification.name": {
+    "en": "e1a25561e414b22c",
+    "text": "نقطة نهاية الإشعار"
+  },
+  "endpoints.route./oid4vci/credential-offer/:id.name": {
+    "en": "357ca7bdfcc31665",
+    "text": "عرض بيانات الاعتماد بالمرجع"
+  },
+  "endpoints.route./bbs/keys/:id.name": {
+    "en": "58347a1730d54e91",
+    "text": "المفتاح العام لـ BBS"
+  },
+  "endpoints.route./vc-api/issuers.name": {
+    "en": "73b838a87b15b09a",
+    "text": "مُصدِرو VC API"
+  },
+  "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
+    "en": "36e4ff37d0083d67",
+    "text": "إصدار بيانات اعتماد (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/verify.name": {
+    "en": "7f67271e211b78e1",
+    "text": "التحقق من بيانات اعتماد (VC API)"
+  },
+  "endpoints.route./vc-api/presentations/verify.name": {
+    "en": "f0ace30e55e137f1",
+    "text": "التحقق من تقديم (VC API)"
+  },
+  "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
+    "en": "96508bdaea6f7f69",
+    "text": "إثبات تقديم (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/derive.name": {
+    "en": "4af3df1e4c1f2f99",
+    "text": "اشتقاق كشف انتقائي (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/status.name": {
+    "en": "d231bdc923e68f8a",
+    "text": "تغيير حالة بيانات اعتماد (VC API)"
+  },
+  "endpoints.route./vc-api/resolve.name": {
+    "en": "39c91a22e95b0c2e",
+    "text": "حلّ معرّف DID"
+  },
+  "endpoints.route./vc-api/dereference.name": {
+    "en": "a7044c968ef56722",
+    "text": "إلغاء مرجع URL لمعرّف DID"
+  },
+  "endpoints.route./.well-known/did.json.name": {
+    "en": "9400b0ba526646db",
+    "text": "وثيقة DID (did:web)"
+  },
+  "endpoints.route./did.json.name": {
+    "en": "64a6ef9ae9a20c82",
+    "text": "وثيقة DID عند مسار did:web (نطاقات الثقة)"
+  },
+  "endpoints.route./applications/:application/did.json.name": {
+    "en": "7d0bcaaf2c946cba",
+    "text": "وثيقة DID لتطبيق"
+  },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "وثيقة DID المنشورة لشخص"
+  },
+  "endpoints.route./.well-known/did-configuration.json.name": {
+    "en": "ea3b5de3683521ad",
+    "text": "بيانات اعتماد ربط النطاق"
+  },
+  "endpoints.route./oid4vp/verifier-certificate.name": {
+    "en": "9e006ca613ebe851",
+    "text": "هوية x509 للمُحقِّق"
+  },
+  "endpoints.route./oid4vp/request/:id.name": {
+    "en": "72816b085ee822bd",
+    "text": "كائن الطلب"
+  },
+  "endpoints.route./oid4vp/response.name": {
+    "en": "041dda1707b526b4",
+    "text": "عنوان URI للاستجابة"
+  },
+  "endpoints.route./enroll/acme/directory.name": {
+    "en": "104ffd34f6a0e8e7",
+    "text": "دليل ACME"
+  },
+  "endpoints.route./enroll/acme/new-nonce.name": {
+    "en": "58500cdad5cfc4d8",
+    "text": "Replay-Nonce جديد"
+  },
+  "endpoints.route./enroll/acme/new-account.name": {
+    "en": "19f7ad85f8039402",
+    "text": "إنشاء حساب أو العثور عليه"
+  },
+  "endpoints.route./enroll/acme/account/:id.name": {
+    "en": "d8e1731e5f342c53",
+    "text": "حساب"
+  },
+  "endpoints.route./enroll/acme/account/:id/orders.name": {
+    "en": "d2c2d051de5a7992",
+    "text": "طلبات حساب"
+  },
+  "endpoints.route./enroll/acme/new-order.name": {
+    "en": "18adf271f8844b21",
+    "text": "إنشاء طلب"
+  },
+  "endpoints.route./enroll/acme/order/:id.name": {
+    "en": "8040f78fc2b0df03",
+    "text": "طلب"
+  },
+  "endpoints.route./enroll/acme/order/:id/finalize.name": {
+    "en": "b6644906e260eb21",
+    "text": "إنهاء طلب"
+  },
+  "endpoints.route./enroll/acme/authz/:id.name": {
+    "en": "56c0850aaa4bcf14",
+    "text": "تفويض"
+  },
+  "endpoints.route./enroll/acme/challenge/:id.name": {
+    "en": "cecfa83a474620dc",
+    "text": "تحدٍّ"
+  },
+  "endpoints.route./enroll/acme/cert/:id.name": {
+    "en": "684bd809e6bf3b64",
+    "text": "تنزيل شهادة"
+  },
+  "endpoints.route./enroll/acme/revoke-cert.name": {
+    "en": "374ba7ba8a1ba9d4",
+    "text": "إبطال شهادة"
+  },
+  "endpoints.route./enroll/acme/key-change.name": {
+    "en": "e5e400a69df90c45",
+    "text": "نقل حساب إلى مفتاح جديد"
+  },
+  "endpoints.route./enroll/acme/renewal-info/:id.name": {
+    "en": "3baccc984057446f",
+    "text": "معلومات التجديد"
+  },
+  "endpoints.route./admin-api/acme.name": {
+    "en": "ccdc212d6fcfff07",
+    "text": "صفحة وحدة تحكم ACME عبر JSON"
+  },
+  "endpoints.route./admin-api/acme/monitor.name": {
+    "en": "96d92e1bcdcc2d27",
+    "text": "تسجيلات ACME عبر JSON"
+  },
+  "endpoints.route./admin-api/acme/:action.name": {
+    "en": "aa09fbaeffaec922",
+    "text": "إجراءات وحدة تحكم ACME"
+  },
+  "endpoints.route./.well-known/est/cacerts.name": {
+    "en": "289fb2c13dc75710",
+    "text": "شهادات CA"
+  },
+  "endpoints.route./.well-known/est/simpleenroll.name": {
+    "en": "1ffad68b1154847d",
+    "text": "التسجيل البسيط"
+  },
+  "endpoints.route./.well-known/est/simplereenroll.name": {
+    "en": "cd138debc7dcace9",
+    "text": "إعادة التسجيل البسيطة"
+  },
+  "endpoints.route./.well-known/est/serverkeygen.name": {
+    "en": "beb605660186e4e5",
+    "text": "توليد المفتاح من جانب الخادم"
+  },
+  "endpoints.route./.well-known/est/csrattrs.name": {
+    "en": "fa0a2c47c0b1dfba",
+    "text": "سمات CSR"
+  },
+  "endpoints.route./.well-known/est/fullcmc.name": {
+    "en": "d8a28887e3416c39",
+    "text": "CMC الكامل"
+  },
+  "endpoints.route./.well-known/est/:label/cacerts.name": {
+    "en": "0808f99538729c98",
+    "text": "شهادات CA (موسومة)"
+  },
+  "endpoints.route./.well-known/est/:label/simpleenroll.name": {
+    "en": "cd563ee6554e6733",
+    "text": "التسجيل البسيط (موسوم)"
+  },
+  "endpoints.route./.well-known/est/:label/simplereenroll.name": {
+    "en": "cf34b617dc30eb0d",
+    "text": "إعادة التسجيل البسيطة (موسومة)"
+  },
+  "endpoints.route./.well-known/est/:label/serverkeygen.name": {
+    "en": "698e0b99518ef7a0",
+    "text": "توليد المفتاح من جانب الخادم (موسوم)"
+  },
+  "endpoints.route./.well-known/est/:label/csrattrs.name": {
+    "en": "a99bf6e38057e196",
+    "text": "سمات CSR (موسومة)"
+  },
+  "endpoints.route./.well-known/est/:label/fullcmc.name": {
+    "en": "9342cd6960af927d",
+    "text": "CMC الكامل (موسوم)"
+  },
+  "endpoints.route./.well-known/est/nonce.name": {
+    "en": "fac4d513cd37ea55",
+    "text": "nonce حداثة الإقرار"
+  },
+  "endpoints.route./.well-known/est/:label/nonce.name": {
+    "en": "228380fc44850d1a",
+    "text": "nonce حداثة الإقرار (موسوم)"
+  },
+  "endpoints.route./admin-api/est.name": {
+    "en": "d52ede6acd0f288e",
+    "text": "صفحة وحدة تحكم EST عبر JSON"
+  },
+  "endpoints.route./admin-api/est/monitor.name": {
+    "en": "d92f192b9774f4df",
+    "text": "تسجيلات EST عبر JSON"
+  },
+  "endpoints.route./admin-api/est/:action.name": {
+    "en": "560ee5483e3bac3e",
+    "text": "الإصدار بمفتاح خادم، أو الإبطال، أو تغيير أسماء المضيفين"
+  },
+  "endpoints.route./.well-known/openid-federation.name": {
+    "en": "d1df780ba25b939c",
+    "text": "تكوين الكيان"
+  },
+  "endpoints.route./oidfed/fetch.name": {
+    "en": "f5422a3881454156",
+    "text": "جلب بيان تابع"
+  },
+  "endpoints.route./oidfed/list.name": {
+    "en": "ce37f0ea513eb35f",
+    "text": "سرد التابعين"
+  },
+  "endpoints.route./oidfed/resolve.name": {
+    "en": "7adde00f12c465ff",
+    "text": "حل كيان"
+  },
+  "endpoints.route./oidfed/trust-mark.name": {
+    "en": "77987668f6339bf8",
+    "text": "نقطة نهاية علامة الثقة"
+  },
+  "endpoints.route./oidfed/extended-list.name": {
+    "en": "b14e63c94c9083ed",
+    "text": "السرد الموسَّع للتابعين"
+  },
+  "endpoints.route./oidfed/collection.name": {
+    "en": "fdaa144094945599",
+    "text": "مجموعة الكيانات"
+  },
+  "endpoints.route./oidfed/subordinate-events.name": {
+    "en": "7a12871efa2aa1bc",
+    "text": "أحداث التابعين"
+  },
+  "endpoints.route./oidfed/trust-mark-status.name": {
+    "en": "5721566a90e07bbb",
+    "text": "حالة علامة الثقة"
+  },
+  "endpoints.route./oidfed/trust-mark-list.name": {
+    "en": "b0d733b58ace3f80",
+    "text": "سرد الكيانات الحاملة لعلامة ثقة"
+  },
+  "endpoints.route./oidfed/historical-keys.name": {
+    "en": "186db2a5169ec661",
+    "text": "المفاتيح التاريخية للاتحاد"
+  },
+  "endpoints.route./oidfed/register.name": {
+    "en": "d04d3abbbcd68dca",
+    "text": "التسجيل الصريح"
+  },
+  "endpoints.route./admin-api/oidfed.name": {
+    "en": "1cf7cd853d6d692e",
+    "text": "صفحة وحدة تحكم OpenID Federation عبر JSON"
+  },
+  "endpoints.route./admin-api/oidfed/:action.name": {
+    "en": "68da5fb8efee3487",
+    "text": "التابعون، والمراسي، وعلامات الثقة، والحل، والمفاتيح"
+  },
+  "endpoints.route./enroll/scep.name": {
+    "en": "7bfb8a0c73122b01",
+    "text": "خادم SCEP"
+  },
+  "endpoints.route./enroll/scep/pkiclient.exe.name": {
+    "en": "8bb99181dc5c31e3",
+    "text": "خادم SCEP (اسم CGI)"
+  },
+  "endpoints.route./enroll/scep/:profile/pkiclient.exe.name": {
+    "en": "b857590b45832439",
+    "text": "خادم SCEP لملف تعريف واحد (اسم CGI)"
+  },
+  "endpoints.route./enroll/scep/:profile.name": {
+    "en": "db710be736714314",
+    "text": "خادم SCEP لملف تعريف واحد"
+  },
+  "endpoints.route./admin-api/scep.name": {
+    "en": "27aaa89dfa182129",
+    "text": "صفحة وحدة تحكم SCEP عبر JSON"
+  },
+  "endpoints.route./admin-api/scep/monitor.name": {
+    "en": "d1775471cb421bca",
+    "text": "تسجيلات SCEP عبر JSON"
+  },
+  "endpoints.route./admin-api/scep/:action.name": {
+    "en": "c335ded81d044226",
+    "text": "التحديات، وشهادة RA، والإبطال، وأسماء المضيفين"
+  },
+  "endpoints.socket.kdc": {
+    "en": "a07cb128332c46ff",
+    "text": "مركز توزيع المفاتيح"
+  },
+  "endpoints.socket.kdcRealm": {
+    "en": "bf03c3bc314da5cf",
+    "text": "مركز توزيع المفاتيح (النطاق {{realm}})"
+  },
+  "endpoints.socket.mainPort": {
+    "en": "6b11a59c1fd5cd82",
+    "text": "شهادات العميل على المنفذ الرئيسي"
+  },
+  "endpoints.socket.mainPortTransport": {
+    "en": "f09855213e0c9733",
+    "text": "TLS (شهادة عميل تُطلب ولا تُشترط أبدًا)"
+  }
+}

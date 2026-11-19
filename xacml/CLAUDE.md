@@ -1756,7 +1756,7 @@ them in order, at least once, to `POST /admin-api/pep-audit`
   answer lost on the way back sends it again; every row names the PEP, its
   process `instance` and the record's `seq`. Suppressing repeats across the
   nodes of a cluster would need a mark on the `ou=peps` entry — a new
-  attribute, its OID and seven catalogs — and was left out on that cost.
+  attribute, its OID and a catalog in every language — and was left out on that cost.
 * **WHAT A ROW CARRIES** is what the PEP's log line carries: never a property
   value or an id an AuthZEN caller sent (decision 9 on #563), never a query
   string, cookie or token from a proxied request. The PEP's error code goes

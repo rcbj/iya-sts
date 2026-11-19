@@ -1,0 +1,2086 @@
+{
+  "ldap.service.bindPolicy": {
+    "en": "ff24480e5b0e0e15",
+    "text": "ينجح كل ربط — أي DN، وأي كلمة مرور، بما فيها المجهولة — باستثناء كلمة المرور الحرفية \"invalid\"، ويُجاب عنها بـ LDAP_INVALID_CREDENTIALS (49) حتى يجد الاختبار السلبي ما يفشل عليه"
+  },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "لا يربط إلا شخص، وعلى LDAPS 636 فقط، وتُتحقق كلمة المرور بمقابلتها بقيمة userPassword المُجزَّأة على مدخله. يُرفض الربط المجهول (48)، وأي ربط على 389 (13)، وكلمة المرور الفارغة (53)، وDN لا يخص شخصًا (49)، وDN أو عنوان تجاوز حد فشل الربط (53) قبل قراءة كلمة المرور؛ أما كلمة المرور الخاطئة، وكلمة المرور الحرفية \"invalid\"، فهما LDAP_INVALID_CREDENTIALS (49)"
+  },
+  "ldap.service.schema": {
+    "en": "0aabcadd26b32a63",
+    "text": "لا شيء. لا يُفرَض أي objectClass ولا تُفحص أي سمة مقابل صياغة، فيجوز أن يحمل المدخل أي سمات يرسلها العميل. الدليل الحقيقي يرفض معظم ذلك."
+  },
+  "ldap.service.authenticationFacts": {
+    "en": "50b11d2cbd23b36a",
+    "text": "حيث يبيّن البروتوكول الذي قبل بيانات الاعتماد كيف قُدِّمت — وهو اليوم شاشة تسجيل الدخول ولا شيء سواها، لأن amr مفردات OIDC — يحمل المدخل أيضًا authnMethod (كل أسلوب من RFC 8176 استخدمه هذا الشخص هنا، متراكمًا)، وmfaAuthenticated (TRUE أو FALSE لأحدث مصادقة، وتُكتب فوقها في كل مرة) وmfaLastAuthTime (متى حدثت المصادقة متعددة العوامل آخر مرة، ولا تُمسح أبدًا). هذه أسماء تخص هذه الخدمة وليست مخططًا. مراسم WebAuthn بعد كلمة المرور تكتب TRUE؛ والمراسم نفسها بلا كلمة مرور تكتب في authnMethod القيمة hwk بلا pwd إلى جانبها وتكتب mfaAuthenticated بالقيمة FALSE، لأن العامل الواحد عامل واحد مهما بلغت مقاومته للتصيد. لا شيء هنا يقرأها: لا يحملها أي رمز ولا تقرر أي نقطة نهاية شيئًا بناءً عليها، تمامًا كما لا تمنح المجموعة هنا شيئًا — باستثناء المجموعتين اللتين تقرران من يجوز له استخدام وحدة تحكم المسؤول، وهو الاستثناء الوحيد في هذا الدليل كله وهو محصور في وحدة التحكم تلك."
+  },
+  "ldap.service.implementation": {
+    "en": "8097f8996f966e83",
+    "text": "ldapjs 3.0.7، مثبَّت كوحدة فرعية node-ldapjs ويُستخدم دون تعديل"
+  },
+  "ldap.service.enforcedRules.0": {
+    "en": "f35b69973b84ae59",
+    "text": "الإضافة التي لا يوجد أصلها هي LDAP_NO_SUCH_OBJECT (32)"
+  },
+  "ldap.service.enforcedRules.1": {
+    "en": "bfd20d58c8b5dd5b",
+    "text": "حذف مدخل له أبناء هو LDAP_NOT_ALLOWED_ON_NONLEAF (66)"
+  },
+  "ldap.service.enforcedRules.2": {
+    "en": "c23d48836f81aaa4",
+    "text": "حذف سمة عبر modify لسمة غير موجودة هو LDAP_NO_SUCH_ATTRIBUTE (16)"
+  },
+  "ldap.service.enforcedRules.3": {
+    "en": "84c96a7e373363b1",
+    "text": "حذف آخر قيمة لسمة يحذف السمة"
+  },
+  "ldap.service.enforcedRules.4": {
+    "en": "a41fc8c3be6cf1bc",
+    "text": "إضافة تحت ou=users يكون اسم المستخدم فيها موجودًا هنا أصلًا هي LDAP_ENTRY_ALREADY_EXISTS (68)، وتسمّي المدخل الذي يحمله. مدخل واحد لكل شخص: اسم المستخدم هو قيمة RDN التي تسمّي المدخل وأي uid يحمله، فـ uid=rcbj وcn=rcbj هما الشخص نفسه ولا يمكن أن يوجد هنا إلا أحدهما. إنه الرفض نفسه الذي تعطيه وحدة التحكم وPOST /admin-api/users/create، والقاعدة نفسها التي يرجع إليها كل بروتوكول هنا عندما يصادق شخصًا"
+  },
+  "ldap.service.specifications.0": {
+    "en": "152af942eb9a86bf",
+    "text": "RFC 4510 (خارطة طريق المواصفة التقنية لـ LDAP)"
+  },
+  "ldap.service.specifications.1": {
+    "en": "ce36f6cc63efd01c",
+    "text": "RFC 4511 (البروتوكول)"
+  },
+  "ldap.service.specifications.2": {
+    "en": "4ef14ce29aa9d0f4",
+    "text": "RFC 4512 (نماذج معلومات الدليل)"
+  },
+  "ldap.service.specifications.3": {
+    "en": "cd7ef4b993066ad2",
+    "text": "RFC 4514 (تمثيل DN بسلسلة)"
+  },
+  "ldap.service.specifications.4": {
+    "en": "b65b5adecdeec710",
+    "text": "RFC 4515 (تمثيل مرشح البحث بسلسلة)"
+  },
+  "ldap.service.sentences.searchScopeRealms": {
+    "en": "a9a6103ce6cbf322",
+    "text": "يجيب بحث الشجرة الفرعية عن نطاق الثقة الذي انطلق منه DN الأساس. {{contexts}} هي السياقات؛ ويُستبعد من بحث أساسه فوقه مدخل ينتمي إلى نطاق ثقة آخر، ويُبلغ بالبحث من أساس نطاق الثقة ذلك نفسه. العملية التي تسمّي DN واحدًا — add أو modify أو delete أو compare أو بحث بنطاق base — يُجاب عنها أينما وُجد ذلك الـ DN، لأن كتابة الـ DN تسمّي نطاق الثقة"
+  },
+  "ldap.service.sentences.searchScopeOne": {
+    "en": "55b2bbab540dbbb4",
+    "text": "لم تُعرَّف نطاقات ثقة، فهناك سياق واحد ({{root}}) وبحث شجرة فرعية منه يجيب عن المخزن كله"
+  },
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "لا تُطلب: `ldap.ldapsDisableOptionalClientCertificate` مفعّل، لذا لا يرسل LDAPS أي CertificateRequest ويُرفض ربط الشهادة (SASL EXTERNAL) لافتقار الشهادة. عطّل ذلك الإعداد لتُطلب من كل اتصال واحدة (اختياريًا)، أو فعّل `ldap.ldapsRequireClientCertificate` لاشتراط واحدة؛ وأي منهما يجعل SASL EXTERNAL متاحًا. يطلب المنفذ الرئيسي ({{port}}) شهادات العميل وفق إعداداته الخاصة."
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "تُطلب ولا تُشترط (اختياري: `ldap.ldapsDisableOptionalClientCertificate` متوقف). يجوز لاتصال يقدّم شهادة تتحقق مقابل مخزن ثقة العميل أن يربط بـ SASL EXTERNAL؛ ومن دونها يربط بكلمة المرور كما سبق."
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "مطلوبة (`ldap.ldapsRequireClientCertificate` مفعّل): يُرفض عند المصافحة اتصال بلا شهادة تتحقق مقابل مخزن ثقة العميل. يجوز للاتصال بعد ذلك الربط بـ SASL EXTERNAL، أو بكلمة المرور كما سبق."
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "c26bf08affa27730",
+    "text": "يربط SASL EXTERNAL الاتصال بوصفه مدخل الشخص الذي تنتمي إليه الشهادة: واحدة أصدرتها هذه الخدمة لشخص له مدخل في نطاق الثقة ذلك، أو واحدة من سلطة شهادات خارجية موثوق بها عبر /admin/tls/trust ومخزّنة، بايتًا ببايت، في userCertificate على مدخل شخص واحد بالضبط في نطاق الثقة ذلك. تُرفض الشهادة الملغاة، أو الخاصة بنطاق ثقة آخر، أو الخاصة بتطبيق، أو الشهادة الخارجية غير المخزّنة على أي مدخل أو المخزّنة على أكثر من مدخل، ولا يُقرأ شيء من الاسم الشائع ولا من الموضوع. لا تُحترم هوية التفويض إلا عندما تسمّي ذلك المدخل نفسه."
+  },
+  "ldap.service.sentences.certificateSource": {
+    "en": "a969a038097605ed",
+    "text": "الشهادة والمفتاح نفسهما اللذان يقدّمهما المنفذ الرئيسي ({{port}}). إنها {{provenance}}: يسلّمها GET /tls/server-certificate بصيغة PEM. مرساة واحدة لكلا المقبسين هي سبب مشاركتهما إياها."
+  },
+  "ldap.service.sentences.autoCreateRule": {
+    "en": "6ddfd5c3a5e8025c",
+    "text": "يظهر مدخل uid=<name>,{{usersDn}} في أول مرة يصادق فيها <name> إلى هذه الخدمة عبر أي بروتوكول. ربط LDAP لا يُنشئ واحدًا (يقدّم DN لا اسم مستخدم) ولا يفعل ذلك عميل OAuth. شهادة عميل TLS متحقَّق منها لا تُنشئ شيئًا: واحدة أصدرتها هذه الخدمة تسمّي شخصًا له مدخل أصلًا، وواحدة من سلطة شهادات خارجية هي المدخل المخزّنة عليه في userCertificate، أو لا أحد — ولا يُقرأ اسمها الشائع ولا موضوعها أبدًا بوصفهما اسمًا. المعرّف اللامركزي شكل آخر وهو ليس اسمًا ولا DN: موضوع did:jwk لبيانات اعتماد صادرة، أيًا كان DID الذي يُقدَّم إلى محقق OID4VP. يوضع مدخله عند uid=did-<12 hex of the SHA-256 of the DID>,{{usersDn}} — فـ did:jwk مكتوبًا كاملًا DN من عدة مئات من المحارف، جلّها مادة مفتاح — مع الإبقاء على المعرّف نفسه كاملًا على المدخل بوصفه didSubject، وعلى طريقته بوصفها didMethod. ابحث عن الشخص بـ didSubject لا بـ uid: في تلك المداخل uid ملخص وdidSubject هو الهوية."
+  },
+  "ldap.spiffe.sourceOfTruth": {
+    "en": "b1ca8ee3d774cf2d",
+    "text": "هذه المداخل هي سجل SPIFFE. يغيّر ldapmodify تحت ou=entries شكل SVID التالي — يغيّر spiffeX509SvidTtl مدة حياته، ويغيّر spiffeDnsName الـ subjectAltName، ويغيّر spiffeId هوية من تكون — لأن لا شيء يخزّنها مؤقتًا. الحاويتان تحملان نوعين مختلفين: المداخل تهيئة والوكلاء سجل، ولهذا لا يمكن تعديل شيء عن وكيل من وحدة التحكم."
+  },
+  "ldap.applications.sourceOfTruth": {
+    "en": "c927447175e35efb",
+    "text": "هذه المداخل هي السجل. يغيّر ldapmodify هنا ما تفعله نقاط نهاية البروتوكول — إضافة قيمة إلى oauthRedirectUri تضيف URI إعادة توجيه يقبلها بعد ذلك وضع RFC 9700 بالمطابقة التامة."
+  },
+  "ldap.federations.sourceOfTruth": {
+    "en": "435fdeccd74e04b0",
+    "text": "هذه المداخل هي السجل. ldapmodify هنا تغيير أمني: يقرر fedSigningCertificate تأكيدات من ستصدّقها هذه الخدمة، ويشغّل fedEnabled شريكًا. لا شيء يخزّنها مؤقتًا."
+  },
+  "ldap.devices.sourceOfTruth": {
+    "en": "fbfeae54369b2897",
+    "text": "هذه المداخل هي سجل الأجهزة: لا شيء يخزّنها مؤقتًا، لذا فإن ldapmodify لـ stsDeviceCompliance هو امتثال الجهاز عند القراءة التالية. يُحجب stsDeviceSecretHash."
+  },
+  "ldap.roles.sourceOfTruth": {
+    "en": "88697020f123dac5",
+    "text": "هذه المداخل هي نصف العضوية في سجل الأدوار. ldapmodify يضيف قيمة إلى roleMemberUser يمنح ذلك الدور، ويُتخذ قرار الإصدار التالي مقابله. ما يتطلب دورًا هو appRequiredRole على مدخل تطبيق تحت ou=applications، وهي حاوية مختلفة."
+  },
+  "ldap.policies.sourceOfTruth": {
+    "en": "4f8877fec63c3904",
+    "text": "هذه المداخل هي مستودع السياسات. يغيّر ldapmodify لـ xacmlPolicyDocument ما يقرره PDP في الطلب التالي مباشرة ولا يُتحقق منه سكونيًا عند الدخول، بخلاف كل كتابة عبر /admin/xacml — فوثيقة يتوقف فحص أنواعها تجيب Indeterminate بدل أن تُرفض."
+  },
+  "ldap.peps.sourceOfTruth": {
+    "en": "b8fc2f8f4bf8c58b",
+    "text": "كل سمة هنا تقريبًا سجل كتبته هذه الخدمة حين سجّل PEP أو سُحب أو أبلغ. السمتان اللتان ليستا كذلك هما xacmlPepEnabled، التي يضبطها المسؤول ولا يمسحها PEP يعيد الاتصال، وxacmlPepNotifyUrl، وهي أحد العناوين الثلاثة التي تتصل بها هذه الخدمة."
+  },
+  "applications.kinds.oauth2-client.label": {
+    "en": "70d50cab8908ac09",
+    "text": "عميل OAuth 2.0"
+  },
+  "applications.kinds.oauth2-client.what": {
+    "en": "348a7be2ebfe0753",
+    "text": "client_id يُقدَّم عند نقطة نهاية التفويض أو الرمز."
+  },
+  "applications.kinds.oauth2-resource-server.label": {
+    "en": "1a0aa8de22952147",
+    "text": "خادم موارد OAuth 2.0"
+  },
+  "applications.kinds.oauth2-resource-server.what": {
+    "en": "58cc9baf4b862f48",
+    "text": "واجهة API تُوجَّه إليها رموز الوصول، وتُسمّى بـ oauthAudience. ليست عميلًا أبدًا: يُرفض client_id الخاص بها عند كل نقطة نهاية يقدّم العميل نفسه عندها."
+  },
+  "applications.kinds.oidc-relying-party.label": {
+    "en": "d1c72d0dc209cf8d",
+    "text": "طرف معتمد OpenID Connect"
+  },
+  "applications.kinds.oidc-relying-party.what": {
+    "en": "af403fd2e4478e84",
+    "text": "client_id نفسه حيث طلب الطلب نطاق openid — الطرف المعتمد عميل OAuth يريد أيضًا ID Token، لذا يحمل السجل عادة كلا النوعين."
+  },
+  "applications.kinds.saml2-service-provider.label": {
+    "en": "d9997212d7ad263b",
+    "text": "مزوّد خدمة SAML 2.0"
+  },
+  "applications.kinds.saml2-service-provider.what": {
+    "en": "f83fcd03aa0aca09",
+    "text": "جمهور تأكيد SAML 2.0 أصدرته هذه الخدمة."
+  },
+  "applications.kinds.saml11-relying-party.label": {
+    "en": "9abb39b3d0f1ed3c",
+    "text": "طرف معتمد SAML 1.1"
+  },
+  "applications.kinds.saml11-relying-party.what": {
+    "en": "4d826e30dbea03d6",
+    "text": "جمهور تأكيد SAML 1.1 — وهو ما يُسلَّم لطرف معتمد WS-Federation افتراضيًا، لذا يظهر هذان الاثنان معًا عادة."
+  },
+  "applications.kinds.wsfed-relying-party.label": {
+    "en": "357be565b6f394e2",
+    "text": "تطبيق WS-Federation"
+  },
+  "applications.kinds.wsfed-relying-party.what": {
+    "en": "8882d3936c581ca7",
+    "text": "wtrealm من طلب wsignin1.0 (القسم 13.2.1)."
+  },
+  "applications.kinds.wstrust-relying-party.label": {
+    "en": "c7d4443f1d20d799",
+    "text": "طرف معتمد WS-Trust"
+  },
+  "applications.kinds.wstrust-relying-party.what": {
+    "en": "27bcd37dd10ee019",
+    "text": "AppliesTo من RequestSecurityToken — الخدمة التي الرمز من أجلها."
+  },
+  "applications.kinds.oid4vp-verifier.label": {
+    "en": "8f530299a9f890c0",
+    "text": "محقق OpenID4VP"
+  },
+  "applications.kinds.oid4vp-verifier.what": {
+    "en": "ecba6c8462d69614",
+    "text": "client_id الذي يقدّمه محقق هذه الخدمة في طلب التفويض."
+  },
+  "applications.kinds.federation-identity-provider.label": {
+    "en": "3f6b9e4e19beb32d",
+    "text": "موفّر هوية متحد"
+  },
+  "applications.kinds.federation-identity-provider.what": {
+    "en": "0d2adcc59a7c1995",
+    "text": "خدمة هوية أجنبية يتحد هذا المثيل معها بوصفه مزوّد خدمة — تصادق الأشخاص إلى هذه الخدمة بدل أن تطلب منها شيئًا، ما يجعلها النوع الوحيد هنا الذي ليس عميلًا. هي في هذا السجل على أي حال، لأن السؤال الذي توجد هذه الحاوية للإجابة عنه هو \"ما الأطراف التي تعاملت معها هذه الخدمة؟\" وشريك الاتحاد أشدها أثرًا: إنه طرف تصدّق هذه الخدمة توقيعه. انظر federation/CLAUDE.md. العلاقة نفسها — نقاط النهاية والشهادة وتعيين السمات — تعيش تحت ou=federations لا هنا؛ هذا السجل هو الشريك بوصفه طرفًا، وتلك هي الترتيب معه."
+  },
+  "applications.kinds.kerberos-service.label": {
+    "en": "c60a52be697d41a7",
+    "text": "أصيل خدمة Kerberos"
+  },
+  "applications.kinds.kerberos-service.what": {
+    "en": "066a9468344f9c0d",
+    "text": "اسم أصيل خدمة أُصدرت له تذكرة، أو طُلب من جهة القبول أن تكونه."
+  },
+  "applications.kinds.gnap-client.label": {
+    "en": "ea237766411168ed",
+    "text": "مثيل عميل GNAP"
+  },
+  "applications.kinds.gnap-client.what": {
+    "en": "42cf02b486bd48ab",
+    "text": "مفتاح (أو معرّف مثيل) قدّم طلب منحة GNAP."
+  },
+  "applications.kinds.gnap-resource-server.label": {
+    "en": "5a9da6b3e05542bf",
+    "text": "خادم موارد GNAP"
+  },
+  "applications.kinds.gnap-resource-server.what": {
+    "en": "dcbb24cab569794d",
+    "text": "مفتاح استدعى واجهة API المواجهة لـ RS: الاستبطان، أو تسجيل مجموعة الموارد، أو اشتقاق رمز لاحق."
+  },
+  "applications.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "applications.protocols.oauth2.what": {
+    "en": "fe4f3acd275e39a1",
+    "text": "client_id عند نقطتي نهاية التفويض والرمز."
+  },
+  "applications.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "applications.protocols.oidc.what": {
+    "en": "1ce7cc23cb0f3a91",
+    "text": "client_id نفسه الذي يطلب نطاق openid، وبالتالي ID Token. الطرف المعتمد هو عميل OAuth، لذا يُعلَّم هذان الاثنان معًا عادة؛ وتعليم هذا وحده جائز ويقول إن المدخل لتدفق OIDC."
+  },
+  "applications.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "applications.protocols.saml2.what": {
+    "en": "cae55da402c3a60c",
+    "text": "entityID لمزوّد خدمة في ملف تعريف Web Browser SSO عند /saml2، أو جمهور تأكيد SAML 2.0 صادر في أي موضع آخر هنا."
+  },
+  "applications.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "applications.protocols.saml11.what": {
+    "en": "0f0b81ee62d1009e",
+    "text": "طرف معتمد لملفي تعريف المتصفح عند /saml11 — وما يُسلَّم لتطبيق WS-Federation افتراضيًا، ولهذا يُعلَّم هذان الاثنان معًا عادة."
+  },
+  "applications.protocols.wsfed.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "applications.protocols.wsfed.what": {
+    "en": "cd68aba0fbb971af",
+    "text": "wtrealm في طلب wsignin1.0 (القسم 13.2.1)."
+  },
+  "applications.protocols.wstrust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "applications.protocols.wstrust.what": {
+    "en": "9cedca1464312341",
+    "text": "AppliesTo في RequestSecurityToken — الخدمة التي يُصدر الرمز من أجلها."
+  },
+  "applications.protocols.krb5.label": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "applications.protocols.krb5.what": {
+    "en": "33fabbb450755342",
+    "text": "اسم أصيل خدمة يجوز إصدار تذكرة له، أو يجوز أن يُطلب من جهة القبول أن تكونه. يغطي هذا SPNEGO (HTTP Negotiate، RFC 4559) إلى خدمة محمية بـ Kerberos، وتحمل التذكرة نفسها. تسجيل دخول الأشخاص إلى هذا التطبيق بـ SPNEGO ليس عائلة: أدرج spnego بين آليات العامل الأول لسياسة المصادقة التي يسمّيها التطبيق (appAuthnPolicy)، وأعلن البروتوكول الذي يحصل التطبيق عبره على رموزه أو تأكيداته."
+  },
+  "applications.protocols.oid4vci.label": {
+    "en": "6a5c76ded81999e5",
+    "text": "OpenID4VCI"
+  },
+  "applications.protocols.oid4vci.what": {
+    "en": "485e6cdaf91b1a44",
+    "text": "محفظة تجمع بيانات اعتماد قابلة للتحقق من المُصدر. لا تقدّم المحفظة معرّف تطبيق خاصًا بها في ذلك التدفق — تصادق كعميل OAuth وتُسجَّل كذلك — لذا ليس لهذه العائلة نوع ولن يعلّمها شيء على أنها شُوهدت."
+  },
+  "applications.protocols.oid4vp.label": {
+    "en": "e2031ac8e75c04a0",
+    "text": "OpenID4VP"
+  },
+  "applications.protocols.oid4vp.what": {
+    "en": "23aae2a858af04d4",
+    "text": "client_id لمحقق في طلب تفويض يطلب عرضًا."
+  },
+  "applications.protocols.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "الاتحاد"
+  },
+  "applications.protocols.federation.what": {
+    "en": "51f9dc86ae390cb9",
+    "text": "خدمة هوية أجنبية على الجانب الآخر من علاقة اتحاد. إنها الشيء الوحيد في هذا السجل الذي ليس عميلًا لهذه الخدمة — تصادق الأشخاص إليها. تُسجَّل مشاهدتها تحت البروتوكول الذي تتحدث به العلاقة، لذا فإن وسم البروتوكول على مثل هذا المدخل لا يتميز عن عميل عادي والنوع هو ما يفرق بينهما — وهذا كل سبب مطابقة هذا الجدول على الأنواع. تعيش العلاقة نفسها تحت ou=federations؛ انظر federation/CLAUDE.md."
+  },
+  "applications.protocols.ldap.label": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "applications.protocols.ldap.what": {
+    "en": "9e2b2e44593ddedf",
+    "text": "عميل دليل يربط على 389 أو LDAPS 636. ينجح كل ربط هنا ولا يسمّي أي منها تطبيقًا، لذا لن يُسجَّل شيء مشاهدة لهذه العائلة — وتعليمها يقول غاية المدخل ولا أكثر."
+  },
+  "applications.protocols.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "applications.protocols.scim.what": {
+    "en": "ce2bae136c7ecd7f",
+    "text": "عميل تزويد عند /scim/v2. تصادق تلك الواجهة المتصل — بأي من المخططات الستة التي يسمّيها القسم 2 من RFC 7644 — لا بمعرّف تطبيق، لذا، كما مع LDAP، لا شيء يكتب هذه العائلة في appProtocol."
+  },
+  "applications.protocols.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "applications.protocols.spiffe.what": {
+    "en": "6d81b6713ac464a6",
+    "text": "حمل عمل على Workload API، أو وكيل أو مسؤول على SPIRE Server API. تحصل هوية SPIFFE على مدخل خاص بها تحت ou=spiffe لا على واحد هنا (انظر spiffe/CLAUDE.md)، لذا هذا إعلان وليس سجلًا أبدًا."
+  },
+  "applications.protocols.mtls.label": {
+    "en": "84f3396586f6fc6d",
+    "text": "TLS / TLS المتبادل"
+  },
+  "applications.protocols.mtls.what": {
+    "en": "eb9407b59ae6b377",
+    "text": "عميل يصادق إلى نقطة نهاية الرمز بموجب RFC 8705. شهادة عميل TLS صادرة للتطبيق من قسم بيانات الاعتماد تصادقه بموجب tls_client_auth بلا تسجيل شيء؛ وشهادة من سلطة أخرى تحتاج واحدًا من معلمات الموضوع الخمس (oauthTlsClientAuthSubjectDn والسمات الأربع oauthTlsClientAuthSan*)، ويقرأ self_signed_tls_client_auth الـ x5c في jwks أو oauthTlsClientCertificateThumbprint — فتعليم هذا المربع ملاحظة للذات، وتلك هي التهيئة."
+  },
+  "applications.protocols.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "applications.protocols.ssf.what": {
+    "en": "4042b281e588be6c",
+    "text": "مستقبل Shared Signals: شيء يتفق على دفق عند /ssf/stream ثم تُسلَّم إليه Security Event Tokens. معرّفه هو ما صادق به حين أنشأ الدفق، وهو `aud` الذي تحمله تلك الـ SETs، ونقطة نهاية التسليم هي حيث يذهب الدفع. لا يُقرأ أي منهما كإذن — يحمل الدفق نقطة نهاية التسليم الخاصة به وهذا المدخل هو حيث يدوّن المشغّل ما يُتوقَّع أن يكونه المستقبل، إلى جانب كل ما يكونه ذلك التطبيق سواه."
+  },
+  "applications.protocols.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "applications.protocols.gnap.what": {
+    "en": "86edbf0cbc0fcbab",
+    "text": "مثيل عميل GNAP، أو خادم موارد GNAP، أو كلاهما: طرف يثبت حيازة مفتاح أمام /gnap (RFC 9635) أو أمام واجهة API المواجهة لـ RS (RFC 9767). مفتاحه هو gnapKey (كائن مفتاح عام) أو gnapKeyReference مع gnapSymmetricKey مختوم؛ وعناوين URI للإنهاء عناوين رجوع كأي غيرها؛ ويحمل خادم الموارد المواقع التي يجيب عنها، وبعد أن يسجّل مجموعة موارد، مفتاح جذر macaroon الذي يتحقق به."
+  },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "خادم موارد User-Managed Access 2.0: عميل OAuth يحصل على رمز واجهة API الحماية لـ /uma، ويسجّل الموارد التي يحتفظ بها لمالك مورد، ويطلب تذاكر إذن لها، وهو جمهور رموز الطرف الطالب الصادرة لها. إعلان العائلة هو ما يقبله؛ ويتيح umaOwnsResources للتطبيق نفسه أن يكون مالكًا."
+  },
+  "applications.protocols.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "applications.protocols.acme.what": {
+    "en": "a497ff001f194be7",
+    "text": "تسجيل شهادات عبر ACME (RFC 8555) عند /enroll/acme: حساب ACME مربوط بهذا التطبيق بمفتاح External Account Binding. تسمّي شهاداته urn:sts:application:<id> وتُحفظ على هذا المدخل."
+  },
+  "applications.protocols.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "applications.protocols.est.what": {
+    "en": "cc7e6d70b3c9a590",
+    "text": "تسجيل شهادات عبر EST (RFC 7030) عند /.well-known/est: هذا التطبيق يصادق بمعرّف العميل وسرّه، أو بشهادة أصدرها له نطاق الثقة هذا."
+  },
+  "applications.protocols.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "applications.protocols.scep.what": {
+    "en": "3aa1a8167ba7b6a1",
+    "text": "تسجيل شهادات عبر SCEP (RFC 8894) عند /enroll/scep: كلمة مرور تحدٍّ للاستخدام مرة واحدة صُنعت لهذا التطبيق."
+  },
+  "applications.protocols.did.label": {
+    "en": "be52dffd72816927",
+    "text": "المعرّف اللامركزي (DID)"
+  },
+  "applications.protocols.did.what": {
+    "en": "ccfbaceacd779cc0",
+    "text": "DID من W3C يصف هذا التطبيق: did:web:<host>[:realm:<id>]:applications:<identifier>، وتعلن هذه الخدمة وثيقته عند <base>/applications/<identifier>/did.json. تنشر الوثيقة المفاتيح العامة في didPublicKeyJwk (ولّد زوج مفاتيح، أو الصق النصف العام من مفتاحك)، والخدمات في didService وعناوين URI في didAlsoKnownAs. لا يُصدر شيء عبر هذه العائلة: إنها كيف يُعرَّف التطبيق وتُوجد مفاتيحه."
+  },
+  "applications.protocols.secret-destination.label": {
+    "en": "c9d21f45ee42c8f9",
+    "text": "وجهة دفع الأسرار"
+  },
+  "applications.protocols.secret-destination.what": {
+    "en": "c604726c3f603150",
+    "text": "مدير أسرار تدفع هذه الخدمة إليه كلمة مرور حساب خدمة بعد تدويرها (#221): AWS Secrets Manager أو Google Cloud Secret Manager أو Azure Key Vault أو محرك HashiCorp Vault / OpenBao KV الإصدار 2 — وفي وضع التطوير فقط، ملف. يجب أن يكون السر موجودًا هناك مسبقًا: الدفع يكتب إصدارًا جديدًا ولا ينشئ واحدًا أبدًا. بيانات اعتماد الكتابة (secretDestCredential) مختومة على هذا المدخل ولا تُعرض أبدًا. لا يُصدر شيء عبر هذه العائلة."
+  },
+  "applications.protocols.scim-client.label": {
+    "en": "9be47ed83dd2d7b2",
+    "text": "عميل SCIM (تزويد صادر)"
+  },
+  "applications.protocols.scim-client.what": {
+    "en": "b4c33bcec8578230",
+    "text": "مزوّد خدمة SCIM 2.0 بعيد تدفع هذه الخدمة إليه المستخدمين والمجموعات (#552): موارد RFC 7643 عبر RFC 7644، تُنشأ أو تُستبدل أو تُرقَّع، وتُعطَّل أو تُحذف مع تغيّر الدليل، وتُوفَّق عند الطلب أو وفق جدول. يصادق بـ HTTP Basic، أو برمز client_credentials لـ OAuth 2.0، أو بشهادة عميل TLS؛ وكل بيانات اعتماد مختومة على هذا المدخل ولا تُعرض أبدًا. يُهيأ في البروتوكولات → SCIM → العملاء. لا يُصدر شيء عبر هذه العائلة."
+  },
+  "applications.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "الصنف المجرد الذي يحمله كل مدخل."
+  },
+  "applications.schema.objectClasses.applicationProcess.what": {
+    "en": "dd82f17846370ea7",
+    "text": "صنف الكائن المسجَّل الوحيد الذي يلائم تطبيقًا. يجلب cn وdescription وseeAlso وou وl — لذا فإن اسم التطبيق هنا سمة قياسية وإن تعذّر أن يكون كذلك أي شيء آخر عنه."
+  },
+  "applications.schema.objectClasses.stsApplication.what": {
+    "en": "1687dbb8042b2835",
+    "text": "مخترَع، لأنه لا مخطط LDAP مسجَّل فيه client_id، ولا مجموعة عناوين URI لإعادة التوجيه، ولا entityID، ولا اسم أصيل خدمة. كل منتج يخزّن عملاء OAuth يبقيهم في قاعدة بياناته لا في الدليل، فلم يكن هناك ما يُستعار. هذه أسماء هذه الخدمة على النحو الذي عليه x509subject وdidSubject أصلًا."
+  },
+  "applications.schema.attributes.appIdentifier.what": {
+    "en": "db19692c7629ad26",
+    "text": "المفتاح: المعرّف تمامًا كما قدّمه البروتوكول. قد يكون cn الخاص بالمدخل ملخصًا له حيث يكون أطول من أن يكون RDN مقروءًا، فهذه هي السمة التي يُبحث بها — الترتيب نفسه الذي لـ didSubject على شخص مسمّى بـ DID."
+  },
+  "applications.schema.attributes.cn.what": {
+    "en": "6fc8c608a7cfc89a",
+    "text": "قيمة RDN: المعرّف نفسه، أو app-<12 hex> حيث يزيد ذلك على 64 محرفًا."
+  },
+  "applications.schema.attributes.appName.what": {
+    "en": "9193fd826474105f",
+    "text": "بماذا يُدعى في صفحة. يوفّر التسجيل واحدًا؛ وإلا فالمعرّف هو الاسم، لأن اختراع اسم ودّي لمعرّف مبهم اختراع حقيقة."
+  },
+  "applications.schema.attributes.appHomePageUrl.what": {
+    "en": "bb7f9df5947fbef1",
+    "text": "الصفحة الرئيسية الخاصة بالتطبيق: حيث يذهب الشخص للوصول إليه، وبالتالي حيث يبدأ تسجيل الدخول إليه. إنها ما يربط إليه /portal/applications كل صف، والمدخل الذي بلا واحدة يُرسم هناك بلا رابط لا بعنوان مخمَّن. مُعلَن ولا يُشتق أبدًا — عناوين URI لإعادة التوجيه إلى جانبه استدعاءات راجعة لا واجهات أمامية، فلا شيء يحسب هذا منها. http أو https فقط، لأنه يصبح href."
+  },
+  "applications.schema.attributes.appLaunchProtocol.what": {
+    "en": "cbbe60c9e914df65",
+    "text": "أي بروتوكول يستخدمه /launch/{app} لهذا التطبيق عندما لا يسمّي الرابط واحدًا ويكون تسجيل الدخول بمبادرة موفّر الهوية مفعّلًا لأكثر من واحد: saml2 أو saml11 أو wsfed أو oidc."
+  },
+  "applications.schema.attributes.appCorsOrigin.what": {
+    "en": "03bcebb131e7b340",
+    "text": "الأصول التي يجوز لصفحة متصفح أن تستدعي منها هذه الخدمة لهذا التطبيق — `https://app.example.com`، أصل واحد مطابق تمامًا لكل قيمة، بلا مسار وبلا حرف بدل. لا يُجاب الطلب الذي يسمّي هذا التطبيق عميلًا له (client_id، أو بيانات اعتماد Basic، أو تأكيد عميل، أو رمز وصول صادر له) بـ Access-Control-Allow-Origin إلا عندما يكون Origin مدرجًا هنا؛ والطلب الذي لا يسمّي عميلًا البتة — الاكتشاف، أو JWKS، أو وثيقة DID، أو طلب CORS التمهيدي — يُجاب لأصل مدرج على أي تطبيق في نطاق الثقة. الفراغ لا يسمح بأي أصل لطرف ثالث، في كلا الوضعين. أصول هذه الخدمة نفسها (مستمعوها، وglobal.publicBaseUrl، والمصحح المضمّن، وglobal.corsOrigins) لا تحتاج إلى إدراج. يُطبَّع عند الكتابة: المخطط والمضيف بحروف صغيرة، ويُسقط المنفذ الافتراضي."
+  },
+  "applications.schema.attributes.appKind.what": {
+    "en": "33629ff0f1ba7b81",
+    "text": "ما يكونه هذا التطبيق، قيمة واحدة لكل دور شُوهد فيه. التعدد هو الحالة العادية وهو المقصود: عميل OAuth يطلب نطاق openid هو أيضًا طرف معتمد."
+  },
+  "applications.schema.attributes.appProtocol.what": {
+    "en": "f52b7b33a4356dba",
+    "text": "عائلات البروتوكول التي ظهر فيها، متراكمة."
+  },
+  "applications.schema.attributes.appAllowedProtocol.what": {
+    "en": "45439186294a129f",
+    "text": "عائلات البروتوكول المُعلَن هذا التطبيق لها، قيمة واحدة لكل عائلة، من الجدول المغلق الذي ينشره PROTOCOLS. إنه التوأم المُعلَن لـ appProtocol أعلاه ولا يجوز قراءة الاثنين كشيء واحد: تلك السمة ما حدث ولا يمكن تعديلها، وهذه ما قاله أحد إن التطبيق من أجله وتُعلَّم في /admin/applications/new قبل أن يتصل قط. لا يمنح شيئًا. في وضع المنتج ترفض سياسة الإصدار إصدارًا عبر عائلة لا تسمّيها — فيُرفض رمز وصول لتطبيق مُعلَن لـ SAML 2.0 وحده (STS-XACML-0084)؛ وفي التطوير لا ترفض شيئًا. إذا لم يُعلَن لأي شيء، لا يُرفض شيء في أي من الوضعين."
+  },
+  "applications.schema.attributes.appAuthorizationServer.what": {
+    "en": "c825e716fe988b04",
+    "text": "أي خوادم تفويض استخدمها هذا العميل، بالاسم في مساراتها — قيمة واحدة لكل خادم شُوهد عنده. تنشر هذه العملية عدة منها، لكل قدراته ونقاط نهايته تحت /{id}/oauth2/…، ويجوز لكل عميل استخدام كل واحد منها: لا شيء هنا يقيّد عميلًا بخادم، فهذا يسجّل أين كان لا أين يجوز له أن يذهب. متراكم، لأن عميلًا يتحدث إلى اثنين منهما عميل واحد بقيمتين لا عميلان."
+  },
+  "applications.schema.attributes.description.what": {
+    "en": "81229d2596ad5f00",
+    "text": "ما هذا التطبيق، في جملة. قيمة واحدة: إلى أن يكتب أحد جملة، تقول كيف وصل التطبيق إلى هنا أول مرة."
+  },
+  "applications.schema.attributes.appFirstSeen.what": {
+    "en": "035402abf1f3f295",
+    "text": "GeneralizedTime، متى قُدِّم هذا المعرّف أول مرة."
+  },
+  "applications.schema.attributes.appLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime، أحدث وقت."
+  },
+  "applications.schema.attributes.appAuthentications.what": {
+    "en": "e453d78bb1daee11",
+    "text": "كم من بيانات اعتماد قبلتها هذه الخدمة لهذا التطبيق. تُسنَد عند كل تغيير — فعدّاد تتراكم قيمه لا معنى له — وهو رقم حي في مدخل دليل، ومن الغرابة بما يكفي ليُقال صراحة: الدليل الحقيقي لا يحتفظ بواحد."
+  },
+  "applications.schema.attributes.appSessions.what": {
+    "en": "74c806c6cf9b69f8",
+    "text": "كم من جلسات تسجيل دخول متصفح متمايزة شاركته. تُعد من معرّف الجلسة الذي يمر عبر قمع المصادقة، فمنحة مباشرة بلا جلسة متصفح خلفها لا تضيف شيئًا."
+  },
+  "applications.schema.attributes.appUsers.what": {
+    "en": "78bcd4b5578f86b8",
+    "text": "كم من هويات متمايزة صادقت من أجله. الهويات نفسها غير مدرجة هنا: وإلا لوضع تطبيق يستخدمه ألفان من الأشخاص ألفي قيمة على مدخل واحد."
+  },
+  "applications.schema.attributes.appLastSession.what": {
+    "en": "74b4f32d920e36d9",
+    "text": "أحدث معرّف لجلسة تسجيل دخول. إنه ما يُعد appSessions مقابله — ومعرّف مختلف يزيد العد — وهو على المدخل لا في الذاكرة لأن المدخل هو المخزن: من دونه كانت إعادة تشغيل بلا أي تغيير ستعيد عد الجلسة المعدودة أصلًا."
+  },
+  "applications.schema.attributes.appLastUser.what": {
+    "en": "a33e3ab766bdbaf9",
+    "text": "أحدث هوية، للسبب نفسه وبالقيد نفسه: يعد تغيّر المستخدم لا مجموعة متمايزة، وهو صحيح للحالة العادية وينقص عد من يتناوب بين تطبيقين. مذكور في seen() حيث تُحسم المقايضة."
+  },
+  "applications.schema.attributes.appRegistered.what": {
+    "en": "1ee5893663bda0e9",
+    "text": "TRUE عندما مر هذا التطبيق بتسجيل عميل ديناميكي هنا، وFALSE عندما يكون مجرد client_id ظهر. يسجّل كيف وصل التطبيق إلى هنا لا ما يُحتسب: يحكم وضع RFC 9700 على العميل مقابل oauthRedirectUri الخاص به كلما حمل المدخل واحدًا، كيفما وصل، ومقابل إعداد oauth2.redirectUris فقط عندما لا يحمل شيئًا — وهو ما يرفضه وضع OAuth 2.1 بدل ذلك. غياب token_endpoint_auth_method يعني client_secret_basic لعميل مسجَّل ولا شيء لواحد صُنع يدويًا."
+  },
+  "applications.schema.attributes.appRegisteredBy.what": {
+    "en": "7472cd23e6e908b3",
+    "text": "كيف سُجِّل هذا التطبيق، حين سُجِّل: \"administrator\" (أُنشئ في /admin/applications/new أو عبر واجهة API الإدارة)، \"rfc7591\" (POST /oauth2/register)، \"ldap:<bound DN>\" (إضافة LDAP تحت ou=applications، #504؛ \"ldap\" لمن لم يُربَط) أو \"startup\" (أحد عملاء هذه الخدمة المبذورين). غائب عن تطبيق ظهر فحسب. يكتبه هذا السجل وإضافة LDAP، التي تبقي قيمة أعطاها كاتبها؛ وتعديل LDAP لا يختمها أبدًا. في المنتج هو ما يجعل التطبيق مخدومًا (#496): مدخل بدونه — واحد دوّنته مشاهدة في التطوير — يُجاب عنه كأنه لا تطبيق عند كل باب بروتوكول."
+  },
+  "applications.schema.attributes.appFederationRegistration.what": {
+    "en": "f86a04098367f409",
+    "text": "\"automatic\" (أول طلب مصادقة موقَّع له) أو \"explicit\" (أُرسلت Entity Configuration بـ POST إلى /oidfed/register)."
+  },
+  "applications.schema.attributes.appFederationExpiresAt.what": {
+    "en": "0ff15cde7d7b84d0",
+    "text": "متى ينتهي التسجيل، بالثواني منذ الحقبة: انتهاء Trust Chain نفسها، أو oidfed.registrationLifetimeS إن حلّ أولًا."
+  },
+  "applications.schema.attributes.appFederationTrustAnchor.what": {
+    "en": "ea39ae6600e267d6",
+    "text": "مرساة الثقة التي انتهت سلسلتها عندها."
+  },
+  "applications.schema.attributes.oauthClientId.what": {
+    "en": "be5cd98b933adf94",
+    "text": "client_id، وسمة المعرّف لثلاث عائلات: طرف معتمد OpenID Connect هو عميل OAuth، ومحفظة تجمع بيانات اعتماد عند مُصدر OpenID4VCI تصادق كواحد، فتعلن الثلاثة اسمها هنا لا في ثلاث سمات تكون ثلاث تهجئات لحقيقة واحدة. يساوي عادة appIdentifier، وهو ما تكتبه مشاهدة بروتوكول وما تكتبه عملية الإنشاء عندما يُترك هذا فارغًا (#393)؛ والقيمة الثانية client_id يجيب عنه هذا التطبيق أيضًا — معرّف لكل بيئة — ولهذا يتراكم هذا بدل أن يُسنَد. قائمة تُكتب عند الإنشاء هي القائمة كلها. غائب عن مدخل لم تُعلَن له أي عائلة OAuth."
+  },
+  "applications.schema.attributes.oauthAudience.what": {
+    "en": "85845f64442f584e",
+    "text": "الجمهور الذي يجيب عنه هذا التطبيق — `aud` الذي يحمله رمز وصول موجَّه إليه، وما يضعه عميل في `audience` (أو `resource`) من القسم 2.1 من RFC 8693 عندما يبادل رمزًا للوصول إلى هذا التطبيق. إنه تهجئة OAuth لحقيقة تسجّلها هنا أصلًا ثلاث عائلات أخرى تحت أسمائها: `wstrustAppliesTo` هو الشيء نفسه في RequestSecurityToken و`samlEntityId` هو الشيء نفسه في AudienceRestriction لتأكيد، وسمة واحدة تحمل الثلاثة تصير سلسلة واحدة عليها أن تعني أي بروتوكول سأل آخرًا.\n\nإنه مُعلَن — لا أحد يقدّم جمهورًا على أنه اسمه، فلا شيء هنا يكتبه ولا يمكن اشتقاقه — وهو URI لا client_id لأن ذلك ما يكونه الجمهور: المورد، لا العميل الذي يستدعيه. تعدد القيم هو الحالة العادية (اسم مضيف لكل بيئة)، ولهذا يتراكم.\n\n**يُقرأ، وهذا ما يجعله الاستثناء** بين سمات الإعلان إلى جانبه. يبحث تبادل الرموز عن `audience` هنا — forAudience() — حتى يسمّي تفويض مسجَّل لـ `https://esb1.example.com` التطبيق `esb1` في /admin/delegation وفي صورته، بدل رسم مربع لـ URL لا يذكره شيء آخر في السجل. إنه بحث لا إذن: جمهور لم يسجّله أحد يُبادل من أجله تمامًا كما سبق ويُسجَّل حرفيًا، لأن خدمة ترفض كانت ستزيل حالة اختبار لا أن تضيف واحدة."
+  },
+  "applications.schema.attributes.oauthClientSecret.what": {
+    "en": "3acdc90938720b6b",
+    "text": "الأسرار التي سكّتها هذه الخدمة أو أُعطيت إياها. كل قيمة مختومة تحت مفتاح تشفير المفاتيح حيثما تحتفظ العملية بواحد دائم (منذ 2026-10-01)، فقراءة الدليل وصف قاعدة البيانات والنسخة الاحتياطية تحمل نصًا مشفرًا؛ ومن دون واحد (التطوير) تكون بنص واضح. تعرضها وحدة التحكم و/admin-api، من خلف بيانات اعتماد، مفتوحة. لا تُكتب أبدًا في سجل التدقيق.\n\nعدة منذ 2026-10-01، كل منها سجل: {\"id\",\"secret\",\"created\",\"expires\",\"description\"}، والوقتان بالثواني منذ الحقبة و`expires` قيمته 0 تعني أبدًا. كل سر غير منتهٍ يصادق؛ وأحدث سر غير منتهٍ هو ما توقّع به هذه الخدمة وتشفّر وهو client_secret الذي يعيده RFC 7591 وRFC 7592. قيمة مجردة (ldapmodify، أو إسناد) سر بلا انتهاء؛ والإسناد يستبدل كل سر، ويضيف قسم بيانات الاعتماد ويزيل ويدوّر واحدًا في كل مرة، بحد أقصى oauth2.clientSecretsMax."
+  },
+  "applications.schema.attributes.oauthRedirectUri.what": {
+    "en": "36056278a77af2f2",
+    "text": "عناوين URI لإعادة التوجيه المسجَّلة من تسجيل، وأي redirect_uri قبلتها هذه الخدمة للتطبيق إلى جانبها. الاثنان ليسا الادعاء نفسه ولا يدمجهما السجل بصمت — انظر appRedirectUriObserved."
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "حيث يجوز لـ /uma/claims أن يعيد الطرف الطالب إلى هذا العميل بعد جمع الادعاءات (القسم 3.3.2 من UMA 2.0 Grant، claims_redirect_uri). تُطابق مطابقة تامة؛ وclaims_redirect_uri غير المدرجة هنا يُبلَّغ بها الشخص ولا يُعاد التوجيه إليها أبدًا."
+  },
+  "applications.schema.attributes.appRedirectUriObserved.what": {
+    "en": "8ef752a64a9931a4",
+    "text": "redirect_uri شُوهد في طلب تفويض أجابته هذه الخدمة. تُبقى منفصلة عن oauthRedirectUri لأن \"مسجَّل\" و\"مستخدَم\" حقيقتان مختلفتان، والقسم 2.1 من RFC 9700 كله عن عدم الخلط بينهما: فحص المطابقة التامة يقرأ القائمة المسجَّلة، وهذا دليل على ما يفعله العميل فعلًا."
+  },
+  "applications.schema.attributes.appReturnAddressObserved.what": {
+    "en": "c0072e90e57245a4",
+    "text": "أي عناوين رجوع على هذا المدخل لم يسجّلها أحد قط. كل قيمة هي `<attribute> <address>` — مثل `samlAssertionConsumerService https://sp.example.com/acs` — وتعلّم عنوانًا سمّاه طلب في وضع التطوير، يكتبه التطوير على المدخل لأنه يصدّق كل عنوان. يعامل وضع المنتج العنوان المعلَّم على أنه غير مسجَّل ويرفضه تمامًا كما يرفض عنوانًا ليس على المدخل أصلًا، فنطاق ثقة يُنقل من التطوير إلى المنتج لا يثق بهدوء بما تعلمه التطوير. يؤكّد المشغّل واحدًا (تزول العلامة ويبقى العنوان)، أو يطرح واحدًا (يزول الاثنان)، أو يكتب العنوان صراحة فيؤكَّد بذلك. العناوين المسجَّلة قبل وجود هذه السمة لا تحمل علامة ولا تُميَّز عن المسجَّلة — راجع تلك يدويًا."
+  },
+  "applications.schema.attributes.oauthPostLogoutRedirectUri.what": {
+    "en": "2008a5c4fcddceb4",
+    "text": "post_logout_redirect_uris المسجَّلة، التي يطابقها RP-Initiated Logout مطابقة تامة، في كل وضع (#124)."
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutUri.what": {
+    "en": "8c640a5c7d635f32",
+    "text": "حيث يُخبَر هذا العميل أن المستخدم سجّل الخروج — frontchannel_logout_uri في القسم 2 من OpenID Connect Front-Channel Logout 1.0. تحمّله صفحة تسجيل الخروج في iframe مخفي، مع iss وsid على سلسلة الاستعلام عندما يطلبهما العميل. أحادي القيمة لأن المواصفة تعرّف URI واحدًا لكل عميل، بخلاف عناوين URI لإعادة التوجيه إلى جانبه؛ والعميل الذي لم يُسجَّل له شيء لا يُخطَر البتة ويُدرج في /logout على هذا النحو بدل أن يُتجاوز بصمت."
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutSessionRequired.what": {
+    "en": "501fcc040a4dd31f",
+    "text": "TRUE إذا كان هذا العميل يتطلب `iss` و`sid` في الإشعار أعلاه — frontchannel_logout_session_required في القسم 2 من Front-Channel Logout 1.0. يهم ذلك لأن طرفًا معتمدًا بعدة جلسات في متصفح واحد لا يستطيع أن يعرف أيها انتهت بلا sid، والقسم 2 من RFC 7591 يجعل القيمة المنطقية المحذوفة FALSE لا مجهولة — فغياب القيمة هنا يعني أن العميل لم يطلب، وهي حقيقة مختلفة عن كون العميل لم يسجّل."
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutUri.what": {
+    "en": "3b143ba0baa349f2",
+    "text": "حيث ترسل هذه الخدمة Logout Token عندما يسجّل المستخدم الخروج — backchannel_logout_uri في القسم 2.2 من OpenID Connect Back-Channel Logout 1.0. كل تسجيل خروج لجلسة أُصدر لهذا العميل رد تفويض عليها يرسل واحدًا، من خادم إلى خادم، بعد أن يكون تسجيل الخروج قد أجاب، عبر السياسة الصادرة (https مع التحقق من الشهادة؛ بلا عنوان داخلي في وضع المنتج). أحادي القيمة، كـ URI القناة الأمامية: تعرّف المواصفة واحدًا لكل عميل. https بلا جزء؛ وhttp فقط لعميل سرّي وفقط حيث ترسل السياسة الصادرة عبر http (federation.outboundAllowHttp، وضع التطوير؛ القسم 2.2، #123)."
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutSessionRequired.what": {
+    "en": "ceb948059d9c1807",
+    "text": "TRUE إذا كان هذا العميل يتطلب `sid` في Logout Token — backchannel_logout_session_required في القسم 2.2 من Back-Channel Logout 1.0. تضع هذه الخدمة `sid` و`sub` في كل Logout Token ترسله، فيُحترم العلم دائمًا؛ ويُسجَّل لأن \"false\" و\"غير مذكور\" حقيقتان مختلفتان عن العميل، كما لعلم القناة الأمامية."
+  },
+  "applications.schema.attributes.oauthGrantType.what": {
+    "en": "0b1c949fd4f2f952",
+    "text": "أنواع المنح التي يجوز لهذا العميل استخدامها — grant_types في القسم 2 من RFC 7591، من تسجيل أو يكتبها المسؤول. ترفض نقطة نهاية الرمز أي منحة أخرى (unauthorized_client)، في كل وضع؛ والقائمة الفارغة لا تقيّد شيئًا. ما استخدمه العميل فعلًا هو oauthGrantTypeObserved."
+  },
+  "applications.schema.attributes.oauthResponseType.what": {
+    "en": "6be9c178253c7d2c",
+    "text": "قيم response_type التي يجوز لهذا العميل طلبها — response_types في القسم 2 من RFC 7591، من تسجيل أو يكتبها المسؤول، وكل قيمة نوع استجابة واحد (\"code\"، \"code id_token\"). ترفض نقطة نهاية التفويض أي غيرها (unauthorized_client)، في كل وضع؛ والقائمة الفارغة لا تقيّد شيئًا. ما طلبه العميل فعلًا هو oauthResponseTypeObserved."
+  },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "أنواع الاستجابة التي تصدر رمز وصول من نقطة نهاية التفويض — token وcode token وid_token token وcode id_token token — التي يجوز لهذا العميل استخدامها حيث يسري وضع RFC 9700 (وضع المنتج يسري دائمًا). تُحترم فقط ما دام نطاق الثقة يتنازل عن القسم 2.1.2 من RFC 9700 (oauth2.allowImplicitTokenResponses، وليس أبدًا تحت OAuth 2.1 أو FAPI)؛ وعندئذ يُرفض نوع غير مدرج هنا (unauthorized_client). فارغ افتراضيًا، والفارغ يعني لا شيء. يكتبه المسؤول أو مالك التطبيق ما دام نطاق الثقة يسمح بهذه الأنواع، أو تسجيل ديناميكي ضمن oauth2.dynamicRegistrationTokenResponseTypes. يقول القسم 2.1.2 من RFC 9700 إن العملاء SHOULD NOT يستخدمونها."
+  },
+  "applications.schema.attributes.oauthGrantTypeObserved.what": {
+    "en": "377bd68db76fa783",
+    "text": "نوع منحة شُوهد هذا العميل يستخدمه عند نقطة نهاية الرمز. سجل، لا إذن: oauthGrantType هو ما يجوز له استخدامه."
+  },
+  "applications.schema.attributes.oauthResponseTypeObserved.what": {
+    "en": "4f06a60676c6cdb9",
+    "text": "response_type شُوهد هذا العميل يطلبه عند نقطة نهاية التفويض. سجل، لا إذن: oauthResponseType هو ما يجوز له طلبه."
+  },
+  "applications.schema.attributes.oauthScope.what": {
+    "en": "04292dc39076baaf",
+    "text": "النطاقات التي طلبها هذا التطبيق، تتراكم كلما طلب. مُشاهَدة، ولا تُعلَن أبدًا: لا يُسمح بشيء ولا يُرفض بناءً عليها. ما يجوز إصداره للتطبيق هو oauthAllowedScope."
+  },
+  "applications.schema.attributes.oauthAllowedScope.what": {
+    "en": "2efedb4db176c20e",
+    "text": "النطاقات التي يجوز إصدارها لهذا العميل — `scope` في القسم 2 من RFC 7591، \"القائمة التي يمكن للعميل استخدامها عند طلب رموز الوصول\". رمز نطاق واحد لكل قيمة. ثلاثة أنواع من النطاق تقرؤه على نحو مختلف.\n\n**النطاقات المحمية الخاصة بهذه الخدمة** — admin:read وadmin:write (/admin-api)، وreport:use وreport:admin (/report-api)، ونطاقات SCIM (scim.scopeRead وscim.scopeWrite)، ونطاقات Shared Signals (ssf.authScopeRead وssf.authScopeWrite، ودائمًا ssf.read وssf.manage) وإذن المصحح — تُصدر فقط لعميل يدرجها، في كلا الوضعين. في Shared Signals تشمل الكتابة القراءة: إدراج نطاق كتابة يفوّض نطاق القراءة أيضًا، وإدراج نطاق قراءة فقط لا يفوّض نطاق كتابة. يسأل خادم الموارد خلف كل منها من جديد عند كل استدعاء، فإزالة قيمة هنا تقطع الرموز الصادرة بالفعل. لا يجوز لتسجيل RFC 7591 إعلانها؛ والمسؤول يفعل ذلك هنا.\n\n**كل نطاق آخر**، في وضع المنتج، يُصدر فقط عندما يُدرج هنا — أو، عندما لا يُدرج شيء، إذا كان في المجموعة الافتراضية: openid وprofile وemail وaddress وphone وoffline_access ونطاقات بيانات اعتماد OpenID4VCI لنطاق الثقة هذا. في التطوير يُصدر أي نطاق.\n\n**نطاق يسمّي تطبيقًا أو إذنًا مفوَّضًا** يبقي قواعده الخاصة (الجمهور، وoauthDelegatedPermission) ولا يلزم إدراجه.\n\nيُرفض النطاق الخارج عن القائمة بـ invalid_scope عند نقطتي نهاية التفويض والرمز (القسم 3.3 من RFC 6749)، ويُنزَع عن التحديث أو تبادل الرموز. وهو غير oauthScope، الذي هو فقط ما طلبه العميل."
+  },
+  "applications.schema.attributes.oauthPermissionBaseUri.what": {
+    "en": "a2b16552f308a9b4",
+    "text": "عنوان URI الأساس الذي يُعلَّق عليه كل إذن يعرّفه هذا التطبيق، وهو ما يجعل اسم الإذن فريدًا هنا على نحو عام. يُعرَّف الإذن بهذه القيمة متبوعة باسمه — الأساس `https://example.com/` والاسم `write` هما الإذن `https://example.com/write` — وهو ما يضعه عميل في `scope` وما يُجعَل رمز الوصول بعده جمهورًا له. يسمّيه Entra ID باسم Application ID URI ويهجئه `api://<guid>`؛ والشكل واحد ولا شيء هنا يشترط ذلك المخطط.\n\nيُطبَّع لينتهي بفاصل عندما يُكتب عبر هذه الوحدة — تُضاف `/` لاحقة حيث لا توجد في النهاية `/` ولا `#` ولا `:` — لأن الأساس + الاسم وصل بسيط، وإلا أنتج `https://example.com` + `write` القيمة `https://example.comwrite`. يصل `ldapmodify` إلى هذه السمة ككل سواها ولا يُطبَّع، فالأساس المكتوب يدويًا يعني تمامًا ما يقوله.\n\nأحادي القيمة، وهي السمة الوحيدة في هذه المجموعة التي لا يمكن توسيعها دون البت في شيء: أساسان كانا ليعنيان أن لكل إذن على المدخل معرّفين، والبحث الذي يحوّل نطاقًا إلى جمهور سيضطر إلى اختيار واحد ليضعه في `aud`."
+  },
+  "applications.schema.attributes.oauthPermission.what": {
+    "en": "7eb690e390462f2d",
+    "text": "إذن واحد يعرضه هذا التطبيق، قيمة لكل إذن. القيمة اسم الإذن — `read` أو `write` أو `Widgets.ReadWrite.All` — متبوعة اختياريًا بـ `|` ووصف: `write|Change widgets on somebody's behalf`. أول `|` هو الفاصل وكل ما بعده ينتمي إلى الوصف، فيجوز أن يحتوي الوصف المحرف ولا يجوز ذلك للاسم.\n\nيجب أن يكون الاسم رمز نطاق OAuth قانونيًا (القسم 3.3 من RFC 6749 — بلا مسافة، وبلا علامة تنصيص مزدوجة، وبلا شرطة مائلة عكسية)، لأن ذلك ما سيضعه العميل في معلمة `scope` وما يعود في ادعاء `scope` للرمز. يُرفض أيضًا اسم أو وصف يحتوي رمز خطأ للمشغّل: كلاهما يُعاد في كل صفحة تسرد الإذن، فالرمز يُسجَّل ولا يُرسَل. لا شيء يفرض أيًا من القاعدتين عندما يكتب `ldapmodify` القيمة؛ وتفعل ذلك هذه الوحدة ووحدتا التحكم.\n\nيجب أن يوجد الإذن قبل أن يُمنَح أي شيء إياه، وهي قاعدة الترتيب الوحيدة في هذه الميزة وتُفحص في updateApplication() حتى لا يختلف نموذج وحدة التحكم وواجهة API الإدارة في شأنها. تُفحص عند المنحة لا هنا: هذه السمة هي التعريف، والتعريف الذي لم يستخدمه أحد بعد خطوة أولى عادية لا خطأ."
+  },
+  "applications.schema.attributes.oauthRoleGatedPermission.what": {
+    "en": "fa1c86d8fb8ce2fb",
+    "text": "إذن يعرّفه هذا التطبيق ولا يُصدر إلا لموضوع يحمل دورًا يفوّضه. قيمة لكل إذن، واسم الإذن كما يعطيه `oauthPermission` (`write`، لا المعرّف الكامل). لا يُصدر لشخص أو لتطبيق يطلب إذنًا مقيّدًا بالدور إلا ما دام يحمل دورًا يسمّي `rolePermission` الخاص به المعرّف الكامل (الأساس + الاسم)؛ وإلا يُترك خارج الرمز (القسم 3.3 من RFC 6749)، ويُرفض بـ `invalid_scope` الطلب الذي لا يطلب غيره. الإذن غير المدرج هنا يُصدر كما كان دائمًا، وهو ما يبقي كل عميل قائم يعمل إلى أن يختار أحد التفعيل.\n\nيجب أن يكون الاسم أحد أذونات هذا المدخل نفسه عندما يُكتب عبر هذه الوحدة؛ ولا يُفحص `ldapmodify`، والقيمة التي لا تسمّي إذنًا معرَّفًا لا تقيّد شيئًا، لأنه لا طلب يستطيع تسميتها."
+  },
+  "applications.schema.attributes.oauthResourceMetadata.what": {
+    "en": "46f443d9a9272cd3",
+    "text": "وثيقة بيانات تعريف المورد المحمي (RFC 9728) التي هُيئ منها هذا التطبيق، بصيغة JSON مضغوطة. `resource` الخاص بها هو الاسم الافتراضي و`oauthPermissionBaseUri` و`oauthAudience` لمدخل أُنشئ منها، و`scopes_supported` هي الأذونات؛ وكل عضو آخر — `authorization_servers` و`jwks_uri` و`bearer_methods_supported` وأعضاء DPoP — يُسجَّل هنا ولا في موضع سواه.\n\nإعلان فقط: لا شيء يعيد قراءته، ولا شيء يعيد جلبه، وتغييره لا يغيّر أي سمة ملأها. القيمة المكتوبة عبر هذه الوحدة يجب أن تكون كائن JSON فيه `resource`؛ ولا يُفحص `ldapmodify`."
+  },
+  "applications.schema.attributes.oauthResourceMetadataUrl.what": {
+    "en": "0e8c5a19327706e7",
+    "text": "من أين جُلبت وثيقة بيانات تعريف المورد المحمي، عندما جُلبت لا عندما لُصقت أو رُفعت. تُسجَّل ولا يُعاد الاتصال بها: الجلب فعل يقوم به المسؤول في /admin/applications/new أو POST /admin-api/applications/load-resource-metadata، ولا شيء ينعّشها."
+  },
+  "applications.schema.attributes.oauthDelegatedPermission.what": {
+    "en": "78e514ee83d20e97",
+    "text": "إذن مُنح هذا التطبيق على تطبيق آخر — معرّف الإذن كاملًا، عنوان URI الأساس والاسم معًا: `https://example.com/write`. إنها علاقة التفويض، وتُحفظ على العميل لا على المورد لسبب Entra ولسبب إضافي: العميل هو الطرف الذي سيسمّيه في `scope`، فالمدخل الذي يجيب \"هل يُحترم هذا الطلب\" هو المدخل الذي يحدده الطلب.\n\n**يُقرأ، ويُقرأ في الموضع الوحيد الذي يقرر ما يقوله الرمز.** قيمة `scope` تطابق إذنًا معرَّفًا تصبح `aud` لرمز الوصول (عنوان URI الأساس) و`scope` الخاص به (الاسم) — انظر audienceScopes() في oauth2.js. في وضع المنتج يُرفض الإذن غير الممنوح بـ `invalid_scope` عند نقطتي نهاية التفويض والرمز، دائمًا. في التطوير يُبلَّغ عنه ولا يرفض شيئًا إلا إذا كان `oauth2.delegatedPermissionsEnforced` مفعّلًا، وهو متوقف افتراضيًا: فالعميل قيد الاختبار يُختبَر بكلا الجوابين.\n\nالقيمة التي لا تُحل إلى إذن معرَّف ليست خطأ ولا تُخفى. قد يكون مدخل المورد قد حُذف، أو أُزيل الإذن من تحته؛ ويعرض `/admin/delegation` مثل هذه المنحة على أنها معلّقة، وهي الصراحة ذات الحالات الثلاث نفسها التي تطبقها بقية وحدة التحكم هذه على اسم لا تستطيع حله."
+  },
+  "applications.schema.attributes.oauthGlobalConsent.what": {
+    "en": "7e0e74028e48880c",
+    "text": "نطاق لا يُسأل عنه أحد عند تسجيل الدخول إلى هذا التطبيق. قيمة واحدة لكل نطاق، تُكتب تمامًا كما يضعها العميل في معلمة `scope` — `openid` أو `profile` أو معرّف إذن مفوَّض كامل مثل `https://example.com/write`.\n\n**إنه تجاوز وليس سجلًا.** عندما يكون `oauth2.consentRequired` مفعّلًا (وهو الافتراضي)، ترسم نقطة نهاية التفويض /oauth2/consent لأي نطاق لم يوافق عليه هذا الشخص لهذا التطبيق؛ والنطاق المسمّى هنا يُتجاوز للجميع، ولا يُكتب شيء في مدخل أي شخص. فإزالة قيمة تعيد السؤال للجميع — بمن فيهم من كانوا سيوافقون — في حين أن إزالة `oauthConsent` الخاصة بشخص تسأل ذلك الشخص وحده.\n\n**مفتاحه هو الزوج لا النطاق وحده.** الموافقة على `read` هنا موافقة عليها لهذا التطبيق؛ وتطبيق يُسجَّل بعد خمس دقائق ويهجئ الكلمة نفسها يُسأل رغم ذلك.\n\nالقيمة التي لا تسمّي إذنًا يعرّفه أي تطبيق ليست خطأ ولا تُخفى — فمعظم النطاقات ليست أذونات. يجب أن تكون رمز نطاق قانونيًا وفق القسم 3.3 من RFC 6749، لأن قيمة فيها مسافة لا يمكن أن تطابق نطاقًا واحدًا؛ ويصل `ldapmodify` إلى هذه السمة ككل سواها ولا يُفحص، ويعرض /admin/consent ما وُضع هناك."
+  },
+  "applications.schema.attributes.appOwner.what": {
+    "en": "9c53dd774f6667e3",
+    "text": "شخص أو مجموعة من نطاق الثقة هذا، مسؤول عن التطبيق (#604)، بصيغة DN، كما هو حال مالكي المجموعة والدور. متعددة القيم، بحد أقصى 25. منذ #607 يجوز للمالك إدارة التطبيق عبر /admin-api باستخدام owner:read وowner:write، ضمن ما تسمح به قاعدة المالك في سياسة التحكم في الوصول. تسرد بوابة المستخدم ما يملكه الشخص."
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE: لا يجوز لمالكي التطبيق إدارته عبر /admin-api (#607) — علامة يضعها المسؤول، تقرأها قاعدة المالك في سياسة التحكم في الوصول على أنها urn:sts:xacml:object-protected. الغياب يعني FALSE."
+  },
+  "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
+    "en": "2d52b0e0fe8e25ca",
+    "text": "وقت سحب موافقة عامة، بالشكل `<when> <scope>` مع اللحظة بدقة جزء من الألف من الثانية. ترفض منحة التحديث رمز تحديث مُنح قبلها وكان مستنداً إلى ذلك التجاوز، حتى بعد إعادة إضافة التجاوز — فالمنحة المسحوبة لا تُحيا بالمنحة التالية. قيمة واحدة لكل scope؛ والسحب اللاحق يحل محل السابق. يكتبها سجل الموافقة ولا يكتبها نموذج أبداً."
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthMethod.what": {
+    "en": "3e1fd60dfab74200",
+    "text": "كيف يصادق — كل طريقة يجوز له استخدامها عند نقطة نهاية الرمز، وأي واحدة منها يجوز للطلب تقديمها. لا يمكن الجمع بين `none` (عميل عام) وأي طريقة أخرى. يجعل RFC 7591 section 2 الطريقة client_secret_basic هي الافتراضية عندما يغفل التسجيل عنها، ولهذا فإن الإغفال يعني CONFIDENTIAL لا مجهولاً."
+  },
+  "applications.schema.attributes.oauthNativeSso.what": {
+    "en": "582a2cbef470da1a",
+    "text": "تتيح TRUE لهذا العميل طلب scope device_sso — فيُسلَّم بذلك device_secret — والمشاركة في تبادل رموز Native SSO، بوصفه التطبيق الأول أو الثاني. أي قيمة أخرى، وهي الافتراضية، ترفض الأمرين معاً. يجب أن يحمل كلا تطبيقي التبادل هذه القيمة وأن يتشاركا oauthNativeSsoGroup. لا يجوز للتسجيل تعيينها إلا عبر بيان برمجيات موثوق، لأن المجموعة هي الحد ولا يجوز للعميل اختيار مجموعته بنفسه."
+  },
+  "applications.schema.attributes.oauthNativeSsoGroup.what": {
+    "en": "78d42281463c5a94",
+    "text": "مجموعة Native SSO: التطبيقات التي يجوز لها مشاركة جلسة جهاز واحدة — وعملياً تطبيقات مورّد واحد. يُرفض تبادل الرموز ما لم يتشارك التطبيق الذي تلقّى ID Token والتطبيق الطالب هذه المجموعة. من 1 إلى 64 من الأحرف والأرقام والرموز . _ : -؛ والقيمة الفارغة أو المشوّهة تُخرج العميل من Native SSO."
+  },
+  "applications.schema.attributes.oauthBackchannelTokenDeliveryMode.what": {
+    "en": "ebaef707274ab832",
+    "text": "CIBA `backchannel_token_delivery_mode`: وهي poll أو ping أو push. لا يجوز لعميل بلا أي منها استخدام Backchannel Authentication Endpoint على الإطلاق."
+  },
+  "applications.schema.attributes.oauthBackchannelClientNotificationEndpoint.what": {
+    "en": "f4bad1b37661210d",
+    "text": "CIBA `backchannel_client_notification_endpoint`: عنوان https URL الذي يُرسل إليه ping أو push بطلب POST، بموجب سياسة الصادر. مطلوب لـ ping ولـ push."
+  },
+  "applications.schema.attributes.oauthCommandEndpoint.what": {
+    "en": "849117c9b5e7b475",
+    "text": "OpenID Provider Commands `command_endpoint` (#151): عنوان https URL الذي يُرسل إليه Command Token بطلب POST، بموجب سياسة الصادر. لا يُرسل أي أمر إلى عميل بلا قيمة."
+  },
+  "applications.schema.attributes.oauthBackchannelAuthenticationRequestSigningAlg.what": {
+    "en": "cdfc398e17d181c0",
+    "text": "CIBA `backchannel_authentication_request_signing_alg`: عند تعيينها، يجب أن يكون كل طلب مصادقة من هذا العميل كائن طلب موقَّعاً بهذه الخوارزمية (section 7.1.1)."
+  },
+  "applications.schema.attributes.oauthBackchannelUserCodeParameter.what": {
+    "en": "6c0f2095e873b568",
+    "text": "TRUE: يحمل كل طلب مصادقة من هذا العميل قيمة `user_code` الخاصة بالشخص (CIBA section 7.1)، وهي سر يعيّنه الشخص في /portal/ciba، ما يمنع عميلاً لا يعرف سوى الاسم من إرسال الطلبات إليه."
+  },
+  "applications.schema.attributes.oauthSubjectType.what": {
+    "en": "cf054cc8fd5f57e3",
+    "text": "OIDC Core section 8 `subject_type`: تعطي `public` (وهي الافتراضية، وما تعنيه القيمة الفارغة) كل عميل قيمة `sub` نفسها؛ وتعطي `pairwise` هذا العميل قيمة خاصة به، مشتقة من الشخص والقطاع وسر تتشاركه كل العقد، بحيث لا يستطيع عميلان من قطاعين مختلفين ربط شخص واحد؛ وتعطي `ephemeral` (#149) قيمة عشوائية لكل مصادقة، وهي نفسها لكل ما تصدره تلك المصادقة ولا تُستخدم بعدها أبداً."
+  },
+  "applications.schema.attributes.oauthSectorIdentifierUri.what": {
+    "en": "2b77aa6b404dbdc0",
+    "text": "OIDC Core section 8.1 `sector_identifier_uri`: عنوان https URL يكون HOST فيه هو القطاع الذي تُشتق من أجله قيمة `sub` من نوع pairwise، بحيث ترى عدة مضيفين لإعادة التوجيه تابعة لمؤسسة واحدة موضوعاً واحداً. التسجيل الذي يسمّي واحداً يُجلب، ويجب أن يكون مدرجاً في مصفوفة JSON التي يقدّمها، وكل redirect URI خاص به؛ وما يكتبه المسؤول هنا هو بيان المسؤول ولا يُجلب. فارغ: القطاع هو مضيف عناوين redirect URI، والتي يجب عندئذٍ أن تتشارك جميعاً مضيفاً واحداً."
+  },
+  "applications.schema.attributes.oauthDidClaimWithPairwise.what": {
+    "en": "6a260538fdd857e4",
+    "text": "TRUE: يجوز إخبار هذا العميل بمعرّف DID المفضّل للشخص (مطالبة `did`، oauth2.didClaim) رغم استخدامه معرّفات موضوع pairwise أو ephemeral. أي شيء آخر، ولعميل ذي موضوع عام لا فرق: أبداً. توجد قيمة `sub` من نوع pairwise أو ephemeral كي لا يستطيع هذا العميل ربط الشخص بعملاء آخرين، ومعرّف DID هو القيمة نفسها لدى كل عميل يُخبر به، ما يُبطل ذلك الغرض — لا تُعيَّن إلا حيث يُراد لهذا العميل أن يعرف الشخص بمعرّف DID الخاص به على أي حال. لا يمكن للتسجيل تعيينها."
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
+    "en": "c3cee680e93f74e1",
+    "text": "OIDC Core section 9 / RFC 7591 `token_endpoint_auth_signing_alg`: خوارزمية JWS الوحيدة التي يجب أن يُوقَّع بها تأكيد مصادقة هذا العميل. يُرفض التأكيد الموقَّع بأي خوارزمية أخرى، في كل وضع. فارغ: أي خوارزمية تسمح بها الطريقة."
+  },
+  "applications.schema.attributes.oauthJwks.what": {
+    "en": "ecb31a10d74a0998",
+    "text": "مفاتيح العميل العامة، بوصفها مستند JWKS — ما يُتحقق من private_key_jwt مقابله (RFC 7591 `jwks`). هذه هي بيانات الاعتماد غير المتماثلة التي يوصي بها RFC 9700 section 2.5، وهي سمة بيانات الاعتماد الوحيدة هنا التي ليست سراً: إنها مادة مفتاح عام، لا قيمة لها لمن يقرأها، وهذا هو الغرض كله من تفضيلها على سر مشترك."
+  },
+  "applications.schema.attributes.oauthJwksUri.what": {
+    "en": "99f551bf8039ea17",
+    "text": "RFC 7591 `jwks_uri`، https. يُجلب منذ #120، عند الحاجة إلى مفتاح، بموجب سياسة الصادر في federation/federation_http.ts (https، بلا إعادة توجيه، حد للحجم، وعناوين داخلية مرفوضة في وضع product)، ويُخزَّن مؤقتاً لمدة oauth2.clientJwksCacheS ويُجلب مجدداً لمعرّف kid غير معروف بما لا يزيد على مرة كل oauth2.clientJwksRefetchS. لا يكون أبداً إلى جانب `oauthJwks`: يسمح RFC 7591 section 2 بأحدهما أو الآخر."
+  },
+  "applications.schema.attributes.oauthIntrospectionSignedResponseAlg.what": {
+    "en": "d3d0457a7d5c2198",
+    "text": "RFC 9701 section 6 `introspection_signed_response_alg`: خوارزمية JWS لاستجابة الاستعلام JWT التي يتلقاها هذا التطبيق عندما يطلب /oauth2/introspect مع `Accept: application/token-introspection+jwt`. الفراغ يعني RS256، وهو افتراضي القسم. أي خوارزمية في `introspection_signing_alg_values_supported` — كل خوارزمية غير متماثلة تحتفظ هذه الخدمة بمفتاح لها، وHS256/384/512 المفتاحة بـ client_secret الخاص بهذا التطبيق. تُرفض `none`: يقول section 5 إن الاستجابة يجب أن تكون مؤمَّنة تشفيرياً."
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseAlg.what": {
+    "en": "e7f4e5a5308b2858",
+    "text": "RFC 9701 section 6 `introspection_encrypted_response_alg`: خوارزمية إدارة مفاتيح JWE التي تُشفَّر بها استجابة الاستعلام الموقَّعة إلى هذا التطبيق، فتصبح Nested JWT. الفراغ يعني عدم التشفير. إحدى الخوارزميات غير المتماثلة (RSA-OAEP وRSA-OAEP-256 وECDH-ES ومتغيرات تغليف المفتاح التابعة لها)، ويُؤخذ المفتاح من `oauthJwks` لهذا المدخل، أو من المجموعة التي يجيب بها `oauthJwksUri` (#120). تُرفض العائلات المتماثلة: فهي لمستند مُشفَّر إلى هذه الخدمة."
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseEnc.what": {
+    "en": "a5b33f9189532b52",
+    "text": "RFC 9701 section 6 `introspection_encrypted_response_enc`: خوارزمية تشفير محتوى JWE. الفراغ يعني A128CBC-HS256 بمجرد تعيين `oauthIntrospectionEncryptedResponseAlg`. لا يجوز تعيينها من دون تلك السمة، وتُرفض الكتابة التي تحاول ذلك؛ والمدخل الذي يُترك حاملاً إياها وحدها (بواسطة `ldapmodify`، أو بمسح الخوارزمية) يجعل استجابة استعلام JWT تفشل مع السبب بدلاً من أن تخرج غير مشفَّرة."
+  },
+  "applications.schema.attributes.oauthRequestUri.what": {
+    "en": "5aed34e258774de3",
+    "text": "OpenID Connect Registration `request_uris`: قيم request_uri (RFC 9101 section 5.2) التي يجوز لهذا العميل إرسالها، واحدة في كل سطر. لا تجلب نقطة نهاية التفويض request_uri إلا عندما تكون إحدى هذه القيم، وتُقارن مطابقة تامة بعد إزالة أي #fragment — وتُرفض request_uri لم يسجّلها أحد بالقيمة invalid_request_uri ولا يُجرى اتصال بها أبداً، وهذا ما يمنع الجلب من أن يكون تزوير طلب من جانب الخادم. https، أو http في وضع development فقط."
+  },
+  "applications.schema.attributes.oauthRequestObjectSigningAlg.what": {
+    "en": "0f2db9e8b6d6472a",
+    "text": "OpenID Connect Registration `request_object_signing_alg`: خوارزمية JWS الوحيدة التي يُقبل بها كائن طلب من هذا العميل. الفراغ يعني أي خوارزمية في request_object_signing_alg_values_supported. لا يجوز تسجيل `none` إلا حيث يُقبل كائن طلب غير موقَّع أصلاً — وضع development، ومن دون اشتراط واحد موقَّع."
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionAlg.what": {
+    "en": "32ae3a1152bab999",
+    "text": "OpenID Connect Registration `request_object_encryption_alg`: عند تعيينها، يجب تشفير كائن طلب من هذا العميل (RFC 9101 section 6.1) بخوارزمية إدارة مفاتيح JWE هذه — إلى مفتاح كائن الطلب الخاص بنطاق الثقة هذا المنشور في /oauth2/jwks (use: enc) لـ RSA-OAEP وECDH-ES، أو إلى client_secret الخاص بهذا العميل للعائلات المتماثلة. الفراغ يعني أن التشفير اختياري."
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionEnc.what": {
+    "en": "fb477df5cfbc6756",
+    "text": "OpenID Connect Registration `request_object_encryption_enc`: تشفير محتوى JWE الذي يجب أن يستخدمه كائن طلب من هذا العميل. الفراغ يعني A128CBC-HS256 بمجرد تعيين `oauthRequestObjectEncryptionAlg`؛ ولا يجوز تعيينها من دون تلك السمة."
+  },
+  "applications.schema.attributes.oauthRequireSignedRequestObject.what": {
+    "en": "c9c63effbd13dd2a",
+    "text": "RFC 9101 section 10.5 `require_signed_request_object`، لهذا العميل وحده: ترفض TRUE طلب تفويض منه لا يحمل `request` أو `request_uri`، وكائن طلب موقَّعاً بـ `none`، بالقيمة invalid_request. تُحيل القيمة FALSE أو الفارغة إلى oauth2.requireSignedRequestObject."
+  },
+  "applications.schema.attributes.oauthRequirePushedAuthorizationRequests.what": {
+    "en": "09a53af1a788654f",
+    "text": "RFC 9126 section 6 `require_pushed_authorization_requests`، لهذا العميل وحده: ترفض TRUE طلب تفويض منه لا يحمل request_uri صادراً عند /oauth2/par، بالقيمة invalid_request. تُحيل القيمة FALSE أو الفارغة إلى oauth2.requirePushedAuthorizationRequests."
+  },
+  "applications.schema.attributes.oauthHttpSignedRequests.what": {
+    "en": "e5c1786e8608f23a",
+    "text": "FAPI 2.0 HTTP Signatures، لهذا العميل وحده: ترفض TRUE، برمز 401، طلباً إلى خادم موارد يحمل رمز وصول هذا العميل ولا يحمل توقيع \"fapi-2-request\" صالحاً (RFC 9421) بمفتاح في jwks أو jwks_uri الخاص به. تُحيل القيمة FALSE أو الفارغة إلى oauth2.httpSignatures."
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsType.what": {
+    "en": "103312425b7a3ae9",
+    "text": "نوع وصول يملكه هذا التطبيق، بوصفه خادم موارد — واحد لكل قيمة، يقرأه RFC 9396 authorization_details وحقوق الوصول في GNAP على السواء. اسم نوع مجرد، أو كائن JSON {\"type\", \"description\", \"locations\", \"schema\", \"actions\", \"datatypes\", \"privileges\", \"required\", \"interaction\", \"consentActions\", \"bearer\", \"maxLifetimeS\", \"acr\", \"derivableFrom\", \"introspectionClaims\", \"limits\"}: `locations` هي العناوين التي يجوز لحق من هذا النوع تسميتها (يُحتسب دائماً URI أساس الإذن وoauthAudience)، و`schema` هي JSON Schema يجب أن يستوفيها كل حق منه، و`actions` و`datatypes` و`privileges` القيم التي يجوز له تسميتها، و`required` الأعضاء التي يجب أن يحملها، وتعني `bearer: false` أن الرمز الذي يحملها مقيّد بالمرسِل، و`maxLifetimeS` أطول مدة يعيشها مثل هذا الرمز، و`derivableFrom` الأنواع التي يجوز اشتقاقه منها (RFC 9767 section 4)، و`introspectionClaims` ما يُخبر به خادم الموارد هذا عن الشخص عند الاستعلام، و`limits` هي JSON Schema (مجموعة فرعية) يجب أن تستوفيها حدود الحق. تقرر `interaction` (always وdefault وnever) و`consentActions` و`acr`، بالنسبة إلى GNAP، ما إذا كان مالك المورد يُسأل ومدى قوة تسجيل الدخول (#432 phase 6). يُرفض النوع غير المُعلَن بالقيمة invalid_authorization_details من RFC 9396 في كل وضع، ومن GNAP في وضع product."
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
+    "en": "5a0acf9625882942",
+    "text": "RFC 9396 section 10 `authorization_details_types`: أنواع authorization_details الوحيدة التي يجوز لهذا العميل استخدامها، واحد لكل قيمة. الفراغ يعني أي نوع يدعمه خادم التفويض هذا."
+  },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "صف واحد من فهرس سمات AuthZEN (#563)، على كائن المورد sts-authzen-api: كائن JSON {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}. يكون `object` هو subject أو resource أو action أو context؛ و`property` اسم العضو، أو مساراً منقطاً إلى كائن متداخل؛ و`attributeId` سمة XACML التي يُرسل بها؛ و`category` (افتراضياً فئة الكائن نفسه) و`dataType` (افتراضياً string) و`multiplicity` (single أو bag). تُرفض في كل وضع خاصية لا يسمّيها أي صف، ولا يجوز لصف أن يسمّي معرّفات urn:sts:xacml: الخاصة بهذه الخدمة، ولا subject-id ولا resource-id ولا action-id، ولا اسماً مجرداً لسمة في الدليل ضمن فئة subject."
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "مجال تطبيق AuthZEN (#563): التطبيقات التي يجوز لهذا العميل، عند استدعاء /access/v1 برمز client_credentials الخاص به، تسميتها في context.application — معرّف واحد لكل قيمة. معرّف العميل نفسه ضمن المجال دائماً. يعيّنه المسؤول، ولا يعيّنه المستدعي أبداً."
+  },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "رد نداء طلب الوصول في AuthZEN (#1180): عنوان https URL يجوز لهذا العميل، بوصفه AuthZEN PEP، تسميته كـ callback.endpoint لطلب وصول — واحد لكل قيمة، بمطابقة تامة. يُرفض الطلب الذي يسمّي أي عنوان آخر؛ ولا تتصل هذه الخدمة أبداً بعنوان callback URL مأخوذ من الطلب وحده. يعيّنه المسؤول، ولا يعيّنه المستدعي أبداً."
+  },
+  "applications.schema.attributes.oauthStepUpAcrValues.what": {
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 section 3: قيم acr التي يشترطها هذا التطبيق، بوصفه خادم موارد، للمصادقة التي وراء رمز الوصول — مفصولة بمسافات، والأكثر تفضيلاً أولاً. الرمز الذي لا يستوفي acr الخاص به أياً منها يُتحدّى برمز 401 insufficient_user_authentication مع هذه القيم كـ acr_values. المستويات 0 < 1 < mfa مرتّبة؛ ويُستوفى hwk بكلمة المرور مع مفتاح أمان؛ ولا يُستوفى phr وphrh إلا بالمصادقة المقاومة للتصيد التي يسمّيانها (#723)؛ وأي قيمة أخرى لا تُستوفى إلا بقيمة acr تلك بعينها. الفراغ لا يشترط شيئاً."
+  },
+  "applications.schema.attributes.oauthStepUpMaxAge.what": {
+    "en": "fdd12480b52b8006",
+    "text": "max_age في RFC 9470 section 3: أقدم مصادقة، بالثواني الكاملة، يقبلها هذا التطبيق وراء رمز وصول. الرمز الذي يكون auth_time الخاص به أقدم، أو غائباً، يُتحدّى برمز 401 insufficient_user_authentication مع max_age. يعني 0 مصادقة في هذه الثانية. الفراغ لا يشترط شيئاً."
+  },
+  "applications.schema.attributes.oauthIdTokenSignedResponseAlg.what": {
+    "en": "8a855d8855d28896",
+    "text": "OpenID Connect Registration `id_token_signed_response_alg`: خوارزمية JWS التي تُوقَّع بها رموز ID Token لهذا العميل — ورموز Logout Token ذات القناة الخلفية ورموز Command Token. الفراغ يعني RS256 (PS256 ضمن FAPI 1.0 Advanced). أي خوارزمية في id_token_signing_alg_values_supported؛ وتُفتاح خوارزمية HMAC بسر العميل. تُرفض `none`."
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseAlg.what": {
+    "en": "183714d075e4bf22",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_alg`: خوارزمية إدارة مفاتيح JWE التي تُشفَّر بها رموز ID Token (ورموز Logout Token) إليه بعد التوقيع. الفراغ يعني عدم التشفير. خوارزمية غير متماثلة، ويُؤخذ المفتاح من `oauthJwks` أو `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseEnc.what": {
+    "en": "48ee797ab8e75fa2",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_enc`: تشفير محتوى JWE. الفراغ يعني A128CBC-HS256 بمجرد تعيين `oauthIdTokenEncryptedResponseAlg`؛ ولا يجوز تعيينها من دون تلك السمة."
+  },
+  "applications.schema.attributes.oauthUserinfoSignedResponseAlg.what": {
+    "en": "ef48efadfd32f3ee",
+    "text": "OpenID Connect Registration `userinfo_signed_response_alg`: خوارزمية JWS التي تُوقَّع بها استجابة UserInfo إلى هذا العميل، فتصبح `application/jwt` تحمل `iss` و`aud`. الفراغ (أو `none`) يعني JSON عادياً، ما لم تكن مشفَّرة."
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseAlg.what": {
+    "en": "76a0ae0574f3ef25",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_alg`: خوارزمية إدارة مفاتيح JWE التي تُشفَّر بها استجابة UserInfo إلى هذا العميل (بعد التوقيع، حيث تكون موقَّعة). الفراغ يعني عدم التشفير. خوارزمية غير متماثلة، إلى `oauthJwks` أو `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseEnc.what": {
+    "en": "6852fab2d2fc0d6a",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_enc`: تشفير محتوى JWE. الفراغ يعني A128CBC-HS256 بمجرد تعيين `oauthUserinfoEncryptedResponseAlg`؛ ولا يجوز تعيينها من دون تلك السمة."
+  },
+  "applications.schema.attributes.oauthAuthorizationSignedResponseAlg.what": {
+    "en": "1287c2f4ab72e7da",
+    "text": "JARM section 3 `authorization_signed_response_alg`: خوارزمية JWS لاستجابات التفويض المؤمَّنة بـ JWT لهذا العميل (`response_mode` `jwt` و`query.jwt` والبقية). الفراغ يعني RS256 (PS256 ضمن FAPI 1.0 Advanced). تُرفض `none` (JARM section 3)."
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseAlg.what": {
+    "en": "9c508446b117e1da",
+    "text": "JARM section 3 `authorization_encrypted_response_alg`: خوارزمية إدارة مفاتيح JWE التي تُشفَّر بها استجابة تفويض مؤمَّنة بـ JWT إلى هذا العميل. الفراغ يعني عدم التشفير. خوارزمية غير متماثلة، إلى `oauthJwks` أو `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseEnc.what": {
+    "en": "c06c3ef3bf155771",
+    "text": "JARM section 3 `authorization_encrypted_response_enc`: تشفير محتوى JWE. الفراغ يعني A128CBC-HS256 بمجرد تعيين `oauthAuthorizationEncryptedResponseAlg`؛ ولا يجوز تعيينها من دون تلك السمة."
+  },
+  "applications.schema.attributes.oauthDefaultAcrValues.what": {
+    "en": "2420d2fb6289e439",
+    "text": "OpenID Connect Registration `default_acr_values`: قيم acr المطلوبة لهذا العميل عندما لا يسمّي الطلب `acr_values` ولا مطالبة acr أساسية — مفصولة بمسافات، والأكثر تفضيلاً أولاً. الفراغ لا يطلب شيئاً."
+  },
+  "applications.schema.attributes.oauthDefaultMaxAge.what": {
+    "en": "4aab318613c37bad",
+    "text": "OpenID Connect Registration `default_max_age`: أقدم تسجيل دخول، بالثواني الكاملة، يقبله هذا العميل عندما لا يسمّي الطلب `max_age` — والأقدم يعيد تسجيل دخول الشخص. يعني 0 تسجيل دخول في هذه الثانية. الفراغ لا يشترط شيئاً."
+  },
+  "applications.schema.attributes.oauthAssertionIssuer.what": {
+    "en": "f927674d2d7a1f5f",
+    "text": "قيم `iss` التي يجوز لهذا التطبيق تقديمها في منح تفويض RFC 7523 SECTION 2.1، وهي من السمات القليلة المُعلَنة هنا التي تُقرأ. تأكيد حامل JWT هو التفويض كله — لا متصفح ولا كلمة المرور ولا خطوة موافقة في تلك المنحة — لذا فإن قبول واحد من أي جهة يعني أن أي شخص يستطيع بلوغ هذا المنفذ يحصل على رمز وصول بوصفه أي شخص. هذه إذن الميزة الثانية في هذه الخدمة التي لا تتاح لها إجابة متساهلة، إلى جانب الاتحاد، و`oauth2.jwtBearerRequireRegisteredIssuer` مفعّلة افتراضياً.\n\nالتأكيد الذي يصدره عميل عن نفسه يسمّي client_id الخاص به قيمةً لـ `iss` ولا يحتاج إلى قيمة هنا: ينجح ذلك البحث أصلاً عبر oauthClientId، وطلب أن يكتب المشغّل client_id مرتين سيكون خطوة إعداد بلا قرار فيها. تتراكم، لأن تطبيقاً واحداً يؤكد بصورة مشروعة تحت اسم مُصدِر لكل بيئة."
+  },
+  "applications.schema.attributes.oauthAssertionJwks.what": {
+    "en": "3abc3d2dd9035aef",
+    "text": "المفاتيح العامة التي أصدرتها هذه الخدمة لهذا التطبيق، بوصفها مستند JWKS، يحمل كل مفتاح `x5c` (سلسلة شهاداته) و`x5t#S256`. يكتبها عنصر التحكم Issue في /admin/pki وبواسطة POST /admin-api/pki/issue.\n\nإنها سمة ثانية إلى جانب `oauthJwks` ولا تستبدلها أبداً. العميل الذي سجّل مفاتيحه ثم أُصدر له زوج لاحقاً من مشغّل لديه طريقتان للتوقيع، رتّبهما شخص عمداً — والكتابة فوق الأولى تنهيها بصمت في اللحظة التي يضغط فيها أحد زراً يخص الثانية. تُقرأ كلتاهما بعملية OR، بواسطة client_auth.js وassertion_grant.js. مادة مفتاح عام، لذا فهي مثل oauthJwks لا قيمة لها لمن يقرأ هذا الدليل."
+  },
+  "applications.schema.attributes.oauthAssertionCertificate.what": {
+    "en": "b4cbd65aec258415",
+    "text": "الشهادة الطرفية، PEM، التي موضوعها هذا التطبيق ومُصدِرها Issuing CA الخاص بنطاق الثقة. البايتات نفسها التي في أول عضو `x5c` أعلاه، بالشكل الذي يمكن للشخص لصقه في `openssl x509 -text`."
+  },
+  "applications.schema.attributes.oauthAssertionCertificateChain.what": {
+    "en": "b7a32cc9139e6bd2",
+    "text": "Issuing CA ثم Intermediate CA، بصيغة PEM، بهذا الترتيب — ما ترافق به الشهادة الطرفية. الجذر غير موجود فيها عمداً: الجذر مرتكز ثقة، والطرف المعتمد الذي يقبل واحداً لأنه وصل في السلسلة يكون قد قبل شهادة تشهد لنفسها."
+  },
+  "applications.schema.attributes.oauthAssertionPrivateKey.what": {
+    "en": "8b668a69fa54d2c9",
+    "text": "المفتاح الخاص، PEM. **مختوم أثناء التخزين حيثما يعمر مفتاح تشفير المفاتيح أطول من العملية** — AES-256-GCM عبر common/keystore.js، الآلية نفسها والمفتاح نفسه اللذان يختمان مفاتيح التوقيع الخاصة بهذه الخدمة، وأزواج مفاتيح CA الثلاثة في common/pki.js، والسر المشترك لأداة المصادقة. لذا فإن ldapsearch على TCP 389 حيث تنجح كل عملية ربط، وملف ldif، وصف قاعدة بيانات، ونسخة احتياطية لأي منهما، تحمل `$aesgcm$…` وليس مفتاحاً قابلاً للاستخدام. الأسطح التي تمر عبر هذه الوحدة — /admin/applications وGET /admin-api/applications، وكلاهما خلف بيانات اعتماد — تُسلَّم PEM، لأن الختم يحمي المخزن لا وحدة التحكم التي يجمع منها المشغّل بيانات اعتماد صادرة؛ وتوضح SEALED_FIELDS هذا الفصل. في وضع development تُكتب كنص واضح، وهي القاعدة التي يتبعها سر أداة المصادقة بجانبها وللسبب نفسه: مفتاح تشفير المفاتيح هناك سريع الزوال، لذا فإن ختم مدخل ينجو من إعادة التشغيل تحت مفتاح لا ينجو سيجعل النصف الخاص عديم الفائدة بصورة دائمة بينما تعود الشهادة. لا يُكتب أبداً في سجل التدقيق، ولا تحتفظ هذه الخدمة بنسخة ثانية منه — تسلّمه common/pki.js مرة واحدة، عند الإصدار، ثم تنساه."
+  },
+  "applications.schema.attributes.oauthAssertionKid.what": {
+    "en": "0bdfcb2fca7999a3",
+    "text": "قيمة `kid` للمفتاح الصادر، مشتقة من مادة المفتاح كما يُشتق كل kid في هذه الخدمة (RFC 7638). التأكيد الذي يسمّيها في ترويسة JWS يضيّق التحقق إلى ذلك المفتاح؛ والذي لا يسمّي شيئاً يُجرَّب مقابل كل مفتاح مسجَّل لهذا التطبيق، وهذا صحيح وليس تراخياً."
+  },
+  "applications.schema.attributes.oauthAssertionExpiresAt.what": {
+    "en": "bf8bf93da43a7bf7",
+    "text": "متى تنتهي صلاحية الشهادة الصادرة، بصيغة GeneralizedTime. إنها حقيقة عن الشهادة وليست سياسة: لا شيء هنا يرفض تأكيداً لأن هذا التاريخ قد مضى — ما يرفض التأكيد هو فشل الشهادة في بناء مسار، ويُفحص ذلك حيث تُفحص السلسلة. تُعرض في /admin/pki كي يرى المشغّل ما أوشك أن يتوقف عن العمل."
+  },
+  "applications.schema.attributes.oauthAssertionKeySource.what": {
+    "en": "9763e439aef61fa1",
+    "text": "من أين أتى زوج مفاتيح RFC 7523 أعلاه، وبالتالي من يحتفظ بنصفه الخاص. `issued` — مُولَّد هنا وموقَّع من Issuing CA الخاص بنطاق الثقة هذا، والمفتاح الخاص على `oauthAssertionPrivateKey`. `uploaded-realm-ca` — شهادة أصدرتها سلطة الشهادات الخاصة بنطاق الثقة هذا، رُفعت بدلاً من زوج مُولَّد. `uploaded-external-ca` — شهادة من سلطة أخرى، رُفعت مع سلسلتها كاملة حتى جذر موقَّع ذاتياً، وكل وصلة متحقَّق منها. بالنسبة إلى كلتا قيمتي الرفع يحتفظ التطبيق بالمفتاح الخاص ولا تمتلكه هذه الخدمة أبداً.\n\nحقيقة عما تم لا سياسة: لا يقرأها أي متحقّق، والمدخل المكتوب قبل وجودها لا يحمل شيئاً — تقرأ وحدة التحكم هناك المفتاح الخاص المختوم على أنه `issued`، وهو الشيء الوحيد الذي كان يمكن أن يضع واحداً على المدخل."
+  },
+  "applications.schema.attributes.oauthSamlAssertionIssuer.what": {
+    "en": "fd1408bafa076faa",
+    "text": "قيم `<Issuer>` التي يجوز لهذا التطبيق تقديمها في منح تفويض RFC 7522 SECTION 2.1. إنها أخت `oauthAssertionIssuer` لملف SAML 2.0 وتُقرأ للسبب نفسه: تأكيد الحامل هو التفويض كله — لا متصفح ولا كلمة المرور ولا خطوة موافقة — لذا فإن قبول واحد من أي جهة يعني أن أي شخص يستطيع بلوغ هذا المنفذ يحصل على رمز وصول بوصفه أي شخص. `oauth2.saml2BearerRequireRegisteredIssuer` مفعّلة افتراضياً.\n\nإنها سمة منفصلة عن سمة JWT وليست قائمة مشتركة: الطرف الموثوق للتأكيد بصيغة واحدة لم يُوثَق بذلك للتأكيد بالصيغة الأخرى، والمشغّل الذي أعلن مُصدِراً لـ RFC 7523 يجب ألا يكون قد أعلنه بصمت لـ RFC 7522. تُقارن بـ Simple String Comparison (RFC 3986 section 6.2.1)، التي يطلبها RFC 7522 section 3 item 1 — بلا طي لحالة الأحرف وبلا تسامح مع الشرطة المائلة في النهاية. تتراكم، للسبب الذي تتراكم به سمة JWT."
+  },
+  "applications.schema.attributes.oauthSamlAssertionSigningCertificate.what": {
+    "en": "2f3d2c8cf3ae0cc7",
+    "text": "الشهادة التي يوقّع بها هذا الطرف تأكيدات RFC 7522 الخاصة به، PEM، مسجَّلة بالقيمة. نظير `oauthJwks` لملف تكون تواقيعه XML Signature لا JWS — لا يوجد JWKS في SAML، والشيء الذي يسجّله الطرف هو شهادة.\n\nقد توجد عدة كتل PEM في قيمة واحدة، لأن الطرف الذي يدوّر شهادة يحتفظ باثنتين ما دامت التأكيدات الموقَّعة بالقديمة ما تزال قيد الإرسال. مادة مفتاح عام، لذا فهي مثل `oauthJwks` لا قيمة لها لمن يقرأ هذا الدليل.\n\n**الشهادة التي تصل في `<ds:KeyInfo>` الخاص بالتأكيد نفسه ليست بديلاً عن هذه.** تُستخدم للاختيار مما هو مسجَّل هنا ولا تُستخدم أبداً كمفتاح في حد ذاتها، وهنا يكون هذا الملف أصرم من RFC 7523: سلسلة إلى جذر نطاق الثقة هذا تثبت أن نطاق الثقة أصدر مفتاحاً ولا تقول شيئاً عن أي تطبيق يحتفظ به، لذا فإن قبول واحدة سيتيح لشهادة RFC 7523 الطرفية الخاصة بتطبيق أن توقّع تأكيد SAML."
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificate.what": {
+    "en": "d1e47484136de9b4",
+    "text": "الشهادة الطرفية التي أصدرتها هذه الخدمة لهذا التطبيق من أجل RFC 7522، PEM، وموضوعها هو التطبيق ومُصدِرها Issuing CA الخاص بنطاق الثقة. يكتبها عنصر التحكم Issue في /admin/pki مع اختيار الغرض SAML 2.0، وبواسطة POST /admin-api/pki/issue مع `purpose: \"saml\"`. إنها شهادة مختلفة على زوج مفاتيح مختلف عن `oauthAssertionCertificate` بجانبها، ويحمل subjectAltName الخاص بها معرّف URI لملف RFC 7522 بحيث تقول شهادة تُقرأ خارج السياق لأي ملف أُصدرت."
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificateChain.what": {
+    "en": "49df2430d4c7cf4c",
+    "text": "Issuing CA ثم Intermediate CA، بصيغة PEM، بهذا الترتيب — ما ترافق به الشهادة الطرفية أعلاه. الجذر غير موجود فيها عمداً، للسبب الذي يذكره صف سلسلة JWT: الطرف المعتمد الذي يقبل واحدة لأنها وصلت في السلسلة يكون قد قبل شهادة تشهد لنفسها."
+  },
+  "applications.schema.attributes.oauthSamlAssertionPrivateKey.what": {
+    "en": "63981c5c57f70802",
+    "text": "المفتاح الخاص لزوج RFC 7522، PEM. **مختوم أثناء التخزين حيثما يعمر مفتاح تشفير المفاتيح أطول من العملية**، بالآلية نفسها وتحت المفتاح نفسه مثل `oauthAssertionPrivateKey` بجانبه — انظر ذلك الصف، الذي يعلّل الأمر كله. لا تحتفظ هذه الخدمة بنسخة ثانية: تسلّمه common/pki.js مرة واحدة، عند الإصدار، ثم تنساه."
+  },
+  "applications.schema.attributes.oauthSamlAssertionThumbprint.what": {
+    "en": "7788d86bee182127",
+    "text": "بصمة SHA-256 للشهادة الصادرة، base64url. إنها ما يمثّله `oauthAssertionKid` لملف JWT وتُكتب بشكل مختلف لأن الصيغتين تحملان مقابض مختلفة: ترويسة JWS تسمّي `kid` ويحمل XML Signature الشهادة نفسها، لذا فإن ما يطابق <ds:KeyInfo> مقدَّماً مع ما هو مسجَّل هو بصمة."
+  },
+  "applications.schema.attributes.oauthSamlAssertionExpiresAt.what": {
+    "en": "21956043d5d0e1df",
+    "text": "متى تنتهي صلاحية شهادة RFC 7522 الصادرة، بصيغة GeneralizedTime. حقيقة عن الشهادة وليست سياسة، تماماً كما هو `oauthAssertionExpiresAt`: لا شيء هنا يرفض تأكيداً لأن هذا التاريخ قد مضى. تُعرض في /admin/pki كي يرى المشغّل ما أوشك أن يتوقف عن العمل."
+  },
+  "applications.schema.attributes.oauthSamlAssertionKeySource.what": {
+    "en": "885b1731802e4f71",
+    "text": "من أين أتى زوج مفاتيح RFC 7522 أعلاه، بالمفردات التي يستخدمها `oauthAssertionKeySource` وللسبب نفسه: `issued` أو `uploaded-realm-ca` أو `uploaded-external-ca`. إنها سمة منفصلة عن سمة JWT لأن زوجي المفاتيح منفصلان — قد يُصدر أحدهما هنا بينما يكون الآخر شهادة تخص جهة أخرى."
+  },
+  "applications.schema.attributes.oauthSoftwareStatementIssuer.what": {
+    "en": "c6834fb57ae3ff4c",
+    "text": "قيم `iss` التي يكفل هذا التطبيق بيانات البرمجيات الخاصة بها عند POST /oauth2/register (RFC 7591 section 2.3) — التطبيق هو ناشر البرمجيات، والبيان الذي يسمّي أحد هؤلاء المُصدِرين يُتحقق منه مقابل `jwks` الخاص به أو زوج مفاتيح RFC 7523 الخاص به من /admin/pki، أو x5c أصدره نطاق الثقة هذا له. تُقرأ: يُرفض بيان من مُصدِر لا يعلنه أحد بالقيمة unapproved_software_statement ما دام `oauth2.softwareStatementRequireTrustedIssuer` مفعّلاً، والموثوق منها يثبّت البيانات الوصفية المسجَّلة وقد يفتح نقطة نهاية تسجيل مغلقة.\n\nسمة منفصلة عن `oauthAssertionIssuer`: الطرف الموثوق ليقول من هو الشخص لم يُوثَق بذلك ليقول أي برمجيات يجوز لها التسجيل. البيان الذي أصدره نطاق الثقة هذا بنفسه لا يحتاج إلى إعلان. تتراكم، للسبب الذي تتراكم به مُصدِرو التأكيدات."
+  },
+  "applications.schema.attributes.oauthIssuedSoftwareStatement.what": {
+    "en": "6e1666963d910326",
+    "text": "بيان البرمجيات الذي أصدره نطاق الثقة هذا آخر مرة لهذا التطبيق، بوصفه JWS مضغوطاً، من النوع `software-statement+jwt`، مع `sub` يسمّي هذا التطبيق. العميل الذي يقدّمه عند POST /oauth2/register يُسجَّل بالأعضاء التي يثبّتها. ليس سراً — يتوقع RFC 7591 section 2.3 أن يُشحن البيان مع كل نسخة من البرمجيات — وليس سجلاً لكل بيان أُصدر: الإصدار مجدداً يستبدل هذه القيمة، والبيان السابق ما يزال يُتحقق منه حتى تنتهي صلاحيته أو يتغير مفتاح توقيع نطاق الثقة."
+  },
+  "applications.schema.attributes.appSoftwareStatementIssuer.what": {
+    "en": "4bd7d529acd9f5fc",
+    "text": "قيمة `iss` لبيان البرمجيات الذي سجّل به هذا العميل، أو غائبة عندما لم يقدّم شيئاً. تُمسح بتحديث RFC 7592 لا يحمل شيئاً، وبحذف التسجيل."
+  },
+  "applications.schema.attributes.appSoftwareStatementTrusted.what": {
+    "en": "b995b37e9b9438b5",
+    "text": "TRUE عندما تم التحقق من ذلك البيان مقابل مُصدِر يثق به نطاق الثقة هذا، وFALSE عندما قُبل غير متحقَّق منه لأن `oauth2.softwareStatementRequireTrustedIssuer` كان متوقفاً. يجب على عميل سُجّل بناءً على بيان TRUE عند نقطة نهاية لولا ذلك مغلقة أن يقدّم بياناً موثوقاً من المُصدِر نفسه مع كل تحديث."
+  },
+  "applications.schema.attributes.appSoftwareStatementPublisher.what": {
+    "en": "5b7f331c8b1c940f",
+    "text": "التطبيق الذي جاءت الثقة عبره: الذي يعلن المُصدِر، أو — بالنسبة إلى بيان أصدره نطاق الثقة هذا — التطبيق الذي أُصدر من أجله."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSubjectDn.what": {
+    "en": "5e4d2971c2881d13",
+    "text": "RFC 8705 section 2.1.2 `tls_client_auth_subject_dn`: اسم DN لموضوع شهادة PKI التي يصادق بها هذا العميل، بصيغة RFC 4514. تُقارن كاسم منذ 2026-09-13 (common/certificate_subject.js: تُطوى أنواع السمات، والقيم وفق caseIgnoreMatch، ووحدات AVA لـ RDN متعدد القيم بأي ترتيب) وفقط مقابل شهادة تم التحقق من سلسلتها. إحدى معلمات الموضوع الخمس، ويسجّل العميل واحدة على الأكثر — وتُرفض الثانية (STS-REG-0131، STS-REG-0135). عند عدم وجود أي منها، ما يزال tls_client_auth يصادق على شهادة أصدرها نطاق الثقة هذا لهذا التطبيق. وهي أيضاً سمة المعرّف لعائلة `mtls`، وهي أحادية القيمة بينما يتراكم كل معرّف آخر هنا، لأن RFC 8705 يقول إن الشهادة تطابق \"the single expected subject\"."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanDns.what": {
+    "en": "112f46fd50b192e5",
+    "text": "RFC 8705 section 2.1.2 `tls_client_auth_san_dns`: اسم dNSName يجب أن تحمله الشهادة التي يصادق بها هذا العميل، يُقارن بلا اعتبار لحالة الأحرف أو لنقطة لاحقة، ولا يُقارن أبداً كحرف بدل. إحدى معلمات الموضوع الخمس؛ انظر oauthTlsClientAuthSubjectDn."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanUri.what": {
+    "en": "1d73c827b1f6f2f1",
+    "text": "RFC 8705 section 2.1.2 `tls_client_auth_san_uri`: معرّف uniformResourceIdentifier يجب أن تحمله الشهادة، يُقارن بمطابقة تامة. إحدى معلمات الموضوع الخمس."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanIp.what": {
+    "en": "bdaffe89241efe64",
+    "text": "RFC 8705 section 2.1.2 `tls_client_auth_san_ip`: عنوان iPAddress يجب أن تحمله الشهادة، IPv4 أو IPv6، يُقارن بوصفه العنوان لا بتهجئته. إحدى معلمات الموضوع الخمس."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanEmail.what": {
+    "en": "fde7039fac656aab",
+    "text": "RFC 8705 section 2.1.2 `tls_client_auth_san_email`: اسم rfc822Name يجب أن تحمله الشهادة، يُقارن اسم النطاق بلا اعتبار لحالة الأحرف والجزء المحلي بمطابقة تامة (RFC 5280 section 7.5). إحدى معلمات الموضوع الخمس."
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateBoundAccessTokens.what": {
+    "en": "0f2ad8a5c3044e38",
+    "text": "RFC 8705 section 3.4 `tls_client_certificate_bound_access_tokens`، TRUE أو FALSE. تعني TRUE أن هذا العميل يعلن أن رموزه مقيّدة بشهادة، ويُلزم بذلك في كل وضع: يُرفض طلب رمز منه عبر اتصال بلا شهادة عميل (STS-OAUTH-0487) بدلاً من الإجابة برمز غير مقيّد، وهو ما يتركه section 3.4 لخادم التفويض. لا تغيّر FALSE أو الغياب شيئاً — والعميل الذي يقدّم شهادة ما يزال يحصل على رمز مقيّد."
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateThumbprint.what": {
+    "en": "1aad4795617491a1",
+    "text": "لأغراض RFC 8705 section 2.2 self_signed_tls_client_auth: قيمة SHA-256 بصيغة base64url لترميز DER للشهادة التي يصادق بها هذا العميل. اسم يخص هذه الخدمة، يُحفظ إلى جانب ما يسمّيه RFC: منذ 2026-09-13 تصادق الشهادة أيضاً على العميل عندما تكون x5c[0] لمفتاح في jwks الذي سجّله (section 2.2.2). اجلب بصمة شهادة بواسطة GET /tls/sign-in، أو احسبها: openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url."
+  },
+  "applications.schema.attributes.oauthConfidential.what": {
+    "en": "11b68b893e67de65",
+    "text": "TRUE أو FALSE، وهو التحديد الذي تجريه طريقة مصادقة نقطة نهاية الرمز، ويكتبه هذا السجل حتى تُقرأ الإجابة. تكون `none`، أو غياب طريقة على تطبيق أُنشئ يدوياً، هي FALSE؛ وأي طريقة أخرى هي TRUE. يقرأ RFC 9700 السمة `oauthTokenEndpointAuthMethod` (`isConfidential()` في `oauth2_bcp.js`)، لذا لا تُحرَّر هذه السمة. لا يجوز للإنشاء ذكرها إلا عندما تتفق القيمة، ويُرفض الاختلاف (`STS-REG-0363`). تطبيق OAuth أو OpenID Connect يُنشأ بلا طريقة وبلا بيانات اعتماد يُسجَّل مع ذلك كـ `none`."
+  },
+  "applications.schema.attributes.samlEntityId.what": {
+    "en": "3987c430d22d9352",
+    "text": "معرّف ENTITYID لمزوّد الخدمة — جمهور التأكيد، وسمة المعرّف لكلتا عائلتي SAML. ليس لـ SAML 1.1 معرّف entityID خاص به في البروتوكول (لا توجد رسالة طلب ينتقل فيها) وما يقوم مقامه — providerId لدى Shibboleth، أو مقطع المسار، أو أصل TARGET — يسمّي الطرف نفسه، لذا تحمل سمة واحدة ذلك بدلاً من اثنتين ستختلفان أول مرة يُعلَن فيها تطبيق لكليهما. تتراكم: التطبيق الذي يجيب عن معرّفي entityID تطبيق واحد.\n\nتُقرأ، بوصفها النصف الثاني من forAppliesTo(): تكون AppliesTo في WS-Trust وAudienceRestriction للتأكيد الصادر من أجلها سلسلة واحدة، لذا فإن التطبيق الذي سجّلها هنا بدلاً من `wstrustAppliesTo` ما يزال يحصل على مربعه في خريطة التفويض. البحث نفسه، ومنذ #496 يُرفض AppliesTo الذي تحلّه في وضع product عندما لا يكون التطبيق الذي تسمّيه مسجَّلاً (appRegisteredBy)."
+  },
+  "applications.schema.attributes.samlAssertionConsumerService.what": {
+    "en": "fd890662f96f022c",
+    "text": "عنوان URL لخدمة مستهلك التأكيد — حيث تُعاد استجابة SAML، وهو redirect URI لكلتا عائلتي SAML. كانت تحمل أيضاً `wreply` الخاصة بـ WS-Federation حتى 2026-08-25؛ ثم انتقلت إلى wsfedReplyUrl، لأن صفحات SAML تقرأ هذه السمة للرجوع في Single Logout ووصول wreply فيها جعل تطبيق WS-Federation يبدو كأنه سمّى ACS لـ SAML. يُفحص في وضع product فقط: يرسل development الاستجابة إلى حيث طلبها الطلب ويسجّل العنوان هنا؛ ولا يسلّم product إلا إلى عنوان موجود أصلاً في هذه القائمة، والمشاهدة هناك لا تضيف عنواناً أبداً. ما يسجّله development هنا يُعلَّم على appReturnAddressObserved، ويرفض product العنوان المعلَّم حتى يؤكده مشغّل — لذا فإن نطاق ثقة انتقل من development إلى product لا يثق بما تعلّمه development. القيم المسجَّلة قبل وجود تلك العلامة لا تحمل شيئاً وما تزال تحتاج إلى مراجعة."
+  },
+  "applications.schema.attributes.samlSingleLogoutService.what": {
+    "en": "afe0a7928da789d7",
+    "text": "حيث تُرسل <samlp:LogoutResponse> لمزوّد الخدمة هذا، وحيث يذهب LogoutRequest عندما يبدأ مزوّد الهوية تسجيل الخروج. مُعلَنة لا مُلاحَظة: لا يحمل LogoutRequest عنوان رجوع، لذا لا يستطيع القول إلا البيانات الوصفية لـ SP أو مشغّل. يكتب استهلاك البيانات الوصفية مواقع SingleLogoutService هنا (وربط كل نقطة نهاية وResponseLocation على samlSloEndpoint، الذي يُقرأ أولاً). عند عدم تسجيل أي شيء يكون الرجوع هو saml2.defaultSingleLogoutService ثم عنوان URL لخدمة مستهلك التأكيد أعلاه، وهو تخمين تصرّح به هذه الخدمة علناً لا سراً."
+  },
+  "applications.schema.attributes.samlNameIdFormat.what": {
+    "en": "7f5ead1978717201",
+    "text": "كل تنسيق NameID طلبه مزوّد الخدمة هذا في NameIDPolicy، متراكماً. إنه دليل لا إعداد: يجيب مزوّد الهوية هذا بما طُلب، بما في ذلك تنسيق لم يسمع به أحد، لذا لا تقيّد قيمة هنا الطلب التالي."
+  },
+  "applications.schema.attributes.samlResponseBinding.what": {
+    "en": "d9d4d1b00c05d3ef",
+    "text": "قيم ProtocolBinding التي طلب إعادة استجاباته عليها — HTTP-POST أو HTTP-Redirect أو HTTP-Artifact. تعدّدها هو الحالة العادية لمزوّد خدمة قيد الاختبار، وهذا ما يجعل هذه قائمة."
+  },
+  "applications.schema.attributes.samlSigningCertificate.what": {
+    "en": "a2ead784b1dff911",
+    "text": "شهادات التوقيع المسجَّلة لمزوّد الخدمة، base64 DER، واحدة لكل قيمة. يُتحقق من AuthnRequest أو LogoutRequest أو LogoutResponse موقَّع من مزوّد الخدمة هذا مقابلها — في كل وضع — ويُرفض عندما لا يتحقق مقابل أي منها. تُكتب باستهلاك بياناته الوصفية (كل KeyDescriptor يحمل use=\"signing\" أو بلا use)، وبصفحة وحدة التحكم لـ SAML 2.0، وبـ POST /admin-api/saml2/set-signing-certificate، وبتأكيد الشهادة الملاحَظة أدناه، أو يدوياً. يجب أن ينتج مفتاحه XML Signature تتحقق منه هذه الخدمة — RSA أو EC أو EdDSA أو DSA أو ML-DSA أو SLH-DSA (STS-REG-0160). لا تُكتب أبداً من طلب: الشهادة التي يحملها طلب في ds:KeyInfo تذهب إلى samlObservedSigningCertificate. القيم المكتوبة قبل 2026-09-17 التُقطت من الطلبات ولا تحمل مصدرها — راجعها قبل الثقة بها. مادة مفتاح عام، لذا فهي بخلاف oauthClientSecret لا قيمة لها لمن يقرأ هذا الدليل."
+  },
+  "applications.schema.attributes.samlObservedSigningCertificate.what": {
+    "en": "91dce6d63a1aaa80",
+    "text": "الشهادة التي حملها آخر طلب موقَّع في ds:KeyInfo الخاص به، base64 DER، عندما لا تكون إحدى قيم samlSigningCertificate المسجَّلة. مُلاحَظة لا موثوقة: المفتاح الذي يحضره طلب لا يثبت شيئاً عن مرسل الطلب، لذا لا يتحقق من شيء في أي من الوضعين. ما يزال development يشفّر تأكيداً إليها عندما لا يحمل المدخل شهادة أخرى؛ ولا يفعل product ذلك. يؤكدها المشغّل (فتنتقل إلى samlSigningCertificate) أو يطرحها، في صفحة SAML 2.0 أو بواسطة POST /admin-api/saml2/confirm-signing-certificate و/discard-signing-certificate. قيمة واحدة — الأخيرة — حتى لا يستطيع سيل من الطلبات الحاملة لمفاتيح مختلقة أن يكبّر المدخل."
+  },
+  "applications.schema.attributes.samlAuthnRequestVerification.what": {
+    "en": "6acc91b675eb6f89",
+    "text": "ما وجده فحص توقيع آخر طلب: `verified` أو `failed` أو `unsigned` أو `no-certificate` (موقَّع، ولا شيء مسجَّل للتحقق مقابله)، ثم الربط والخوارزمية. تُسنَد، مثل samlAuthnRequestSigned بجانبها."
+  },
+  "applications.schema.attributes.samlSpMetadataUrl.what": {
+    "en": "4de7dca3c5546c56",
+    "text": "حيث تُنشر البيانات الوصفية لمزوّد الخدمة هذا. تُجلب بإجراء تحديث البيانات الوصفية في صفحة التطبيق وبـ POST /admin-api/applications/refresh-metadata، ولا تُجلب أبداً أثناء جريان تدفق — فتأكيد اضطر إلى انتظار خادم ويب يخص جهة أخرى كي يُصدر سيجعل كل تسجيل دخول بموثوقية ذلك الخادم. ما يكتبه الجلب هو كل ما يكتبه استهلاك المستند — انظر samlSpMetadata أدناه.\n\nهذا هو سطح الطلب الصادر الثاني في هذه الخدمة؛ وكان الاتحاد هو الأول وهو الوحيد الآخر. يتبع حالات الرفض نفسها — يجب أن يكون URL أحد ما يحمله هذا المدخل، ويجب أن يكون المخطط http أو https، وينتهي وقت الطلب."
+  },
+  "applications.schema.attributes.samlSpMetadata.what": {
+    "en": "f94a9d0c56e1e3f0",
+    "text": "مستند البيانات الوصفية لمزوّد الخدمة، مخزَّن حرفياً. هو ما يخزّنه إجراء التحديث، وما يخزّنه رفع واحد في صفحة SAML 2.0 (أو POST /admin-api/saml2/upload-metadata) لمزوّد خدمة لا تستطيع هذه الخدمة الوصول إلى بياناته الوصفية. يكتب استهلاكه (2026-09-17) نقاط نهاية AssertionConsumerService وSingleLogoutService كعناوين رجوع مسجَّلة (samlAssertionConsumerService وsamlAcsEndpoint وsamlSingleLogoutService وsamlSloEndpoint)، وشهادات التوقيع (samlSigningCertificate)، وشهادة التشفير (samlEncryptionCertificate)، وNameIDFormats وAuthnRequestsSigned وWantAssertionsSigned، وvalidUntil وcacheDuration. تعيين هذه السمة يدوياً يخزّن المستند ولا يستهلك شيئاً — استخدم الرفع.\n\nيُحتفظ به مع المستخلص حتى يرى القارئ ما استُهلك فعلاً. الشهادة التي لا مستند خلفها قيمة لا يستطيع أحد التحقق منها."
+  },
+  "applications.schema.attributes.samlEncryptionCertificate.what": {
+    "en": "9105bb16521de17b",
+    "text": "الشهادة التي يُشفَّر إليها التأكيد، base64 DER أو PEM. يكتبها جلب البيانات الوصفية من <md:KeyDescriptor use=\"encryption\"> — مع الرجوع إلى KeyDescriptor غير مقيَّد، الذي تقول المواصفة إنه يخدم الاستخدامين — ويمكن تعيينها يدوياً لمزوّد خدمة بلا بيانات وصفية أصلاً.\n\nهي تقرر ما يخرج. عند عدم وجود شيء هنا تُستخدم samlSigningCertificate المسجَّلة، ثم — في development فقط — الملاحَظة، وعند عدم وجود أي منها يُرسل التأكيد كنص واضح (development) أو يُرفض (product)، وتقول الصفحة ذلك."
+  },
+  "applications.schema.attributes.samlAcsEndpoint.what": {
+    "en": "3bc462623206e5a8",
+    "text": "عنصر <md:AssertionConsumerService> من البيانات الوصفية المستهلكة، بالشكل `<index> <isDefault> <binding> <location>` — وتكون isDefault هي `true` أو `false` أو `-` عندما لا تُذكر. يُجاب عن AuthnRequest لـ SAML 2.0 يسمّي AssertionConsumerServiceIndex عند نقطة النهاية تلك وعلى ربطها؛ والذي يسمّي AssertionConsumerServiceURL يجب أن يسمّي أحد هذه (في كل وضع، بمجرد استهلاك البيانات الوصفية)؛ والذي لا يسمّي أياً منهما يذهب إلى نقطة النهاية الافتراضية (saml-metadata-2.0-os section 2.2.3). يستخدم SAML 1.1 الربط والموقع المسجَّلين لاختيار Browser/POST أو Browser/Artifact عندما لا يُطلب ملف صراحة."
+  },
+  "applications.schema.attributes.samlSloEndpoint.what": {
+    "en": "50fc4269807fa1f6",
+    "text": "عنصر <md:SingleLogoutService> من البيانات الوصفية المستهلكة، بالشكل `<binding> <location>` أو `<binding> <location> <responseLocation>`. يذهب LogoutResponse إلى ResponseLocation حيث يوجد واحد، على الربط الذي وصل عليه LogoutRequest حيث ينشره مزوّد الخدمة."
+  },
+  "applications.schema.attributes.samlSpNameIdFormat.what": {
+    "en": "5c24c66a2d887053",
+    "text": "قيم <md:NameIDFormat> التي تعلنها البيانات الوصفية لمزوّد الخدمة. بخلاف samlNameIdFormat (ما طلبه)، هذه تقيّد: يُجاب عن NameIDPolicy يسمّي تنسيقاً آخر بـ InvalidNameIDPolicy (saml-core-2.0-os section 3.4.1.1)، ويُختار التنسيق الافتراضي منها."
+  },
+  "applications.schema.attributes.samlSpAuthnRequestsSigned.what": {
+    "en": "9859c664a8b4172e",
+    "text": "TRUE عندما تقول البيانات الوصفية AuthnRequestsSigned=\"true\": يُرفض عندئذٍ طلب غير موقَّع من مزوّد الخدمة هذا مهما قال saml2.requireSignedAuthnRequests، وتقول البيانات الوصفية التي يقدّمها له مزوّد الهوية هذا WantAuthnRequestsSigned=\"true\"."
+  },
+  "applications.schema.attributes.samlSpWantAssertionsSigned.what": {
+    "en": "e0f4d22138fd10d6",
+    "text": "TRUE عندما تقول البيانات الوصفية WantAssertionsSigned=\"true\": يُوقَّع التأكيد حتى حيث يكون saml2.signAssertion (أو saml2SignAssertion) متوقفاً — في وضع product؛ ويحترم development الإعداد، وهو حالة اختبار، ويسجّل أن مزوّد الخدمة طلب خلاف ذلك."
+  },
+  "applications.schema.attributes.samlSpWantAssertionsEncrypted.what": {
+    "en": "0435ae5ea89e68d9",
+    "text": "TRUE عندما تنشر البيانات الوصفية المستهلكة KeyDescriptor معلَّماً بـ use=\"encryption\" — أي أن مزوّد الخدمة يقول إن لديه مفتاحاً للتأكيدات المشفَّرة، ولا تملك بيانات SAML 2.0 الوصفية سمة خاصة بها لذلك (تقرأ ملفات التشغيل البيني المفتاح بوصفه الطلب). يُشفَّر التأكيد عندئذٍ إلى ذلك المفتاح في كل وضع، مهما قال saml2.encryptAssertion."
+  },
+  "applications.schema.attributes.samlSpMetadataValidUntil.what": {
+    "en": "144abddd1e7267dc",
+    "text": "قيمة validUntil الفعلية للمستند المستهلك — الأبكر على أي EntitiesDescriptor محيط، وعلى EntityDescriptor وSPSSODescriptor الخاص به. يُرفض المستند المنتهي صلاحيته أصلاً عند استهلاكه؛ وبمجرد تجاوز هذا، يُرفض كل طلب من مزوّد الخدمة (STS-SAML-0074) حتى يُستهلك مستند أحدث."
+  },
+  "applications.schema.attributes.samlSpMetadataCacheDuration.what": {
+    "en": "14f91b25e0604839",
+    "text": "قيمة cacheDuration الفعلية للمستند المستهلك (الأقصر في سلسلته)، بصيغة xs:duration التي حملها. بمجرد انقضائها منذ استهلاك المستند، يصبح المستند قديماً: يجلبه المحدّث في الخلفية مجدداً حيث يستطيع (saml2.spMetadataRefresh)، ويواصل العمل حتى validUntil الخاص به."
+  },
+  "applications.schema.attributes.samlSpMetadataConsumedAt.what": {
+    "en": "f4b47a01d6cdaafd",
+    "text": "متى استُهلك المستند آخر مرة، وكيف: `<ISO instant> <refresh|upload|mdq>` — و`mdq` للذي جُلب من مجيب Metadata Query، والذي يستطيع المحدّث في الخلفية جلبه مجدداً."
+  },
+  "applications.schema.attributes.samlSpMetadataSignature.what": {
+    "en": "918bec6e5d05e1d7",
+    "text": "ما وجده فحص توقيع المستند المستهلك نفسه: `verified` أو `unsigned` أو `signed-not-verified` (موقَّع، ولا توجد samlSpMetadataSigningCertificate للتحقق مقابله)."
+  },
+  "applications.schema.attributes.samlSpMetadataSigningCertificate.what": {
+    "en": "cdb98da69d5f24ce",
+    "text": "الشهادة التي يجب أن تُوقَّع بها البيانات الوصفية لمزوّد الخدمة هذا، base64 DER. عند تعيينها، يُرفض المستند غير الموقَّع، أو الذي لا يتحقق توقيعه مقابلها، ولا يتغير شيء على المدخل. من دونها يُستهلك المستند الموقَّع ويُسجَّل كـ signed-not-verified: فعل الثقة عندئذٍ هو اختيار المشغّل لـ URL (أو للمستند)، وهو ما يكونه التحديث الصريح أو الرفع."
+  },
+  "applications.schema.attributes.saml2EncryptAssertion.what": {
+    "en": "759b4ebf4d0a40a8",
+    "text": "TRUE أو FALSE: تشفير التأكيد الصادر إلى مزوّد الخدمة هذا، متجاوزاً saml2.encryptAssertion. هذه هي الأكثر جدوى من الأربع لكل تطبيق — فالبيئة التي يشترط فيها مزوّد خدمة واحد التشفير ولا يستطيع الآخرون قراءته هي الحالة العادية، ومفتاح على مستوى الخدمة كلها لا يستطيع التعبير عن ذلك."
+  },
+  "applications.schema.attributes.saml2EncryptionAlgorithm.what": {
+    "en": "fa273f083d4148cb",
+    "text": "تشفير الكتلة المستخدم لمزوّد الخدمة هذا — aes256-gcm أو aes128-gcm أو aes256-cbc أو aes128-cbc — متجاوزاً saml2.encryptionAlgorithm. القيمة التي ليست إحدى هذه الأربع تُتجاهل مع تحذير وتُستخدم اختيار الخدمة كلها، تماماً كما يُفعل برقم غير قابل للتحليل."
+  },
+  "applications.schema.attributes.saml2KeyTransportAlgorithm.what": {
+    "en": "e2972659824b67ae",
+    "text": "كيف يُغلَّف مفتاح المحتوى لمزوّد الخدمة هذا — rsa-oaep-mgf1p أو rsa-oaep (SHA-256، MGF1-SHA-256؛ #168) أو rsa-1_5 — متجاوزاً saml2.keyTransportAlgorithm. الجهاز الذي لا يقبل إلا rsa-1_5 هو السبب في أن هذا لكل تطبيق لا قراراً يُتخذ مرة واحدة للخدمة كلها."
+  },
+  "applications.schema.attributes.saml2EncryptLogoutNameId.what": {
+    "en": "6d5adf9b1aaa6b01",
+    "text": "TRUE أو FALSE: إرسال <saml:EncryptedID> بدلاً من <saml:NameID> في LogoutRequest المُرسل إلى مزوّد الخدمة هذا، متجاوزاً saml2.encryptLogoutNameId. منفصل عن مفتاح التأكيد أعلاه لأنهما قدرتان منفصلتان في كل مكتبة لمزوّد خدمة تملكهما: الذي يفك تشفير التأكيدات قد ما يزال يتوقع NameID عادياً في رسالة تسجيل خروج."
+  },
+  "applications.schema.attributes.oauthAccessTokenTtlS.what": {
+    "en": "a97604c8265b331c",
+    "text": "المدة التي يعيشها رمز الوصول الصادر إلى هذا العميل، بالثواني، متجاوزةً oauth2.accessTokenTtlS له وحده. وتصير قيمة `exp` للرمز، فتُختم عند التوقيع، ولا شيء هنا يستطيع تقصير رمز صدر بالفعل. اضبطها على 30 لدى عميل واحد لتشاهد ذلك العميل يجدد بينما يمضي كل عميل آخر."
+  },
+  "applications.schema.attributes.oauthIdTokenTtlS.what": {
+    "en": "8cc6c14509612cb8",
+    "text": "الأمر نفسه لرمز ID Token في OIDC، متجاوزًا oauth2.idTokenTtlS. وهو منفصل عن مدة رمز الوصول لأن الاثنين يذهبان إلى قراء مختلفين: يُستهلك ID Token مرة واحدة عند تسجيل الدخول، ويُقدَّم رمز الوصول طوال مدة بقائه."
+  },
+  "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
+    "en": "019d39de89f62aaf",
+    "text": "الأمر نفسه لرمز التجديد، متجاوزًا oauth2.refreshTokenTtlS. والقيمة المساوية لـ oauthAccessTokenTtlS أو الأدنى منها قانونية، وهي منحة لا يمكن تجديدها تجديدًا مفيدًا أبدًا — وتبلغ /admin/token-lifetimes عن ذلك الاقتران للزوج على مستوى الخدمة، وهو ممكن هنا بالقدر نفسه. فبالنسبة إلى وحدة تحكم المسؤول وبوابة المستخدم وتطبيق التقارير، تكون القيمة النافذة هي الأقصر بين عدد موجب هنا وإعداد نطاق الثقة؛ ولا يمكن مسح هذه الثلاثة، ويُرفض 0، ويتغير ذلك بتأكيد عدد موجب مختلف عند الحفظ (#825)."
+  },
+  "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
+    "en": "2fd2c72086342ab0",
+    "text": "وضع RFC 9700 فقط: المدة التي يجوز أن تمكث فيها سلسلة التجديد بلا استخدام قبل قطعها، متجاوزةً oauth2.refreshIdleSeconds لهذا العميل. وتُقاس من آخر مرة استُرد فيها أي رمز في السلسلة لا من وقت الإصدار، فيحتفظ العميل المشغول بمنحته ولا يحتفظ بها العميل الخامل. وخارج وضع RFC 9700 لا يقرأها شيء، وهذه خاصية للإعداد لا لهذه السمة. فبالنسبة إلى وحدة تحكم المسؤول وبوابة المستخدم وتطبيق التقارير، تكون القيمة النافذة هي الأقصر بين عدد موجب هنا وإعداد نطاق الثقة؛ ولا يمكن مسح هذه الثلاثة، ويُرفض 0، ويتغير ذلك بتأكيد عدد موجب مختلف عند الحفظ (#825)."
+  },
+  "applications.schema.attributes.oauthMaxAuthAgeS.what": {
+    "en": "c79eafa0090748ab",
+    "text": "كم مضى على مصادقة هذا العميل، بالثواني، قبل أن يجب على طلب التفويض أن يصادق من جديد، حتى عندما لا يرسل الطلب max_age، متجاوزًا oauth2.maxAuthAgeS. ولا تضيف القيمة 0 أو القيمة الفارغة حدًا خاصًا بهذه السمة، ويتبع العميل العادي عندئذ إعداد نطاق الثقة، الذي قيمته الافتراضية 0. فبالنسبة إلى وحدة تحكم المسؤول وبوابة المستخدم وتطبيق التقارير، تكون القيمة النافذة هي الأقصر بين عدد موجب هنا وauthn.sessionLifetimeS، لذا فإن رفع نطاق الثقة لا يطيلها أبدًا. ولا يمكن مسح هذه الثلاثة، ويُرفض 0، ويتغير الحد بتأكيد عدد موجب مختلف عند الحفظ (#825)."
+  },
+  "applications.schema.attributes.oauthClaimsAccessToken.what": {
+    "en": "e284080e7c1bb9a6",
+    "text": "مطالبات رمز الوصول الخاصة بهذا التطبيق، كمصفوفة JSON من الصفوف على غرار صفحة المطالبات المخصصة في نطاق الثقة. تُضاف إلى مطالبات رمز الوصول في نطاق الثقة للرموز الصادرة إلى هذا العميل، ويحل صف التطبيق محل صف نطاق الثقة ذي الاسم نفسه."
+  },
+  "applications.schema.attributes.oauthClaimsIdToken.what": {
+    "en": "bf6d6d58355a3d7d",
+    "text": "مطالبات ID Token الخاصة بهذا التطبيق، كمصفوفة JSON من الصفوف على غرار صفحة المطالبات المخصصة في نطاق الثقة. تُضاف إلى مطالبات ID Token في نطاق الثقة لهذا العميل، وتفوز بحسب الاسم."
+  },
+  "applications.schema.attributes.oauthClaimsUserinfo.what": {
+    "en": "45d44e8df029c130",
+    "text": "مطالبات UserInfo الخاصة بهذا التطبيق، كمصفوفة JSON من الصفوف على غرار صفحة مطالبات UserInfo في نطاق الثقة. تُضاف إلى مطالبات UserInfo في نطاق الثقة التي تُجاب لهذا العميل، وتفوز بحسب الاسم."
+  },
+  "applications.schema.attributes.oauthClaimAttributesAccessToken.what": {
+    "en": "0bb51f4496678312",
+    "text": "اختيار هذا التطبيق لسمات الدليل الخاصة برموز الوصول لديه، كمصفوفة JSON من أسماء السمات من فهرس المطالبات المخصصة في نطاق الثقة. وعند وجوده يحل محل اختيار نطاق الثقة للرموز الصادرة إلى هذا العميل؛ وعند غيابه يُستخدم اختيار نطاق الثقة."
+  },
+  "applications.schema.attributes.oauthClaimAttributesIdToken.what": {
+    "en": "281e877a92a4cd99",
+    "text": "اختيار هذا التطبيق لسمات الدليل الخاصة برموز ID Token لديه، وهو مصفوفة JSON من أسماء سمات الفهرس، ويحل محل اختيار نطاق الثقة عند وجوده."
+  },
+  "applications.schema.attributes.oauthClaimAttributesUserinfo.what": {
+    "en": "bc1313ec18da0769",
+    "text": "اختيار هذا التطبيق لسمات الدليل الخاصة باستجابة UserInfo التي تُجاب له، وهو مصفوفة JSON من أسماء سمات الفهرس، ويحل محل اختيار نطاق الثقة عند وجوده."
+  },
+  "applications.schema.attributes.oauthClaimsCombineAccessToken.what": {
+    "en": "0fdd9c637c2aed07",
+    "text": "كيف تُدمَج مطالبات رمز الوصول الخاصة بنطاق الثقة مع مطالبات هذا التطبيق (#395)، الصفوف ذات النوع وسمات الدليل المؤشَّرة على السواء: application (ما يخص هذا التطبيق فقط)، union (ما يخص نطاق الثقة وما يخص التطبيق)، intersection (ما يحمله الطرفان فقط) أو realm (ما يخص نطاق الثقة فقط). عند عدم الضبط تُضاف صفوفه إلى صفوف نطاق الثقة وتفوز بحسب الاسم، ويحل اختياره محل اختيار نطاق الثقة. والتطبيق الذي لا يحمل شيئًا يخصه يحصل على ما لدى نطاق الثقة مهما قال هذا."
+  },
+  "applications.schema.attributes.oauthClaimsCombineIdToken.what": {
+    "en": "5712c8d8fec06866",
+    "text": "كيف تُدمَج مطالبات ID Token الخاصة بنطاق الثقة مع مطالبات هذا التطبيق (#395)، الصفوف ذات النوع وسمات الدليل المؤشَّرة على السواء: application (ما يخص هذا التطبيق فقط)، union (ما يخص نطاق الثقة وما يخص التطبيق)، intersection (ما يحمله الطرفان فقط) أو realm (ما يخص نطاق الثقة فقط). عند عدم الضبط تُضاف صفوفه إلى صفوف نطاق الثقة وتفوز بحسب الاسم، ويحل اختياره محل اختيار نطاق الثقة. والتطبيق الذي لا يحمل شيئًا يخصه يحصل على ما لدى نطاق الثقة مهما قال هذا."
+  },
+  "applications.schema.attributes.oauthClaimsCombineUserinfo.what": {
+    "en": "114411a8522be187",
+    "text": "كيف تُدمَج مطالبات UserInfo الخاصة بنطاق الثقة مع مطالبات هذا التطبيق (#395)، الصفوف ذات النوع وسمات الدليل المؤشَّرة على السواء: application (ما يخص هذا التطبيق فقط)، union (ما يخص نطاق الثقة وما يخص التطبيق)، intersection (ما يحمله الطرفان فقط) أو realm (ما يخص نطاق الثقة فقط). عند عدم الضبط تُضاف صفوفه إلى صفوف نطاق الثقة وتفوز بحسب الاسم، ويحل اختياره محل اختيار نطاق الثقة. والتطبيق الذي لا يحمل شيئًا يخصه يحصل على ما لدى نطاق الثقة مهما قال هذا."
+  },
+  "applications.schema.attributes.oauthAccessTokenClaim.what": {
+    "en": "cf887c3be9a18ff1",
+    "text": "مطالبات الهوية التي يريدها خادم الموارد هذا على رموز الوصول الموجهة إليه (إحدى قيم oauthAudience الخاصة به، أو client_id الخاص به مسمى بوصفه نطاق صلاحية)، من مطالبات profile وemail وaddress وphone في OpenID Connect Core القسم 5.4. ولا تُطلَق كل واحدة إلا عندما يُمنَح نطاق الصلاحية الذي يغطيها، وفي رمز موجه إلى عدة خوادم موارد لا تدخل إلا مطالبة أعلنها كل واحد منها. وعند الغياب لا يحمل الرمز أيًا من هذه المطالبات من هذه الطبقة — ومن ذلك preferred_username."
+  },
+  "applications.schema.attributes.oauthPermissionClaims.what": {
+    "en": "81cd9d9de131a21b",
+    "text": "المطالبات التي تحملها كل صلاحية من صلاحيات خادم الموارد هذا، ككائن JSON من اسم صلاحية (إحدى قيم oauthPermission الخاصة به) إلى قائمة بأسماء السمات من فهرس مطالبات نطاق الثقة. ويحمل رمز الوصول الموجه إلى هذا التطبيق والذي مُنحت عليه صلاحية قيم الشخص لسمات تلك الصلاحية، تحت أسماء مطالبات الفهرس؛ ومنح الصلاحية هو منح تلك المطالبات، بما فيها مطالبة OpenID Connect القياسية. وتُدمَج مع مطالبات العميل كما يقول oauthAccessTokenClaimsCombine."
+  },
+  "applications.schema.attributes.oauthAccessTokenClaimsCombine.what": {
+    "en": "bf5a0b995021c02e",
+    "text": "كيف تُدمَج مطالبات رمز الوصول الخاصة بالعميل مع المطالبات المعلنة لخادم الموارد هذا (oauthAccessTokenClaim) على رمز موجه إليه: 'union' (الافتراضي)، 'intersection' (المطالبات التي يحملها الطرفان فقط)، 'client' (مطالبات العميل فقط) أو 'resource' (المعلنة فقط). وتُدمَج خوادم الموارد المتعددة التي تختلف بالوضع intersection. ولا يُطلَق شيء لم تغطه منحة، أيًا كان الخيار."
+  },
+  "applications.schema.attributes.oauthRevokeRefreshOnLogout.what": {
+    "en": "4a6e20c0380356cf",
+    "text": "TRUE أو FALSE: هل يلغي تسجيل الخروج رموز التجديد لهذا العميل، متجاوزًا oauth2.revokeRefreshOnLogout. وFALSE هي الحالة المثيرة للاهتمام وهي سبب استحقاق وجود هذا لكل عميل — فالعميل الذي يستطيع أن يعود بالتجديد بعد تسجيل الخروج عيب حقيقي في عمليات النشر الحقيقية، وهذا يجعله قابلًا لإعادة الإنتاج لعميل واحد بينما يتصرف الباقي."
+  },
+  "applications.schema.attributes.oauthThirdPartyInitiatedLogin.what": {
+    "en": "fff2d88eaeaf4e44",
+    "text": "TRUE أو FALSE: هل يجوز لـ /launch/{app} — ولرابط تسجيل الدخول في بوابة المستخدم — أن يرسل شخصًا إلى oauthInitiateLoginUri لهذا العميل (OpenID Connect Core القسم 4)، متجاوزًا oauth2.thirdPartyInitiatedLogin."
+  },
+  "applications.schema.attributes.oauthSpInitiatedSso.what": {
+    "en": "50ec3dfde523d275",
+    "text": "TRUE أو FALSE: هل يجيب /oauth2/authorize هذا العميل عندما لم يُطلَق للتو، متجاوزًا oauth2.spInitiatedSso. ولا تجيب FALSE إلا طلب تفويض يلي /launch لهذا العميل على الجلسة نفسها ضمن oauth2.launchWindowS، مرة لكل إطلاق، وترفض أي طلب آخر بـ unauthorized_client."
+  },
+  "applications.schema.attributes.oauthInitiateLoginUri.what": {
+    "en": "bee89c2346a1fa39",
+    "text": "حيث يبدأ طرف ثالث تسجيل الدخول إلى هذا العميل: initiate_login_uri في OpenID Connect Core القسم 4، الذي يرسل إليه /launch/{app} وبوابة المستخدم شخصًا مع iss وlogin_hint وtarget_link_uri. https فقط، وبلا fragment."
+  },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "شعار العميل: logo_uri في OpenID Connect Registration القسم 2، ويُرسم على شاشتي تسجيل الدخول والموافقة إلى جانب اسم العميل. يحمّله متصفح الشخص من هذا العنوان، ولا تجلبه هذه الخدمة أبدًا. عنوان URL مطلق بمخطط https."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "سياسة خصوصية العميل: policy_uri في OpenID Connect Registration القسم 2، ويُربَط من شاشتي تسجيل الدخول والموافقة. عنوان URL مطلق بمخطط https."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "شروط خدمة العميل: tos_uri في OpenID Connect Registration القسم 2، ويُربَط من شاشتي تسجيل الدخول والموافقة. عنوان URL مطلق بمخطط https."
+  },
+  "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
+    "en": "25b5b04c83819b5b",
+    "text": "ما إذا كان تبادل الرموز وفق RFC 8693 الذي يجريه هذا العميل يحصل على `refresh_token` إلى جانب رمز الوصول المُتبادَل، متجاوزًا oauth2.tokenExchangeRefreshToken له وحده. إحدى ثلاث كلمات: `never` أو `when-requested` (الافتراضي على مستوى الخدمة — يطلب العميل باستخدام `requested_token_type` في RFC 8693 القسم 2.1 ولا يحصل على واحد إلا إذا طلب) أو `always`.\n\nيُقرأ على العميل الذي يجري التبادل لا على الجمهور، لأن رمز التجديد يُسلَّم إلى العميل: فهو بيانات اعتماد ذلك الطرف ليحتفظ بها ويلغيها ويستردها في النهاية. ليس للموضوع الذي يدور حوله التبادل قيد في هذا السجل أصلًا في الحالة المهمة، لأن الغرض كله من التبادل هو subject_token من مكان آخر.\n\n**ينطبق على عائلتي OAuth 2.0 وOpenID Connect دون غيرهما، وبخلاف كل سمة أخرى هنا فإنه مُنفَّذ.** يُرفض القيد غير المُعلَن لأي من العائلتين من بابَي وحدة التحكم كليهما ومن واجهة الإدارة البرمجية، مع تسمية العائلة التي تُؤشَّر أولًا — لأن القيمة هنا سياسة تخص نقطة نهاية الرمز، والقيد الذي لا يمكن لأي طلب رمز أن يسميه سيحملها وكأنها نافذة. الكتلة فوق هذا الصف تحاجج في ذلك. يصل `ldapmodify` إلى هذه السمة كأي سمة أخرى ولا يُفحص.\n\nالقيمة التي ليست إحدى الكلمات الثلاث ليست خطأ عند الكتابة وليست صامتة: يحذّر settingFor() مسميًا القيد والسمة وما تحمله، ويحسم إعداد مستوى الخدمة — بأمانة الحالات الثلاث نفسها التي ينالها كل تجاوز آخر على هذا القيد."
+  },
+  "applications.schema.attributes.appRequiredRole.what": {
+    "en": "03d0f9a2b65f3598",
+    "text": "دور يجب أن يحمله أحد قبل أن يُصدَر لهذا التطبيق أي شيء — رمز، أو تأكيد، أو استجابة WS-Federation، أو جلسة. متعدد القيم ويكفي أي منها. الغياب يعني الجميع، وهو الدور المضمّن الذي يحمله الجميع، ولهذا لا يرفض التطبيق غير المهيأ أحدًا. يتخذ القرار PDP الخاص بـ XACML وفق السياسة التي يسميها xacml.issuancePolicy، لا بشرط if في موقع إصدار، فيكون سبب الرفض سياسة يستطيع أحد أن يقرأها."
+  },
+  "applications.schema.attributes.appAllowedToDelegateTo.what": {
+    "en": "5308a92257a7b8f9",
+    "text": "الأهداف التي يجوز لهذا التطبيق أن يحصل على رمز من أجلها نيابة عن شخص آخر، عندما يكون الوسيط في طلب WS-Trust من نوع OnBehalfOf / ActAs أو في تبادل رموز وفق RFC 8693 — وهو نظير msDS-AllowedToDelegateTo في Kerberos، على الواجهة الأمامية. معرّف تطبيق واحد (أو القيمة الحرفية audience / AppliesTo) لكل قيمة. يُنفَّذ في وضع المنتج؛ ويسجّل وضع التطوير ما كان سيُرفض على /admin/delegation. أما appAllowedToActOnBehalfOf على الهدف فهو الطريق الآخر للسماح بالزوج نفسه."
+  },
+  "applications.schema.attributes.appAllowedToActOnBehalfOf.what": {
+    "en": "ec2ab22c5113f585",
+    "text": "الوسطاء الذين يقبلهم هذا التطبيق بوصفهم يتصرفون نيابة عن شخص آخر عندما يكون هو هدف التفويض — وهو النظير القائم على المورد لـ msDS-AllowedToActOnBehalfOfOtherIdentity في Kerberos، ويُضبط على الواجهة الخلفية. معرّف تطبيق وسيط واحد لكل قيمة."
+  },
+  "applications.schema.attributes.appDelegationSubjectGroup.what": {
+    "en": "ccd774803e78bb21",
+    "text": "الأشخاص الذين يجوز لهذا الوسيط أن يتصرف نيابة عنهم، كأسماء DN للمجموعات: يجب أن يكون الموضوع عضوًا في إحداها. الفراغ يعني أي شخص غير محمي — فالشخص الذي يحمل stsNotDelegated، أو العضو في قائمة Admin Read أو Admin Write في وحدة التحكم، لا يُفوَّض أبدًا مهما قال هذا."
+  },
+  "applications.schema.attributes.appDelegationSemantics.what": {
+    "en": "9faf00ab16755dec",
+    "text": "الدلالات التي يسمح بها هذا التطبيق: `delegation` أو `impersonation` أو كلتاهما. بوصفه الفاعل — عميل تبادل الرموز، أو طالب OnBehalfOf / ActAs في WS-Trust، أو خدمة طلب S4U في Kerberos — يقول ما يجوز لهذا التطبيق أن يفعله؛ والفراغ يعني delegation فقط، فانتحال شخص يحتاج إلى `impersonation` هنا (TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION في Kerberos). وبوصفه الموضوع يقول ما يجوز فعله بصفته؛ والفراغ يعني كليهما. وسياسة الإصدار هي التي تقرر، وهذه إحدى وقائعها."
+  },
+  "applications.schema.attributes.appDefaultDelegationSemantics.what": {
+    "en": "172f18f5cdd5396c",
+    "text": "`delegation` أو `impersonation`: ما يكون عليه فعل يشارك فيه هذا التطبيق عندما لا يقول الطلب — افتراضي الفاعل أولًا، ثم افتراضي الموضوع، ثم delegation.defaultSemantics."
+  },
+  "applications.schema.attributes.appNotDelegated.what": {
+    "en": "08d03ae79d14ab20",
+    "text": "TRUE أو FALSE، والافتراضي FALSE: لا يجوز لأحد أن يتصرف نيابة عن هذا التطبيق، في أي بروتوكول — NOT_DELEGATED، وهو نظير التطبيق لـ stsNotDelegated لدى الشخص."
+  },
+  "applications.schema.attributes.appMayAct.what": {
+    "en": "46cfc90a8de4561b",
+    "text": "اسم DN لطرف واحد — شخص أو تطبيق آخر — يسميه هذا التطبيق مفوضًا له: يحمل الرمز الذي يدور حوله may_act الوارد في RFC 8693 القسم 4.4 مسميًا ذلك الطرف، كما تعيّنه سياسة الإصدار، ويُرفض تبادل ذلك الرمز من قبل أي أحد آخر. ونظير ذلك لدى الشخص هو stsMayAct."
+  },
+  "applications.schema.attributes.appGroupsClaim.what": {
+    "en": "01129d11979c9b3d",
+    "text": "TRUE أو FALSE: هل يحمل أي شيء يُصدَر إلى هذا التطبيق مطالبة groups أصلًا، متجاوزًا groups.claim. ووضع FALSE على تطبيق واحد هو وسيلة اختبار عميل يتعطل عند مطالبة غير متوقعة من غير سحب المطالبة من كل ما عداه."
+  },
+  "applications.schema.attributes.appGroupsClaimName.what": {
+    "en": "4fc6ecdda2fd1881",
+    "text": "ما تُسمّى به مطالبة groups لهذا التطبيق، متجاوزًا groups.claimName. وهذه هي السمة التي تستحق بها المجموعة مكانها هنا: فـ `groups` و`roles` و`memberOf` واسم مطالبة على هيئة URI كلها أمور عادية، وهي تختلف باختلاف الطرف المعتمد في كل نشر حقيقي، وكان الاسم الواحد على مستوى الخدمة يعني أن واحدًا منها فقط يمكن اختباره في المرة الواحدة."
+  },
+  "applications.schema.attributes.appGroupsClaimValue.what": {
+    "en": "68134f2525fc0453",
+    "text": "ما إذا كانت المطالبة تحمل اسم كل مجموعة أو اسم DN الكامل لها، متجاوزةً groups.claimValue. وتختلف الأطراف المعتمدة فعلًا: يطابق أحدها على `cn`، وكُتب التالي مقابل اسم DN في LDAP."
+  },
+  "applications.schema.attributes.appGroupsClaimFromMemberOf.what": {
+    "en": "a49254d4644665d9",
+    "text": "من أين تُقرأ المجموعات لهذا التطبيق، متجاوزًا groups.claimFromMemberOf — من سمة memberOf لدى الشخص، أو من بحث في حاوية المجموعات. ويتفق الاثنان في هذا الدليل؛ ويستحقان أن يُميَّزا لأن memberOf في دليل حقيقي قد يتأخر."
+  },
+  "applications.schema.attributes.wsfedAssertionLifetimeMin.what": {
+    "en": "9a4a30909e2c05ca",
+    "text": "مدة صلاحية تأكيد SAML 1.1 داخل استجابة تسجيل الدخول في WS-Federation لهذا الطرف المعتمد، بالدقائق، متجاوزةً wsfed.assertionLifetimeMin. ويضبط Conditions الخاص بالتأكيد وwsu:Lifetime الخاص بـ RequestSecurityTokenResponse المحيط به، فلا يختلف الظرف عن المستند الذي بداخله. وهو منفصل عن saml11AssertionLifetimeMin: فقد يتكلم تطبيق واحد بالاثنين، ولا تُستهلك جلسة WS-Federation وتأكيد Browser/POST بالطريقة نفسها."
+  },
+  "applications.schema.attributes.saml2CustomAttributes.what": {
+    "en": "6a7f74a34549ac13",
+    "text": "سمات SAML 2.0 الخاصة بمزود الخدمة هذا، كمصفوفة JSON من الصفوف على غرار صفحة سمات SAML المخصصة في نطاق الثقة (ويُسمح بـ nameFormat). تُضاف إلى سمات SAML 2.0 في نطاق الثقة ضمن التأكيدات لهذا الجمهور، وتفوز بحسب الاسم."
+  },
+  "applications.schema.attributes.saml11CustomAttributes.what": {
+    "en": "c1469888e73b177f",
+    "text": "سمات SAML 1.1 الخاصة بهذا الطرف المعتمد، كمصفوفة JSON من الصفوف على غرار صفحة سمات SAML المخصصة في نطاق الثقة (ويُسمح بـ namespace). تُضاف إلى سمات SAML 1.1 في نطاق الثقة ضمن التأكيدات لهذا الجمهور (SAML 1.1 وWS-Federation وWS-Trust)، وتفوز بحسب الاسم."
+  },
+  "applications.schema.attributes.saml2ClaimAttributes.what": {
+    "en": "1975b37dcacff86c",
+    "text": "اختيار مزود الخدمة هذا لسمات الدليل الخاصة بتأكيدات SAML 2.0 لديه، وهو مصفوفة JSON من أسماء سمات الفهرس، ويحل محل اختيار نطاق الثقة عند وجوده."
+  },
+  "applications.schema.attributes.saml11ClaimAttributes.what": {
+    "en": "bb6b41c7ea67806c",
+    "text": "اختيار هذا الطرف المعتمد لسمات الدليل الخاصة بتأكيدات SAML 1.1 لديه (SAML 1.1 وWS-Federation وWS-Trust)، وهو مصفوفة JSON من أسماء سمات الفهرس، ويحل محل اختيار نطاق الثقة عند وجوده."
+  },
+  "applications.schema.attributes.saml2ClaimsCombine.what": {
+    "en": "d0a05b0063187eff",
+    "text": "كيف تُدمَج سمات SAML 2.0 الخاصة بنطاق الثقة مع سمات هذا التطبيق (#395)، الصفوف ذات النوع وسمات الدليل المؤشَّرة على السواء: application (ما يخص هذا التطبيق فقط)، union (ما يخص نطاق الثقة وما يخص التطبيق)، intersection (ما يحمله الطرفان فقط) أو realm (ما يخص نطاق الثقة فقط). عند عدم الضبط تُضاف صفوفه إلى صفوف نطاق الثقة وتفوز بحسب الاسم، ويحل اختياره محل اختيار نطاق الثقة. والتطبيق الذي لا يحمل شيئًا يخصه يحصل على ما لدى نطاق الثقة مهما قال هذا."
+  },
+  "applications.schema.attributes.saml11ClaimsCombine.what": {
+    "en": "a19640f716396460",
+    "text": "كيف تُدمَج سمات SAML 1.1 الخاصة بنطاق الثقة مع سمات هذا التطبيق (#395)، الصفوف ذات النوع وسمات الدليل المؤشَّرة على السواء: application (ما يخص هذا التطبيق فقط)، union (ما يخص نطاق الثقة وما يخص التطبيق)، intersection (ما يحمله الطرفان فقط) أو realm (ما يخص نطاق الثقة فقط). عند عدم الضبط تُضاف صفوفه إلى صفوف نطاق الثقة وتفوز بحسب الاسم، ويحل اختياره محل اختيار نطاق الثقة. والتطبيق الذي لا يحمل شيئًا يخصه يحصل على ما لدى نطاق الثقة مهما قال هذا."
+  },
+  "applications.schema.attributes.vcCredentialClaimAttributes.what": {
+    "en": "5df9a1b2f23cb7e9",
+    "text": "اختيار هذا العميل لسمات الدليل التي تحملها Verifiable Credential، وهو مصفوفة JSON من أسماء سمات الفهرس. وعند وجوده يحل محل اختيار مطالبات Credential في نطاق الثقة لبيانات الاعتماد الصادرة على رموز الوصول لهذا العميل؛ غير أن بيانات وصف المُصدِر ما زالت تعلن اختيار نطاق الثقة."
+  },
+  "applications.schema.attributes.saml2AssertionLifetimeMin.what": {
+    "en": "5980ad42371e28c5",
+    "text": "مدة صلاحية تأكيدات مزود الخدمة هذا، بالدقائق، متجاوزةً saml2.assertionLifetimeMin له وحده. وما تصير إليه هو Conditions/NotOnOrAfter وSubjectConfirmationData/NotOnOrAfter الخاص بالحامل على السواء، ويُوسَّع من الطرفين بـ saml.clockSkewS — وهو ليس لكل تطبيق، لأنه حقيقة عن الساعات في هذه البيئة لا عن طرف معتمد واحد."
+  },
+  "applications.schema.attributes.saml2SignAssertion.what": {
+    "en": "119214c380ca0bfc",
+    "text": "TRUE أو FALSE: وقِّع <saml:Assertion> الصادر إلى مزود الخدمة هذا، متجاوزًا saml2.signAssertion له وحده. وFALSE حالة اختبار لا خطأ — فمزود الخدمة الذي يقبل تأكيدًا غير موقَّع فيه ثغرة، وهذه طريقة العثور على واحدة من غير إيقاف التوقيع لكل تطبيق آخر في الوقت نفسه. وذلك هو السبب كله لكون هذا لكل تطبيق."
+  },
+  "applications.schema.attributes.saml2SignResponse.what": {
+    "en": "bb83449f1266566e",
+    "text": "TRUE أو FALSE: وقِّع <samlp:Response> المحيط بالتأكيد لمزود الخدمة هذا، متجاوزًا saml2.signResponse. وعلى ربط HTTP Redirect يتحكم أيضًا في توقيع سلسلة الاستعلام الوارد في القسم 3.4.4.1، وهو التوقيع الذي تُتحقق به استجابة إعادة التوجيه فعلًا."
+  },
+  "applications.schema.attributes.saml2NameIdFormat.what": {
+    "en": "c71975e6bdd39ec9",
+    "text": "تنسيق NameID المستخدم لمزود الخدمة هذا عندما لا يطلب NameIDPolicy في AuthnRequest الخاص به شيئًا، متجاوزًا saml2.nameIdFormat. أما الطلب الذي يسمي تنسيقًا فيُجاب بالتنسيق الذي سمّاه — هذا افتراضي لا قيد، وهو عمدًا غير مفحوص مقابل samlNameIdFormat الذي بجانبه، وتلك قائمة التنسيقات التي طلبها مزود الخدمة هذا."
+  },
+  "applications.schema.attributes.saml2ArtifactTtlS.what": {
+    "en": "f6fd526344172dcd",
+    "text": "المدة التي يمكن خلالها حل artifact صُك لمزود الخدمة هذا، بالثواني، متجاوزةً saml2.artifactTtlS. والـ artifact لمرة واحدة أيضًا مهما بلغت هذه المدة — فحلّه يتلفه، وهو ما يشترطه القسم 3.6.4.1 ولا يستطيع أي عمر أن يعبّر عنه."
+  },
+  "applications.schema.attributes.saml11AssertionLifetimeMin.what": {
+    "en": "1c1e8ff577d70a0c",
+    "text": "مكافئ SAML 1.1 لـ saml2AssertionLifetimeMin، متجاوزًا saml11.assertionLifetimeMin لهذا الطرف المعتمد. وهو منفصل عن سمة 2.0 للسبب الذي يفصل الإعدادين: فملفات التعريف تنفيذات منفصلة تُستهلك على نحو مختلف، والتطبيق المعلن لكليهما يريد إجابتين بشكل مشروع."
+  },
+  "applications.schema.attributes.saml11SignAssertion.what": {
+    "en": "6123c6863711aa4b",
+    "text": "TRUE أو FALSE: وقِّع <saml:Assertion> من SAML 1.1 لهذا الطرف المعتمد، متجاوزًا saml11.signAssertion. ويتطلب ملف تعريف Browser/POST تأكيدًا موقَّعًا (saml-profile-1.1 القسم 4.2.1.4)، لذا فـ FALSE هنا هي حالة الاختبار بعينها: الطرف المعتمد الذي يقبله رغم ذلك فيه ثغرة."
+  },
+  "applications.schema.attributes.saml11SignResponse.what": {
+    "en": "b5c3ac0c3a3f20d3",
+    "text": "TRUE أو FALSE: وقِّع <samlp:Response> من SAML 1.1 لهذا الطرف المعتمد، متجاوزًا saml11.signResponse، مع مرجع يسمي ResponseID."
+  },
+  "applications.schema.attributes.saml11NameIdFormat.what": {
+    "en": "0e4deac01ea4ef16",
+    "text": "تنسيق NameIdentifier المستخدم لهذا الطرف المعتمد، متجاوزًا saml11.nameIdFormat. وليس في SAML 1.1 رسالة طلب، فلا شيء يستطيع أن يطلب تنسيقًا وهذا هو الشيء الوحيد الذي يقرره — ما يجعله الأفيد بين سمتَي التنسيق لكل تطبيق."
+  },
+  "applications.schema.attributes.saml11ArtifactTtlS.what": {
+    "en": "1887a455954e9b4f",
+    "text": "المدة التي يمكن خلالها حل artifact من SAML 1.1 صُك لهذا الطرف المعتمد، بالثواني، متجاوزةً saml11.artifactTtlS. ومجيب SOAP في ملف تعريف Browser/Artifact هو الذي يسترده، مرة واحدة."
+  },
+  "applications.schema.attributes.saml2IdpInitiatedSso.what": {
+    "en": "00f7ceacfb9304e7",
+    "text": "TRUE أو FALSE: هل يجوز لموفر الهوية هذا أن يبدأ تسجيل الدخول إلى مزود الخدمة هذا — وهو Response غير مطلوب (saml-profiles-2.0-os القسم 4.1.5) من /saml2/unsolicited أو /launch/{app} — متجاوزًا saml2.idpInitiatedSso. ولا تكون TRUE إلا لمزود خدمة يتوقع واحدًا: لا يحمل Response قيمة InResponseTo، فلا يستطيع أن يميز واحدًا أُرسل إليه من واحد دُفع إلى متصفحه."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE أو FALSE: هل يُسأل الشخص مرة واحدة قبل أن يسجّل SAML 2.0 دخوله إلى هذا التطبيق من جلسة لديه أصلًا، متجاوزًا saml2.ssoConsent (ASVS 5.0.0 7.6.2). وتناسب FALSE تطبيقًا يُتوقع أن يستخدمه الجميع في نطاق الثقة؛ وتجيب الموافقة العامة على القيد عن الجميع وتحتفظ بسجل من وافق."
+  },
+  "applications.schema.attributes.saml2SpInitiatedSso.what": {
+    "en": "1cab33aadc246c17",
+    "text": "TRUE أو FALSE: هل يُجاب <samlp:AuthnRequest> الخاص بمزود الخدمة هذا، متجاوزًا saml2.spInitiatedSso. وتجيب FALSE بـ RequestDenied، فيبقى تسجيل الدخول الذي يبدأه موفر الهوية الطريق الوحيد للدخول."
+  },
+  "applications.schema.attributes.saml11IdpInitiatedSso.what": {
+    "en": "6081871f6aca6a2f",
+    "text": "TRUE أو FALSE: هل يجوز أن يبدأ تسجيل دخول SAML 1.1 إلى هذا الطرف المعتمد من هنا — /saml11/sso/{rp} مع TARGET وبلا shire، أو /launch/{app} — متجاوزًا saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE أو FALSE: هل يُسأل الشخص مرة واحدة قبل أن يسجّل SAML 1.1 دخوله إلى هذا التطبيق من جلسة لديه أصلًا، متجاوزًا saml11.ssoConsent (ASVS 5.0.0 7.6.2). وتناسب FALSE تطبيقًا يُتوقع أن يستخدمه الجميع في نطاق الثقة؛ وتجيب الموافقة العامة على القيد عن الجميع وتحتفظ بسجل من وافق."
+  },
+  "applications.schema.attributes.saml11SpInitiatedSso.what": {
+    "en": "2376052fceb025ab",
+    "text": "TRUE أو FALSE: هل يُجاب تسجيل دخول SAML 1.1 بدأه هذا الطرف المعتمد — ملف تعريف AuthnRequest في Shibboleth 1.3، وهو طلب يحمل shire — متجاوزًا saml11.spInitiatedSso. والطلب عنوان URL غير موقَّع، لذا فـ FALSE تغلق الباب بدلًا من أن تثبت من فتحه."
+  },
+  "applications.schema.attributes.samlAuthnRequestSigned.what": {
+    "en": "2150507140b66231",
+    "text": "TRUE عندما حمل آخر AuthnRequest من مزود الخدمة هذا توقيعًا — توقيع ds:Signature مغلَّف على ربط POST، أو معامل Signature في القسم 3.4.4.1 على ربط Redirect. ويُسنَد بدلًا من أن يتراكم، لأنه حقيقة عن الطلب الأخير ولن يقول تاريخ من القيم المنطقية شيئًا."
+  },
+  "applications.schema.attributes.wsfedRealm.what": {
+    "en": "86782168726d7440",
+    "text": "WTREALM من طلب wsignin1.0 (القسم 13.2.1) — سمة المعرّف في WS-Federation. ويتراكم، للسبب نفسه الذي يتراكم له كل معرّف هنا."
+  },
+  "applications.schema.attributes.wsfedReplyUrl.what": {
+    "en": "1d6376f1797ef43c",
+    "text": "المكان الذي تُعاد إليه استجابة تسجيل الدخول نشرًا لهذا التطبيق: `wreply` في القسم 13.2.1، وهو عنوان URI لإعادة التوجيه في WS-Federation. كان يُكتب في samlAssertionConsumerService حتى 2026-08-25، فوضع ذلك wreply في السمة التي تقرأها صفحات SAML لخدمة مستهلك التأكيد ولخيار Single Logout الاحتياطي — سمة واحدة تحمل عنواني عودة لبروتوكولين، فظهر تطبيق WS-Federation وكأن له ACS في SAML لم يسمّه قط. حقيقتان، سمتان. ومثل سمة SAML التي بجانبه، يُفحص هذا في وضع المنتج فقط: لا يرفض وضع التطوير أي wreply، لأن خدمة ترفض كانت ستزيل حالة اختبار بدلًا من أن تضيف واحدة؛ ولا ينشر وضع المنتج إلا إلى عنوان في هذه القائمة، ولا تضيف مشاهدة عنوانًا أبدًا. يُوسم wreply سجّله وضع التطوير على appReturnAddressObserved، ويرفضه وضع المنتج حتى يُؤكد؛ والقيم المسجلة قبل وجود تلك الوسمة لا تحملها، وما زالت تحتاج إلى مراجعة قبل تحويل نطاق الثقة إلى وضع المنتج."
+  },
+  "applications.schema.attributes.wsfedIdpInitiatedSso.what": {
+    "en": "af8a13f7621cb3a1",
+    "text": "TRUE أو FALSE: هل يجوز لموفر الهوية هذا أن يبدأ تسجيل الدخول إلى هذا الطرف المعتمد — /wsfed/initiate/{rp} أو /launch/{app}، ناشرًا إلى wsfedReplyUrl المسجَّل له — متجاوزًا wsfed.idpInitiatedSso."
+  },
+  "applications.schema.attributes.wsfedSpInitiatedSso.what": {
+    "en": "d199b15200f6e9de",
+    "text": "TRUE أو FALSE: هل يُجاب wsignin1.0 الخاص بهذا الطرف المعتمد، متجاوزًا wsfed.spInitiatedSso. وإن wsignin1.0 عنوان URL غير موقَّع، لذا فـ FALSE تغلق الباب بدلًا من أن تثبت من فتحه."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE أو FALSE: هل يُسأل الشخص مرة واحدة قبل أن يسجّل WS-Federation دخوله إلى هذا التطبيق من جلسة لديه أصلًا، متجاوزًا wsfed.ssoConsent (ASVS 5.0.0 7.6.2). وتناسب FALSE تطبيقًا يُتوقع أن يستخدمه الجميع في نطاق الثقة؛ وتجيب الموافقة العامة على القيد عن الجميع وتحتفظ بسجل من وافق."
+  },
+  "applications.schema.attributes.wsfedSignOutUri.what": {
+    "en": "677e7babd8d711d3",
+    "text": "المكان الذي يُرسل إليه نداء wsignoutcleanup1.0 لهذا التطبيق — عنوان URI لتسجيل الخروج في WS-Federation، وهو الذي لم يكن في هذا الجدول حتى 2026-08-30. مُعلَن لا مُشاهَد، ما يجعله شقيق samlSingleLogoutService لا شقيق wsfedReplyUrl: يُرسل التنظيف عند انتهاء الجلسة، وعندئذ يكون الطلب الذي كان سيحمل wreply قد انتهى منذ زمن.\n\n**العنوان المُعلَن يعلو العنوان المُشاهَد** (#747). ينادي `cleanupTargetsFor()` كل قيمة هنا لنطاق ثقة سجلت الجلسة الدخول إليه، وينادي wreply الذي ذهبت إليه استجابة تسجيل الدخول، والذي يسجله `session.wsfedRealms`، فقط حيث يكون هذا فارغًا."
+  },
+  "applications.schema.attributes.wstrustAppliesTo.what": {
+    "en": "9a8d1ca262be725c",
+    "text": "عنوان AppliesTo من RequestSecurityToken — الخدمة التي يُصدَر الرمز من أجلها، وسمة المعرّف في WS-Trust. ويتراكم.\n\n**إنه يُقرأ**، وهو ما لم يكن قبل 2026-08-27، وهو استثناء `oauthAudience` واصلًا عبر بروتوكول ثان: يُسجَّل OnBehalfOf أو ActAs يطلب رمزًا للوصول إلى `https://esb.example.com` على /admin/delegation مقابل التطبيق الذي سجّل ذلك العنوان، فترسم سلسلة القفزات المفوضة صورة واحدة بدلًا من مربعات تسمى بأسماء URL لا يذكرها شيء آخر فيها. وفي وضع التطوير هو بحث لا إذن — يُصدَر لـ AppliesTo لم يسجله أحد ويُسجَّل حرفيًا؛ وفي وضع المنتج يُرفض (#496). انظر forAppliesTo()، الذي يسأل هذه السمة أولًا ثم `samlEntityId` بعدها."
+  },
+  "applications.schema.attributes.wstrustJwtScope.what": {
+    "en": "86ac83dbe366a17b",
+    "text": "نطاقات صلاحية OAuth 2.0 التي يحملها JWT من WS-Trust لهذا التطبيق، قيمة واحدة لكل منها (#485). ويحمل JWT الذي يصدره WS-Trust وهذا التطبيق هو AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) تلك القيم في مطالبة `scope`، مفصولة بمسافات (RFC 9068 القسم 2.2.3)؛ وإن لم يُضبط شيء فلا يحمل `scope`. ولا يتأثر رمز SAML.\n\n**يُحكم على كل منها كما يُحكم على ما لرمز وصول OAuth**، مع هذا التطبيق عميلًا: يعلن `oauthAllowedScope` ما يجوز إصداره (في وضع المنتج؛ ونطاقات الصلاحية المحمية لهذه الخدمة في كل وضع)، ويحسم سؤال سياسة الإصدار لكل نطاق صلاحية. والقيمة التي تسقطها السياسة تُترك خارج الرمز وتُدقَّق (STS-OAUTH-0579)، ولا تُصدَر أبدًا. وتُقبل هنا كتابة تسمي نطاق صلاحية غير معلن، لأن الإعلان قد يتغير ووضع التطوير يمنح نطاقات الصلاحية غير المعلنة: أعلنه على oauthAllowedScope أيضًا. ويُحذَّر من قيمة ستسقطها السياسة حيث تُضبط (#488): إلى جانب هذا الحقل، وفي رد الحفظ، وكـ `warnings` على ردود الكتابة في /admin-api وعلى عرض التطبيق."
+  },
+  "applications.schema.attributes.krb5ServicePrincipalName.what": {
+    "en": "2e8e5f607172bae7",
+    "text": "SPN، مثل HTTP/sts@EXAMPLE.COM — سمة المعرّف في Kerberos v5. وخدمة Kerberos تطبيق كسائر التطبيقات هنا، وهي التي ربما أنشأت هذه الخدمة معرّفها عند الطلب (KRB5_SERVICE_DOMAINS). وهو يتراكم، وهنا تلك هي الحالة العادية لا النادرة: فالخدمة الواحدة تجيب عادة عن عدة SPN — HTTP/host وHTTP/host.example.com — ويحفظ KDC حقيقي بها كلها مقابل حساب واحد."
+  },
+  "applications.schema.attributes.krb5ClaimsPac.what": {
+    "en": "0abf4d44f51d3755",
+    "text": "مطالبات PAC الخاصة بهذه الخدمة، كمصفوفة JSON من الصفوف على غرار صفحة مطالبات PAC في Kerberos لنطاق الثقة. تُضاف إلى المطالبات التي تحملها تذكرة خدمة لأحد أسماء SPN لهذا التطبيق (وهي مطالبات TGT الذي صدرت منه)، ويحل صف التطبيق محل المطالبة ذات الاسم نفسه. ولا يكون ذلك إلا حين يكون krb5.pacClaims مفعّلًا."
+  },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "مطالبات JWT لرمز الوصول في GNAP الخاصة بهذا العميل، كمصفوفة JSON من الصفوف على غرار مجموعات المطالبات المخصصة الأخرى. تُضاف إلى رمز jwt-signed وإلى JWT داخل رمز jwt-encrypted صادر إلى هذا العميل، ويحل صف التطبيق محل صف نطاق الثقة ذي الاسم نفسه. ولا يمكن تجاوز مطالبات الرمز نفسه (access وflags وlabel وgrant_id وأسماء JWT). ولا تحمل رموز Macaroon وbiscuit وzcap هذه الصفوف."
+  },
+  "applications.schema.attributes.krb5TrustedForDelegation.what": {
+    "en": "3b66e9eeaaad2290",
+    "text": "TRUE أو FALSE، والافتراضي FALSE: خدمة Kerberos هذه موثوق بها للتفويض — غير مقيَّد (TRUSTED_FOR_DELEGATION في Active Directory). وتحمل تذاكر خدمتها ok-as-delegate، الذي يخبر العميل أنه يجوز له تمرير TGT الخاص به إلى هنا؛ ومن يحمل TGT مُمرَّرًا يستطيع التصرف بصفة ذلك الشخص في أي مكان. ولا يكون TGT الشخص المحمي قابلًا للتمرير أبدًا، فلا يُمرَّر مهما كان ضبط هذا. والتفويض المقيَّد (appAllowedToDelegateTo وappAllowedToActOnBehalfOf) هو البديل الأكثر أمانًا."
+  },
+  "applications.schema.attributes.krb5S4uSelfRealm.what": {
+    "en": "1549deb6e1db2854",
+    "text": "نطاقات Kerberos التي يجوز لهذه الخدمة أن تحصل على تذاكر S4U2SELF لمستخدميها، إلى جانب نطاقها. والفراغ يعني نطاقها الخاص فقط. ويجب أن تكون القيمة نطاقًا تقبل علاقات الثقة الخاصة بهذا النطاق تذاكر صادرة منه — علاقة ثقة تحمل مفتاحًا واردًا، أو نطاقًا توجّه إليه علاقة ثقة متعدية — وتُفحص عند الكتابة."
+  },
+  "applications.schema.attributes.krb5ForeignTgtDelegation.what": {
+    "en": "8f20493c35397916",
+    "text": "`inherit` (الافتراضي) أو `deny`: ما تقوله هذه الخدمة عن TGT فُوِّض إليها عبر علاقة ثقة — ok-as-delegate على تذاكرها لمستخدم من نطاق آخر. ويتبع `inherit` سمات علاقة الثقة ([MS-KILE] 3.3.5.7.5)؛ ويرفضه `deny` مهما قالت. وهو يضيّق فقط: لا شيء هنا يمكّن ما لا تمكّنه علاقة الثقة."
+  },
+  "applications.schema.attributes.krb5ServiceKeys.what": {
+    "en": "35f24692c1cc40a5",
+    "text": "مفاتيح طويلة الأجل عشوائية لمدير خدمة، واحد لكل enctype، في قيمة واحدة: مستند JSON يسمي SPN وrealm وkvno إلى جانب المفاتيح، مختوم تحت مفتاح تشفير المفاتيح حيثما عاش ذلك المفتاح أطول من العملية. قيمة واحدة لا قيمة لكل enctype، حتى لا يمكن نقل مفتاح إلى قيد آخر أو إلى kvno آخر من غير أن يفشل الختم. وهو مكافئ لكلمة المرور: يُحجب عن كل صفحة وعن كل رد من /admin-api، والمرة الوحيدة التي يغادر فيها هذه الخدمة هي keytab تسلّمه عملية إنشاء أو تدوير."
+  },
+  "applications.schema.attributes.krb5ServiceKeyInfo.what": {
+    "en": "c7f1cd5d22b9cff1",
+    "text": "ما يحمله `krb5ServiceKeys` من غير المفاتيح: kvno، وأنواع enctype، ووقت صنع المفاتيح، وهل هي مختومة. ويُكتب في الفعل نفسه مع المفاتيح، فلا يصف الاثنان جيلين مختلفين."
+  },
+  "applications.schema.attributes.appEnrolledCertificate.what": {
+    "en": "8aa24cf06f1d004f",
+    "text": "سجل JSON واحد لكل شهادة صدرت لهذا التطبيق عبر بروتوكول تسجيل: الرقم التسلسلي، والبروتوكول، والملف التعريفي، والموضوع، والأسماء، والصلاحية، ومن طلب، وهل وُلِّد المفتاح هنا، والشهادة وسلسلة إصدارها، وعلامة الإلغاء. مادة عامة. ولا يكتبها إلا common/cert_enrollment.ts."
+  },
+  "applications.schema.attributes.appEnrolledPrivateKey.what": {
+    "en": "68a37a841eb0e1f0",
+    "text": "مفتاح خاص ولّدته هذه الخدمة لإحدى الشهادات أعلاه (توليد المفتاح في جانب الخادم لدى EST، أو زوج المفاتيح الذي يولده خادم وحدة التحكم)، بالشكل `<serial>:<PEM>`، ويُختم حيثما عاش مفتاح تشفير المفاتيح أطول من العملية. يُحجب عن كل صفحة وعن رد /admin-api؛ ويُسلَّم مرة واحدة، عند الإصدار."
+  },
+  "applications.schema.attributes.appAcmeEabKey.what": {
+    "en": "a77a4c24f3169e88",
+    "text": "مفاتيح External Account Binding في ACME الصادرة لهذا التطبيق، سجل JSON لكل واحد: معرّف المفتاح، ومفتاح HMAC المختوم، وانتهاء صلاحيته، والحساب الذي ربطه. بيانات اعتماد عاملة، تُحجب عن كل صفحة وعن رد /admin-api."
+  },
+  "applications.schema.attributes.appScepChallenge.what": {
+    "en": "5cfc533567cbdfbe",
+    "text": "كلمات مرور التحدي في SCEP الصادرة لهذا التطبيق، سجل JSON لكل واحدة: المعرّف، وبصمة SHA-256 للسر، والملف التعريفي، وانتهاء الصلاحية، ووقت الاسترداد. تُحجب عن كل صفحة وعن رد /admin-api."
+  },
+  "applications.schema.attributes.appCertificateHostName.what": {
+    "en": "1ed851c949c198fb",
+    "text": "اسم DNS أو عنوان IP يجوز أن تُصدَر لهذا التطبيق شهادة من أجله عبر ACME أو EST أو SCEP. وتسجيل واحد هو برهان السيطرة كله: فهذه الخدمة لا تتصل باسم للتحقق منه أبدًا. يضبطه المسؤول، ويقرأه common/cert_enrollment.ts."
+  },
+  "applications.schema.attributes.appRegistrationJson.what": {
+    "en": "5766d34ddf2a5c0b",
+    "text": "تسجيل RFC 7591 حرفيًا، كـ JSON على سمة واحدة. وهو هنا لأن RFC 7591 يتيح للعميل تسجيل بيانات وصف اعتباطية، ويجب أن تعيد قراءة RFC 7592 ما سُجِّل — وهو ما لا تستطيع مجموعة ثابتة من سمات LDAP أن تمثله. وهو نقطة البداية عند إعادة بناء السجل لا الكلمة الأخيرة: ثم يُكتب فوق كل عضو له أيضًا سمة أعلاه من تلك السمة، لذا فإن ldapmodify على oauthRedirectUri هو ما ينفذه وضع RFC 9700. ولا تحرره إلا لتغيير عضو ليست له سمة خاصة به."
+  },
+  "applications.schema.attributes.appRegistrationAccessToken.what": {
+    "en": "c7a3a95ccee6d6fb",
+    "text": "رمز وصول التسجيل في RFC 7592، وهو ما يحرس عمليات القراءة والتحديث والحذف على هذا العميل. يُختم مثل oauthClientSecret حيثما حملت العملية مفتاح تشفير مفاتيح دائمًا (منذ 2026-10-01)، ولا يُكتب في سجل التدقيق أبدًا."
+  },
+  "applications.schema.attributes.oid4vpClientId.what": {
+    "en": "7254425d22df2918",
+    "text": "قيمة client_id الخاصة بالمحقق في طلب تفويض يطلب presentation — سمة المعرّف في OpenID4VP. ويأخذ محقق هذه الخدمة معرّفه من الإعداد (oid4vp.clientId) لا من متصل، فيظهر ذلك السجل في أول مرة يُتحقق فيها من presentation؛ والقيمة المعلنة هنا هي محقق أجنبي يهيئه أحد."
+  },
+  "applications.schema.attributes.federationPartnerId.what": {
+    "en": "6b7f63d65cdd8229",
+    "text": "ما يسمي به شريك الاتحاد نفسه — entityID لموفر هوية أجنبي، أو معرّف المُصدِر حيث تتحدث العلاقة بـ OpenID Connect. والعلاقة ليست هنا: تعيش نقاط النهاية والشهادة وتعيين السمات تحت ou=federations، وهي ما يتحقق /federation/acs/{id} مقابله فعلًا (انظر federation/CLAUDE.md). وهذا القيد هو الشريك بوصفه طرفًا، وهذه السمة هي الاسم الذي يُعرف به — فقيمة هنا لا تتحد مع أحد، وهو الموضع الوحيد في هذه الخدمة الذي يكون لتلك الجملة فيه أثر فعلي."
+  },
+  "applications.schema.attributes.ldapBindDn.what": {
+    "en": "f1e68cbe5820e3d4",
+    "text": "اسم DN الذي يربط به عميل الدليل على 389 أو LDAPS 636. ولن يكتب هذا شيء ولن يقرأه شيء: ففي وضع التطوير ينجح كل ربط — أي DN، وأي كلمة مرور، والربط المجهول — وفي وضع المنتج لا يربط إلا شخص، فيقرأ التطبيق الدليل عبر SCIM بدلًا من ذلك. وهنا يسجّل المشغّل بيانات الاعتماد التي يُتوقع أن يستخدمها تطبيق، إلى جانب بقية ما يكونه ذلك التطبيق."
+  },
+  "applications.schema.attributes.scimClientId.what": {
+    "en": "9fa8008ba9df8d03",
+    "text": "ما يُسمّى به عميل التزويد عند /scim/v2 — client_id في OAuth الذي يقدّم رمزًا منه، أو اسم المستخدم الذي يرسله في Basic. وتصادق تلك الواجهة على المتصل بها بأي من المخططات الستة التي يسميها RFC 7644 القسم 2 لا بمعرّف تطبيق، فلا تكتب شيئًا هنا؛ والقيمة إعلان، وبوابة SCIM هي ما يقرر ما إذا كانت بيانات الاعتماد مطلوبة أصلًا."
+  },
+  "applications.schema.attributes.acmeAllowedProfiles.what": {
+    "en": "de16295602b7cfb4",
+    "text": "ملفات تعريف ACME التي يجوز إصدارها لهذا التطبيق. وحيث يسرد شيئًا فهو يتجاوز acme.allowedProfiles لهذا التطبيق، أوسع كان أو أضيق؛ ويترك الفراغ قائمة نطاق الثقة. ولا تُصدَر ملفات التعريف الخمسة الخاصة بـ CA وOCSP وKDC أبدًا."
+  },
+  "applications.schema.attributes.acmeDefaultProfile.what": {
+    "en": "4b0f22f11ec6337b",
+    "text": "الملف التعريفي الذي يُصدَر به هذا التطبيق عبر ACME عندما لا يسمي الطلب شيئًا، متجاوزًا acme.defaultProfile. ولا يُستخدم إلا ما دامت القائمة النافذة له تسمح به."
+  },
+  "applications.schema.attributes.acmeCertificateLifetimeDays.what": {
+    "en": "32178dcf7b3e4ef3",
+    "text": "مدة صلاحية الشهادة التي تُصدَر لهذا التطبيق عبر ACME، بالأيام، متجاوزةً acme.certificateLifetimeDays (أطول أو أقصر). ولا تعيش أي شهادة أطول من CA الإصدار الخاص بها."
+  },
+  "applications.schema.attributes.estAllowedProfiles.what": {
+    "en": "fe0432c6af1e6225",
+    "text": "ملفات تعريف EST التي يجوز إصدارها لهذا التطبيق. وحيث يسرد شيئًا فهو يتجاوز est.allowedProfiles لهذا التطبيق، أوسع كان أو أضيق؛ ويترك الفراغ قائمة نطاق الثقة. ولا تُصدَر ملفات التعريف الخمسة الخاصة بـ CA وOCSP وKDC أبدًا."
+  },
+  "applications.schema.attributes.estDefaultProfile.what": {
+    "en": "c4ee79f2c43d72a3",
+    "text": "الملف التعريفي الذي يُصدَر به هذا التطبيق عبر EST عندما لا يسمي الطلب شيئًا، متجاوزًا est.defaultProfile. ولا يُستخدم إلا ما دامت القائمة النافذة له تسمح به."
+  },
+  "applications.schema.attributes.estCertificateLifetimeDays.what": {
+    "en": "ea0b1720d4a2f466",
+    "text": "مدة صلاحية الشهادة التي تُصدَر لهذا التطبيق عبر EST، بالأيام، متجاوزةً est.certificateLifetimeDays (أطول أو أقصر). ولا تعيش أي شهادة أطول من CA الإصدار الخاص بها."
+  },
+  "applications.schema.attributes.scepAllowedProfiles.what": {
+    "en": "c5d9d1351151d0c4",
+    "text": "ملفات تعريف SCEP التي يجوز إصدارها لهذا التطبيق. وحيث يسرد شيئًا فهو يتجاوز scep.allowedProfiles لهذا التطبيق، أوسع كان أو أضيق؛ ويترك الفراغ قائمة نطاق الثقة. ولا تُصدَر ملفات التعريف الخمسة الخاصة بـ CA وOCSP وKDC أبدًا."
+  },
+  "applications.schema.attributes.scepDefaultProfile.what": {
+    "en": "c1fa1a123597d8f1",
+    "text": "الملف التعريفي الذي يُصدَر به هذا التطبيق عبر SCEP عندما لا يسمي الطلب شيئًا، متجاوزًا scep.defaultProfile. ولا يُستخدم إلا ما دامت القائمة النافذة له تسمح به."
+  },
+  "applications.schema.attributes.scepCertificateLifetimeDays.what": {
+    "en": "0c245cd0b371079a",
+    "text": "مدة صلاحية الشهادة التي تُصدَر لهذا التطبيق عبر SCEP، بالأيام، متجاوزةً scep.certificateLifetimeDays (أطول أو أقصر). ولا تعيش أي شهادة أطول من CA الإصدار الخاص بها."
+  },
+  "applications.schema.attributes.estBasicAuthentication.what": {
+    "en": "d46cf350842998c4",
+    "text": "ما إذا كان EST يقبل معرّف العميل وسرّه لهذا التطبيق (HTTP Basic، RFC 7030 القسم 3.2.3)، متجاوزًا est.basicAuthentication: تقبلها TRUE وترفضها FALSE مهما قال نطاق الثقة؛ وتركها بلا ضبط يترك القرار لنطاق الثقة."
+  },
+  "applications.schema.attributes.estCertificateAuthentication.what": {
+    "en": "a50d58c25992eab8",
+    "text": "ما إذا كان EST يقبل شهادة أصدرها نطاق الثقة هذا لهذا التطبيق (مصادقة عميل TLS، RFC 7030 القسم 3.3.2)، متجاوزًا est.certificateAuthentication: تقبلها TRUE وترفضها FALSE؛ وتركها بلا ضبط يترك القرار لنطاق الثقة."
+  },
+  "applications.schema.attributes.estServerKeyGeneration.what": {
+    "en": "7b442138976271e8",
+    "text": "ما إذا كان يجوز لـ EST /serverkeygen (RFC 7030 القسم 4.4) أن يولّد مفتاح هذا التطبيق، متجاوزًا est.serverKeyGeneration: تسمح به TRUE وترفضه FALSE؛ وتركه بلا ضبط يترك القرار لنطاق الثقة."
+  },
+  "applications.schema.attributes.enrollMaxCertificates.what": {
+    "en": "4f16c3693e154521",
+    "text": "كم من الشهادات المسجَّلة غير المنتهية (ACME وEST وSCEP معًا) يجوز لهذا التطبيق أن يحتفظ بها، متجاوزًا pki.enrollmentMaxCertificatesPerEntry (أعلى أو أدنى)."
+  },
+  "applications.schema.attributes.didPublicKeyJwk.what": {
+    "en": "0e71b81250b48154",
+    "text": "مفتاح عام ينشره مستند DID للتطبيق، JWK واحد لكل قيمة، وكل منها طريقة تحقق JsonWebKey2020 مسماة بـ kid الخاص بها (بصمة RFC 7638 حيث لا تحمل واحدة) ومدرجة تحت authentication وassertionMethod. والأعضاء العامة فقط: تُرفض قيمة تحمل d أو p أو q أو dp أو dq أو qi أو oth أو k أو priv. ولِّد زوج مفاتيح في صفحة التطبيق فيُسلَّم النصف الخاص مرة واحدة ولا يُحفظ هنا."
+  },
+  "applications.schema.attributes.didPrivateKeys.what": {
+    "en": "a302dcc5f0442754",
+    "text": "الأنصاف الخاصة لمفاتيح DID التي ولّدتها هذه الخدمة، كمصفوفة JSON من مفاتيح JWK الخاصة، مختومة في وضع السكون تحت مفتاح تشفير المفاتيح مثل زوج مفاتيح RFC 7523 الخاص بتطبيق. وتُحفظ حتى تستطيع هذه الخدمة أن توقّع Domain Linkage Credentials الخاصة بالتطبيق (وهي DIF Well-Known DID Configuration) عند الطلب؛ والمفتاح الذي يُلصق في didPublicKeyJwk يدويًا ليس له نصف خاص هنا ولا يستطيع توقيع واحدة. ولا يكتبها إلا توليد زوج مفاتيح."
+  },
+  "applications.schema.attributes.didService.what": {
+    "en": "e5ce72a596909938",
+    "text": "خدمة يسميها مستند DID، بالشكل <type>|<serviceEndpoint>: مثل LinkedDomains|https://app.example.com. والنوع رمز واحد؛ ونقطة النهاية عنوان URL مطلق بمخطط http أو https. ويصبح كل منها قيد خدمة بالمعرّف <did>#service-<n>."
+  },
+  "applications.schema.attributes.didAlsoKnownAs.what": {
+    "en": "5a74e5a6c69ffbcd",
+    "text": "معرّف آخر للتطبيق نفسه، يُنشر كـ alsoKnownAs في مستند DID: عنوان URI مطلق مثل أصل الويب للتطبيق أو عنوان URL الخاص بـ client_id لديه. ويجعل DID Core منه مطالبة لا برهانًا، ويتحقق منه الطرف المعتمد."
+  },
+  "applications.schema.attributes.secretDestProvider.what": {
+    "en": "999c0334f7036e11",
+    "text": "أي مدير أسرار تكون هذه الوجهة: aws (Secrets Manager، PutSecretValue)، أو gcp (Secret Manager، AddSecretVersion)، أو azure (Key Vault، setSecret)، أو vault (محرك KV الإصدار 2 من HashiCorp Vault أو OpenBao، بكتابة مع check-and-set)، أو file (وضع التطوير فقط). فخدمة إدارة المفاتيح ليست وجهة: إنها تخزن المفاتيح لا الأسرار."
+  },
+  "applications.schema.attributes.secretDestPayload.what": {
+    "en": "afacd48434fc8c13",
+    "text": "ما تكتبه عملية الدفع: password (كلمة المرور المجردة، وهو الافتراضي) أو json — {\"username\", \"password\", \"realm\", \"rotatedAt\"}، وهو الكائن الذي يأخذ القارئ كلمة المرور منه بحسب حقله، كما تفعل قراءات الأسرار الخاصة بهذه الخدمة (keys.kekField وما شابه). وفي Vault، الذي تكون إصداراته خرائط، يكتب password الحقل الواحد الذي يسميه secretDestField."
+  },
+  "applications.schema.attributes.secretDestRegion.what": {
+    "en": "b18c846aef149c6a",
+    "text": "aws: منطقة AWS التي توجد فيها الأسرار (us-east-1)."
+  },
+  "applications.schema.attributes.secretDestProject.what": {
+    "en": "6bb1d4dc14be4ba4",
+    "text": "gcp: المشروع الذي يوجد فيه اسم السر القصير، حتى يسمي حساب الخدمة سرّه sts-svc-backup بدلًا من projects/<project>/secrets/sts-svc-backup. ويُؤخذ اسم المورد الكامل كما هو."
+  },
+  "applications.schema.attributes.secretDestEndpoint.what": {
+    "en": "42bf9494550ebc2f",
+    "text": "azure: عنوان URL للخزنة (https://<name>.vault.azure.net). vault: عنوان Vault أو OpenBao (https://vault.example.com:8200). https فقط — تعبره بيانات اعتماد الكتابة وكلمة مرور."
+  },
+  "applications.schema.attributes.secretDestMount.what": {
+    "en": "364ce1b692cdde7c",
+    "text": "vault: حيث يُركَّب محرك KV الإصدار 2؛ وتكون secret عند الفراغ."
+  },
+  "applications.schema.attributes.secretDestField.what": {
+    "en": "22aeaa69eeb5f6d9",
+    "text": "vault، مع حمولة password: حقل الإصدار الذي تُكتب إليه كلمة المرور؛ ويكون value عند الفراغ، وهو الحقل الذي تستخدمه قراءات Vault الخاصة بهذه الخدمة افتراضيًا."
+  },
+  "applications.schema.attributes.secretDestDirectory.what": {
+    "en": "ea50b002c10c07e7",
+    "text": "file (وضع التطوير فقط): المجلد المطلق الذي يكون اسم السر ملفًا فيه. ويجب أن يكون الملف موجودًا سلفًا؛ ويُرفض الاسم الذي يخرج من المجلد."
+  },
+  "applications.schema.attributes.secretDestCaCertificates.what": {
+    "en": "2ddb41551cc111c9",
+    "text": "vault: شهادات PEM الخاصة بـ CA التي تتسلسل إليها أداة الاستماع في Vault، وتُوثَّق إلى جانب الجذور العامة. والشهادات عامة؛ والشهادة تُتحقق دائمًا."
+  },
+  "applications.schema.attributes.secretDestCredential.what": {
+    "en": "0e3e22596dd9d73c",
+    "text": "بيانات اعتماد الكتابة الخاصة بهذه الوجهة، ويجوز لها كتابة إصدارات الأسرار المسماة وينبغي ألا تقدر على شيء سواها: aws، وتكون JSON بالشكل {\"accessKeyId\", \"secretAccessKey\"[, \"sessionToken\"]}؛ وgcp، وتكون JSON لملف مفتاح حساب الخدمة؛ وazure، وتكون JSON بالشكل {\"tenantId\", \"clientId\", \"clientSecret\"}؛ وvault، وتكون رمزًا. وهي منفصلة عن بيانات الاعتماد المقتصرة على القراءة التي تقرأ بها هذه الخدمة مفتاح تشفير المفاتيح وكلمة مرور قاعدة البيانات الخاصين بها. تُختم بمفتاح تشفير المفاتيح عندما تستمر المفاتيح، وتُحجب عن كل صفحة وعن رد /admin-api وعن قراءة الدليل، ولا تُسجل في السجل أبدًا."
+  },
+  "applications.schema.attributes.scimClientBaseUrl.what": {
+    "en": "8576dcce5d9aa880",
+    "text": "عنوان URI الأساسي لـ SCIM البعيد (RFC 7644 القسم 1.3)، مع تضمين المقطع /v2 حيث يستخدم مزود الخدمة واحدًا: https://idp.example.com/scim/v2. https فقط (القسم 7.2)؛ بلا استعلام ولا fragment ولا معلومات مستخدم (القسم 7.1)."
+  },
+  "applications.schema.attributes.scimClientEnabled.what": {
+    "en": "f0836917befa5243",
+    "text": "TRUE لدفع التغييرات وإجراء المصالحة؛ وFALSE (الافتراضي) تبقي الإعداد ولا ترسل شيئًا."
+  },
+  "applications.schema.attributes.scimClientAuthMethod.what": {
+    "en": "fe00a32026bba611",
+    "text": "كيف يُصادَق على الطلب (RFC 7644 القسم 2): basic (HTTP Basic مع scimClientUsername وscimClientPassword)، أو oauth2 (رمز client_credentials من scimClientTokenEndpoint، يُرسل كرمز Bearer)، أو none (شهادة عميل TLS فقط، عند تهيئة واحدة)."
+  },
+  "applications.schema.attributes.scimClientUsername.what": {
+    "en": "46d34680b8229ade",
+    "text": "basic: اسم المستخدم الذي يعرف مزود الخدمة هذا العميل به."
+  },
+  "applications.schema.attributes.scimClientPassword.what": {
+    "en": "0bd798150c823e27",
+    "text": "basic: كلمة المرور. تُختم بمفتاح تشفير المفاتيح عندما تستمر المفاتيح، وتُحجب عن كل صفحة وعن رد /admin-api وعن قراءة الدليل، ولا تُسجل في السجل أبدًا."
+  },
+  "applications.schema.attributes.scimClientTokenEndpoint.what": {
+    "en": "2fff62508823be4f",
+    "text": "oauth2: نقطة نهاية الرمز لدى خادم التفويض الذي يثق به مزود الخدمة. https فقط."
+  },
+  "applications.schema.attributes.scimClientOAuthClientId.what": {
+    "en": "7db4d9638e6d19a4",
+    "text": "oauth2: قيمة client_id التي سُجِّل هذا العميل تحتها هناك."
+  },
+  "applications.schema.attributes.scimClientOAuthClientSecret.what": {
+    "en": "532cf20542b7031b",
+    "text": "oauth2: سر العميل. مختوم، ومحجوب، ولا يُسجل أبدًا."
+  },
+  "applications.schema.attributes.scimClientOAuthClientAuth.what": {
+    "en": "ede4e8f4cfdb1611",
+    "text": "oauth2: كيف يصادق العميل عند نقطة نهاية الرمز — client_secret_basic (الافتراضي) أو client_secret_post (RFC 6749 القسم 2.3.1)."
+  },
+  "applications.schema.attributes.scimClientOAuthScope.what": {
+    "en": "9f692d33ed80633f",
+    "text": "oauth2: نطاق الصلاحية المطلوب، مفصولًا بمسافات (scim:write، الخاص بـ /scim/v2 لهذه الخدمة). والفراغ لا يطلب شيئًا."
+  },
+  "applications.schema.attributes.scimClientOAuthResource.what": {
+    "en": "b8d133b2b811132b",
+    "text": "oauth2: مؤشر مورد وفق RFC 8707 يُرسل مع طلب الرمز، حيث يريد خادم التفويض واحدًا."
+  },
+  "applications.schema.attributes.scimClientTlsSource.what": {
+    "en": "59a022632ff98966",
+    "text": "شهادة عميل TLS المقدَّمة إلى مزود الخدمة: none (الافتراضي)، أو issued (بواسطة CA نطاق الثقة هذا، من CA الإصدار tls-client الخاص به، وقابلة للإلغاء على /admin/pki)، أو uploaded (scimClientTlsCertificate وscimClientTlsPrivateKey). وتُقدَّم مهما قال scimClientAuthMethod."
+  },
+  "applications.schema.attributes.scimClientTlsCertificate.what": {
+    "en": "b666cc747004775b",
+    "text": "شهادة العميل، بصيغة PEM، وسلسلة الشهادات بعدها. عامة."
+  },
+  "applications.schema.attributes.scimClientTlsPrivateKey.what": {
+    "en": "93b05dbd701d0139",
+    "text": "المفتاح الخاص لشهادة العميل، بصيغة PEM. مختوم، ومحجوب، ولا يُدوَّن في السجلات أبدًا."
+  },
+  "applications.schema.attributes.scimClientCaCertificates.what": {
+    "en": "cd2239779722a5f1",
+    "text": "شهادات PEM لـ CA تتسلسل إليها شهادة TLS الخاصة بمزوّد الخدمة، موثوق بها إلى جانب الجذور العامة. تُتحقق دائمًا من الشهادة ومن اسم مضيفها."
+  },
+  "applications.schema.attributes.scimClientScopeMode.what": {
+    "en": "372adf4f4a44227b",
+    "text": "من يُدفَع: all (كل شخص في نطاق الثقة)، أو groups (أعضاء scimClientScopeGroups)، أو filter (الأشخاص الذين يطابقهم scimClientScopeFilter). من يغادر نطاق الدفع يُلغى توفيره هناك."
+  },
+  "applications.schema.attributes.scimClientScopeGroups.what": {
+    "en": "8377e938c9251688",
+    "text": "نطاق groups: المجموعات التي يُدفَع أعضاؤها، وكل منها cn أو DN لمجموعة."
+  },
+  "applications.schema.attributes.scimClientScopeFilter.what": {
+    "en": "eb63610a69d08d21",
+    "text": "نطاق filter: مرشح LDAP وفق RFC 4515 يجب أن يطابقه مدخل الشخص، مثل (department=Sales)."
+  },
+  "applications.schema.attributes.scimClientGroupMode.what": {
+    "en": "c83feac3531f87f7",
+    "text": "أي المجموعات تُدفَع، كل منها مع أعضائها المشمولين بنطاق الدفع فقط: none، أو selected (scimClientGroups)، أو member-groups (كل مجموعة ينتمي إليها شخص مشمول)، أو all."
+  },
+  "applications.schema.attributes.scimClientGroups.what": {
+    "en": "b69fad674e7a8af5",
+    "text": "مجموعات selected: كل منها cn أو DN لمجموعة."
+  },
+  "applications.schema.attributes.scimClientDeprovision.what": {
+    "en": "fa13a73140f18534",
+    "text": "ماذا يحدث هناك عندما يُحذف شخص هنا أو يغادر نطاق الدفع: deactivate (active false، وهو الافتراضي) أو delete. الحساب المعطّل هنا يكون دائمًا active false هناك."
+  },
+  "applications.schema.attributes.scimClientReconcileMinutes.what": {
+    "en": "a40bdc8ff019b288",
+    "text": "كم مرة يُوفَّق نطاق الدفع كله، بالدقائق، عبر مجدول العنقود: يُدفَع كل شخص وكل مجموعة ضمن النطاق، وما يحتفظ به مزوّد الخدمة تحت externalId تابع لنطاق الثقة هذا ولم يعد ضمن نطاق الدفع يُلغى توفيره. 0 (الافتراضي) يُوفَّق فقط عندما يطلب المسؤول ذلك."
+  },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "أين يوجد مزوّد الخدمة، كرمز اختصاص في خريطة الخلايا (us، eu، ca، …). في خدمة منشورة كخلايا، تسأل الخلية الأصلية لكل شخص سياسة الإصدار عمّا إذا كان يجوز أن تذهب بيانات ذلك الشخص إلى هناك (release-attributes، والغرض scim-provision) قبل دفعها؛ والرفض يُخرجها من نطاق الدفع — لا تُدفَع، ويُلغى توفيرها إن كانت قد دُفعت. الفراغ اختصاص غير معروف، لا يُطلِق إليه الافتراضي الصارم أبدًا. يُتجاهل عندما تكون الخدمة خلية واحدة."
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "أي الخلايا تدفع إلى مزوّد الخدمة، كل منها معرّف خلية؛ ولا شيء (الافتراضي) يعني كل خلية. الخلية غير المدرجة لا ترسل شيئًا لهذا العميل، فلا يُدفَع الأشخاص الموطَّنون فيها. يُتجاهل عندما تكون الخدمة خلية واحدة."
+  },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "كم طلبًا في الثانية يُرسَل إلى مزوّد الخدمة، على الأكثر: كل تسليم وبحث وقراءة اكتشاف وصفحة توفيق ينتظر دوره بدل أن يفشل. الفراغ أو 0 (الافتراضي) يعني بلا حد. في خدمة منشورة كخلايا يجوز لكل خلية تدفع أن ترسل هذا مقسومًا على عدد تلك الخلايا، مقربًا إلى الأعلى."
+  },
+  "applications.schema.attributes.ssfReceiverId.what": {
+    "en": "25f9e6acd671b643",
+    "text": "ما يُسمّى به مستقبِل الإشارات المشتركة — أيًّا كان ما صادق به عندما أنشأ تدفقًا عند /ssf/stream، وهو أيضًا `aud` لكل رمز حدث أمان يحمله ذلك التدفق. بخلاف معرّفات الإعلان الأربعة التي فوقه، هذا المعرّف يكتبه البروتوكول فعلًا: إنشاء تدفق يسجّل مشاهدة، لأن مصادقة مستقبِل والاتفاق معه على تدفق هو بالضبط نوع الحدث الذي يوجد هذا السجل لحفظه. وهو لا يمنح شيئًا مع ذلك — التدفق هو ما يقرّر ما يحصل عليه المستقبِل، ويحمل جمهوره الخاص."
+  },
+  "applications.schema.attributes.ssfDeliveryEndpoint.what": {
+    "en": "1e2bc78133a2e93d",
+    "text": "أين يتوقع هذا المستقبِل دفع أحداثه — نقطة نهاية تسليم وفق RFC 8935. إنه إعلان ولا يقرأه شيء: يذهب الدفع إلى نقطة النهاية على التدفق، التي سمّاها المستقبِل عندما أنشأه، ولن تأخذ هذه الخدمة URL للاتصال به من مدخل تطبيق: عنوان URL المسجّل هنا ملاحظة عمّا يكونه المستقبِل، وعنوان URL على تدفق هو عنوان URL تفتح هذه الخدمة اتصالًا إليه. المخزنان ليسا واحدًا عن عمد."
+  },
+  "applications.schema.attributes.ssfAllowedEvents.what": {
+    "en": "4f31fdedab6d1306",
+    "text": "أي أنواع أحداث الإشارات المشتركة يجوز إرسالها في تدفق يملكه هذا التطبيق. قيمة واحدة في كل سطر، وكل منها إما ملف تعريف كامل — `caep` (أحداث الجلسة الثمانية) أو `risc` (أحداث الحساب الأربعة عشر) — أو URI لنوع حدث واحد، مثل https://schemas.openid.net/secevent/caep/event-type/session-revoked. الفراغ يعني بلا قيد. أحداث التحقق وأحداث تحديث التدفق الخاصة بـ SSF مسموح بها دائمًا. يُفرَض ذلك مرتين: التدفق الذي ينشئه هذا التطبيق أو يحدّثه لا يُتفق له إلا على الأنواع المسموح بها هنا (أي شيء آخر طلبه يغيب عن `events_delivered`، ويقول سجل التدفق السبب)، وكل تسليم يتحقق منه مجددًا، فإزالة قيمة توقف التدفقات القائمة عن تلقّي ذلك النوع. المالك هو من صادق إلى /ssf/stream، مطابَقًا مع معرّف هذا المدخل أو مع قيم ssfReceiverId الخاصة به."
+  },
+  "applications.schema.attributes.ssfCaepIncludeReasons.what": {
+    "en": "059ef3d0fe452b85",
+    "text": "TRUE أو FALSE: أرسِل reason_admin وreason_user في أحداث CAEP التي تحملها تدفقات هذا المستقبِل. كلاهما عضوان اختياريان (CAEP 1.0 القسم 2)، فأي الإجابتين مطابقة."
+  },
+  "applications.schema.attributes.ssfCaepReasonLanguage.what": {
+    "en": "100441045f6dec57",
+    "text": "وسم اللغة وفق BCP 47 الذي تُفتاح به أعضاء سبب CAEP في تدفقات هذا المستقبِل. تبقى كائنات مفتاحها وسم في الحالتين."
+  },
+  "applications.schema.attributes.ssfCaepOmitEventTimestamp.what": {
+    "en": "64e3c89f9f918ec8",
+    "text": "TRUE أو FALSE: اترك event_timestamp (اختياري، CAEP 1.0 القسم 2) خارج أحداث CAEP التي تحملها تدفقات هذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfRiscIncludeReasons.what": {
+    "en": "87fd9888a9716f80",
+    "text": "TRUE أو FALSE: أرسِل reason_admin وreason_user في أحداث RISC التي تعرّفهما، على تدفقات هذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfRiscReasonLanguage.what": {
+    "en": "f381d51fb9949509",
+    "text": "وسم اللغة وفق BCP 47 الذي تُفتاح به أعضاء سبب RISC في تدفقات هذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfRiscOmitEventTimestamp.what": {
+    "en": "f3d2b4cf9c458620",
+    "text": "TRUE أو FALSE: اترك event_timestamp خارج أحداث RISC التي تعرّفه، على تدفقات هذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfSigningAlgorithm.what": {
+    "en": "4e33e62e91d9c511",
+    "text": "خوارزمية JWS التي تُوقَّع بها رموز أحداث الأمان لهذا المستقبِل. كل منها خوارزمية ينشر هذا المرسِل مفتاحًا لها في JWKS الخاص به، حتى يستطيع المستقبِل التحقق دائمًا."
+  },
+  "applications.schema.attributes.ssfMinVerificationInterval.what": {
+    "en": "3994c1382024d169",
+    "text": "بالثواني: min_verification_interval (SSF 1.0 القسم 8.1.1، يوفّره المرسِل) في تدفقات هذا المستقبِل. يُرفَض المستقبِل الذي يطلب فاصلًا أقصر."
+  },
+  "applications.schema.attributes.ssfInactivityTimeoutS.what": {
+    "en": "5e2f9c2067c275ce",
+    "text": "بالثواني: inactivity_timeout (SSF 1.0 القسم 8.1.1، يوفّره المرسِل) في تدفقات هذا المستقبِل؛ و0 يعني لا شيء."
+  },
+  "applications.schema.attributes.ssfInactivityAction.what": {
+    "en": "ee8022952a9ec9a9",
+    "text": "ما يحدث لأحد تدفقات هذا المستقبِل عندما تنقضي مهلة عدم نشاطه."
+  },
+  "applications.schema.attributes.ssfVerificationEveryS.what": {
+    "en": "923b6f96adaf217c",
+    "text": "الثواني بين أحداث التحقق التي يرسلها هذا المرسِل من تلقاء نفسه على تدفقات هذا المستقبِل؛ و0 يعني لا شيء."
+  },
+  "applications.schema.attributes.ssfStreamStatusOnCreate.what": {
+    "en": "529d7f85e9b424fd",
+    "text": "الحالة التي يبدأ بها تدفق ينشئه هذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfMaxStreams.what": {
+    "en": "aea69ff44391bddd",
+    "text": "كم تدفقًا يجوز لهذا المستقبِل أن يحتفظ به في وقت واحد."
+  },
+  "applications.schema.attributes.ssfMaxSubjectsPerStream.what": {
+    "en": "c6bf17308cf86a2e",
+    "text": "كم موضوعًا يجوز لأحد تدفقات هذا المستقبِل أن يسمّيه."
+  },
+  "applications.schema.attributes.ssfMaxQueuedEvents.what": {
+    "en": "bce67526a337e6c5",
+    "text": "كم حدثًا غير مسلَّم يحتفظ به أحد تدفقات هذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfPollMaxEvents.what": {
+    "en": "7059c22de4f7bb2c",
+    "text": "أقصى عدد من الأحداث يعيده استطلاع واحد لتدفق هذا المستقبِل (يسمح RFC 8936 للمرسِل بإعادة أقل من maxEvents)."
+  },
+  "applications.schema.attributes.ssfDeadLetterMaxPerStream.what": {
+    "en": "d6a27411e99ce504",
+    "text": "كم رسالة ميتة يحتفظ بها أحد تدفقات هذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfPushTimeoutMs.what": {
+    "en": "68440f363578ed9e",
+    "text": "بالميلي ثانية، مدة انتظار إجابة نقطة نهاية الدفع لهذا المستقبِل."
+  },
+  "applications.schema.attributes.ssfPushRetries.what": {
+    "en": "193c97284b3b02e8",
+    "text": "كم مرة تُعاد محاولة دفع فاشل إلى هذا المستقبِل قبل أن يصبح رسالة ميتة."
+  },
+  "applications.schema.attributes.ssfPushRetryDelayMs.what": {
+    "en": "4e5bbb896a8e1382",
+    "text": "بالميلي ثانية، الفاصل بين محاولات الدفع إلى هذا المستقبِل."
+  },
+  "applications.schema.attributes.gnapInstanceId.what": {
+    "en": "5bf2a9c4ae9566c8",
+    "text": "معرّف مثيل ثابت (RFC 9635 القسم 2.3.1): السلسلة التي يرسلها العميل كـ `client` بدل مفتاحه. المفتاح الذي يجب أن يثبته بعد ذلك هو gnapKey أو gnapKeyReference في هذا المدخل. المعرّفات الديناميكية التي يصدرها خادم التفويض (القسم 3.5) لا تُكتب هنا."
+  },
+  "applications.schema.attributes.gnapKey.what": {
+    "en": "f0520a38e076cf8b",
+    "text": "المفتاح العام لمثيل العميل أو لخادم الموارد، ككائن مفتاح JSON وفق RFC 9635 القسم 7.1: طريقة إثبات وواحد بالضبط من jwk أو cert أو cert#S256. هكذا يُطابَق طلب بالقيمة مع هذا المدخل، ببصمة المفتاح."
+  },
+  "applications.schema.attributes.gnapKeyIdentity.what": {
+    "en": "e1ed7ac7ee02a735",
+    "text": "هوية بصمة gnapKey (jkt:... لمفتاح JWK، وx5t:... لشهادة)، تُكتب عندما ينشئ GNAP المدخل حتى يُعثَر على المفتاح دون إعادة قراءته."
+  },
+  "applications.schema.attributes.gnapKeyReference.what": {
+    "en": "d8aec54850661b34",
+    "text": "مرجع مفتاح (RFC 9635 القسم 7.1.1): السلسلة المبهمة التي يرسلها العميل كـ `key`. يُحل إلى gnapSymmetricKey عندما يكون ذلك معيّنًا، وإلا إلى gnapKey."
+  },
+  "applications.schema.attributes.gnapKeyProof.what": {
+    "en": "1c6aefeeff99f7f3",
+    "text": "طريقة الإثبات التي يُربَط بها مرجع المفتاح (القسم 7.1.1: \"يجب أن يُربَط بآلية إثبات واحدة\"): httpsig أو jwsd أو jws. الافتراضي httpsig."
+  },
+  "applications.schema.attributes.gnapMtlsTrust.what": {
+    "en": "c51b28815693cab2",
+    "text": "كيف يُوثَق مفتاح يثبته هذا العميل بـ TLS المتبادل، لهذا العميل وحده (#107): `pki` أو `pinned`، كما في gnap.mtlsTrust لنطاق الثقة. لا يمكنه إلا أن يجعل نطاق الثقة أصرم — `pki` حيث يكون نطاق الثقة pinned — ويُرفَض `pinned` حيث يكون نطاق الثقة pki (STS-REG-0196) ويُتجاهل إذا جُعل نطاق الثقة pki بعد ذلك. الفراغ يتبع نطاق الثقة. تحت pki يجب أن تتسلسل الشهادة إلى مخزن ثقة العملاء وأن يكون نطاق الثقة هذا قد أصدرها لهذا المدخل، أو أن تحمل معلمة subject الوحيدة وفق RFC 8705 التي يسجّلها (oauthTlsClientAuthSubjectDn أو سمة oauthTlsClientAuthSan*)."
+  },
+  "applications.schema.attributes.gnapSymmetricKey.what": {
+    "en": "ded5d8a8476372b4",
+    "text": "سر مشترك لمرجع مفتاح، بصيغة base64url، بطول 32 بايتًا على الأقل — الحالة الوحيدة التي يسمح فيها GNAP بمفتاح متماثل، لأنه لا يعبر السلك أبدًا (القسم 7.1.2). يُختَم بمفتاح تشفير المفاتيح عندما تُداوَم المفاتيح، ويُحجَب عن قارئي LDAP في وضع المنتج."
+  },
+  "applications.schema.attributes.gnapSymmetricAlg.what": {
+    "en": "6bdcccc92db67444",
+    "text": "الخوارزمية التي يوقّع بها السر المشترك: HS256 (الافتراضي) أو HS384 أو HS512 لـ jwsd وjws؛ وhmac-sha256 لـ httpsig."
+  },
+  "applications.schema.attributes.gnapClassId.what": {
+    "en": "cf0254b61fae8a9c",
+    "text": "class_id لبرمجية العميل (القسم 2.3). تتقدّم القيمة المسجّلة على تلك التي يحملها الطلب."
+  },
+  "applications.schema.attributes.gnapDisplayUri.what": {
+    "en": "2eac54c277b83c17",
+    "text": "display.uri للعميل، ويُعرَض في صفحة الموافقة (القسم 2.3.2)."
+  },
+  "applications.schema.attributes.gnapLogoUri.what": {
+    "en": "15cc8de2d5eecf88",
+    "text": "display.logo_uri للعميل. لا تُرسَم إلا صورة data:؛ وأي URI آخر يُعرَض رابطًا (القسم 11.16)."
+  },
+  "applications.schema.attributes.gnapFinishUri.what": {
+    "en": "5a8f71c45d66489d",
+    "text": "URI إنهاء تفاعل (القسم 2.5.2) يجوز إعادة هذا العميل إليه أو دفعه إليه. عنوان عودة: في وضع المنتج يُرفَض URI إنهاء غير مدرج هنا."
+  },
+  "applications.schema.attributes.gnapInteractionStartModes.what": {
+    "en": "764406fc42ad4c3c",
+    "text": "أوضاع بدء التفاعل التي يجوز لهذا العميل استخدامها (redirect وapp وuser_code وuser_code_uri). الفراغ يعني كل وضع يقدّمه خادم التفويض."
+  },
+  "applications.schema.attributes.gnapAllowedAccess.what": {
+    "en": "a9291497eb549cb6",
+    "text": "أنواع الوصول وسلاسل المرجع التي يجوز لهذا العميل طلبها، أو التي يجوز لخادم الموارد هذا تسجيلها. الفراغ يعني أيًّا كان."
+  },
+  "applications.schema.attributes.gnapBearerTokens.what": {
+    "en": "7b779b458f033217",
+    "text": "يرفض FALSE علم bearer لهذا العميل بالخطأ invalid_flag."
+  },
+  "applications.schema.attributes.gnapSkipInteraction.what": {
+    "en": "83695731fd2cce04",
+    "text": "يجعل TRUE هذا مثيل عميل موثوقًا (القسم 2.3.3): تُوافَق منحة لا تطلب معلومات عن الموضوع بلا مالك مورد وبلا تفاعل، وتُوافَق المنحة التي تحمل تأكيد مستخدم متحققًا منه لذلك الشخص. يُحترَم فقط لمدخل مسجّل، ولا يُحترَم أبدًا لمدخل أنشأه GNAP عند المشاهدة."
+  },
+  "applications.schema.attributes.gnapAccessTokenFormat.what": {
+    "en": "453628f81688d935",
+    "text": "تنسيق الرمز وفق RFC 9767 للرموز الصادرة لهذا العميل، أو لخادم الموارد هذا: jwt-signed أو jwt-encrypted أو macaroon أو biscuit أو zcap."
+  },
+  "applications.schema.attributes.gnapAccessTokenLifetimeS.what": {
+    "en": "fc21e3ffa049e1a6",
+    "text": "عمر رموز الوصول الصادرة لهذا العميل، بالثواني."
+  },
+  "applications.schema.attributes.gnapResourceServerUri.what": {
+    "en": "52d42256a31f2bd6",
+    "text": "المواقع التي يجيب عنها خادم الموارد هذا. حق وصول تبدأ مواقعه بأحد هذه يُجعَل جمهوره هذا المدخل، ويُسكّ رمز له بتنسيق خادم الموارد هذا ومفتاح JWE ومفتاح macaroon."
+  },
+  "applications.schema.attributes.gnapOwnerLookupUri.what": {
+    "en": "c07831202c3c5254",
+    "text": "أين يجيب خادم الموارد هذا عمّن يملك موردًا (#432 المرحلة 5): قالب https URL يحمل {identifier} مرة واحدة في مساره، مثل https://rs.example.com/owners/{identifier}. يجلبه خادم التفويض بعد ترميز المعرّف بالنسبة المئوية داخل ذلك المقطع ويقرأ {\"owner\": \"<DN>\"} (404: لا أحد يملكه)؛ ويجب أن يكون الشخص الذي يوافق على حق يسمّي المعرّف هو ذلك الشخص أو عضوًا في تلك المجموعة."
+  },
+  "applications.schema.attributes.gnapJweKey.what": {
+    "en": "754dbf2167a8ecea",
+    "text": "مفتاح التشفير العام لخادم الموارد هذا (JWK) لرموز jwt-encrypted، حتى لا يستطيع قراءتها إلا خادم الموارد هذا."
+  },
+  "applications.schema.attributes.gnapMacaroonKey.what": {
+    "en": "20db1983f230f494",
+    "text": "مفتاح الجذر macaroon الذي يتحقق به خادم الموارد هذا من رموز macaroon الخاصة به، بصيغة base64url. يكتبه خادم التفويض عندما يسجّل خادم الموارد مجموعة موارد لأول مرة؛ ويُختَم بمفتاح تشفير المفاتيح عندما تُداوَم المفاتيح."
+  },
+  "applications.schema.attributes.gnapScopedSignals.what": {
+    "en": "2671ec903329beba",
+    "text": "يُخرج FALSE تطبيق الويب هذا من تقييد نطاق الإشارات المشتركة: فيحمل تدفق يملكه حينئذ أحداثًا عن الجميع، كأي مستقبِل آخر."
+  },
+  "applications.schema.attributes.spiffeWorkloadId.what": {
+    "en": "57058ad7e2424d0b",
+    "text": "معرّف SPIFFE يُتوقَّع أن يحمله هذا التطبيق — spiffe://<trust domain>/<path>. تحصل هوية SPIFFE على مدخل خاص بها تحت ou=spiffe (انظر spiffe/CLAUDE.md) والسجل هناك هو ما يُصدَر مقابله SVID فعلًا، لذا فهذا لا يكتب شيئًا ولا يقرأ شيئًا: إنه الصلة بين تطبيق في هذا السجل وهوية في ذاك، تُقال يدويًا لأن لا بروتوكول يقولها."
+  },
+  "applications.schema.attributes.appFederationRelationship.what": {
+    "en": "2353119c3b8b44f3",
+    "text": "علاقات الاتحاد التي يُصادَق عبرها مستخدمو هذا التطبيق — كل قيمة هي `fedId` لمدخل تحت ou=federations، في نطاق الثقة هذا، تكون قيمة `fedRole` فيه service-provider. يُتحقق من كلا النصفين عند القراءة لا عند الكتابة: علاقة من جانب موفّر الهوية تسير في الاتجاه الآخر (تؤكّد هذه الخدمة لذلك الشريك، فلا يوجد ما يُسجَّل الدخول إليه)، والسجل لكل نطاق ثقة، لذا معرّف يسمّي علاقة في نطاق ثقة آخر لا يسمّي شيئًا هنا.\n\nيحتفظ بقائمة، وذلك ما يمكّن التطبيق من عرض أكثر من موفّر هوية. قيمة واحدة قابلة للاستخدام مع تشغيل إعادة التوجيه التلقائي هي الحالة التي أُضيفت لها هذه السمة وهي بلا تغيير: يذهب المتصفح مباشرة إلى ذلك الشريك. عدة قيم قابلة للاستخدام ترسم /authn/select-idp، حيث يختار الشخص أيها — اكتشاف نطاق الثقة الأصلي مضيَّقًا إلى شركاء هذا التطبيق بدل إجرائه على كل علاقة لدى هذه الخدمة. لا يلزم أن يشتركا في بروتوكول: شريك SAML 2.0 وشريك OpenID Connect قيمتان هنا وزرّان هناك، لأن ما تسمّيه القائمة هو أين يمكن مصادقة الشخص لا كيف.\n\nالقيمة التي تسمّي علاقة لا تستطيع هذه الخدمة استخدامها تُعرَض على الشاشة بدل إسقاطها، سطر لكل قيمة: قائمة من ثلاثة مدخلها الأوسط معطّل يجب ألا تبدو كقائمة من اثنين.\n\nلا يكتبه أحد. لا بروتوكول يقدّمه ولا مشاهدة تشتقه — موفّر الهوية الأصلي لتطبيق ترتيب صنعه شخص، لا شيء تستطيع هذه الخدمة ملاحظته — لذا فهو قابل للتحرير ويبدأ فارغًا."
+  },
+  "applications.schema.attributes.appFederationAutoRedirect.what": {
+    "en": "f049a40c629458fa",
+    "text": "TRUE إذا كان ينبغي إرسال شخص يسجّل الدخول إلى هذا التطبيق مباشرة إلى الشريك المسمّى أعلاه، من دون شاشة تسجيل الدخول بينهما. هذا اكتشاف لنطاق الثقة الأصلي يُنجَز بالتهيئة بدل السؤال، وهو ما تفعله عملية نشر ذات موفّر هوية متحد واحد فعلًا.\n\nيكون TRUE افتراضيًا ما إن تُسمّى علاقة، لأن تسمية واحدة ثم الاضطرار إلى نقر زر حالة لا يريدها أحد؛ اضبطه على FALSE للإبقاء على الشاشة، فيصبح الشركاء الأزرار الوحيدة المعروضة. لذا فالقيمة الغائبة تعني \"نعم\" هنا لا \"غير معروف\"، وهذا عكس ما يجعله RFC 7591 القسم 2 للبولياني المحذوف — يُقال جهرًا لأن القاعدتين تلتقيان في مدخل واحد.\n\nعندما تُسمّى عدة علاقات فإنه يعني بالضبط ما عناه دائمًا — \"من دون شاشة تسجيل الدخول\" — وما يتغيّر هو ما يخلّفه ذلك. مع علاقة واحدة يكون إعادة توجيه مباشرة إلى الشريك. ومع عدة يكون المنتقي عند /authn/select-idp: زر لكل شريك ومن دون حقل كلمة المرور، وهو عمل شاشة تسجيل الدخول منجزًا من دونها. وما لا يعنيه أبدًا هو \"اختر واحدًا عنهم\"؛ لا قيمة لبولياني تستطيع أن تقول أي موفّر هوية هو صاحب عمل شخص.\n\nلذا فإن FALSE مع تسمية عدة علاقات هو الشاشة، بزر لكل شريك تحت مربع كلمة المرور — الشيء نفسه الذي فعله FALSE دائمًا، والشركاء بالجمع.\n\nومن دون تسمية أي علاقة لا يفعل شيئًا البتة، بدل أن يكون خطأ: يُحرَّران منفصلين، والقيمة التي خلّفتها علاقة مُسحت لا ينبغي أن ترفض الكتابة التالية."
+  },
+  "applications.schema.attributes.appAuthnPolicy.what": {
+    "en": "2c8a385006302f63",
+    "text": "سياسة المصادقة التي يسجّل تحتها أشخاص هذا التطبيق الدخول: `default` (أو فارغ)، أو اسم سياسة مصادقة مسماة لنطاق الثقة هذا (الدليل > السياسات). تحمل السياسة المسماة آليات العامل الأول المسموح بها (password وpassword-mfa وwebauthn وspnego وwallet وfederation؛ ويسمح none بكل واحدة) وعوامل التحقق الثانية المسموح بها (password وsecurityKey وtotp وrecoveryCode وemailCode وemailLink وwallet؛ ويترك none سياسة نطاق الثقة كما هي). يسمح `default` بكل آلية تسمح بها سياسة المصادقة لنطاق الثقة.\n\nتُفرَض عند كل تسجيل دخول من المتصفح إلى التطبيق، في كلا الوضعين: الشخص الذي تقوم جلسته على آلية لا تسمح بها السياسة يُرسَل ليسجّل الدخول مجددًا بآلية تسمح بها. آلية عامل أول واحدة مدرجة هي أيضًا وجهة تسجيل الدخول (`spnego` إلى /authn/spnego، و`wallet` إلى /authn/wallet، و`federation` إلى appFederationRelationship). عوامل التحقق الثانية تضيّق سياسة نطاق الثقة فحسب: ما أوقفته يبقى موقفًا هنا.\n\nالاسم الذي لا تحمله أي سياسة لنطاق الثقة هذا — وقد كُتب متجاوزًا وحدة التحكم — لا يسمح بأي آلية حتى توجد السياسة (STS-AUTHN-0536).\n\nلا يكتبه أحد: لا بروتوكول يقدّمه، لذا فهو قابل للتحرير ويبدأ فارغًا."
+  },
+  "applications.schema.attributes.appPasskeyPolicy.what": {
+    "en": "7bc62e3e8f1d7a2a",
+    "text": "سياسة مفتاح المرور التي يُلتزَم بها تسجيل الدخول إلى هذا التطبيق: `default` (أو فارغ)، أو اسم سياسة مفتاح مرور مسماة لنطاق الثقة هذا (الدليل > السياسات). تتنافس في الأسبقية مع سياسة مفتاح المرور التي تسمّيها كل مجموعة من مجموعات الشخص (stsPasskeyPolicy): تنطبق الأدنى أسبقية، ويُحسم التعادل بالاسم، ويُستخدم `default` حيث لا شيء يسمّي سياسة.\n\nالاسم الذي لا تحمله أي سياسة لنطاق الثقة هذا — وقد كُتب متجاوزًا وحدة التحكم — لا يسمّي شيئًا ويُسجَّل (STS-AUTHN-0537). لا يمكن حذف سياسة مفتاح مرور مسماة تسمّيها هذه السمة (STS-AUTHN-0538).\n\nلا يكتبه أحد: لا بروتوكول يقدّمه، لذا فهو قابل للتحرير ويبدأ فارغًا."
+  },
+  "applications.schema.attributes.appLocalePolicy.what": {
+    "en": "2fbcb920f26d8f11",
+    "text": "سياسة اللغة التي ترتد إليها صفحة أو رسالة بريد لهذا التطبيق: `default` (أو فارغ)، أو اسم سياسة لغة مسماة لنطاق الثقة هذا (الدليل > السياسات). تقرّر اللغة التي تُرسَم بها الصفحة عندما لا يسمّي الطلب ولا الشخص ولا المتصفح لغةً يجيب عنها فهرس، وpreferredLanguage الذي يُعطى لشخص يتسبب هذا التطبيق في إنشائه. وحيث يُعرَف الشخص تتنافس في الأسبقية مع سياسة اللغة التي تسمّيها كل مجموعة من مجموعات الشخص (stsLocalePolicy): تنطبق الأدنى أسبقية، ويُحسم التعادل بالاسم، ويُستخدم `default` حيث لا شيء يسمّي سياسة.\n\nالاسم الذي لا تحمله أي سياسة لنطاق الثقة هذا — وقد كُتب متجاوزًا وحدة التحكم — لا يسمّي شيئًا ويُسجَّل (STS-I18N-0013): ينطبق `default`، لأن اللغة هي كل ما تقرّره. لا يمكن حذف سياسة لغة مسماة تسمّيها هذه السمة (STS-I18N-0014).\n\nلا يكتبه أحد: لا بروتوكول يقدّمه، لذا فهو قابل للتحرير ويبدأ فارغًا."
+  },
+  "applications.schema.attributes.appPasswordPolicy.what": {
+    "en": "3422915746161336",
+    "text": "سياسة كلمة المرور التي تُلتزَم بها كلمة مرور تُضبَط أثناء تسجيل الدخول إلى هذا التطبيق: `default` (أو فارغ)، أو اسم سياسة كلمة مرور مسماة لنطاق الثقة هذا (الدليل > السياسات). تتنافس في الأسبقية مع سياسة كلمة المرور التي تسمّيها كل مجموعة من مجموعات الشخص (stsPasswordPolicy): تنطبق الأدنى أسبقية، ويُحسم التعادل بالاسم، ويُستخدم `default` حيث لا شيء يسمّي سياسة. الباب الذي لا تطبيق بيده (البوابة، ووحدة التحكم، وLDAP) يرتّب سياسات المجموعات وحدها.\n\nالاسم الذي لا تحمله أي سياسة لنطاق الثقة هذا — وقد كُتب متجاوزًا وحدة التحكم — لا يسمّي شيئًا، وتبقى مراجع المجموعات تُرتَّب، ويُسجَّل (STS-AUTHN-0539). لا يمكن حذف سياسة كلمة مرور مسماة تسمّيها هذه السمة (STS-AUTHN-0540).\n\nلا يكتبه أحد: لا بروتوكول يقدّمه، لذا فهو قابل للتحرير ويبدأ فارغًا."
+  },
+  "applications.schema.attributes.appPostLoginPolicy.what": {
+    "en": "b5b9d466c5a220cc",
+    "text": "سياسة نشاط ما بعد تسجيل الدخول التي يتبعها تسجيل الدخول إلى هذا التطبيق: `default` (أو فارغ)، أو اسم سياسة ما بعد تسجيل الدخول مسماة لنطاق الثقة هذا (الدليل > السياسات). تتنافس في الأسبقية مع سياسة ما بعد تسجيل الدخول التي تسمّيها كل مجموعة من مجموعات الشخص (stsPostLoginPolicy): تنطبق الأدنى أسبقية، ويُحسم التعادل بالاسم، ويُستخدم `default` حيث لا شيء يسمّي سياسة. السياسة المسماة التي نشاطها متوقف تستبعد تسجيل الدخول إلى هذا التطبيق حيث تفوز.\n\nتُقرأ عند تسجيل الدخول فقط: بريد التذكير لنشاط قد بدأ وتقرير التقدّم لا يعرفان تطبيقًا، ويختاران بحسب مجموعات الشخص وحدها.\n\nالاسم الذي لا تحمله أي سياسة لنطاق الثقة هذا — وقد كُتب متجاوزًا وحدة التحكم — لا يسمّي شيئًا ويُسجَّل (STS-AUTHN-0542). لا يمكن حذف سياسة ما بعد تسجيل الدخول مسماة تسمّيها هذه السمة (STS-AUTHN-0543).\n\nلا يكتبه أحد: لا بروتوكول يقدّمه، لذا فهو قابل للتحرير ويبدأ فارغًا."
+  },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "اسم المدخل في ou=policies لسياسة التفويض الدقيقة التي يملكها هذا التطبيق، وهي تقرّر كل تفصيل تفويض للأنواع التي يصرّح بها ما إن تكون appFgaEnforced بقيمة TRUE."
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "TRUE عندما تُفرَض السياسة الدقيقة لهذا التطبيق. الغياب أو FALSE يعني أنها لا تُفرَض، وهو الافتراضي."
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "TRUE عندما يجوز لخادم موارد UMA 2.0 هذا أن يسجّل موارد يملكها بنفسه، عبر رمز واجهة حماية يُحصَّل بـ client_credentials. الغياب أو FALSE، وهو الافتراضي، يعني أن PAT يجب أن يكون لشخص (تدفق code) وأن ذلك الشخص يملك ما يسجّله."
+  },
+  "devices.schema.objectClasses.device.what": {
+    "en": "d480f4c7cd3a1226",
+    "text": "cn، والمالك والوصف القياسيان."
+  },
+  "devices.schema.objectClasses.stsDevice.what": {
+    "en": "a8d77e5e94f00be8",
+    "text": "كل سمة stsDevice* أدناه: نوع المالك، والتطبيقات، والمفاتيح، والإثبات، والامتثال، والحالة، والتسميات الوصفية، والتسجيل، وNative SSO."
+  },
+  "devices.schema.attributes.cn.what": {
+    "en": "e3e1cbc76383e39a",
+    "text": "معرّف الجهاز، وهو UUID."
+  },
+  "devices.schema.attributes.owner.what": {
+    "en": "20552d2a82296c6e",
+    "text": "DN لمالكه الوحيد: شخص أو تطبيق."
+  },
+  "devices.schema.attributes.stsDeviceOwnerKind.what": {
+    "en": "7b8d9312393bf1b0",
+    "text": "person أو application."
+  },
+  "devices.schema.attributes.description.what": {
+    "en": "18482faa4e7ecf07",
+    "text": "تسميته."
+  },
+  "devices.schema.attributes.stsDeviceApplication.what": {
+    "en": "98905a8e55fa4198",
+    "text": "DN لكل تطبيق استخدمه."
+  },
+  "devices.schema.attributes.stsDeviceKey.what": {
+    "en": "500fcea967956d89",
+    "text": "قيمة JSON واحدة لكل مفتاح: id وkind (x509 وjwk وwebauthn) وthumbprint وlabel وadded وaddedBy وproof وattestation والمادة العامة. ليس سرًا أبدًا."
+  },
+  "devices.schema.attributes.stsDeviceKeyThumbprint.what": {
+    "en": "28d0e44cd4e26efd",
+    "text": "<kind>:<thumbprint> لكل مفتاح، مشتق من stsDeviceKey عند كل كتابة حتى يستطيع مرشح LDAP إيجاد جهاز بمفتاحه."
+  },
+  "devices.schema.attributes.stsDeviceCredentialId.what": {
+    "en": "5c367d4336aa3edd",
+    "text": "معرّف اعتماد كل مفتاح WebAuthn مرتبط، مشتق من stsDeviceKey عند كل كتابة حتى يجد تسجيل الدخول جهازه عبر الفهرس."
+  },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "معرّف كل مفتاح أثبتته سلسلة Android احتُفظ بأرقامها التسلسلية، مشتق من stsDeviceKey عند كل كتابة حتى لا تقرأ إعادة فحص إثبات Android إلا الأجهزة التي تحمل واحدًا (#615)."
+  },
+  "devices.schema.attributes.stsDeviceAttestation.what": {
+    "en": "c06a57ab13bda511",
+    "text": "attested عندما يُتحقق من إثبات أي مفتاح، وإلا self-asserted. يُشتق عند كل كتابة."
+  },
+  "devices.schema.attributes.stsDeviceCompliance.what": {
+    "en": "90630ca11c38c021",
+    "text": "compliant أو not-compliant؛ والغياب يعني غير معروف."
+  },
+  "devices.schema.attributes.stsDeviceComplianceChange.what": {
+    "en": "ff1e956941db4c7c",
+    "text": "JSON: آخر تغيير امتثال — status وprevious وat وsource (admin وmdm وtest-control وcaep) وactor وreason."
+  },
+  "devices.schema.attributes.stsDeviceStatus.what": {
+    "en": "cae725abd42266df",
+    "text": "compromised؛ والغياب يعني active."
+  },
+  "devices.schema.attributes.stsDeviceStatusChange.what": {
+    "en": "5bd1d7f64e5bb6b1",
+    "text": "JSON: آخر تغيير للحالة."
+  },
+  "devices.schema.attributes.stsDeviceRiskLevel.what": {
+    "en": "6a2a30b54f4d72c8",
+    "text": "LOW أو MEDIUM أو HIGH (مستويات الخطر في CAEP)؛ والغياب يعني غير مقيَّم. يضبطه تقييم المخاطر والاختراق."
+  },
+  "devices.schema.attributes.stsDeviceRiskChange.what": {
+    "en": "cc0db159344881ab",
+    "text": "JSON: آخر تغيير لمستوى الخطر — level وprevious وat وsource (risk وcompromise وadmin) وactor وreason."
+  },
+  "devices.schema.attributes.stsDeviceBrowser.what": {
+    "en": "16fa8dcc3a7975f0",
+    "text": "JSON: حالة متصفح متذكَّر (#265) — جيل الرمز، ومتى أُصدر هو والذي قبله، والمتصفح الذي رُبط به، ومتى قُدِّم عليه العامل الثاني آخر مرة. لا رمز ولا سر."
+  },
+  "devices.schema.attributes.stsDevicePlatform.what": {
+    "en": "0d8e2225e2bd158d",
+    "text": "ios أو ipados أو android أو macos أو windows أو linux أو chromeos أو other."
+  },
+  "devices.schema.attributes.stsDeviceModel.what": {
+    "en": "57494abd3e39355e",
+    "text": "وصفي."
+  },
+  "devices.schema.attributes.stsDeviceOs.what": {
+    "en": "57494abd3e39355e",
+    "text": "وصفي."
+  },
+  "devices.schema.attributes.stsDeviceEnrolment.what": {
+    "en": "f5796c5015933387",
+    "text": "JSON: method (native-sso وadmin وportal وest وscep) وat وactor."
+  },
+  "devices.schema.attributes.stsDeviceSecretHash.what": {
+    "en": "c7709d14767009ba",
+    "text": "SHA-256 لقيمة device_secret في Native SSO. محجوب عن كل قراءة LDAP."
+  },
+  "devices.schema.attributes.stsDeviceSession.what": {
+    "en": "4e1ef4b44bea18f1",
+    "text": "جلسة تسجيل الدخول التي يصلح لها السر."
+  },
+  "devices.schema.attributes.stsDeviceLastUsed.what": {
+    "en": "8c5617e5acd3ea36",
+    "text": "متى استُخدم آخر مرة، وفق ISO 8601."
+  },
+  "xacmlPolicies.schema.objectClasses.xacmlPolicy.what": {
+    "en": "df332e0eeff63c92",
+    "text": "Policy أو PolicySet واحد من XACML 3.0، مخزّن كما أُلّف المستند. هذه الحاوية هي مستودع السياسات — وldapmodify على xacmlPolicyDocument هنا يغيّر ما يقرّره PDP في الطلب التالي."
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyId.what": {
+    "en": "b1c3c568e23849c7",
+    "text": "PolicyId أو PolicySetId داخل المستند. يُشتق عند الكتابة ويُستخدم للإدراج ولحل PolicyIdReference؛ والمستند هو الحقيقة."
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyDocument.what": {
+    "en": "9bc6b993b0d6c0df",
+    "text": "XML الخاص بـ XACML 3.0. هذه هي السياسة. كل ما عداها في المدخل مشتق منها."
+  },
+  "xacmlPolicies.schema.attributes.xacmlVersion.what": {
+    "en": "ddb54fc06797469d",
+    "text": "سمة Version في المستند. مشتقة."
+  },
+  "xacmlPolicies.schema.attributes.xacmlKind.what": {
+    "en": "90f98881070fc199",
+    "text": "\"Policy\" أو \"PolicySet\". مشتق."
+  },
+  "xacmlPolicies.schema.attributes.xacmlCombiningAlgId.what": {
+    "en": "8457173a3dcce81d",
+    "text": "خوارزمية جمع القواعد أو السياسات التي يسمّيها المستند. مشتقة، وتُعرَض في وحدة التحكم لأنها أشد سطر أثرًا في السياسة."
+  },
+  "xacmlPolicies.schema.attributes.xacmlEnabled.what": {
+    "en": "9ba8d73484fcced4",
+    "text": "\"TRUE\" أو \"FALSE\". تبقى السياسة المعطّلة في المستودع ولا تُقيَّم. ليست مشتقة — إنها الشيء الوحيد هنا الذي هو حقيقة عن النشر لا عن المستند، ولهذا هي سمة وليست تعليقًا في XML."
+  },
+  "xacmlPolicies.schema.attributes.xacmlIsRoot.what": {
+    "en": "b927978feb9fe3f1",
+    "text": "\"TRUE\" على السياسة التي يبدأ منها PDP. المستودع بلا جذر لا يقرّر شيئًا ويقول ذلك؛ والمستودع بجذرين يُرفَض عند الكتابة بدل اختيار أحدهما."
+  },
+  "xacmlPolicies.schema.attributes.description.what": {
+    "en": "7aa4f682ef6437eb",
+    "text": "<Description> الخاص بالمستند، إن وُجد."
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "معرّف التطبيق الذي يملك هذه السياسة، وهي تقرّر تفاصيل أنواع authorization_details لذلك التطبيق. مثل هذه السياسة ليست الجذر أبدًا، ولا يبلغها PolicyIdReference من الجذر أبدًا، ولا تُرسَل إلى PEP بعيد أبدًا."
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "متى حُذف التطبيق المالك. تُحفَظ السياسة معطّلة للتدقيق إلى أن يزيلها المسؤول."
+  },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "PEP البعيد والمسار، بصيغة اسم PEP ثم شرطة مائلة ثم معرّف المسار، اللذان وُلِّدت لهما هذه السياسة باختيار Authorization للمسار (simple أو public) في نماذج مسارات الوكيل العكسي أو بإجراء generate-pep-route-policy (#1760). تُعاد كتابة مثل هذه السياسة عند حفظ المسار، وتُعاد تسميتها مع المسار وتُزال معه؛ وهي ليست الجذر أبدًا. يجوز تحريرها في محرّر السياسات، والحفظ التالي لاختيار simple أو public للمسار يكتبها من جديد — اختر سياسة موجودة على المسار للإبقاء على واحدة مكتوبة يدويًا."
+  },
+  "xacmlPeps.schema.objectClasses.xacmlPep.what": {
+    "en": "2b063c0577e29981",
+    "text": "نقطة إنفاذ سياسة بعيدة واحدة سجّلت لدى نقطة قرار السياسة هذه. الصف سجل وليس إذنًا — فـ PEP لا يسجّل قط يستطيع مع ذلك سحب المستودع والإنفاذ. ما يمنحه الصف هو مكان في وحدة التحكم وعنوان لتنبيه التغيير."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepIdentity.what": {
+    "en": "aa1e6b32f2237675",
+    "text": "DN الذي تسمّي به certificatePlan() هوية هذه الشهادة. لا يُنشأ مدخل هناك بسبب التسجيل — تُعاد استخدام قاعدة التسمية لا إنشاء المدخل، لأن PEP مكوّن ولأن ou=users يعدّ الأشخاص."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepCertificateSubject.what": {
+    "en": "a7bb93a757915e8c",
+    "text": "subject الكامل لشهادة العميل التي وصل عليها التسجيل. يُحفَظ كاملًا إلى جانب DN لأن DN هو الورقة وهذا ما قُدّم فعلًا."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepThumbprint.what": {
+    "en": "caeb8d9bfef75798",
+    "text": "x5t#S256 وفق RFC 8705 لتلك الشهادة — SHA-256 لتمثيل DER الخاص بها، بصيغة base64url. الحساب نفسه الذي تربط به نقطة نهاية الرمز رمز وصول مرتبطًا بشهادة، عبر الدالة نفسها، حتى لا يفترق الإملاءان."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAuthenticated.what": {
+    "en": "0d3cc605fa81dd70",
+    "text": "\"TRUE\" عندما وصل التسجيل على اتصال يحمل شهادة عميل، و\"FALSE\" عندما كان xacml.pepRequireCertificate متوقفًا ولم يحملها. ليس مخفيًا ولا مختلطًا بغيره: التسجيل غير المصادَق صف لم يثبت شيئًا، وتقوله وحدة التحكم على الصف لا في حاشية."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepNotifyUrl.what": {
+    "en": "0b05ac938bf3376e",
+    "text": "أين يُرسَل POST لتنبيه التغيير، إن قدّم PEP واحدًا. التنبيه ليس الآلية أبدًا — يسحب PEP على فترته ويتقارب من دونه — لذا URL غائب أو مرفوض أو متعذّر الوصول يكلّف كمونًا ولا شيء سواه."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepBias.what": {
+    "en": "9d0aed2bdeb99a4b",
+    "text": "الانحياز الذي يبلّغ PEP البعيد أنه يعمل به. يبلّغه هو، ولا يُضبَط من هنا أبدًا: إنه تهيئة PEP نفسه (PEP_BIAS)، وعنصر تحكم يبدو أنه يضبطه لن يفعل شيئًا في صمت."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepResource.what": {
+    "en": "b53451dce7081be1",
+    "text": "ما يقول PEP البعيد إنه يحرسه. نص حر من PEP، يُعرَض بوصفه ادّعاءه عن نفسه."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepEnabled.what": {
+    "en": "d83c2cb6edef6347",
+    "text": "\"TRUE\" أو \"FALSE\". يحتفظ PEP المعطّل بصفّه وعداداته ولا يُنبَّه. وهو لا يتوقف عن الإنفاذ، وتقوله وحدة التحكم — لا شيء هنا يبلغ عملية أخرى ليوقفها."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRegisteredAt.what": {
+    "en": "edb9e97207f6ea2f",
+    "text": "متى سجّل هذا PEP أول مرة. يُحفَظ عبر إعادة التسجيل، لأن مكوّنًا يُعاد تشغيله كل ساعة حقيقة تستحق أن تُرى، ومدخل يُصفَّر عمره عند كل إعادة تشغيل لا يمكنه إظهارها."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
+    "en": "2e8561030cee3201",
+    "text": "آخر نبضة أو سحب عند آخر كتابة لهذا المدخل. النبضة التي لا تغيّر شيئًا دائمًا لا تُكتب هنا (#1882): تُحفَظ هي والعدادات وصحة الإشارات وآخر تنبيه إلى جانب المدخل، وتعرض وحدة التحكم الأحدث بينهما. xacml.pepStaleAfterS هي المدة منذ آخر واحدة قبل أن تقول وحدة التحكم \"متقادم\" — وذلك لا يغيّر شيئًا تفعله هذه الخدمة، عن عمد."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
+    "en": "44708a3c15a93cf6",
+    "text": "ملخّص المستودع الذي بلّغ هذا PEP آخر مرة أنه يحتفظ به. يُقارَن بـ syncToken() لتقرير ما إذا كان حاليًا، حتى يكون محدَّثًا أمرًا تستنتجه هذه الخدمة لا أمرًا يؤكده PEP."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyCount.what": {
+    "en": "f985e1174e1c1b66",
+    "text": "كم سياسة يقول PEP إنه حمّلها من ذلك السحب. العدد الذي يخالف عدد هذا المستودع أمارة PEP سحب بنجاح ثم رفض مستندًا."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepDecisions.what": {
+    "en": "ca35f28698ce6c91",
+    "text": "القرارات التي يبلّغ PEP البعيد أنه اتخذها، تراكميًا. عدّه هو، في عمليته هو — لم ترها هذه الخدمة، وذلك مغزى PEP البعيد."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAllowed.what": {
+    "en": "7a24f64947edb3c3",
+    "text": "كم منها سمح به. إلى جانب عدد القرارات لا مشتقًا منه، لأن الفرق بينهما هو ما فعله الانحياز وقاعدة الالتزام فعلًا."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRefused.what": {
+    "en": "820782cb1ba96ee7",
+    "text": "كم منها رفض، بما فيها Permit رُفض لالتزام تعذّر الوفاء به (القسم 7.2)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepUndischargeable.what": {
+    "en": "a252138a66875fb2",
+    "text": "كم من تلك الرفضات كان التزامًا غير قابل للوفاء على Permit. يُعَدّ على حدة لأنه نتيجة الإنفاذ الوحيدة التي تبدو عطلًا من جهة العميل وهي المواصفة تعمل."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepVersion.what": {
+    "en": "b6078cbbbfdb9576",
+    "text": "ما يقول PEP البعيد إنه هو. نص حر."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "اسم المضيف الذي يبلّغه PEP البعيد في تسجيله ونبضته (#1760): متغير البيئة HOSTNAME، وإلا اسم النواة، وإلا /etc/hostname — الاسم الذي تُعرَف به الحاوية على شبكتها، والذي يشتق منه URL الإشعار عندما تسمّيه شهادة مستمع HTTPS لديه. يُقيَّد باسم DNS لا يتجاوز 253 محرفًا، بأحرف صغيرة، وليس عنوان IP أبدًا؛ ويُرفَض التسجيل أو النبضة التي تحمل غير ذلك (STS-XACML-0261). تسمّيه شهادة المستمع الافتراضية لنطاق الثقة إلى جانب اسم PEP المسجّل ومضيف الإشعار. التسجيل من دونه يسقطه، والنبضة من دونه تبقيه. غائب عن PEP أقدم من هذا، وتبقى أسماء شهادته كما كانت."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
+    "en": "a512a007219ee216",
+    "text": "ما حدث لآخر تنبيه — الحالة، أو جملة الرفض — عند آخر كتابة لهذا المدخل. لا تُكتب نتيجة التنبيه هنا (#1882): يُحفَظ الأحدث في سجل حيوية PEP إلى جانب المدخل (xacml_pep_registry.liveness)، وتعرض وحدة التحكم الأحدث بينهما. هذه الخدمة وحدها تسجّل التنبيه الفاشل، للسبب الذي يذكره ssf_streams.js عن دفع مرفوض: إنه غير مرئي من طرف الاستقبال بحكم التعريف."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "تهيئة الوكيل العكسي التي يسحبها PEP البعيد من GET /xacml/pep/proxy (#1760): مستند JSON واحد — enabled، وURL الأساس لتطبيق المنبع، وURL الأساس العام الذي يبلغ المتصفح الوكيل عنده، والمهلات وجدول المسارات المرتّب، ولكل مسار مساره وأساليبه وآليات مصادقته والتطبيق الذي يتقدّمه في سجل نطاق الثقة ومورد XACML وإجراءه. يكتبه إجراء set-pep-proxy في وحدة التحكم وواجهة الإدارة، ويُتحقق منه كاملًا هناك ثم عند بناء السحب، فالقيمة التي كتبها ldapmodify ولم تجتز التحقق تُسحَب على أنها configured: false. يُحفَظ عبر التسجيل والنبضة؛ ويُزال مع الصف."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "973f5fff5b5df8e8",
+    "text": "صحة تدفق إشارات CAEP/RISC لدى الوكيل العكسي كما بلّغها PEP البعيد آخر مرة في نبضة (#1760): مستند JSON واحد من أعداد وأعمار فقط — المستقبِلون، وكم منهم سليم وكم متقادم، وعتبة التقادم وفاصل الاستطلاع، وأقدم عمر لآخر نجاح، وأكبر عدد من الإخفاقات المتتالية، وSET المقبولة والمرفوضة، والجلسات التي أُنهيت، وقيم مخازن جلسات المكتبة held وmax وTTL وevicted وexpired — مع وقت وصوله، ومن PEP يبلّغها صف واحد لكل تدفق: عميل OIDC الذي يخدمه ومعرّف تدفقه، وكل منهما مقيّد بمجموعة محارف، وهل يعمل وهل هو سليم، ومتى بدأ ومتى استُطلع آخر مرة ومتى نجح آخر مرة (يُحسَب هنا من الأعمار التي أرسلها PEP ومن وقت الوصول، لا من ساعة PEP أبدًا)، وعداداته. يُسقَط كل عضو آخر، وكل قيمة ليست عددًا صحيحًا غير سالب تُجعَل 0، فلا يُحفَظ URL ولا نص خطأ أبدًا. النبضة من دونه تبقيه، والنبضة التي تحمله null تمسحه، والتسجيل يسقطه، لأن التسجيل عملية جديدة. وهو غائب عن PEP لم يبلّغه قط، وترسمه وحدة التحكم غير مُبلَّغ."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "الإعدادات التي ضبطها المسؤول لهذا PEP البعيد في صفحة وحدة التحكم أو بإجراء set-pep-settings في واجهة الإدارة (#1760): مستند JSON واحد لا يحتفظ إلا بالإعدادات التي ضُبطت، كل منها باسم عضوه (description وresource وnotifyUrl وbias وpip، وفواصل الاستطلاع والنبضة والتراجع، والمهلة وحد الجسم، وفاصل إعادة تحميل HTTPS، ومستوى السجل، ومفتاح AuthZEN ومعرّفه ومهلة التمرير، وحدود الجلسة وJWKS والمنبع والطرف المعتمد وتدفق الإشارات في الوكيل العكسي)، ويُتحقق منه كاملًا عند الكتابة ثم عندما يسحبها PEP من GET /xacml/pep/settings. الإعداد الغائب عنه هو متغير بيئة PEP، أو افتراضيه. الحد الأدنى الذي يحتاجه PEP ليتصل أول مرة ليس هنا أبدًا. يُحفَظ عبر التسجيل والنبضة؛ ويُزال مع الصف."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "ما بلّغ PEP البعيد آخر مرة، في نبضة، أنه نافذ لكل إعداد مُدار (#1760): مستند JSON واحد بالشكل { token, values: { setting: { value, source } } }، والمصدر service أو environment أو default، مع وقت وصوله. يُسقَط كل إعداد لا يسمّيه الجدول وكل قيمة ليست من نوع إعدادها وكل مصدر آخر. النبضة من دونه تبقيه، والتي تحمله null تمسحه، والتسجيل يسقطه. غائب عن PEP أقدم من الإعدادات، وترسمه وحدة التحكم غير مُبلَّغ."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "المستمعون الذين عرّفهم المسؤول لهذا PEP البعيد في صفحة وحدة التحكم أو بإجراء set-pep-listener في واجهة الإدارة (#1760)، علاوة على الأربعة التي تربطها بيئته: مصفوفة JSON واحدة، ولكل مستمع id وprotocol (http أو https) وpurpose (api أو proxy) وعنوان ومنفذ، ولمستمع HTTPS أسماء DNS وعناوين IP التي تحملها شهادته وخوارزمية مفتاحه وعداد تجديد. يُتحقق منها كاملة عند الكتابة ثم عندما يسحبها PEP من GET /xacml/pep/settings، فيربطها ويفك ربطها أثناء عمله. يولّد PEP مفتاح كل مستمع HTTPS ويطلب شهادته بـ POST /xacml/pep/listener-certificate، فلا يُحفَظ مفتاح خاص هنا أبدًا. يُحفَظ عبر التسجيل والنبضة؛ ويُزال مع الصف."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "ما بلّغه PEP البعيد آخر مرة في نبضة عن كل مستمع لديه (#1760)، أربعة بيئته والمعرَّفة: مستند JSON واحد بالشكل { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }، مع وقت وصوله. تكون state إحدى listening وwaiting وfailed وoff، ويكون reason أحد مجموعة مغلقة، وليس نص نظام التشغيل أبدًا؛ والشهادة هي subject وissuer وserial وsubjectAltName وvalidity وfingerprint للشهادة التي يخدمها. يُسقَط كل عضو آخر. النبضة من دونه تبقيه، والتي تحمله null تمسحه، والتسجيل يسقطه. غائب عن PEP أقدم من المستمعين، وترسمه وحدة التحكم غير مُبلَّغ."
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "ما قاله PEP عن نفسه عندما سجّل."
+  },
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "عنقود منطقي من نقاط إنفاذ سياسة بعيدة تشترك في تهيئة واحدة (#1760): يُحفَظ الوكيل العكسي والإعدادات المُدارة وتعريفات المستمعين هنا مرة واحدة، ويسحب كل عضو إياها على أنها له. لا يختلف العضو إلا في اسمه وعناوينه. العضوية محفوظة هنا، فيجوز إدراج PEP قبل تسجيله، ولا ينتمي PEP إلى أكثر من عنقود واحد."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "تهيئة الوكيل العكسي التي يسحبها كل عضو في العنقود من GET /xacml/pep/proxy (#1760): مستند PEP نفسه (xacmlPepProxy)، ويُتحقق منه بالقواعد نفسها، وتُسمّى السياسات المولَّدة لمساراته pepc-<cluster>-<route> وتُعلَّم @<cluster>/<route>. إن publicBaseUrl فيه هو URL الأساس المنطقي للعنقود، ومنه يُبنى المورد الافتراضي لمسار simple أو public، وإليه يُرسَل العضو الذي بلا publicBaseUrl خاص به. يكتبه الإجراءان set-pep-cluster-proxy وset-pep-cluster-route."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "الإعدادات المُدارة التي يسحبها كل عضو في العنقود من GET /xacml/pep/settings (#1760): مستند PEP نفسه (xacmlPepSettings)، ويُتحقق منه بالجدول نفسه، ما عدا URL الإشعار، فهو عنوان العضو ويُضبَط على العضو. يكتبه إجراء set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "المستمعون المعرَّفون لكل عضو في العنقود (#1760): مصفوفة PEP نفسها (xacmlPepListeners)، ويُتحقق منها بالقواعد نفسها. يجوز للعضو أن يتجاوز عنوان مستمع ومنفذه وأن يضيف أسماء DNS إلى شهادته؛ ولكل عضو شهادته، تُصدَر لمفتاحه. يكتبه الإجراءان set-pep-cluster-listener وremove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "أعضاء العنقود (#1760): مصفوفة JSON واحدة بالشكل { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }، وكل pep اسم PEP مسجّل أو اسم لم يُسجَّل بعد، والباقي عناوين العضو نفسه. لا يكون PEP عضوًا في أكثر من عنقود واحد. تكتبه إجراءات create-pep-cluster وadd-pep-cluster-member وset-pep-cluster-member وremove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "ما قاله المسؤول عن العنقود عند إنشائه."
+  }
+}

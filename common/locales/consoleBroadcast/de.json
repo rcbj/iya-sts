@@ -1,0 +1,16 @@
+{
+  "about": "Zeigt allen, die an der Administratorkonsole, dem Benutzerportal oder der Berichteanwendung angemeldet sind, eine kurze Nachricht in einem Banner oben in jedem davon jetzt offenen Tab. Sie wird als eigenes Ereignis von Shared Signals dieses Dienstes auf dem Empfänger-Stream jeder Anwendung gesendet, und ein Tab zeigt sie innerhalb von etwa {seconds, plural, one {# Sekunde} other {# Sekunden}}. Das Banner schließt sich nach zehn Sekunden von selbst. Ein später geöffneter Tab zeigt sie nicht.",
+  "notReady": "Im Moment kann nichts zugestellt werden:",
+  "readOnly": "Zum Senden einer Ankündigung ist Admin Write nötig.",
+  "message": "Nachricht",
+  "maxChars": "Klartext, höchstens {max} Zeichen.",
+  "surfaces": "Anzeigen in",
+  "scope.legend": "Senden an",
+  "scope.realm": "Dieser Bereich (<code>{realm}</code>)",
+  "scope.every": "Jeder Bereich ({count, plural, one {# Bereich} other {# Bereiche}})",
+  "scope.only": "Sie geht an die Personen, die in diesem Bereich angemeldet sind, <code>{realm}</code>.",
+  "send": "Rundsenden",
+  "streamsLink": "Die Empfänger-Streams, über die sie geht (Shared Signals)",
+  "banner.heading": "Ankündigung",
+  "banner.close": "Schließen"
+}

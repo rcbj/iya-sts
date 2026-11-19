@@ -1,0 +1,1422 @@
+{
+  "mode.requirements.cell-key.what": {
+    "en": "4f8bb53495422cda",
+    "text": "كل خلية في خدمة منشورة كخلايا تختم ما تخزّنه بمفتاح خاص بها"
+  },
+  "mode.requirements.cell-key.development": {
+    "en": "4d08283419abad5c",
+    "text": "تختم الخلية التي ليس لها keys.cellKekProvider صفوفها بمفتاح تشفير مفاتيح الخدمة، فيمكن فتح صفوفها في أي خلية — وهذا مقبول للخلايا التي تُختبَر على جهاز واحد."
+  },
+  "mode.requirements.cell-key.product": {
+    "en": "369ac4727226b20a",
+    "text": "لا تبدأ خلية بلا مفتاح خلية (STS-CELL-0003). يُختم الأشخاص الموطَّنون في خلية وما تصدره بمفتاح لا يوجد إلا في منطقتها، ولا يُفتح في أي خلية أخرى (#98). لا يتأثر وضع الخلية الواحدة."
+  },
+  "mode.requirements.credentials.what": {
+    "en": "d15cf61729a21c92",
+    "text": "يُتحقق من كلمة المرور المقدَّمة"
+  },
+  "mode.requirements.credentials.development": {
+    "en": "e739d8f39e9b046f",
+    "text": "لا تُفحص أي كلمة مرور في أي بروتوكول. تقبل شاشة تسجيل الدخول أي شيء، ويقبل ربط LDAP أي DN مع أي كلمة مرور، ويُقرأ WS-Security UsernameToken لاسمه لا لسرّه، وينجح SCIM Basic بأي زوج، ويُصدر WS-Trust لمنادٍ لم يقدّم شيئًا أو قدّم تأكيد SAML غير موقَّع."
+  },
+  "mode.requirements.credentials.product": {
+    "en": "b0da5c4d2cc617e2",
+    "text": "يُتحقق منها مقابل قيمة `userPassword` المُجزَّأة في مدخلة الدليل الخاصة بالشخص، عند كل باب من تلك الأبواب. لا يستطيع شخص لم تُضبط له `userPassword` تسجيل الدخول إطلاقًا. لا يوجد منح كلمة المرور في OAuth 2.0 في وضع المنتج، وهو يستلزم وضع RFC 9700 (القسم 2.4). يتطلب WS-Trust بيانات اعتماد، ولا يقبل تأكيدًا إلا إذا وقّعه نطاق الثقة هذا وكان داخل Conditions الخاصة به."
+  },
+  "mode.requirements.credential-issuer-tokens.what": {
+    "en": "44c70d0922c9471b",
+    "text": "لا تقبل نقطة نهاية OpenID4VCI إلا رمز وصول يستطيع نطاق الثقة هذا التحقق منه"
+  },
+  "mode.requirements.credential-issuer-tokens.development": {
+    "en": "b5994bd9f06c2622",
+    "text": "تقبل نقاط نهاية بيانات الاعتماد وبيانات الاعتماد المؤجلة والإشعار أي رمز وصول وتقرأ مطالباته دون تحقق — إذ يسمح OpenID4VCI بأن يكون خادم التفويض طرفًا آخر — فيمكن توجيه محفظة إلى هذا المُصدر برمز من أي مكان."
+  },
+  "mode.requirements.credential-issuer-tokens.product": {
+    "en": "557e937f9ef07afe",
+    "text": "يُرفض الرمز الذي لا يُتحقق منه بمفتاح توقيع نطاق الثقة هذا، أو الذي أبطله نطاق الثقة هذا، بـ invalid_token (HTTP 401) قبل إصدار أي شيء."
+  },
+  "mode.requirements.unverified-signals.what": {
+    "en": "8bba1b51797ebea8",
+    "text": "يُرفض Security Event Token مستلَم لا يُتحقق من توقيعه"
+  },
+  "mode.requirements.unverified-signals.development": {
+    "en": "d0b1b34847fe54b1",
+    "text": "يقبل مستقبلا وحدة التحكم والبوابة الخاصان به الرمز، ويسجّلانه ويقولان لماذا لم يُتحقق منه — وهو موقف أداة التصحيح — ما لم يكن ssf.receiveRequireSignature مفعّلًا. لا يُتخذ أي إجراء بناءً عليه. تُعامَل Shared Signals لشريك الاتحاد بالطريقة نفسها، سواء دُفعت إلى /federation/signals/{id} أو جرى استطلاعها: يُسجَّل SET غير المتحقَّق منه في صندوق وارد العلاقة على أنه غير متحقَّق منه ولا يُتخذ بشأنه أي إجراء، ما لم يكن ssf.receiveRequireSignature مفعّلًا."
+  },
+  "mode.requirements.unverified-signals.product": {
+    "en": "369551d9ee637c3c",
+    "text": "يجيب مستقبلا وحدة التحكم والبوابة بـ 400 invalid_key، مهما كانت قيمة ssf.receiveRequireSignature (#117)، ويُبقيانه في صندوق الوارد موسومًا بالرفض. يُرفض SET غير المتحقَّق منه من شريك الاتحاد بـ invalid_key أيضًا — HTTP 400 لدفع إلى /federation/signals/{id}، وفي setErrs عند طلب الاستطلاع التالي للمستطلَع — ويُحفَظ في صندوق وارد العلاقة موسومًا بالرفض، ولا يُتخذ بشأنه أي إجراء أبدًا."
+  },
+  "mode.requirements.signal-reactions.what": {
+    "en": "25aa56c5f929fe05",
+    "text": "يُنفَّذ ما تفعله وحدة التحكم والبوابة الخاصتان بهذه الخدمة بحدث CAEP أو RISC تتلقيانه"
+  },
+  "mode.requirements.signal-reactions.development": {
+    "en": "7be9247afb6c5c44",
+    "text": "يُسجَّل الحدث المتحقَّق منه في صندوق إشارات السطح مع ما سمحت به سياسة الاستجابة للإشارات، ولا يُنهى شيء، ما لم يكن ssf.actOnSignalsInDevelopment مفعّلًا."
+  },
+  "mode.requirements.signal-reactions.product": {
+    "en": "4d69a170d09c1d35",
+    "text": "ينهى الحدث المتحقَّق منه الذي تسمح به سياسة الاستجابة للإشارات — session-revoked وcredential-change وحدث حساب أو بيانات اعتماد في RISC وتغيّر مستوى الخطر إلى HIGH، افتراضيًا — جلسات السطح المستقبِل الخاصة بالشخص الذي يسمّيه. لا يُتخذ أي إجراء بشأن حدث غير متحقَّق منه في أي من الوضعين."
+  },
+  "mode.requirements.risk-decisions.what": {
+    "en": "c187e2cdafec165a",
+    "text": "تُفرَض قرارات سياسة الإصدار بشأن خطر المصادقة"
+  },
+  "mode.requirements.risk-decisions.development": {
+    "en": "f19592d34351da44",
+    "text": "يُقيَّم كل تسجيل دخول وتُسأل سياسة الإصدار بوقائع خطره، ويُسجَّل ما تقرره على التقييم — لكن يُنحَّى قرار Deny الخاص بالخطر وتقرر الأدوار وحدها، ما لم يكن risk.enforceInDevelopment مفعّلًا."
+  },
+  "mode.requirements.risk-decisions.product": {
+    "en": "27940e1a18ad7fb0",
+    "text": "يُبقى قرار Deny الخاص بالخطر: تُرفض المصادقة التي ترفضها السياسة بسبب الخطر (HIGH افتراضيًا)، ويُطلب ممن تطلب له تصعيدًا (MEDIUM) عامل ثانٍ أو مفتاح أمان حيث يستطيع الباب أن يطلب، وتُرفض حيث لا يستطيع. عندما يتغيّر خطر شخص، تُتخذ ردود الفعل التي تسمح بها سياسة الاستجابة للخطر — إنهاء كل شيء عند HIGH، وcredential-compromise في RISC؛ ويُعلن وضع التطوير التغيّر ويسجّل الباقي على أنه مُلاحَظ."
+  },
+  "mode.requirements.token-exchange-tokens.what": {
+    "en": "ae3a72a9b5d7b234",
+    "text": "لا يقبل تبادل الرموز وفق RFC 8693 إلا subject_token وactor_token يستطيع نطاق الثقة هذا التحقق منهما"
+  },
+  "mode.requirements.token-exchange-tokens.development": {
+    "en": "7eb1db0e063f53dc",
+    "text": "يُقرأ subject_token الذي لا يستطيع نطاق الثقة هذا التحقق منه لاسمه ويُبادَل على أي حال، ويُقرأ actor_token ولا يُتحقق منه أبدًا، فيستطيع عميل قيادة المنح برمز من أي مُصدر."
+  },
+  "mode.requirements.token-exchange-tokens.product": {
+    "en": "b66324c8935f8390",
+    "text": "يجب أن يُتحقق من كليهما بمفتاح توقيع نطاق الثقة هذا، وأن يكونا غير منتهيي الصلاحية وغير مُبطَلين، وإلا يُرفض التبادل بـ invalid_request (HTTP 400، RFC 8693 القسم 2.2.2)."
+  },
+  "mode.requirements.delegation-policy.what": {
+    "en": "415893f644c81a40",
+    "text": "يُقرَّر من يجوز له التصرف نيابة عن من عند WS-Trust OnBehalfOf / ActAs وعند تبادل الرموز وفق RFC 8693"
+  },
+  "mode.requirements.delegation-policy.development": {
+    "en": "89d3215a1960b7f3",
+    "text": "يُصدر كل تفويض. ما زالت السياسة تُسأل ويُسجَّل جوابها على الفعل في /admin/delegation بصيغة \"would have been refused: ...\"، ويجوز لتبادل أن يطلب scope أوسع من scope الخاص بـ subject_token."
+  },
+  "mode.requirements.delegation-policy.product": {
+    "en": "fe19fc117becfe0b",
+    "text": "تقرر سياسة الإصدار (#186) من سمات التفويض (appAllowedToDelegateTo وappAllowedToActOnBehalfOf وappDelegationSubjectGroup وappDelegationSemantics وappNotDelegated على مدخلات التطبيق؛ وstsNotDelegated وstsDelegationSemantics وdelegation.protectedGroups وقائمة وحدة التحكم للأشخاص). الرفض هو invalid_request أو invalid_target (RFC 8693 القسم 2.2.2) أو wst:RequestFailed SOAP Fault (WS-Trust 1.4 القسم 11). لا يتصرف الشخص إلا وهو يحمل delegation.actorRole، ولا يجوز لتبادل توسيع scope الخاص بـ subject_token (invalid_scope)."
+  },
+  "mode.requirements.declared-scopes.what": {
+    "en": "24912ad15f5cdcc7",
+    "text": "لا يُصدر للعميل إلا scope التي أعلنها"
+  },
+  "mode.requirements.declared-scopes.development": {
+    "en": "1c76373a91206e5a",
+    "text": "يُصدر أي scope يطلبه العميل، مهما سرد `oauthAllowedScope` الخاص به. في كلا الوضعين لا تُصدر admin:read وadmin:write وscope الخاصة بـ SCIM وShared Signals وإذن أداة التصحيح إلا لعميل يسردها `oauthAllowedScope` الخاص به."
+  },
+  "mode.requirements.declared-scopes.product": {
+    "en": "33fcb48e8c17655e",
+    "text": "يُرفض scope الخارج عن `oauthAllowedScope` الخاص بالعميل بـ invalid_scope عند نقاط نهاية التفويض والتفويض المدفوع والرمز (STS-OAUTH-0578) ويُنزَع من تحديث أو تبادل. يحصل العميل الذي لا يسرد شيئًا على الافتراضي الموثَّق: openid وprofile وemail وaddress وphone وoffline_access وscope الخاصة بـ OpenID4VCI لنطاق الثقة هذا. يحتفظ scope الذي يسمّي تطبيقًا أو إذنًا مفوَّضًا بقواعده الخاصة."
+  },
+  "mode.requirements.declared-protocols.what": {
+    "en": "89e8ef1624565f1b",
+    "text": "لا يُصدر للتطبيق شيء عبر بروتوكول لم يُعلَن له"
+  },
+  "mode.requirements.declared-protocols.development": {
+    "en": "b8f60692e2fa6b31",
+    "text": "appAllowedProtocol وصف: يُصدر رمز أو تأكيد أو تذكرة أيًّا كان البروتوكول الذي طلب."
+  },
+  "mode.requirements.declared-protocols.product": {
+    "en": "01bf0ea288cde1c4",
+    "text": "ترفض قاعدة protocol-not-declared في سياسة الإصدار إصدارًا عبر عائلة بروتوكول لم يُعلَن التطبيق لها (STS-XACML-0084): ID Token لتطبيق أُعلن لـ OAuth 2.0 وحده، وتأكيد SAML لتطبيق أُعلن لـ OpenID Connect. لا يُرفض تطبيق لم يُعلَن لأي شيء."
+  },
+  "mode.requirements.uncatalogued-access.what": {
+    "en": "cae99ea77ebca46f",
+    "text": "لا يُمنح حق وصول GNAP إلا من نوع يعلنه فهرس أنواع الوصول"
+  },
+  "mode.requirements.uncatalogued-access.development": {
+    "en": "de56636f7e123b4d",
+    "text": "يُمنح حق من نوع لا يعلنه أي تطبيق مورد (oauthAuthorizationDetailsType) كما طلبه العميل."
+  },
+  "mode.requirements.uncatalogued-access.product": {
+    "en": "89edeaa0cee05b30",
+    "text": "ترفض قاعدة gnap-type-not-catalogued في سياسة الإصدار ذلك عند نقطة نهاية المنح (request_denied، STS-GNAP-0810). ترفض authorization_details وفق RFC 9396 نوعًا غير معلن في كلا الوضعين، كما يتطلب القسم 5."
+  },
+  "mode.requirements.delegated-permissions.what": {
+    "en": "81f1a910d89c9265",
+    "text": "لا يُصدر الإذن المفوَّض إلا لعميل مُنح إياه"
+  },
+  "mode.requirements.delegated-permissions.development": {
+    "en": "2748c5103ef68673",
+    "text": "يُقبَل الإذن غير الممنوح ويُسجَّل على أنه غير ممنوح، ما لم يكن oauth2.delegatedPermissionsEnforced مفعّلًا."
+  },
+  "mode.requirements.delegated-permissions.product": {
+    "en": "e3783b780299b3c1",
+    "text": "يُرفض بـ invalid_scope (STS-OAUTH-0155) مهما قال oauth2.delegatedPermissionsEnforced: المنح هو `oauthDelegatedPermission` على مدخلة العميل."
+  },
+  "mode.requirements.federated-name-match.what": {
+    "en": "aa45efa130eb1fdf",
+    "text": "لا يسجّل شريك الاتحاد دخول إلا الشخص الذي يرتبط موضوعه به"
+  },
+  "mode.requirements.federated-name-match.development": {
+    "en": "935cd045cd8649e7",
+    "text": "يجوز لعلاقة ضبط fedSubjectPolicy على any-existing، فيُطابَق الاسم الذي أكّده الشريك مباشرة على شخص محلي — أي شخص، بما في ذلك المسؤول ما لم يكن fedMayAssertAdministrators بالقيمة off (الافتراضي). تتصرف كل سياسة أخرى كما تتصرف في المنتج."
+  },
+  "mode.requirements.federated-name-match.product": {
+    "en": "21b1d1c16447c0c6",
+    "text": "يُرفض any-existing عند العلاقة (STS-FED-0095) وعند تسجيل الدخول (STS-FED-0094). يسجّل الشريك دخول المدخلة المرتبطة بـ (issuer, subject) الخاص به؛ ويجب على موضوع غير مرتبط يسمّي شخصًا موجودًا أن يسجّل الدخول هنا أولًا بصفته ذلك الشخص (link-at-first-sign-in، الافتراضي)، أو يُرفض (pre-linked). يُبقي وضع التطوير ووضع المنتج القواعد ورفض مسؤول وحدة التحكم."
+  },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "تنشئ علاقة اتحاد جديدة مدخلة في الدليل لموضوع شريك لم يربطه أحد"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "تُكتب fedAutocreateUsers بالقيمة TRUE عند إنشاء العلاقة، والعلاقة التي لا تخزّن السمة تنشئ. أما FALSE المخزَّنة فلا تنشئ أحدًا."
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "تُكتب fedAutocreateUsers بالقيمة FALSE عند إنشاء العلاقة، والسمة الغائبة لا تنشئ أحدًا (STS-FED-0090). تستمر العلاقة التي تخزّن TRUE أصلًا في الإنشاء إلى أن تُحرَّر. ما زال link-at-first-sign-in يربط شخصًا موجودًا تمت مقابلته في كلا الوضعين."
+  },
+  "mode.requirements.federated-logout-signature.what": {
+    "en": "ab3acff66ae80262",
+    "text": "يوقّع شريك الاتحاد خروج SAML الخاص به"
+  },
+  "mode.requirements.federated-logout-signature.development": {
+    "en": "0e22c30af1770452",
+    "text": "تقبل العلاقة التي ضُبط fedRequireSignedLogout فيها على off طلب LogoutRequest أو LogoutResponse غير موقَّع من شريكها. يُتحقق من التوقيع الموجود مقابل fedSigningCertificate تمامًا كما في المنتج، والإعداد مفعّل لكل علاقة ما لم يوقفه أحد."
+  },
+  "mode.requirements.federated-logout-signature.product": {
+    "en": "103de5212c6c07d6",
+    "text": "يجب أن تُوقَّع كل رسالة خروج SAML من شريك وأن يُتحقق منها مقابل شهادة العلاقة (saml-profiles-2.0-os القسم 4.4.4.1): يُرفض غير الموقَّع (STS-FED-0115) مهما قال fedRequireSignedLogout، ويُرفض ضبط الإعداد على off (STS-FED-0132)."
+  },
+  "mode.requirements.federated-assertion-encryption.what": {
+    "en": "0fdc50d76534c95c",
+    "text": "يُشفَّر تأكيد شريك الاتحاد أو ID Token في القناة الأمامية بمفتاح العلاقة الخاص"
+  },
+  "mode.requirements.federated-assertion-encryption.development": {
+    "en": "980ef0a024b77d35",
+    "text": "يُقبل تأكيد SAML 2.0 أو WS-Federation، أو id_token في OpenID Connect عبر form_post، بالنص الواضح. يُفك تشفير ما هو مشفَّر ويُلزَم بقائمة الخوارزميات نفسها كما في المنتج."
+  },
+  "mode.requirements.federated-assertion-encryption.product": {
+    "en": "8e50a67f08bab738",
+    "text": "يُرفض التأكيد بالنص الواضح أو ID Token في القناة الأمامية (STS-FED-0140) ما لم تضبط العلاقة fedAllowUnencrypted، وهو موثَّق مع تحذير. تُرفض AES-CBC وrsa-1_5 وRSA1_5 في كلا الوضعين (STS-FED-0139)."
+  },
+  "mode.requirements.passkey-first-use.what": {
+    "en": "c8556d37e16453f0",
+    "text": "لا تسجّل شاشة تسجيل الدخول مفتاح مرور لمن لم يثبت من هو"
+  },
+  "mode.requirements.passkey-first-use.development": {
+    "en": "8bea6b2667160433",
+    "text": "يسجّل تسجيل الدخول بلا كلمة مرور، الذي يسمّي شخصًا لا يحمل مفتاح مرور، واحدًا في الحال دون قراءة كلمة المرور — وأول من يدّعي اسمًا يحصل عليه."
+  },
+  "mode.requirements.passkey-first-use.product": {
+    "en": "b2a73f5e48d6f2c4",
+    "text": "يُرفض ذلك. يُضاف مفتاح المرور في /portal/keys خلف جلسة، أو برابط تفعيل، أو بواسطة مشغّل."
+  },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "لا يسجّل موضوع did:web صادر ذاتيًا الدخول إلا بمفتاح ثُبّت عند تسجيله"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "يسجّل did:web الذي سُجّل قبل تثبيت المفاتيح، وليس له مفتاح مثبَّت، الدخول بالمفتاح الذي يسمّيه مستنده في تسجيل الدخول التالي، ويُثبَّت ذلك المفتاح حينئذ (الثقة عند أول استخدام)، مع سطر في السجل وصف تدقيق."
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "يُرفض تسجيل الدخول ذلك (STS-VC-0127) ويُدقَّق، ويعيد الشخص تسجيل DID بإثباته في /portal/self-issued. في كلا الوضعين يُرفض مفتاح لا يسمّيه التثبيت (STS-VC-0126)."
+  },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "يُبنى عنوان صورة الملف الشخصي على URL الأساس العام المثبَّت"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "في غياب URL أساس عام مثبَّت، تُعنوَن صورة تُضبط في /portal أو تُنسخ من شريك اتحاد على المضيف الذي وصل إليه الطلب، وتحمل الرموز ذلك العنوان."
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "يُرفض ضبط واحدة (STS-PORTAL-0635)، ولا تُنسخ صورة الشريك (STS-FED-0220)، إلى أن يثبّت global.publicBaseUrl الأساس: لا تصبح ترويسة Host أبدًا جزءًا من عنوان يحمله رمز."
+  },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "يُسك did:web المنشور لشخص على URL الأساس العام المثبَّت"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "في غياب URL أساس عام مثبَّت، يُبنى DID المنشور من /portal/self-issued على العنوان الذي وصل إليه الطلب، ويبقى ذلك العنوان جزءًا من DID إلى الأبد."
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "يُرفض نشر واحد (STS-VC-0168) إلى أن يثبّت global.publicBaseUrl، أو المستمع المُعلَن لتطبيق بيانات الاعتماد القابلة للتحقق، الأساس: لا تصبح ترويسة Host أبدًا جزءًا من معرّف مخزَّن."
+  },
+  "mode.requirements.webauthn-attestation.what": {
+    "en": "8c22563b2f23268b",
+    "text": "يُتحقق من بيان إثبات مفتاح الأمان قبل تسجيل المفتاح"
+  },
+  "mode.requirements.webauthn-attestation.development": {
+    "en": "6e29fa143ed40161",
+    "text": "webauthn.attestationPolicy هي by-mode، وهي هنا off: يُسجَّل تنسيق البيان ولا يُفحص شيء فيه. verify-if-present وrequire-trusted متاحتان للضبط."
+  },
+  "mode.requirements.webauthn-attestation.product": {
+    "en": "1114fdf1aee58a97",
+    "text": "by-mode هي verify-if-present: يُتحقق من كل بيان بإجراء WebAuthn Level 3 القسم 8 (التنسيقات الثمانية كلها)، وتُفحص سلسلته مقابل مراسي نطاق الثقة وجذور FIDO Metadata Service، وتُستشار حالة إبطاله، ويُرفض طراز يبلغ MDS أنه مخترَق. تُقبل إثباتات none وself وتُسجَّل على أنها غير موثوقة. يُرفض off عند الكتابة ويُقرأ على أنه by-mode."
+  },
+  "mode.requirements.second-factor-doors.what": {
+    "en": "c4647caa0a5e5f86",
+    "text": "يُرفض من يحمل عاملًا ثانيًا أو يجب أن يحمله إذا قدّم كلمة المرور وحدها عند الأبواب التي لا تقبل إلا كلمة المرور"
+  },
+  "mode.requirements.second-factor-doors.development": {
+    "en": "f1ede458c1549c0c",
+    "text": "يقبل الربط البسيط لـ LDAP وWS-Security UsernameToken وHTTP Basic لكل من SCIM وSSF وEST Basic كلمة المرور كما يقبل كل كلمة مرور؛ وما زالت شاشة تسجيل الدخول تطلب العامل الثاني."
+  },
+  "mode.requirements.second-factor-doors.product": {
+    "en": "a4d4c20c45b2d573",
+    "text": "عند تلك الأبواب الخمسة تُرفض كلمة مرور الشخص نفسه — ويُجاب عنها تمامًا كما يُجاب عن كلمة مرور خاطئة، وتُحتسب على حد المعدّل واحدة (STS-AUTHN-0213 في صف التدقيق وفي السجل فقط) — كلما حمل تطبيق مصادقة أو أي مفتاح مرور حيث يقبل نطاق الثقة (أو سياسة المصادقة التي يسمّيها التطبيق) مفتاح المرور عاملًا ثانيًا، أو كان العامل الثاني مطلوبًا منه (stsMfaRequired، سياسة المصادقة). تُقبل بدلًا منها كلمة مرور تطبيق صنعها في /portal/app-passwords ومقيَّدة بالباب. يسمّي authn.passwordAloneDoors أبوابًا تقبل كلمة المرور على أي حال، فيُنزَل كل شخص من هؤلاء إلى عامل واحد هناك."
+  },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "لا تُحترم ثقة Kerberos إلا ما دامت ترشّح SID"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "يُستخدَم سجل ثقة قيمة quarantined فيه off مثل أي سجل آخر: تُحال التذاكر عبره وتُقبل منه، ويُرشَّح PAC الواصل عبره كما يقول حد ثقته، دون قاعدة الحجر التي لا يمر بها إلا SID للمجال الموثوق."
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "لا يحيل سجل ثقة قيمة quarantined فيه off أحدًا ولا يقبل شيئًا (STS-KRB-0229 يسمّي السبب) ما دام krb5.requireSidFilteringInProduct مفعّلًا، وهو الافتراضي. إيقاف ذلك الإعداد على نطاق الثقة هو قبول المشغّل لمعرّفات SID الخاصة بالشريك."
+  },
+  "mode.requirements.kerberos-second-factor.what": {
+    "en": "6bb019d0381a77a4",
+    "text": "لا يحصل من يحمل عاملًا ثانيًا أو يجب أن يحمله على تذكرة Kerberos بكلمة المرور وحدها"
+  },
+  "mode.requirements.kerberos-second-factor.development": {
+    "en": "48c67bd985cdac31",
+    "text": "يُصدر KDC تذكرة TGT لطلب AS-REQ مُصادَق عليه مسبقًا بكلمة المرور وحدها (PA-ENC-TIMESTAMP، أو PA-ENCRYPTED-CHALLENGE الخاص بـ FAST)، كما يقبل كل كلمة مرور."
+  },
+  "mode.requirements.kerberos-second-factor.product": {
+    "en": "ab8a6af4d276b0bc",
+    "text": "يُرفض AS-REQ ذلك بـ KDC_ERR_POLICY (12)، STS-KRB-0135، بعد التحقق من كلمة المرور (وتبقى الخاطئة KDC_ERR_PREAUTH_FAILED)، كلما حمل الشخص تطبيق مصادقة أو أي مفتاح مرور حيث يقبل نطاق الثقة (أو سياسة المصادقة التي يسمّيها التطبيق) مفتاح المرور عاملًا ثانيًا، أو كان العامل الثاني مطلوبًا منه. يحصل من لديه تطبيق مصادقة على تذكرة عبر درع FAST وفق RFC 6113 مع مصادقة OTP مسبقة وفق RFC 6560 — كلمة المرور والرمز في تبادل واحد — وتحمل مؤشر RFC 8129 `otp`. ليست كلمة مرور التطبيق مفتاح Kerberos أبدًا."
+  },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "لا يكون استرداد الحساب أضعف من مفتاح المرور الذي يستبدله، افتراضيًا"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "يُفترض recoveryAssurance في سياسة مفتاح المرور على any: يستعيد رابط إعادة ضبط كلمة المرور أو رابط التفعيل أو رمز الاسترداد أو رمز أو رابط مُرسَل بالبريد الوصول فورًا، أيًّا كان مفتاح المرور الذي يحمله الشخص."
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "يُفترض على not-weaker: بالنسبة إلى شخص يحمل مفتاح مرور، لا يبلغ تسجيل الدخول الأول بعد استرداد ليس تسجيل دخول بمفتاح مرور أي تطبيق (STS-AUTHN-0381). تطلب شاشة تسجيل الدخول منه تسجيل مفتاح مرور يلبّي سياسة مفتاح المرور، ثم تسجيل الدخول به. يقول صف نطاق الثقة الخاص خلاف ذلك في أي من الوضعين."
+  },
+  "mode.requirements.resource-metadata-import.what": {
+    "en": "fb298f641de33009",
+    "text": "يُلزَم استيراد بيانات تعريف مورد محمي وفق RFC 9728 بالقواعد التي يتبعها عميل المستند"
+  },
+  "mode.requirements.resource-metadata-import.development": {
+    "en": "f89c0a8aa3cffb2b",
+    "text": "يُستورَد مستند جُلب من URL مع تحذير عندما لا يطابق `resource` الخاص به well-known URL الذي جاء منه (القسم 3.3) أو لم يكن https، ويجوز أن يُحل URL إلى عنوان loopback أو عنوان خاص."
+  },
+  "mode.requirements.resource-metadata-import.product": {
+    "en": "3364c42939a2cbce",
+    "text": "يُرفض كلاهما، ولا يُطلب URL يُحل إلى عنوان loopback أو خاص أو link-local أو محجوز — يُحل الاسم مرة واحدة ويُثبَّت الاتصال على العنوان الذي فُحص. يُرفض المستند المشوَّه في كلا الوضعين."
+  },
+  "mode.requirements.mail.what": {
+    "en": "8b83e20e2d14d9a9",
+    "text": "يُرسَل البريد ولا يُحتفَظ به؛ ويسمّي الرابط المُرسَل بالبريد العنوان العام المثبَّت"
+  },
+  "mode.requirements.mail.development": {
+    "en": "c6e53c9e30d286e6",
+    "text": "mail.transport `default` هو نقل CAPTURE: يُحتفَظ بكل رسالة مع متنها وتُعرض في المراقبة → البريد بدل إرسالها، ما لم يُضبط نقل حقيقي. يُبنى الرابط المُرسَل بالبريد على global.publicBaseUrl، أو على مضيف المستمع ومنفذه المضبوطين عندما يكون ذلك فارغًا — وليس على الطلب أبدًا."
+  },
+  "mode.requirements.mail.product": {
+    "en": "497ff2ab5fad4b85",
+    "text": "`default` هي `off`، ويُرفض `capture` عند الكتابة وعند البدء (STS-MAIL-0003)، لأن رابط إعادة ضبط كلمة المرور الملتقَط بيانات اعتماد على وحدة التحكم. يوقف النقل المضبوط الذي لا يمكن بناؤه بدء الخدمة (STS-MAIL-0002). لا يُرسَل رابط بالبريد إلا عندما يُضبط global.publicBaseUrl (STS-MAIL-0015)."
+  },
+  "mode.requirements.secret-destinations.what": {
+    "en": "745eb3890b07294e",
+    "text": "تُدفَع كلمة مرور حساب الخدمة بعد تدويرها إلى مدير أسرار، ولا تُكتَب أبدًا على قرص هذه الحاوية"
+  },
+  "mode.requirements.secret-destinations.development": {
+    "en": "0633c12f9bf4ca80",
+    "text": "يجوز أن تكون وجهة دفع السر من النوع FILE: تكتب الدفعة كلمة المرور في ملف موجود تحت مجلد الوجهة، وهكذا تمرّن مجموعة الاختبار التدوير دون مدير أسرار."
+  },
+  "mode.requirements.secret-destinations.product": {
+    "en": "5ab672b908ba6b88",
+    "text": "تُبلَّغ الوجهة التي تسمّي `file` بأنها غير قابلة للاستخدام ويُرفض الدفع إليها (STS-SECDEST-0006). تبقى AWS Secrets Manager وGoogle Cloud Secret Manager وAzure Key Vault ومحرك Vault أو OpenBao من KV الإصدار 2، كل منها عبر TLS متحقَّق منه ببيانات اعتماد الكتابة الخاصة بالوجهة (#221)."
+  },
+  "mode.requirements.outbound-tls.what": {
+    "en": "b211ebe14931a1d7",
+    "text": "يتحقق الطلب الصادر من شهادة من يجيب، ولا يخرج عبر http العادي"
+  },
+  "mode.requirements.outbound-tls.development": {
+    "en": "d23b51307ba13e8a",
+    "text": "تحترم إنهاءات دفع GNAP وتسليمات دفع SSF والقنوات الخلفية للاتحاد وتنبيهات PEP في XACML إعدادات …SkipTlsVerification الخاصة بها (التحقق متوقف، مع تحذير في كل طلب) وإعدادات …AllowHttp الخاصة بها (http عادي إلى أي مضيف). يُحترَم أيضًا spiffe.k8sSkipKubeletVerification الخاص بـ SPIRE."
+  },
+  "mode.requirements.outbound-tls.product": {
+    "en": "247dae79affdfe65",
+    "text": "يُتجاهَل كل إعداد …SkipTlsVerification، وكذلك spiffe.k8sSkipKubeletVerification — يُسجَّل مرة واحدة مع رمزه — ويُرفض عند الكتابة عبر /admin و/admin-api (STS-CORE-0103)؛ ويُوصل إلى CA خاص عبر …CaFile الخاص بالعائلة مع التحقق مفعّلًا. يُرفض http العادي لـ SSF والاتحاد وXACML مهما قال …AllowHttp، ولا يُسمح به لإنهاء دفع GNAP إلا إلى عنوان loopback (RFC 9635 القسم 2.5.2.1)."
+  },
+  "mode.requirements.deliberate-defects.what": {
+    "en": "055db67685f19f36",
+    "text": "لا يجعل العيب المتعمَّد الاستجابة خاطئة"
+  },
+  "mode.requirements.deliberate-defects.development": {
+    "en": "0b1230d1659875d3",
+    "text": "يضع oauth2.breakIdTokenNonce قيمة nonce خاطئة في كل ID Token ينبغي أن يحمل واحدة، ويغيّر ssf.breakSetSignature محرفًا واحدًا من توقيع كل SET، ويضيف ssf.legacySubClaim مطالبة `sub` التي يثبّطها RFC 8417 إلى جانب `sub_id`، ويكتب risc.googleSubjectType العضو `subject_type` الذي يقول RISC 1.0 القسم 3.1 إن الخدمات الجديدة MUST NOT تستخدمه، ويحرّك krb5.clockOffset ساعة KDC — كل منها ما دام مضبوطًا، حتى يُمرَّن تعامل العميل مع إجابة خاطئة."
+  },
+  "mode.requirements.deliberate-defects.product": {
+    "en": "472a5c81b1274879",
+    "text": "تُتجاهَل الخمسة كلها حيث تُقرأ — ويجيب نطاق ثقة حُوّل إلى المنتج وما زال أحدها مخزَّنًا إجابة صحيحة، على ساعة الجهاز — وتُسجَّل مرة واحدة لكل عملية (STS-CORE-0106)، وتُرفض عند الكتابة عبر /admin و/admin-api وإعدادات نطاق الثقة (STS-CORE-0103)."
+  },
+  "mode.requirements.broken-algorithms.what": {
+    "en": "51bdc0bbaafe7762",
+    "text": "لا تُستخدَم خوارزمية مكسورة: SHA-1 في توقيع، أو نقل مفتاح RSA PKCS#1 v1.5"
+  },
+  "mode.requirements.broken-algorithms.development": {
+    "en": "448d4e1f57c8cc23",
+    "text": "يوقّع saml.signatureAlgorithm بالقيمة rsa-sha1 كل توقيع XML بـ SHA-1، ويلف saml2.keyTransportAlgorithm بالقيمة rsa-1_5 (أو saml2KeyTransportAlgorithm الخاص بالتطبيق) مفتاح تأكيد مشفَّر بـ RSAES-PKCS1-v1_5، ويقبل saml.allowSha1Signatures عند تفعيله SHA-1 في توقيع تتحقق منه هذه الخدمة، ويجعل pki.signatureAlgorithm بالقيمة sha1-rsa أو sha1-ecdsa (أو نموذج بناء يسمّي أيًّا منهما) سلطة الشهادات توقّع بـ SHA-1، ويُفك لف عنصر XML مشفَّر إلى هذه الخدمة بـ rsa-1_5، ويعرض scim.digestMd5 عند تفعيله MD5 ويقبله في HTTP Digest الخاص بـ SCIM. كل واحد منها off ما لم يُضبط."
+  },
+  "mode.requirements.broken-algorithms.product": {
+    "en": "173ed3ea10d31cc3",
+    "text": "تُتجاهَل كل قيمة ضعيفة حيث تُقرأ (تُسجَّل مرة واحدة، STS-CORE-0106) وتُرفض عند الكتابة (STS-CORE-0103، وSTS-REG-0193 على تطبيق): يُوقَّع XML بالافتراضي rsa-sha256، وتُلف المفاتيح بـ rsa-oaep (وrsa-oaep-mgf1p فقط عندما يكون crypto.allowLegacyHashes مفعّلًا)، ويُرفض توقيع SHA-1، ويُرفض بناء CA أو زوج مفاتيح يسمّي SHA-1 (STS-PKI-0191) ويُستبدَل ما وُرث من فرع بُني في التطوير بافتراضي المفتاح، ويُرفض EncryptedKey من rsa-1_5 قبل فك لفه (STS-KEYS-0070) — XML Encryption 1.1 القسم 6.1.2. لا أثر لـ scim.digestMd5، إذ لا يقدّم المنتج Digest على الإطلاق (STS-SCIM-0056). تبقى القيم الأقوى لكل إعداد متاحة. يُرفض JOSE RSA1_5 في كلا الوضعين."
+  },
+  "mode.requirements.jose-key-sizes.what": {
+    "en": "73495c403f54e4f5",
+    "text": "لا يُتحقق من JWS إلا بمفتاح بالحجم الذي يتطلبه RFC 7518"
+  },
+  "mode.requirements.jose-key-sizes.development": {
+    "en": "ef2804b46316aeed",
+    "text": "ما زال مفتاح RSA دون 2048 بتًا (RFC 7518 القسم 3.3، وRFC 8230 القسم 5 لـ COSE) ومفتاح HMAC أقصر من خرج تجزئته (RFC 7518 القسم 3.2) — client_secret قصير ضمن client_secret_jwt — يُتحقق منهما، فيمكن تمرين عميل يحمل أحدهما. أضعف من المواصفة: كلاهما MUST."
+  },
+  "mode.requirements.jose-key-sizes.product": {
+    "en": "d1fb3763f55efbde",
+    "text": "يُرفض كلاهما عند فحص التوقيع، في المتحقّق المشترك، وفي verifyJws() و(RSA) لمفتاح WebAuthn. يبلغ client_secret المسكوك 48 بايتًا عشوائيًا افتراضيًا (oauth2.registeredSecretBytes)، وهو يكفي لـ HS512. في كلا الوضعين يُرفض مفتاح HMAC فارغ، وأُس RSA أقل من 3 أو زوجي (تزوير لا مفتاح ضعيف)، ومعامل RSA يحمل بصمة ROCA (CVE-2017-15361)، وJWK ليست قيمة use فيه \"sig\" أو تخلو key_ops فيه من \"verify\"، وقطعة ليست base64url قانونيًا."
+  },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "لا تُستخدَم secp256k1 إلا حيث تسمّيها قائمة"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "يُوقَّع بـ ES256K وتُعرَض وتُقبل مثل أي خوارزمية أخرى."
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "لا يُوقَّع بـ ES256K ولا تُعرَض ما لم تسردها keys.signingAlgorithms، ويُرفض توقيع بها ما لم تسردها keys.acceptedSigningAlgorithms أو keys.signingAlgorithms (cose.acceptedAlgorithms لـ COSE). تُخرجها قوائم الخوارزميات المنشورة، ومنها قائمة DPoP."
+  },
+  "mode.requirements.xml-ecdsa-curves.what": {
+    "en": "858a80a68d7c0582",
+    "text": "لا يُتحقق من توقيع ECDSA في XML إلا على منحنًى من 256 بتًا على الأقل"
+  },
+  "mode.requirements.xml-ecdsa-curves.development": {
+    "en": "6d585203e0d0c40f",
+    "text": "يُتحقق من مفتاح على أي منحنًى يقرأه node — ومنها secp160 وsecp192 وsecp224 — فيمكن تمرين شريك على أحدها. أضعف من الحد الأدنى في NIST SP 800-57 البالغ 112 بتًا لأصغرها."
+  },
+  "mode.requirements.xml-ecdsa-curves.product": {
+    "en": "83ca2ed6f0591c63",
+    "text": "لا يُتحقق إلا من P-256 وP-384 وP-521 وbrainpoolP256r1 وما هو أكبر، ومن secp256k1 حيث تسمّي keys.acceptedSigningAlgorithms أو keys.signingAlgorithms القيمة ES256K؛ ويُرفض أي منحنًى آخر (STS-KEYS-0077) ولا تُسجَّل شهادة عليه."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.what": {
+    "en": "d0088e020fb9a13e",
+    "text": "لا يستخدم مفتاح Kerberos أو تذكرة أو تبادل enctype يُهمله RFC 8429 (rc4-hmac)"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.development": {
+    "en": "05d8e71722ffc76a",
+    "text": "krb5.enctypes هي 18,17,20,19,23 افتراضيًا: لكل حساب مفتاح rc4-hmac إلى جانب مفاتيح AES الخاصة به، وليس لتجهيز rc4only شيء غيره، ويحصل العميل الذي يعرض 23 فقط على تذكرة — فيمكن تمرين عميل RC4."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.product": {
+    "en": "7bb2840e2f96210a",
+    "text": "تُقرأ القائمة دون 23 (تُسجَّل مرة واحدة، STS-CORE-0106) وتُرفض كتابة تسمّيها (STS-CORE-0103). لا يُشتق مفتاح RC4 ولا يُخزَّن ولا يُوضع في keytab لـ krbtgt أو لخدمة أو لشخص؛ ولا يُستخدم مفتاح أو تذكرة من ذلك الـ enctype أبدًا؛ ويُرفض AS-REQ أو TGS-REQ لا يعرض غيره بـ KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156)؛ ويُرفض مفتاح جلسة RC4 أو مفتاح فرعي في TGS-REQ أو AP-REQ أو درع FAST (STS-KRB-0157, 0158, 0159). ما يبقى هو AES."
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "المنفذ الرئيس هو HTTPS"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "يشغّل STS_HTTPS=false المنفذ الرئيس بالنص الواضح."
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "لا تبدأ عملية يكون فيها global.https بالقيمة off (STS-CORE-0167). يبقى مستمع الإبطال وSCEP عبر HTTP العادي، كما يتوقع RFC 5280 وRFC 5019 وRFC 8894."
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "شهادة المستمع موثوقة علنًا"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "تسكّها سلطة الشهادات الخاصة بهذه الخدمة."
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "اضبط tls.certificateFile على سلسلة موثوقة علنًا. لا توقف شهادة سكّتها هذه الخدمة بدءها، وتُعرض في هذا الصف."
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "يتجنّب SCEP وتشفير XML وKerberos الشفرات القديمة"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "يجيب SCEP، ويجوز لتشفير XML استخدام AES-CBC، ويعرض Kerberos نوعي التشفير 17 و18."
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "لا يجيب SCEP إلا عندما يكون scep.allowInProduct مفعّلًا (STS-SCEP-0067). لا يختار تشفير XML ولا يقبل إلا AES-GCM (STS-KEYS-0195). يستخدم Kerberos النوعين 19 و20 ما لم يكن krb5.allowSha1Enctypes مفعّلًا."
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "لا يستخدم العميل إلا المنح التي يحتاجها"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "يجوز لعميل لا يعلن أنواع منح أن يستخدم أي منح."
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "لا يجوز لعميل لا يعلن أنواع منح أن يستخدم إلا authorization_code وrefresh_token، ما لم يكن oauth2.allowUndeclaredGrants مفعّلًا (STS-OAUTH-0598)."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "لا يحمل أي حساب اسم مسؤول افتراضيًا"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "مسؤول الإقلاع هو admin، وبه يسجّل كل اختبار وكل جولة إرشادية الدخول."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "يُعطى مسؤول إقلاع اسمه admin أو root أو sa أو administrator، أو بلا اسم، اسمًا مولَّدًا لا يمكن التنبؤ به، يُطبع مع كلمة المرور عند البدء الأول، ما لم يكن admin.allowDefaultUsername مفعّلًا."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "لا تُستخدَم التجزئات غير المسموح بها"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "تتاح OAEP فوق SHA-1، واشتقاق مفتاح PKINIT عبر SHA-1، ومجموع التحقق HMAC-MD5 الخاص بـ S4U2Self."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "هي متوقفة ما لم يكن crypto.allowLegacyHashes مفعّلًا. يبقى TOTP على HMAC-SHA-1 افتراضيًا لتوافق تطبيق المصادقة، ويُبقي PKINIT قيمة paChecksum عبر SHA-1 التي يعرّفها RFC 4556."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "يجب أن يكون الملف المسمّى في دليل مسموح به"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "يُقرأ الملف الذي يسمّيه المسؤول من الموضع الذي يسمّيه."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "لا يُقرأ الملف إلا إذا كان مساره الحقيقي داخل دليل تسرده security.fileRoots، ولا يقول الجواب لماذا فشل مسار."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "يُطلب عامل ثانٍ من الجميع"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "تقرر سياسة المصادقة، وافتراضيًا لا يُطلب العامل الثاني إلا ممن يحمله."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "يحتاج الجميع إلى عامل ثانٍ، مهما قالت السياسة، ما لم يكن authn.allowOptionalSecondFactor مفعّلًا."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "يحتاج مسح عامل ثانٍ إلى إثبات هوية مُصرَّح به"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "يجوز للمسؤول مسح عامل بتسمية الشخص."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "يجب أن يقول المسؤول كيف جرى التحقق من هوية الشخص. يُدوَّن البيان في صف التدقيق."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "يُلزَم دخل البروتوكول بالقراءة الصارمة"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "يأخذ معامل الرمز المكرَّر قيمته الأخيرة، ولا يحتاج Logout Token الخاص بالشريك إلى نوع صريح، وتُصدَّق العناوين المُحالة من أي أحد عندما يكون global.trustProxy مفعّلًا بلا قائمة، ويصل نص الخطأ الداخلي إلى المنادي."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "يُرفض معامل الرمز المكرَّر، ويجب أن يكون نوع Logout Token الخاص بالشريك logout+jwt ما لم يكن federation.allowUntypedLogoutToken مفعّلًا، وتحتاج العناوين المُحالة إلى global.trustedProxies، ويبقى نص الخطأ الداخلي في السجل."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "لا تحمل السجلات وقاعدة البيانات أسرارًا معروفة"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "عند مستوى debug يحمل السجل الطلبات والاستجابات كاملة، ويجوز لقاعدة البيانات أن تستخدم كلمة مرور للعرض."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "تستثني سجلات الطلب بيانات الاعتماد والمتون في كل مستوى، ويُسجَّل الرمز الموقَّع أو التأكيد بحجمه وتجزئته فقط، وتوقف كلمة مرور قاعدة البيانات الافتراضية الخدمة ما لم يكن persistence.allowDefaultDatabasePassword مفعّلًا."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "يسأل تسجيل الدخول الموحَّد قبل أن يسجّل دخول شخص إلى تطبيق"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "يسجّل SAML 2.0 وSAML 1.1 وWS-Federation دخول شخص من جلسته دون سؤال."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "يُسأل الشخص مرة واحدة لكل تطبيق قبل أن يسجّل SAML 2.0 أو SAML 1.1 أو WS-Federation دخوله إليه، ويُحتفَظ بالجواب. يوقف saml2.ssoConsent وsaml11.ssoConsent وwsfed.ssoConsent ذلك لكل بروتوكول، وتتجاوزها قيمة التطبيق الخاصة."
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "تأتي أسرار الواجهة الخلفية من مخزن أسرار"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "قد يكون مفتاح تشفير المفاتيح ملفًا، وقد تكون كلمة مرور قاعدة البيانات في ملف أو في سلسلة الاتصال."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "تأتي مفاتيح تشفير المفاتيح من مخزن أسرار أو من خدمة إدارة مفاتيح، وتأتي كلمة مرور قاعدة البيانات من مخزن أسرار. يوقف ملف أو كلمة مرور في سلسلة الاتصال الخدمة ما لم يكن secrets.allowLocalSecrets مفعّلًا. قد يبقى مفتاح تشفير مفاتيح سابق ملفًا، حتى يستطيع النشر الانتقال عنه."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "ينبغي أن يغادر سجل التدقيق هذه الخدمة"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "لا يُقال شيء عن تصدير التدقيق."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "أضف وجهة لتصدير التدقيق، حتى تكون نسخة من السجل بعيدة عن متناول اختراق هنا. إلى أن توجد واحدة تسجّل الخدمة تحذيرًا لنطاق الثقة ذلك."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "تصل الملفات إلى فاحص البرمجيات الخبيثة مشفَّرة"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "يجوز استخدام عنوان icap:// أو icaps://."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "لا يُستخدم إلا عنوان icaps://، ما لم يكن malwareScan.allowCleartext مفعّلًا."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "للجلسات ومفاتيح RSA افتراضيات أصرم"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "ليست للجلسة مهلة خمول، ومفاتيح RSA الجديدة من 2048 بتًا."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "تنتهي الجلسة بعد 30 دقيقة من الخمول وتكون مفاتيح RSA الجديدة من 3072 بتًا، ما لم يقل إعداد خلاف ذلك."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "تبقى كلمة مرور الإقلاع خارج السجل"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "تُكتب كلمة المرور المولَّدة في سجل الخدمة."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "تُكتب في ملف لا تستطيع قراءته إلا هذه الخدمة، ويقول السجل أين، ما لم يكن admin.logBootstrapPassword مفعّلًا."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "يجب أن يستخدم كل عميل PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "يُكتفى بتسجيل العميل السري الذي لا يرسل code_challenge."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "يُرفض ما لم يكن oauth2.allowConfidentialWithoutPkce مفعّلًا."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "تشفير محتوى JWE هو AES-GCM فقط"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "تُعرَض وتُقبل A128CBC-HS256 وA192CBC-HS384 وA256CBC-HS512، وA128CBC-HS256 هي الافتراضي."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "لا يُعرَض ولا يُقبل إلا AES-GCM، ويُستخدم حيث لا يسمّي العميل enc، ما لم يكن crypto.allowCbcJwe مفعّلًا."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "يحتاج الشخص إلى دور عند SCIM وShared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "يجوز لأي شخص مُصادَق عليه أن يقرأ ويكتب، أيًّا كان المخطط الذي استخدمه."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "يحتاج المخطط الذي لا يحمل scope إلى Admin Read للقراءة وإلى Admin Write للكتابة، ما لم يكن security.allowUnscopedPeople مفعّلًا. تعمل scope في OAuth وشهادة التطبيق كما من قبل."
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "يحمل كل ملف تعريف ارتباط بادئة __Host- أو __Secure-"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "تُبقي ملفات تعريف الارتباط أسماءها العادية (sts_session والبقية)، وهي ما يقرأه الشخص في أدوات المتصفح."
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "عبر TLS تُسبَق كل ملفات تعريف الارتباط بـ __Host-، أو بـ __Secure- حيث تحمل Domain، ويُتجاهل ما بلا بادئة. تُطبَّق البادئة مرة واحدة، بواسطة العملية التي تمسك المقبس."
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "قرار الوصول الذي يتعذّر اتخاذه هو رفض"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "يسمح مقرّر يرمي استثناء، أو جواب فارغ، أو فحص لا يسمّي موردًا أو فعلًا، بالطلب ويُسجَّل، حتى تظل عملية تطوير محمّلة جزئيًا تجيب."
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "كل من تلك رفض (STS-XACML-0051, 0181, 0182). يبقى xacml.enforceAccess وroles.enforceIssuance طريق الرجوع من سياسة تمنع إصلاح نفسها، ويُعرض ما أُوقف في هذا الصف."
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "تخبر كل استجابة عبر TLS المتصفح ألا يستخدم إلا HTTPS (Strict-Transport-Security)"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "لا تُرسَل الترويسة: يربط HSTS كل منفذ لاسم مضيف ويزيل تجاوز النقر على شهادة غير موثوقة، وعلى localhost سيدوم ذلك بعد الحاوية."
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "تحمل كل استجابة وصلت عبر TLS القيمة Strict-Transport-Security: max-age=31536000 (RFC 6797). لا تفعل ذلك أبدًا استجابة على مستمع الإبطال وSCEP عبر HTTP العادي."
+  },
+  "mode.requirements.signed-assertions.what": {
+    "en": "61c90b75f7b0a5e3",
+    "text": "يُوقَّع كل تأكيد SAML، وكل Response في SAML 1.1"
+  },
+  "mode.requirements.signed-assertions.development": {
+    "en": "38123244c09ef3c2",
+    "text": "يرسل إيقاف saml2.signAssertion وsaml11.signAssertion وsaml11.signResponse — على نطاق الخدمة أو على تطبيق واحد — تأكيدًا غير موقَّع أو Response غير موقَّع في SAML 1.1، وهكذا يُعثر على طرف معتمد يقبل واحدًا."
+  },
+  "mode.requirements.signed-assertions.product": {
+    "en": "aa7a88c57793c53d",
+    "text": "تُتجاهَل الثلاثة كلها حيث تُقرأ (STS-CORE-0106) وتُرفض عند الكتابة (STS-CORE-0103؛ وSTS-REG-0193 على تطبيق). يُوقَّع تأكيد SAML 2.0 أيًّا كان الربط (يتطلبه saml-profiles-2.0-os 4.1.3.5 و4.1.4.5 عبر POST)، ويُوقَّع Response في SAML 1.1 (يتطلبه oasis-sstc-saml-bindings-1.1 4.1.2.4 في Browser/POST) مع تأكيده. يبقى إيقاف saml2.signResponse مسموحًا: مع توقيع التأكيد لا يطلب الـ profile أكثر من ذلك."
+  },
+  "mode.requirements.workload-security-header.what": {
+    "en": "776290c79cdd3f4a",
+    "text": "يُرفض استدعاء Workload API بلا ترويسة workload.spiffe.io"
+  },
+  "mode.requirements.workload-security-header.development": {
+    "en": "27e04db12d62c69b",
+    "text": "spiffe.requireSecurityHeader مفعّل افتراضيًا كما في المنتج؛ والقيمة off تخدم استدعاء بلا الترويسة."
+  },
+  "mode.requirements.workload-security-header.product": {
+    "en": "3251248ccb01d6b6",
+    "text": "يُرفض دائمًا (مواصفة SPIFFE Workload Endpoint القسم 3، تدبير تصليب ضد SSRF): تُتجاهَل القيمة off حيث تُقرأ (STS-CORE-0106) وتُرفض عند الكتابة (STS-CORE-0103)."
+  },
+  "mode.requirements.credential-status-reference.what": {
+    "en": "d2f22919aea82d16",
+    "text": "يجب أن تحمل بيانات الاعتماد المقدَّمة مرجع حالة"
+  },
+  "mode.requirements.credential-status-reference.development": {
+    "en": "a291b8402b9977d5",
+    "text": "oid4vp.requireStatusReference هي all افتراضيًا، كما في المنتج: يجب أن تسمّي كل بيانات اعتماد تُقدَّم إلى متحقّق OpenID4VP حالة تُحل إلى VALID، ما لم يكن مُصدرها الموثوق مسردًا في oid4vp.statusOptionalIssuers. يعفي own-only بيانات الاعتماد الأجنبية، وتقبل القيمة off — في التطوير فقط — واحدة من بيانات اعتماد نطاق الثقة هذا بلا مرجع، وldp_vc حجب تقديمه credentialStatus."
+  },
+  "mode.requirements.credential-status-reference.product": {
+    "en": "091040d9ab1a08e5",
+    "text": "تُتجاهَل القيمة off حيث تُقرأ (تُسجَّل مرة واحدة، STS-CORE-0106) وتُرفض عند الكتابة (STS-CORE-0103): تُرفض دائمًا بيانات اعتماد لنطاق الثقة هذا بلا مرجع حالة، أو ldp_vc لم يُفصح عن credentialStatus الخاص به. يُسمح بـ own-only وبالإعفاء لكل مُصدر."
+  },
+  "mode.requirements.weaker-responses.what": {
+    "en": "57d0e17e4a068c39",
+    "text": "يجوز أن تخرج استجابة أضعف مما طُلب"
+  },
+  "mode.requirements.weaker-responses.development": {
+    "en": "552b8f1ae7baed48",
+    "text": "يُرسَل التأكيد أو الرمز الذي كان ينبغي تشفيره وتعذّر ذلك بالنص الواضح، مع تحذير."
+  },
+  "mode.requirements.weaker-responses.product": {
+    "en": "231c8252c053a97b",
+    "text": "يُرفض."
+  },
+  "mode.requirements.objects.what": {
+    "en": "9acaa32a6ee23f77",
+    "text": "يجب أن يكون الكائن المُشار إليه موجودًا سلفًا"
+  },
+  "mode.requirements.objects.development": {
+    "en": "b998406cf3b99cec",
+    "text": "يُنشأ المستخدم أو التطبيق أو كيان الخدمة أو خادم التفويض أول مرة يسمّيه شيء، وهو ما يتيح لعميل أن يشير إلى هذه الخدمة بأي معرّف ويحصل على تبادل يعمل."
+  },
+  "mode.requirements.objects.product": {
+    "en": "a33d2b29f75e06ee",
+    "text": "يُرفض الاسم المجهول. يجب إنشاء كل شيء مسبقًا، عبر وحدة التحكم أو /admin-api أو SCIM أو إضافة LDAP."
+  },
+  "mode.requirements.key-material.what": {
+    "en": "07ec07df478bb563",
+    "text": "تبقى مفاتيح التوقيع بعد إعادة التشغيل"
+  },
+  "mode.requirements.key-material.development": {
+    "en": "c2e1929930228d7a",
+    "text": "يُولَّد مفتاح توقيع جديد عند كل بدء ويُحفَظ في الذاكرة. لا يبقى الرمز بعد إعادة التشغيل — وهو ما يجعل هذه الخدمة قابلة للاستغناء عنها، ويُشتق `kid` من مادة المفتاح حتى لا تنشر نسختان اسمًا واحدًا على مفتاحين."
+  },
+  "mode.requirements.key-material.product": {
+    "en": "f4d83aab08e747e0",
+    "text": "تُولَّد مرة واحدة وتُقرأ من مخزن الاستمرارية — وهو ما يتطلبه وضع المنتج لذلك — مشفَّرة بـ AES-256-GCM تحت مفتاح لا تولّده هذه الخدمة ولا تخزّنه أبدًا، يُقرأ من ملف مُركَّب أو من AWS Secrets Manager أو GCP Secret Manager أو Azure Key Vault أو HashiCorp Vault."
+  },
+  "mode.requirements.client-secret.what": {
+    "en": "f43a81528281dea5",
+    "text": "يُصادق تطبيق OAuth 2.0 / OIDC وفق ما سُجّل به"
+  },
+  "mode.requirements.client-secret.development": {
+    "en": "ce6389143b3d36c0",
+    "text": "لا يُطلب شيء من أحد: يجوز لعميل ألا يرسل سوى client_id، مهما أعلن تسجيله."
+  },
+  "mode.requirements.client-secret.product": {
+    "en": "9d1bf687c36cb03c",
+    "text": "يجب على العميل السري — وهو الذي يعلن تسجيله أي token_endpoint_auth_method غير \"none\"، ويشمل ذلك تسجيلًا لم يعلن طريقة أصلًا (يفترض RFC 7591 القسم 2 القيمة client_secret_basic) — أن يقدّم بيانات الاعتماد تلك وأن يُتحقق منها. يُسمح بالعميل العام (token_endpoint_auth_method=none صراحة) ولا يقدّم شيئًا، وهذا صحيح؛ وما يُحتجز له بدل ذلك هو الصف أدناه. كان النص \"there are no public clients\" حتى 2026-09-17."
+  },
+  "mode.requirements.oauth-security-bcp.what": {
+    "en": "87c3aae84dd60fee",
+    "text": "تُفرَض OAuth 2.0 Security BCP (RFC 9700)"
+  },
+  "mode.requirements.oauth-security-bcp.development": {
+    "en": "03a913ace3bef932",
+    "text": "فقط حيث يُضبط oauth2.rfc9700 أو oauth2.oauth21، لكل عملية أو لكل نطاق ثقة. عند الإيقاف تجيب هذه الخدمة طلبًا كانت BCP سترفضه — وهكذا يُمرَّن عميل على الإجابتين."
+  },
+  "mode.requirements.oauth-security-bcp.product": {
+    "en": "a92e513a7178c6bf",
+    "text": "دائمًا، مهما قالت تلك الإعدادات، ولا يستطيع نطاق الثقة إيقافها. يُطلب من العميل العام PKCE مع S256، ومطابقة تامة لـ redirect-URI، وبلا إعادة توجيه مفتوحة، وبلا URI إعادة توجيه http خارج loopback، وتحدٍّ أو nonce لا يمكن إعادة تشغيله، وnonce مع أي id_token، وبلا نوع استجابة يُصدر رمز وصول من نقطة نهاية التفويض، ورموز تحديث تدور مع كشف إعادة الاستخدام. هذا ما يُحتجز له العميل العام بدل بيانات الاعتماد، وهو سبب جواز السماح به أصلًا (2026-09-17)."
+  },
+  "mode.requirements.public-client-grants.what": {
+    "en": "2b836cf35c373f3d",
+    "text": "أي المنح التي يجوز لعميل عام استخدامها"
+  },
+  "mode.requirements.public-client-grants.development": {
+    "en": "9a103bc53ec958ff",
+    "text": "كل منح تعرضه هذه الخدمة، لأي أحد."
+  },
+  "mode.requirements.public-client-grants.product": {
+    "en": "82bf0ab77ef49e17",
+    "text": "منحا رمز التفويض والتحديث، وليس منح بيانات اعتماد العميل (يعرّفه RFC 6749 القسم 4.4 للعملاء السريين؛ ويصرّح OAuth 2.1 القسم 4.2 بذلك) ولا منح كلمة مرور مالك المورد (RFC 9700 القسم 2.4: MUST NOT يُستخدم). لا يتأثر العميل السري."
+  },
+  "mode.requirements.introspection.what": {
+    "en": "9f11bb5247c41fb8",
+    "text": "يُصادق منادي /oauth2/introspect"
+  },
+  "mode.requirements.introspection.development": {
+    "en": "8a4fb8f785e4d1f4",
+    "text": "يجيب استبطان JSON وفق RFC 7662 أي أحد يحمل سلسلة الرمز، بلا بيانات اعتماد عميل. استجابة JWT وفق RFC 9701 (Accept: application/token-introspection+jwt) هي الاستثناء في كلا الوضعين: يسمّي aud خادم المورد الذي سأل، فيجب أن يُصادق ذلك المنادي عميلًا ببيانات اعتماد مسجَّلة، وإلا يُرفض بـ 400 invalid_client."
+  },
+  "mode.requirements.introspection.product": {
+    "en": "b53ed135725fbe0c",
+    "text": "يجب أن يُصادق كل طلب استبطان عميلًا ببيانات اعتماد يُتحقق منها — client_secret_basic أو post، أو تأكيد عميل، أو شهادة وفق RFC 8705 — وإلا يُرفض بـ 401 invalid_client (400 لطلب JWT، RFC 9701 القسم 5)."
+  },
+  "mode.requirements.revocation.what": {
+    "en": "5677b3fbce656c33",
+    "text": "يُصادق منادي /oauth2/revoke، ولا يُبطل إلا رمزه"
+  },
+  "mode.requirements.revocation.development": {
+    "en": "99c5947846bf5a05",
+    "text": "يُبطل إبطال وفق RFC 7009 بلا بيانات اعتماد عميل أي رمز وصول أو تحديث أصدره نطاق الثقة هذا، لأي أحد يحمل سلسلة الرمز. يُحتجز المنادي الذي يقدّم بيانات اعتماد لما يحتجزه له المنتج: تُرفض بيانات الاعتماد التي لا يُتحقق منها بـ 401 invalid_client، ويُرفض الرمز الصادر لعميل آخر بـ invalid_grant."
+  },
+  "mode.requirements.revocation.product": {
+    "en": "753907c223c4fde4",
+    "text": "يجب أن يأتي كل طلب إبطال من عميل: يقدّم السري بيانات اعتماد يُتحقق منها (طرائق نقطة نهاية الرمز)، ويسمّي العام client_id المسجَّل الخاص به، ويُرفض غير ذلك بـ 401 invalid_client (RFC 7009 القسم 2.1). يُرفض الرمز الصادر لعميل آخر بـ 400 invalid_grant ولا يُبطل شيء."
+  },
+  "mode.requirements.oid4vp-x509-host.what": {
+    "en": "b6950c831f947bf4",
+    "text": "يُضبط اسم x509_san_dns لمتحقّق OpenID4VP، ولا يُؤخذ من طلب أبدًا"
+  },
+  "mode.requirements.oid4vp-x509-host.development": {
+    "en": "c5a807820eba98b7",
+    "text": "عندما يكون oid4vp.x509DnsName فارغًا وglobal.publicBaseUrl غير مثبَّت، يشهد المتحقّق للمضيف الذي وصل إليه الطلب (شهادة واحدة لكل اسم، وست عشرة على الأكثر لكل نطاق ثقة) ويسمّيه Client Identifier من نوع x509_san_dns."
+  },
+  "mode.requirements.oid4vp-x509-host.product": {
+    "en": "1bc891545748f93d",
+    "text": "الاسم هو oid4vp.x509DnsName، أو مضيف global.publicBaseUrl؛ ومن دونهما يُرفض طلب x509_san_dns (STS-VC-0110) — يُبنى Response URI من المضيف نفسه، فكانت ترويسة Host ستختار أين يرسل طلب موقَّع وموثوق العروض. لا يحتاج x509_hash إلى اسم ولا يتأثر."
+  },
+  "mode.requirements.request-objects.what": {
+    "en": "6376797d2aae208e",
+    "text": "يكون طلب التفويض المؤمَّن بـ JWT موقَّعًا، ويكون request_uri عبر HTTPS"
+  },
+  "mode.requirements.request-objects.development": {
+    "en": "00801b6681025497",
+    "text": "يُقبل كائن طلب موقَّع بـ `none` (OpenID Connect Core 6.1) ما لم يُطلب كائن موقَّع — عبر oauth2.requireSignedRequestObject أو مدخلة العميل أو ملف تعريف خادم التفويض. يجوز أن يكون request_uri المسجَّل http عاديًا وأن يجيب بأي نوع وسائط؛ ويُسجَّل كلاهما."
+  },
+  "mode.requirements.request-objects.product": {
+    "en": "247799ea9e0595ef",
+    "text": "يجب أن يكون كائن الطلب موقَّعًا (RFC 9101 القسم 4) وإلا يُرفض بـ invalid_request_object. يجب أن يكون request_uri المسجَّل https وأن يجيب application/oauth-authz-req+jwt أو application/jwt، وإلا يُرفض الطلب بـ invalid_request_uri، كما يُرفض عندما يُحل مضيفه إلى عنوان loopback أو خاص أو link-local أو محجوز. في كلا الوضعين لا يُجلب request_uri إلا عندما سجّله العميل."
+  },
+  "mode.requirements.management-api.what": {
+    "en": "7e9bb52b567f5c3c",
+    "text": "يتطلب /admin-api رمز وصول ودورًا"
+  },
+  "mode.requirements.management-api.development": {
+    "en": "a91239e28663677c",
+    "text": "رمز وصول OAuth 2.0 يحمل admin:read أو admin:write، بينما adminApi.authRequired مفعّل (الافتراضي). وعند إيقافه: مفتوح. وهو ما تقوده الاختبارات وطريق العودة عندما لا يحمل أحد دورًا — ما يعني أيضًا أن أي شخص يستطيع بلوغ هذا المنفذ يمكنه منح نفسه كلا الدورين من خلاله."
+  },
+  "mode.requirements.management-api.product": {
+    "en": "2b5a59d171c39596",
+    "text": "رمز الوصول نفسه، دائمًا. يُرفض adminApi.authRequired=false عند الكتابة ويُتجاهل حيث يُخزَّن: بوابة واجهة البرمجة هذه هي البوابة الوحيدة لوحدة التحكم، لذا لا يجوز لشيء أن يفتحها. طريق العودة هو adminApi.clientSecret، المثبَّت قبل البدء."
+  },
+  "mode.requirements.console.what": {
+    "en": "44bcae0f35012ef6",
+    "text": "يتطلب /admin تسجيل دخول ودورًا"
+  },
+  "mode.requirements.console.development": {
+    "en": "6c836b756fab2991",
+    "text": "مطلوب — وكان كذلك دائمًا؛ والإعداد الذي كان يمكنه إيقافه زال. لا يفحص تسجيل الدخول الذي خلفه كلمة المرور، فما تثبته البوابة هو أن شخصًا كتب اسمًا يحمل دورًا."
+  },
+  "mode.requirements.console.product": {
+    "en": "d8fc7997d383c0b0",
+    "text": "مطلوب، ويتحقق تسجيل الدخول الذي خلفه من بيانات الاعتماد."
+  },
+  "mode.requirements.console-bootstrap-window.what": {
+    "en": "9aae56ff92524098",
+    "text": "لا تُفتح وحدة التحكم للجميع قبل وصول مسؤول التمهيد"
+  },
+  "mode.requirements.console-bootstrap-window.development": {
+    "en": "3e57442382188f6c",
+    "text": "إلى أن يسجّل مسؤول التمهيد في النطاق دخوله أول مرة إلى /admin — أو، حيث لم يُبذَر أحد، ما دام الكشف فارغًا — يحمل كل شخص سجّل دخوله كلا دورَي وحدة التحكم في ذلك النطاق، ما دام admin.openWhenEmpty مفعّلًا. وأي تسجيل دخول بذلك الحساب يغلق النافذة."
+  },
+  "mode.requirements.console-bootstrap-window.product": {
+    "en": "80feb38828e08d3d",
+    "text": "لا يحمل أحد دورًا بسبب النافذة، مهما قال admin.openWhenEmpty: الكشف وحده يقرر. إلى أن يطالب مسؤول التمهيد بوحدة التحكم، لا تُحترم أدوارها إلا من تسجيل دخول بكلمة المرور عبر نطاقه هو (amr pwd، متحقق منه هنا، لا شريك اتحاد ولا شهادة ولا محفظة ولا تذكرة Kerberos)، وذلك التسجيل وحده يطالب بها (STS-ADMIN-0796)؛ وينتظر المصحح وسلطة تسجيل شهادات الجلسة المطالبة. يُغلق نطاق بلا مسؤول تمهيد وبكشف فارغ ويُسجَّل عند بدء التشغيل (STS-ADMIN-0798)؛ وPOST /admin-api/rbac/grant هو طريق الدخول."
+  },
+  "mode.requirements.certificate-enrollment.what": {
+    "en": "e1e5d0112481b526",
+    "text": "يتطلب ACME وEST بروتوكول TLS؛ ويُتحقق من بيانات اعتماد التسجيل"
+  },
+  "mode.requirements.certificate-enrollment.development": {
+    "en": "cbe243baf730a04d",
+    "text": "يجيب ACME (/enroll/acme) وEST (/.well-known/est) عبر HTTP العادي أيضًا ويسجّلان أنهما فعلا ذلك. لا تُفحص كلمة مرور EST (صف بيانات الاعتماد) ولا يُشترط سر عميل التطبيق. ويُتحقق من MAC لـ External Account Binding في ACME ومن كلمة تحدي SCEP، ويُفرَض لمن يجوز إصدار الشهادة له تمامًا كما في وضع المنتج: لنفسك، أو لأي شخص في النطاق إذا كنت تحمل Admin Write."
+  },
+  "mode.requirements.certificate-enrollment.product": {
+    "en": "f27791f1f0f45794",
+    "text": "يُرفض الطلب الذي لم يصل عبر TLS (STS-ENROLL-0060). يتحقق EST من كلمة مرور الدليل ويشترط سر العميل. وكل ما عدا ذلك كما في وضع التطوير."
+  },
+  "mode.requirements.scim.what": {
+    "en": "9a890adef7950278",
+    "text": "يتطلب /scim/v2 بيانات اعتماد"
+  },
+  "mode.requirements.scim.development": {
+    "en": "7f09cdc729d11a04",
+    "text": "مطلوب بأحد المخططات الستة في القسم 2 من RFC 7644 — وكان كذلك دائمًا — دون التحقق من أي منها بما يتجاوز شكله."
+  },
+  "mode.requirements.scim.product": {
+    "en": "6a52ccdf24efb34f",
+    "text": "مطلوب ويُتحقق منه. لا يُعرض HTTP Digest، لأن RFC 7616 يحتاج إلى كلمة المرور أو تجزئتها، وتجزئة scrypt لا تستطيع التحقق من أي منهما؛ ولا يجوز تسجيل مفتاح HOBA إلا لمالك الحساب الموجود الذي سجّل دخوله، وتسجيل مفتاح لا ينشئ حسابًا أبدًا."
+  },
+  "mode.requirements.shared-signals.what": {
+    "en": "b32bd06900029893",
+    "text": "يتطلب /ssf بيانات اعتماد"
+  },
+  "mode.requirements.shared-signals.development": {
+    "en": "5056af1ab55c8c24",
+    "text": "مطلوب بأحد المخططات التي تقبلها نقاط النهاية — وكان كذلك دائمًا — دون التحقق من أي منها بما يتجاوز شكله."
+  },
+  "mode.requirements.shared-signals.product": {
+    "en": "815c7d1e43aaf41d",
+    "text": "مطلوب ويُتحقق منه: تُفحص بيانات اعتماد Basic مقابل userPassword للشخص، ويزيل ssf.authBasic المخطط."
+  },
+  "mode.requirements.demo-data.what": {
+    "en": "bc4f8fb3268c8841",
+    "text": "تحتوي خدمة جديدة على بيانات توضيحية"
+  },
+  "mode.requirements.demo-data.development": {
+    "en": "25a09144798ca6c5",
+    "text": "يُبذَر الدليل بثلاثة أشخاص ومجموعتين وحساب ربط وهويتَي remote-pep-1 وxacml-user-1 في مجموعتَي أدوار XACML؛ وKDC بحسابات تجريبية ثابتة وقواعد تفويض ونطاق موثوق كلمات مروره مكتوبة في مصدره؛ وسجل SPIFFE بمدخلات نموذجية؛ ويُعطى كل شخص سمات بيانات اعتماد مولَّدة."
+  },
+  "mode.requirements.demo-data.product": {
+    "en": "2d0556abc166bc57",
+    "text": "لا شيء من ذلك. يحتفظ الدليل وقاعدة بيانات الأسماء الرئيسية والسجل بما كُوِّن أو وُفِّر، ولا شيء غيره — مجموعتا أدوار XACML موجودتان وفارغتان، ويرفض KDC بناء krbtgt أو حساب خدمته على كلمات المرور المنشورة في هذا المستودع."
+  },
+  "mode.requirements.test-double.what": {
+    "en": "f037d7b70aacf864",
+    "text": "تصف الخدمة نفسها بأنها بديل اختبار"
+  },
+  "mode.requirements.test-double.development": {
+    "en": "ffe468af90a49423",
+    "text": "تكون `testDouble` بالقيمة true في GET /admin-api/sts-metadata: لا تفحص هذه الخدمة كلمة المرور ولا تتحقق من صحة رمز الوصول، ويجب ألا تُقرأ قائمة نقاط النهاية على أنها ادّعاء بأنها تفعل ذلك. وترسم فهرس وحدة التحكم ما لا تفعله عمدًا."
+  },
+  "mode.requirements.test-double.product": {
+    "en": "2fef3ea99ceb768a",
+    "text": "تكون `testDouble` بالقيمة false: يُتحقق من كلمات المرور ومن صحة رموز الوصول، وتقول الوثيقة ذلك. ولا ترسم فهرس وحدة التحكم تلك القائمة."
+  },
+  "mode.requirements.claim-values.what": {
+    "en": "3e4acbf9a020d8f8",
+    "text": "يجوز اختراع قيمة مطالبة"
+  },
+  "mode.requirements.claim-values.development": {
+    "en": "656bcc392c40db7a",
+    "text": "يسمّي الرمز شخصية — اسم العائلة `Mock`، وعنوانًا عند sts.example مع email_verified بالقيمة true — وتملأ بيانات الاعتماد سمة غائبة بقيمة مولَّدة، ويسمّي حدث أمني فاعلًا على @example.com، ويُجاب الشخص الذي لا يملك تحققًا مسجَّلًا من الهوية بتحقق واحد ضمن إطار الثقة `urn:sts:demo` (OpenID Connect for Identity Assurance 1.0، #127)."
+  },
+  "mode.requirements.claim-values.product": {
+    "en": "3a1905ca05d2e355",
+    "text": "تأتي القيمة من مدخلة الشخص في الدليل أو تُحذف؛ ولا تُطلَق `verified_claims` إلا من تحقق مسجَّل على المدخلة، ولا تكون email_verified بالقيمة true إلا لعنوان متحقق منه: عنوان أثبته الشخص عبر رابط مُرسَل بالبريد (#63)، أو عنوان كتبه مصدر موثوق — مسؤول (وحدة التحكم، أو /admin-api، أو كتابة LDAP تحمل Admin Write)، أو SCIM، أو شريك اتحاد لم يقل إن email_verified تساوي false (#64)."
+  },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "يحمل الشخص السمات التي تتطلبها سياسة سمات نطاق الثقة"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "تُخزَّن السياسة وتُرسم في الدليل > السياسات ولا تُفرَض: يجوز إنشاء شخص بلا أكثر من اسم مستخدم، ويجوز لتعديل أن يفرغ أي سمة عدا cn وsn."
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "يُرفض الإنشاء الذي يترك سمة مطلوبة بلا قيمة (STS-LDAP-0162) عند كل باب — وحدة التحكم، و/admin-api، وSCIM، وإضافة LDAP (objectClassViolation، 65)، وتسجيل HOBA، والاستيراد بالجملة (STS-LDAP-0163) — ولا ينشئ تسجيل الدخول الأول الاتحادي، الذي لم يوفّر شريكه السمة، أي شخص (STS-FED-0158). ويُرفض التعديل الذي يسحب قيمة مطلوبة (STS-LDAP-0164). وتكون uid وcn وsn مطلوبة دائمًا؛ وgivenName وmail افتراضيًا. ولا يُرفض على الشخص الذي كان يفتقر إلى واحدة أصلًا تسجيل الدخول أو تعديل شيء آخر."
+  },
+  "mode.requirements.saml-request-signatures.what": {
+    "en": "85e7bc435ce1b0c0",
+    "text": "يُوقَّع طلب مزود خدمة SAML 2.0"
+  },
+  "mode.requirements.saml-request-signatures.development": {
+    "en": "6958e9df9b9440fb",
+    "text": "يُقبل AuthnRequest أو LogoutRequest غير الموقَّع (saml2.requireSignedAuthnRequests=auto) ما لم تقل البيانات الوصفية المستهلكة لمزود الخدمة AuthnRequestsSigned. ويُتحقق من التوقيع الموجود مقابل الشهادة المسجَّلة لمزود الخدمة ويُرفض إذا لم يُتحقق منه؛ ومن دون شهادة مسجَّلة يُسجَّل على أنه غير متحقق منه. وتُسجَّل الشهادة التي يحملها الطلب في KeyInfo على أنها OBSERVED — وليست مرساة ثقة أبدًا — ويجوز مع ذلك تشفير التأكيد إليها عندما لا تحمل المدخلة شهادة أخرى."
+  },
+  "mode.requirements.saml-request-signatures.product": {
+    "en": "c05ec261d945ccda",
+    "text": "يُرفض AuthnRequest أو LogoutRequest غير الموقَّع (STS-SAML-0063). ويُتحقق من التوقيع تمامًا كما في وضع التطوير، ويُرفض الذي لا توجد شهادة مسجَّلة للتحقق منه مقابله على أنه غير موقَّع. ولا يُشفَّر إلى شهادة OBSERVED إلى أن يؤكدها مشغّل في صفحة SAML 2.0 أو عبر POST /admin-api/saml2/confirm-signing-certificate."
+  },
+  "mode.requirements.saml-metadata-query.what": {
+    "en": "0ac0996817bde223",
+    "text": "لا يسجّل بحث Metadata Query إلا مزود خدمة كفل له مشغّل أو مرساة ثقة"
+  },
+  "mode.requirements.saml-metadata-query.development": {
+    "en": "161781e2465d3676",
+    "text": "يبدأ طلب من entityID غير معروف بحث MDQ (saml2.mdqBaseUrl)، وتنشئ الإجابة التي تصف ذلك الكيان مدخلة التطبيق، مقيَّدة بـ saml2.metadataTrustAnchors فقط عند تعيين أي منها. ويفعل إجراء الاستيراد من MDQ الأمر نفسه مع المراسي أو من دونها."
+  },
+  "mode.requirements.saml-metadata-query.product": {
+    "en": "e7990881d9e5016a",
+    "text": "لا يُجرى بحث بدأه طلب لـ entityID غير معروف عندما لا يملك النطاق saml2.metadataTrustAnchors (STS-SAML-0080)؛ ومع وجود المراسي لا تنشئ الإجابة المدخلة إلا عندما يُتحقق من توقيعها مقابل أحدها (STS-SAML-0081). ويُرفض استيراد المشغّل من MDQ بلا مرساة (STS-SAML-0084) ما لم يكن saml2.mdqImportWithoutAnchors مفعّلًا. وتُدرَج entityIDs المرفوضة في صفحة SAML 2.0 وفي GET /admin-api/saml2 (mdqRefused)."
+  },
+  "mode.requirements.saml-unregistered-providers.what": {
+    "en": "68a665e10d606a70",
+    "text": "لا تجيب بيانات SAML الوصفية ونقاط النهاية الخاصة بكل مزود إلا مزودًا مسجَّلًا"
+  },
+  "mode.requirements.saml-unregistered-providers.development": {
+    "en": "98a80675acb99981",
+    "text": "تصدر GET /saml2/metadata/{sp} و/saml11/metadata/{rp} وثيقة موقَّعة لأي اسم، وتجيب نقاط نهاية SSO وSLO وartifact والمستجيب تحت {sp} أو {rp} من أجله."
+  },
+  "mode.requirements.saml-unregistered-providers.product": {
+    "en": "5a56aaa1243f844e",
+    "text": "يجيب كل مسار من تلك المسارات برمز 404 لاسم ليس مزود خدمة SAML 2.0 مسجَّلًا (STS-SAML-0082) أو طرفًا معتمدًا في SAML 1.1 (STS-SAML-0083). والوثائق غير المرتبطة بنطاق تبقى بلا تغيير."
+  },
+  "mode.requirements.unregistered-applications.what": {
+    "en": "f59ad1efb04f3196",
+    "text": "لا يُصدر رمز إلا لتطبيق مسجَّل (#496)"
+  },
+  "mode.requirements.unregistered-applications.development": {
+    "en": "d4a6c5bb3e64bdeb",
+    "text": "يُجاب RST في WS-Trust لأي AppliesTo، ولغيابه (رمز بلا تقييد جمهور)؛ وwsignin1.0 في WS-Federation لأي wtrealm. ويُصدر كل منها تحت entityID المشترك، ويُودَع التطبيق في السجل عند أول رصد."
+  },
+  "mode.requirements.unregistered-applications.product": {
+    "en": "ad9954edbb251dbb",
+    "text": "يُرفض RST الذي لا ينحل AppliesTo فيه إلى تطبيق مسجَّل (appRegisteredBy غير معيَّن — والرصد ليس تسجيلًا) بـ wst:InvalidScope (STS-WSTRUST-0030)، والذي بلا AppliesTo بـ wst:InvalidRequest (STS-WSTRUST-0031)، لكل نوع رمز ولـ OnBehalfOf / ActAs، قبل مصادقة مقدم الطلب أو تسجيل أي شيء. ويُرفض wsignin1.0 الذي لا يسمّي wtrealm فيه طرفًا معتمدًا مسجَّلًا بصفحة 404 (STS-WSFED-0021) قبل شاشة تسجيل الدخول."
+  },
+  "mode.requirements.unregistered-oauth-clients.what": {
+    "en": "264387e4eb558328",
+    "text": "لا يُخدَم عميل OAuth 2.0 إلا إذا كان مسجَّلًا (#496)"
+  },
+  "mode.requirements.unregistered-oauth-clients.development": {
+    "en": "5a23e83731e4dd69",
+    "text": "لا تسأل نقطة نهاية التفويض عن client_id شيئًا يتجاوز عناوين URI لإعادة التوجيه، وتودِع نقطة نهاية الرمز عميلًا سبق أن رأته قبل أن ترفضه. وجمهور RFC 8693 أودعه رصد هو هدف، وجمهور تأكيد يسمّي واحدًا هو طرف معتمد."
+  },
+  "mode.requirements.unregistered-oauth-clients.product": {
+    "en": "6b65fe6221534e38",
+    "text": "طلب تفويض أو PAR يسمّي client_id لم يسجّله أحد (appRegisteredBy غير معيَّن — والرصد ليس تسجيلًا) هو 400 على هذا الخادم، ولا يُعاد توجيهه أبدًا (STS-OAUTH-0947؛ وإن لم يُسمَّ أي منها: STS-OAUTH-0948)؛ وطلب رمز يسمّي واحدًا هو 401 invalid_client (STS-OAUTH-0949) قبل أن يُعد أو يُسجَّل. وجمهور أو مورد RFC 8693 يسمّي تطبيقًا غير مسجَّل هو unregistered-target في السياسة (invalid_target، STS-OAUTH-0793)، ويجب أن يكون جمهور التأكيد المُبادَل تطبيقًا مسجَّلًا ضمن any-declared-relying-party."
+  },
+  "mode.requirements.unregistered-saml-providers.what": {
+    "en": "15c793bc36671f22",
+    "text": "لا يُجاب مزود خدمة SAML أو طرف معتمد إلا إذا كان مسجَّلًا (#496)"
+  },
+  "mode.requirements.unregistered-saml-providers.development": {
+    "en": "a0d68da6bdce5cb8",
+    "text": "يُجاب AuthnRequest وLogoutRequest وتدفق متصفح SAML 1.1 لأي Issuer؛ ويسجّل فحص التوقيع ذلك، وتُعد المدخلة التي أودعها رصد مزود خدمة على المسارات الخاصة بكل SP."
+  },
+  "mode.requirements.unregistered-saml-providers.product": {
+    "en": "121d2314a39e79b5",
+    "text": "يكون AuthnRequest الذي ليس Issuer فيه مزود خدمة SAML 2.0 مسجَّلًا (appRegisteredBy غير معيَّن — والرصد ليس تسجيلًا) صفحة 403 قبل فحص توقيعه (STS-SAML-0103؛ ولا يبقى في الطابور إلا بحث Metadata Query لـ entityID غير معروف، بموجب قاعدة مرساة الثقة)؛ ولا ينهي LogoutRequest صادر من واحد شيئًا (STS-SAML-0104)؛ ويكون تدفق SAML 1.1 لطرف معتمد غير مسجَّل صفحة 403 (STS-SAML-0105). ولا تحسب المسارات لكل SP وسلطة السمات ومستجيب SAML 1.1 إلا مدخلة مسجَّلة، ويعامل بحث MDQ المدخلة غير المسجَّلة على أنها غير معروفة."
+  },
+  "mode.requirements.unregistered-gnap-clients.what": {
+    "en": "60ada07c629c3794",
+    "text": "لا يُخدَم عميل GNAP أو خادم موارد إلا إذا كان مسجَّلًا (#496)"
+  },
+  "mode.requirements.unregistered-gnap-clients.development": {
+    "en": "431c5d7a551b30c7",
+    "text": "يُجعَل المفتاح المُثبَت غير المعروف مدخلة تطبيق عند أول ظهور، ويُقبل من بعد ذلك مفتاح تلك المدخلة ومعرّف نسختها."
+  },
+  "mode.requirements.unregistered-gnap-clients.product": {
+    "en": "43ea90ee5ea17888",
+    "text": "يُرفض المفتاح غير المعروف (STS-GNAP-0082)، وكذلك مفتاح أو معرّف نسخة يخص مدخلة لم يسجّلها أحد (appRegisteredBy غير معيَّن — والمنشأة عند أول ظهور ليست تسجيلًا): 401 invalid_client أو invalid_resource_server (STS-GNAP-0902)، قبل أن تُرصَد المدخلة مرة أخرى أو يُصدر أي شيء."
+  },
+  "mode.requirements.return-addresses.what": {
+    "en": "49ff721244e24e9d",
+    "text": "تذهب الاستجابة إلى حيث يقول الطلب"
+  },
+  "mode.requirements.return-addresses.development": {
+    "en": "6c6eccc7e6bfce66",
+    "text": "يُستخدم أي URL مطلق يسمّيه AuthnRequest في SAML أو shire في SAML 1.1 أو wreply في WS-Federation أو رابط محفظة، سواء كان مسجَّلًا أم لا — ويُعلَّم العنوان الذي يكتبه رصد على مدخلة تطبيق (أو رد اتصال تتعلمه وحدة التحكم أو البوابة من ترويسة Host) على أنه مرصود في appReturnAddressObserved."
+  },
+  "mode.requirements.return-addresses.product": {
+    "en": "c9aeb6e9c45812da",
+    "text": "عنوان مسجَّل على مدخلة التطبيق نفسها فقط — ولا يضيف الرصد عنوانًا أبدًا. والعنوان الذي ما زال معلَّمًا مرصودًا ليس مسجَّلًا: وضعه وضع التطوير هناك ويُرفض إلى أن يؤكده مشغّل في صفحة التطبيق أو عبر POST /admin-api/applications/confirm-address (STS-REG-0049). والعناوين المسجَّلة قبل أن تُعلَّم عمليات الرصد لا تحمل علامة وما زالت تحتاج إلى مراجعة قبل تبديل النطاق. ولا تُتعلَّم ردود اتصال وحدة التحكم والبوابة من ترويسة Host في الطلب (عيّن global.publicBaseUrl)، ويرفض WebAuthn RP ID الذي لا يلائم المضيف المراسم بدلًا من الرجوع إليه."
+  },
+  "mode.requirements.test-controls.what": {
+    "en": "0a76dd48b1006dbe",
+    "text": "عناصر تحكم الاختبار مفتوحة"
+  },
+  "mode.requirements.test-controls.development": {
+    "en": "fd65d2d3c735e23e",
+    "text": "تسجيل خروج شخص آخر عبر ?username=، والتسجيل الديناميكي المفتوح للعملاء، وسلطة سمات SAML 1.1، وتسجيل مفتاح HOBA، كلها تجيب أي شخص، ويطبع تحدي SCIM Digest المرفوض كلمة المرور المشتركة، ويمسح restore-kerberos في وحدة التحكم لحظة تسجيل الخروج من Kerberos."
+  },
+  "mode.requirements.test-controls.product": {
+    "en": "eac9684b6453a72e",
+    "text": "يُرفض كل منها، أو يتطلب بيانات الاعتماد التي يتطلبها مكافئه الإداري أصلًا. ويُرفض تسجيل الخروج الذي يسمّي أي شخص غير المتصل الذي سجّل دخوله مهما قال logout.anyUser. ويُرفض restore-kerberos في وحدة التحكم وفي /admin-api على السواء، فيبقى تسجيل الخروج من Kerberos قائمًا حتى آخر لحظة يمكن أن تظل فيها تذكرة من قبله صالحة. ويُرفض التسجيل الديناميكي للعملاء ما لم يكن oauth2.openRegistration مفعّلًا — أو يحمل التسجيل بيان برمجيات يثق به هذا النطاق (هو الذي أصدره، أو يصرّح تطبيق بمُصدره) وكان oauth2.softwareStatementOpensRegistration مفعّلًا، وهو أن يقرر المشغّل من يجوز له التسجيل بأن يقرر بيانات من يثق بها."
+  },
+  "mode.requirements.directory-writes.what": {
+    "en": "3ad0ca0be1789212",
+    "text": "تُفوَّض الكتابة في الدليل عبر LDAP"
+  },
+  "mode.requirements.directory-writes.development": {
+    "en": "086b01f4240590eb",
+    "text": "يجوز لأي اتصال إضافة أي مدخلة أو تعديلها أو إعادة تسميتها أو حذفها في أي نطاق، بما فيها المجهولة — وهذا ما يتيح لاختبار قيادة المقبس الخام بلا إعداد."
+  },
+  "mode.requirements.directory-writes.product": {
+    "en": "18434dc600cc297c",
+    "text": "لا يكتب الاتصال المجهول شيئًا. ويكتب الاتصال المربوط بشخص يحمل Admin Write — في دليل النطاق الافتراضي، وليس لمجرد أنه لم يكتسب أي دور عضوًا بعد — أي شيء. ولا يجوز لسواه تعديل مدخلته هو فقط، والسمات التي يسمّيها ldap.selfWritableAttributes فقط؛ وتظل userPassword من بينها خاضعة لسياسة كلمة المرور. والرفض هو رمز نتيجة LDAP 50، insufficientAccessRights. وما لا يغطيه هذا هو القراءة: انظر directory-reads وdirectory-read-authorization."
+  },
+  "mode.requirements.directory-reads.what": {
+    "en": "5e95694a2b5ed0cc",
+    "text": "تتطلب قراءة الدليل عبر LDAP ربطًا، ولا تُرجع بيانات اعتماد أبدًا"
+  },
+  "mode.requirements.directory-reads.development": {
+    "en": "9f319ab9234595bb",
+    "text": "يجوز لأي اتصال، مجهولًا كان أو لم يُربَط قط، البحث في كل مدخلة ومقارنتها وقراءة كل سمة عدا مفتاح Kerberos، وكتابة createTimestamp وmodifyTimestamp وentryDN كأي سمة أخرى."
+  },
+  "mode.requirements.directory-reads.product": {
+    "en": "c5c88b050f8273ed",
+    "text": "يُرفض البحث أو المقارنة على اتصال لم يُربَط بشخص برمز النتيجة 50، insufficientAccessRights — باستثناء DSE الجذر، الذي يقرأه العميل ليعرف أين يربط. ولا يُرجع البحث أبدًا سمات بيانات الاعتماد (userPassword وpwdHistory وأسرار العميل ورموز وصول التسجيل والمفاتيح الخاصة وأسرار TOTP ورموز الاسترداد ورموز التفعيل ومفاتيح Kerberos)، وهي غير مرئية لمرشح البحث حتى لا يُستخدم أداة استعلام، ولا يمكن المقارنة مقابلها؛ ولا يُستثنى المسؤول. ولا يستطيع أحد كتابة createTimestamp أو modifyTimestamp أو entryDN، برمز النتيجة 19، constraintViolation."
+  },
+  "mode.requirements.directory-read-authorization.what": {
+    "en": "1cdf8bb4054623dc",
+    "text": "تُفوَّض قراءة الدليل عبر LDAP وفق الهوية التي ربطت"
+  },
+  "mode.requirements.directory-read-authorization.development": {
+    "en": "18724e51d13abb83",
+    "text": "يرى أي اتصال كل مدخلة وكل سمة عدا مفتاح Kerberos، وينجح ربط أي DN — بما في ذلك DN التطبيق — وهذا ما يتيح لاختبار قيادة المقبس الخام بلا إعداد."
+  },
+  "mode.requirements.directory-read-authorization.product": {
+    "en": "4e4200c1388999dd",
+    "text": "يقرأ من يحمل Admin Read أو Admin Write — في كشف النطاق الافتراضي، الذي يصل إلى كل نطاق، أو في كشف النطاق نفسه، الذي يصل إلى ذلك النطاق — كل مدخلة ضمن المدى. ويقرأ غيره مدخلته هو كاملة؛ ومن شخص آخر السمات التي يسمّيها ldap.directoryReadableAttributes فقط (لا شيء افتراضيًا، فلا يكون الشخص الآخر موجودًا أصلًا)؛ والمجموعة فقط إذا كان عضوًا فيها، وعندئذ cn وdescription وobjectClass الخاصة بها (وأعضاؤها أيضًا مع ldap.groupMembersReadable)؛ والحاويات، بالاسم. والتطبيقات والاتحادات والسياسات والأدوار ومراسي الثقة وتسجيلات SPIFFE غير مرئية لهم. وتجيب المدخلة التي لا يجوز للقارئ رؤيتها بـ noSuchObject (32) تمامًا كما تفعل المفقودة، والسمة التي لا يجوز له قراءتها غائبة من النتيجة ومن مرشح البحث، وتُرفض المقارنة مقابل واحدة برمز 50. ويُرفض DN ربط لا يسمّي شخصًا — DN تطبيق أو اتحاد — برمز 49 قبل قراءة كلمة مروره. ويبقى DSE الجذر وقراءة أساسية لمدخلة CRL مفتوحين، وتُحجب بيانات الاعتماد عن الجميع."
+  },
+  "mode.requirements.directory-binds.what": {
+    "en": "3f010c21151814fb",
+    "text": "يكون ربط LDAP سريًا ومصادَقًا ومحدود المعدّل"
+  },
+  "mode.requirements.directory-binds.development": {
+    "en": "750bac629938a394",
+    "text": "ينجح كل ربط إلا الذي بكلمة المرور \"invalid\"، على 389 و636 على السواء، بما في ذلك المجهول وغير المصادَق، بلا حد لعدد الإخفاقات."
+  },
+  "mode.requirements.directory-binds.product": {
+    "en": "5b510b001e85e8d0",
+    "text": "يُرفض الربط المجهول برمز النتيجة 48، inappropriateAuthentication، وDN بكلمة مرور فارغة برمز 53، unwillingToPerform (RFC 4513 القسمان 5.1.1 و5.1.2). ويُرفض الربط الذي يحمل كلمة مرور على المستمع العادي برمز 13، confidentialityRequired، قبل قراءة كلمة المرور — استخدم LDAPS، أو أوقف ldap.plainListener. وتُعد عمليات الربط الفاشلة لكل DN ربط ولكل عنوان مقابل security.rateLimitPerIdentity وsecurity.rateLimitPerAddress ضمن security.rateLimitWindowS، ويُرفض المتصل الذي يتجاوز أيًا منهما برمز 53 قبل فحص كلمة مروره؛ ويمسح الربط الناجح عدّاد DN الخاص به، لا عدّاد عنوانه أبدًا، ولا يُعد أبدًا."
+  },
+  "mode.requirements.spire.what": {
+    "en": "8391a467ac94040a",
+    "text": "تتطلب واجهة SPIRE Server API وجود X509-SVID"
+  },
+  "mode.requirements.spire.development": {
+    "en": "99df3afbc3a75e95",
+    "text": "مطلوب عبر TLS المتبادل ومفوَّض مقابل جدول SPIRE لكل طريقة؛ ويجوز لأي شخص أن يطلب من المقبس المحلي سك SVID الذي يدخله."
+  },
+  "mode.requirements.spire.product": {
+    "en": "6a6aa70f3583b8bb",
+    "text": "الأمر نفسه، عبر سجل لم يعد يسك مدخلة لكل من يطلب."
+  },
+  "mode.requirements.spire-local-socket.what": {
+    "en": "cda7c1405aa2843d",
+    "text": "لا يكون المتصل على مقبس Unix لواجهة SPIRE Server API هو الكيان الموثوق `local` إلا حيث تصمد حدود المقبس"
+  },
+  "mode.requirements.spire-local-socket.development": {
+    "en": "3203d7aa8d181aea",
+    "text": "كل متصل على المقبس هو `local` ما دام spiffe.trustLocalSocket مفعّلًا (الافتراضي): تُفترَض أذونات نظام ملفات المقبس حدودًا، كما يفترض spire-server حقيقي."
+  },
+  "mode.requirements.spire-local-socket.product": {
+    "en": "c6acb9b502748c92",
+    "text": "تُتحقق الحدود لكل اتصال: يجب أن يكون المقبس قد أُنشئ بالوضع 0600 وأن يقع في مجلد بلا بتات للمجموعة أو للآخرين (STS-SPIFFE-0117)، ويجب أن يكون uid النواة للند، المقروء بـ SO_PEERCRED عبر الوحدة الأصلية، هو uid هذه الخدمة نفسها (STS-SPIFFE-0118؛ وإن تعذرت قراءته، STS-SPIFFE-0119). والمتصل الذي يخفق في أي منهما ليس `local` ويحتاج إلى X509-SVID لمسؤول على منفذ TCP."
+  },
+  "mode.requirements.spiffe-node-attestation.what": {
+    "en": "67505ccecccef296",
+    "text": "إثبات عقدة SPIFFE (AttestAgent)"
+  },
+  "mode.requirements.spiffe-node-attestation.development": {
+    "en": "bfa8ef829776ad45",
+    "text": "يُتحقق من كل نوع بواسطة مُثبِته أو يُرفض — join_token وx509pop وsshpop وtpm_devid وk8s_psat وhttp_challenge وaws_iid وgcp_iit وazure_imds — كما يسردها النطاق في spiffe.nodeAttestors."
+  },
+  "mode.requirements.spiffe-node-attestation.product": {
+    "en": "ae822c00223caa10",
+    "text": "الأمر نفسه؛ ولا يختلف شيء في إثبات العقدة بحسب الوضع."
+  },
+  "mode.requirements.spiffe-workload-attestation.what": {
+    "en": "1544cf58376f56fe",
+    "text": "إثبات حمل عمل SPIFFE (مقبس Unix لواجهة Workload API)"
+  },
+  "mode.requirements.spiffe-workload-attestation.development": {
+    "en": "4668876fe1c832e2",
+    "text": "تُقرأ بيانات اعتماد النواة للمتصل وعمليته عند الاتصال (spiffe.workloadAttestors: unix وdocker وk8s) حيث تُبنى الوحدة الأصلية؛ ومن دونها يُخدَم المقبس على محددات النقل وحدها ويصرّح بذلك. وتُصدَّق المحددات المدَّعاة عندما يكون spiffe.acceptAssertedSelectors مفعّلًا، ويجيب إيقاف spiffe.attestWorkloads كل متصل بكل مدخلة."
+  },
+  "mode.requirements.spiffe-workload-attestation.product": {
+    "en": "5d5eaf65e73e2248",
+    "text": "من دون الوحدة الأصلية لا يُخدَم مقبس Workload API. ولا تُصدَّق المحددات المدَّعاة أبدًا، ولا يُجاب المتصل إلا بالمدخلات التي تطابقها محدداته، مهما قال spiffe.attestWorkloads؛ ويُتجاهل كلا الإعدادين حيث يُقرأان (يُسجَّل مرة واحدة، STS-CORE-0106) ويُرفضان عند الكتابة (STS-CORE-0103)."
+  },
+  "mode.requirements.spiffe-workload-tcp.what": {
+    "en": "235ce79c4d00ce33",
+    "text": "واجهة SPIFFE Workload API عبر TCP (spiffe.workloadPort)"
+  },
+  "mode.requirements.spiffe-workload-tcp.development": {
+    "en": "61ffdd49f4ac0582",
+    "text": "تُخدَم على spiffe.grpcHost، بما في ذلك حرف البدل. ولا يُثبَت متصل TCP — فلا توجد عملية ند تُسأل — ويُعرَّف بنقله ونقطة النهاية التي بلغها وعنوان مصدره."
+  },
+  "mode.requirements.spiffe-workload-tcp.product": {
+    "en": "8f0bd456684ee03c",
+    "text": "لا تُخدَم (STS-SPIFFE-0120) ما لم يصرّح spiffe.workloadTcpSourceAuthenticated بأن الشبكة تصادق عناوين المصدر (Workload Endpoint القسم 3)، وعندئذ على عنوان مسمّى فقط: يُرفض spiffe.grpcHost إذا كان حرف بدل (STS-SPIFFE-0121). ويرفض النطاق المبدَّل إلى وضع المنتج والمنفذ مربوط فيه أصلًا كل استدعاء عليه بالرموز نفسها."
+  },
+  "mode.requirements.spiffe-entry-selectors.what": {
+    "en": "56b2a805f8092775",
+    "text": "تختار مدخلة تسجيل SPIFFE ما يحدّد حمل عمل"
+  },
+  "mode.requirements.spiffe-entry-selectors.development": {
+    "en": "6c7626e3f66110d1",
+    "text": "أي محددات، بما في ذلك عدم وجودها: تُصدر مدخلة على transport:tcp وحده لكل متصل TCP، وتحمل المدخلة المخترعة ذلك تمامًا."
+  },
+  "mode.requirements.spiffe-entry-selectors.product": {
+    "en": "4aa137b3e071f46c",
+    "text": "تُرفض المدخلة التي بلا محدد، أو التي تحمل محددات transport: وendpoint: فقط، في وحدة التحكم و/admin-api وواجهة SPIRE Server API (STS-SPIFFE-0122؛ وINVALID_ARGUMENT لكل عنصر هناك)، والتي في السجل أصلًا لا تجيب أي متصل (STS-SPIFFE-0123). ويطابق محدد peer: عنوان المصدر تمامًا — بلا بادئات، كما في SPIRE."
+  },
+  "mode.requirements.revocation-check.what": {
+    "en": "c47e754d9209d8a8",
+    "text": "تُفحص الشهادة المقدَّمة من حيث الإبطال"
+  },
+  "mode.requirements.revocation-check.development": {
+    "en": "3a55260648f17cd6",
+    "text": "SOFT-FAIL (pki.revocationCheck=auto). تُبحث الشهادة التي أصدرتها هذه الخدمة في سجلها، والسلسلة كلها، وتُرفض المُبطَلة؛ وتُفحص الصادرة عن سلطة أخرى بمستجيب OCSP وبـ CRL الذي تسمّيه، وتُقبل الحالة التي لا يمكن جلبها أو التحقق منها ويُبلَّغ عنها."
+  },
+  "mode.requirements.revocation-check.product": {
+    "en": "27fcb65a331cb504",
+    "text": "HARD-FAIL (pki.revocationCheck=auto). عمليات البحث نفسها، وتُرفض أيضًا الشهادة الأجنبية التي لا يمكن جلب حالتها أو التحقق منها أو الثقة بأنها حديثة — أو التي لا يعرفها مستجيب مُصدرها —: لا يستطيع مهاجم قادر على حجب الجلب تحويل \"revoked\" إلى \"accepted\". وكذلك الشهادة التي تكون قائمتها الوحيدة أو مستجيبها الوحيد على عنوان هذه الخدمة مُهيّأة لعدم الاتصال به (ldap: العادي ضمن pki.revocationLdap=ldaps، وأي ldap عند إيقافه، واسم نسبي من دون pki.revocationLdapDirectory؛ STS-PKI-0188): نشر المُصدر قائمة، وسياسة هذه الخدمة نفسها هي ما منع قراءتها."
+  },
+  "mode.requirements.revocation-unrevocable.what": {
+    "en": "06bc21b848bd7218",
+    "text": "شهادة أجنبية لا يسمّي مُصدرها CRL ولا مستجيب OCSP"
+  },
+  "mode.requirements.revocation-unrevocable.development": {
+    "en": "1995d7e07f8cc2a1",
+    "text": "مقبولة (pki.revocationRequireDistributionPoint=auto)، ويقول الحكم إنه تعذّر فحصها: لا يوجد جلب يمكن لمهاجم حجبه، وCA اختبار يبنيها مؤلف عميل بلا قائمة هي عادة أول ما يبنونه."
+  },
+  "mode.requirements.revocation-unrevocable.product": {
+    "en": "68f6ce868376fbc6",
+    "text": "مرفوضة تحت hard-fail (pki.revocationRequireDistributionPoint=auto، STS-PKI-0190): الشهادة التي تصدرها CA — وليست موقعة ذاتيًا — ولا تسمّي نقطة توزيع ولا مستجيبًا لا يمكن إبطالها أبدًا، فيبقى المفتاح المسروق تحتها صالحًا حتى انتهاء صلاحيته. وتُقبل التي تحمل noRevAvail في RFC 9608، لأن مُصدرها أعلن أنه لا توجد معلومات إبطال (يتجاوز القسم 4 الفحص). وضبط الإعداد على off يقبل الباقي، مع تحذير."
+  },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "تُخضَع كل شهادة X.509 يُعتمَد عليها للفحوصات الكاملة (المسار والصلاحية والإبطال وحقول الاستخدام) عبر باب واحد"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "متوقف (pki.paranoid=auto): تتصرف كل حالة استخدام كما كانت قبل #1360 — لا تُفحص صلاحية الشهادة المثبتة، ولا يُستشار الإبطال لند صادر أو لمُثبِت أو لموقّع شريك، ولا يُسأل extendedKeyUsage إلا حيث يطلبه موقع يدويًا. اضبط pki.paranoid=on لممارسة الفحوصات هنا."
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "مفعّل (pki.paranoid=auto): يُخضع common/certificate_trust.ts كل شهادة — عند مصافحة TLS في أي من الاتجاهين، وتحت توقيع، وكمتلقٍ للتشفير، وفي إثبات — لمسار يصل إلى مرساة أُبلغت بها هذه الخدمة (مخزن ثقة العميل أو الموقّع، أو CA النطاق، أو إعداد العائلة الخاص)، وللصلاحية في الوقت الحالي، وللإبطال، ولـ basicConstraints وkeyUsage وextendedKeyUsage التي تطلبها حالة الاستخدام؛ والفحص الذي لم تُجرِه حالة الاستخدام قط رفض. ويعيد صف واحد من pki.paranoid<UseCase> لكل حالة استخدام سلوكها السابق عند off، ويُرسم بالأحمر في /admin/pki/trust (STS-PKI-0239)."
+  },
+  "mode.requirements.gnap-mtls-trust.what": {
+    "en": "9797405bffe8917b",
+    "text": "مفتاح GNAP المُثبت بـ TLS المتبادل هو شهادة أصدرتها للعميل سلطة موثوقة"
+  },
+  "mode.requirements.gnap-mtls-trust.development": {
+    "en": "a5a38e4582010d81",
+    "text": "PINNED (gnap.mtlsTrust=auto): يجب أن تكون شهادة عميل TLS هي التي يسمّيها المفتاح — ببصمة الإبهام، أو بالمفتاح العام نفسه — وتُقبل الموقعة ذاتيًا (RFC 9635 القسم 7.3.2). ولا تُبنى سلسلة. وتُرفض الشهادة التي أبطلتها هذه الخدمة أو سلطة أخرى على كل حال (pki.revocationCheck)."
+  },
+  "mode.requirements.gnap-mtls-trust.product": {
+    "en": "3635435377d7498b",
+    "text": "PKI (gnap.mtlsTrust=auto، RFC 9635 القسم 11.4): يجب أن تبني الشهادة سلسلة إلى مخزن ثقة العميل، وأن تجتاز فحص الإبطال، وأن تُربَط بمدخلة تطبيق العميل — صادرة له من سلطة عميل TLS لهذا النطاق، أو حاملة معلمة subject الوحيدة من RFC 8705 التي تسجّلها المدخلة (oauthTlsClientAuth*). وتُقبل شهادة جديدة من السلطة بلا إعادة تسجيل، وتُسجَّل بصمة إبهامها على المدخلة. ويوقف gnap.mtlsTrust=pinned هذا لنطاق؛ ويجوز لمدخلة أن تطلب pki حيث لا يطلبه النطاق، ولا العكس أبدًا."
+  },
+  "mode.requirements.protocol-debugger.what": {
+    "en": "b74abbe6b21c5dbc",
+    "text": "مصحح بروتوكول الهوية مضمَّن، وما يجوز لـ api الاتصال به"
+  },
+  "mode.requirements.protocol-debugger.development": {
+    "en": "a784d5509a322d03",
+    "text": "مفعّل (debugger.enabled=auto): يخدم مستمعه الخاص (debugger.port) واجهة المصحح ويحوّل /api إلى عملية فرعية. ويتصل api بما يطلبه مسؤول سجّل دخوله، بما في ذلك الشبكات الخاصة."
+  },
+  "mode.requirements.protocol-debugger.product": {
+    "en": "28c0296a7d41ddec",
+    "text": "متوقف ما لم يكن debugger.enabled=on. وعند التفعيل تُسلَّم العملية الفرعية لـ api قائمة سماح — عناوين هذه الخدمة نفسها وdebugger.allowedDestinations — وترفض كل وجهة أخرى، بما في ذلك المقابس الخام."
+  },
+  "mode.requirements.client-secret-expiry.what": {
+    "en": "995744aa9058b211",
+    "text": "سر عميل منتهٍ"
+  },
+  "mode.requirements.client-secret-expiry.development": {
+    "en": "9f39d413e509fdba",
+    "text": "مقبول حيث يُفحص سر، مع صف تدقيق يقول إنه كان منتهيًا."
+  },
+  "mode.requirements.client-secret-expiry.product": {
+    "en": "870f4fcd8826cc66",
+    "text": "مرفوض عند نقطة نهاية الرمز (invalid_client، STS-OAUTH-0558)، وكمفتاح client_secret_jwt، بمجرد انقضاء الانتهاء المسجَّل لذلك السر في oauthClientSecret. ويجوز للتطبيق أن يحمل عدة أسرار، لكل منها انتهاؤه؛ وتنقل المناوبة الأسرار الحية لتنتهي بعد oauth2.clientSecretOverlapS."
+  },
+  "mode.requirements.signing-key-rotation.what": {
+    "en": "0643fa994213871f",
+    "text": "تُناوَب مفاتيح التوقيع، مع فترة تداخل"
+  },
+  "mode.requirements.signing-key-rotation.development": {
+    "en": "ed30176d075c7eef",
+    "text": "لا تُناوَب: تُصنع المفاتيح من جديد عند كل بدء. وما زالت كل وحدة تحمل أجيالها، فيُنشر المفتاح التالي أو المتقاعد المصنوع يدويًا ويُتحقق منه كما في وضع المنتج."
+  },
+  "mode.requirements.signing-key-rotation.product": {
+    "en": "9cd85e5afa22e865",
+    "text": "تحمل كل وحدة (النطاق وحالة الاستخدام والخوارزمية) مفتاحًا تاليًا، يُنشر في JWKS وفي بيانات SAML وWS-Federation الوصفية وفي /crypto/metadata قبل أن يوقّع أي شيء، ويُرقّى كل signing.rotationIntervalDays بواسطة مهمة signing.rotate؛ ويستمر المفتاح الذي يحل محله في التحقق طوال signing.retiredKeyGraceDays أو أطول عمر لرمز، أيهما أطول."
+  },
+  "mode.requirements.krbtgt-key.what": {
+    "en": "d62d09cce263a9ae",
+    "text": "مفتاح krbtgt لكل نطاق ثقة: مصدره، ومناوبته"
+  },
+  "mode.requirements.krbtgt-key.development": {
+    "en": "df9896e4af770351",
+    "text": "مشتق من krb5.krbtgtPassword (الافتراضي المنشور)، فيستطيع قارئ فك تشفير كل TGT، ولا يُناوَب وفق جدول. وتعمل المناوبة اليدوية في /admin/kerberos/principals هنا أيضًا: تستبدل المفتاح المشتق بمفتاح عشوائي مخزَّن ما دام الدليل يحتفظ به."
+  },
+  "mode.requirements.krbtgt-key.product": {
+    "en": "943c5e80b61d7656",
+    "text": "عشوائي — random-to-key في RFC 3961 لكل enctype في krb5.enctypes — يُصنع مرة واحدة لكل نطاق، ويُختَم على مدخلة الدليل krbtgt/<REALM>@<REALM> ولا يُعرض أبدًا؛ ويُتجاهل krb5.krbtgtPassword. وتستبدله مهمة krb5.krbtgt-rotate كل krb5.krbtgtRotationIntervalDays، وتحتفظ بالنسخة التي استبدلتها لأطول مدة يمكن أن يعيشها TGT تحته (بما في ذلك التجديدات)، ولا تُناوب أبدًا ما دامت تلك النافذة مفتوحة. و«التناوب والإبطال» هو إعادة التعيين المزدوجة في Active Directory ضمن فعل واحد: لا يُحتفظ بشيء ويُرفض كل TGT في النطاق بـ KRB_AP_ERR_BADKEYVER."
+  },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "المفتاح الذي يفك به قابل Kerberos تشفير التذاكر عندما يكون krb5.servicePassword فارغًا أو هو الافتراضي المنشور"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "مشتق من krb5.servicePassword المنشور، فيستطيع قارئ اشتقاقه؛ ولا تنشئ كلمة المرور الفارغة حسابًا ولا يقبل القابل أي تذكرة."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "عشوائي — مفتاح لكل enctype في krb5.enctypes من أجل SPN الذي يسمّيه krb5.servicePrincipal، يُصنع مرة واحدة لكل نطاق عند البدء (أو عندما يسأل القابل أول مرة)، ويُختَم على مدخلة التطبيق <spn>@<REALM> ولا يُعرض أبدًا. ناوبه في /admin/kerberos/principals للحصول على keytab. وتغلب قيمة krb5.servicePassword التي يضعها المشغّل عليه."
+  },
+  "mode.requirements.unattested-device-keys.what": {
+    "en": "6fe7c4a02a6ed641",
+    "text": "يُرفض مفتاح جهاز يُقدَّم بلا إثبات يمكن التحقق منه"
+  },
+  "mode.requirements.unattested-device-keys.development": {
+    "en": "bf711f627a32037a",
+    "text": "يُسجَّل المفتاح المُثبَت في /portal/devices (إثبات JWK، أو بيانات اعتماد WebAuthn مرتبطة) أو المصدَّق عبر EST أو SCEP لجهاز بلا إثبات، أو بإثبات لا يتسلسل إلى devices.*TrustAnchors، ويُسجَّل مدَّعى ذاتيًا."
+  },
+  "mode.requirements.unattested-device-keys.product": {
+    "en": "f81bd7d492b66baa",
+    "text": "يُرفض مثل هذا المفتاح (STS-DEVICE-0024): لا يسجّل مفتاحًا إلا Android Key Attestation أو بيان Apple App Attest أو إثبات مفتاح TPM أو إثبات WebAuthn تم التحقق منه وتسلسل إلى مرساة. وإدخال المسؤول مفتاحًا بالقيمة فعل مسؤول ويُقبل في كلا الوضعين، ويُسجَّل proof admin ومدَّعى ذاتيًا."
+  },
+  "mode.requirements.android-attestation-revocation.what": {
+    "en": "72012b06e78ecc69",
+    "text": "لا يُوثَق إثبات Android الذي تعذّر فحص إبطاله، حيث يقول النطاق ذلك"
+  },
+  "mode.requirements.android-attestation-revocation.development": {
+    "en": "31364892d7d7a96d",
+    "text": "في غياب قائمة حالية لحالة إثبات Android (لم تُنزَّل قط، أو فشل التنزيل، أو بَلِيت) تُسجَّل سلسلة Android على أنها مُثبَتة وإبطالها غير مفحوص، مهما قال devices.androidRevocationRequired. والسلسلة التي تبطلها القائمة أو تعلّقها مدَّعاة ذاتيًا في كلا الوضعين."
+  },
+  "mode.requirements.android-attestation-revocation.product": {
+    "en": "f55874a104fe39a1",
+    "text": "الأمر نفسه افتراضيًا. وعند تفعيل devices.androidRevocationRequired تُسجَّل السلسلة غير المفحوصة مدَّعاة ذاتيًا: فيُرفض عندئذ مفتاح الجهاز (STS-DEVICE-0024) ولا يُوثَق بيان WebAuthn من النوع android-key."
+  },
+  "mode.requirements.fresh-key-attestation.what": {
+    "en": "703b4411bf1f7787",
+    "text": "يجب أن يكون إثبات مفتاح TPM في طلب شهادة جهاز حديثًا"
+  },
+  "mode.requirements.fresh-key-attestation.development": {
+    "en": "f1d730667e165896",
+    "text": "بيان TPM2_Certify الذي لا يكون extraData فيه nonce حيًا صادرًا عند EST /nonce للعميل وcookie نفسيهما (لم يُجلب شيء، أو منتهٍ، أو مُنفَق أصلًا، أو لعميل آخر، أو طلب عبر SCEP الذي لا يملك عملية nonce) يحتفظ بمستواه ويُسجَّل بحداثة غير مُثبَتة ومع السبب. ويُنفَق nonce المطابق."
+  },
+  "mode.requirements.fresh-key-attestation.product": {
+    "en": "335681287a816601",
+    "text": "يُرفض مثل هذا البيان (STS-DEVICE-0050): إثبات مُلتقَط يُعاد في طلب جديد للمفتاح نفسه ليس مفتاحًا صُنع واُحتفظ به في TPM الآن. لذا لا تُصدر شهادة جهاز تحمل إثبات TPM إلا عبر EST، بعد /nonce (draft-ietf-lamps-attestation-freshness القسم 5.1)."
+  },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "يبلغ المتصفح الوكيل العكسي لـ PEP البعيد عبر https"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "يجوز لتكوين الوكيل أن يسمّي publicBaseUrl على http العادي، فلا تحتاج حزمة على جهاز واحد إلى شهادة مستمع للوكيل."
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "يُرفض publicBaseUrl الذي ليس https (STS-XACML-0188): يُرجع تسجيل الدخول في آلية الجلسة رمز تفويض إلى هناك ويكون cookie الجلسة Secure."
+  },
+  "mode.notYet.certificate-revocation.what": {
+    "en": "90de04e6940f9577",
+    "text": "يُستشار الإبطال لشهادة مقدَّمة (انظر المتطلب أعلاه) ولشهادة مسجَّلة عندما تتحقق من شيء — السجل، ومستجيب OCSP (بما في ذلك حالة المستجيب المفوَّض نفسه)، وCRL الذي تسمّيه شهادة أجنبية، عبر http وhttps وldaps، مع دمج قوائم CRL التفاضلية، وقراءة قوائم CRL غير المباشرة لكل مُصدر مع جلب موقّعها من عنوان caIssuers للقائمة حيث لا يحتفظ شيء هنا به. وما يبقى حدود لا عمل: مفتاح مجرد مسجَّل بلا شهادة (JWK من دون x5c) لا يسمّي مُصدرًا ولا قائمة، فلا يوقفه عن التحقق إلا نزعه من المدخلة؛ ولا يُتصل بـ ldap: العادي إلا عندما يسمح pki.revocationLdap بذلك؛ ولا تُستخدم نقطة توزيع مسماة نسبةً إلى مُصدر CRL إلا مع تعيين pki.revocationLdapDirectory وكون كل RDN أحادي القيمة؛ ولا يطلب LDAPS 636 شهادة عميل، فلا يُستشار شيء هناك."
+  },
+  "mode.notYet.post-quantum-keys.what": {
+    "en": "c03a9a7d18f82d4c",
+    "text": "لا تُثبَّت شهادة خادم TLS ولا سلطة JWT في SPIFFE، في أي من الوضعين: فهما تتبعان وحدتيهما وتُصنعان من جديد عند كل بدء (ما لم توفّر tls.certificateFile الشهادة). وخرجت مفاتيح ما بعد الكم الإحدى عشرة للنطاق من هذا الصف في 2026-09-12 — في وضع المنتج تُكتب مع مجموعة مفاتيح النطاق وتُستعاد معها — وسلطة X.509 في SPIFFE في 2026-09-11: فهي SPIFFE Issuing CA لهذا النطاق تحت Root الخدمة، فتُثبَّت في وضع المنتج تمامًا كما تُثبَّت بقية سلطة الشهادات."
+  },
+  "mode.notYet.key-never-in-memory.what": {
+    "en": "59055bc9d218975f",
+    "text": "يُفك تشفير المفتاح الخاص في هذه العملية بينما يوقّع. ومنذ 2026-09-06 ما يبقى مقيمًا بين التوقيعات هو النص المشفّر، ويقرر `keys.plaintextRetention` مدة بقاء النص الصريح — لكن مفتاح تشفير المفاتيح مقيم أيضًا، فيضيّق هذا قيمة اللقطة (تفريغ نواة، أو صفحة مُبادَلة، أو مصحح مُرفَق للحظة) ولا يحمي من شيء يستطيع قراءة هذه الذاكرة في لحظة يختارها ثم انتظار التوقيع التالي. والمفتاح الذي تعجز هذه العملية حقًا عن قراءته هو HSM، أو KMS يوقّع نيابةً عنك، وهو تصميم مختلف لا إعداد. ولا يمكن مسح سلسلة JavaScript أيضًا: يُصفَّر مخزن فك التشفير المؤقت ويُطلَق كل ما صُنع منه بدلًا من محوه."
+  },
+  "mode.notYet.kerberos-keys.what": {
+    "en": "0529f94b9d0cd311",
+    "text": "لا ينشئ وضع المنتج أسماء رئيسية تجريبية ثابتة ولا نطاقًا موثوقًا ولا شيئًا عند الطلب، ويرفض كلمة مرور الخدمة المنشورة. ويصادق أشخاص الدليل إلى KDC وضع المنتج بمفاتيح مشتقة من كلمة مرورهم عندما تُعيَّن أو يُتحقق منها، مختومة على مدخلتهم (`stsKrb5Keys`)؛ وتحصل الأسماء الرئيسية للخدمة على مفاتيح عشوائية وkeytab يُعرض مرة واحدة في /admin/kerberos/principals. ويُشتق keytab الشخص (#59) من كلمة مرور في اليد — كلمته في /portal/kerberos، أو واحدة يعيّنها مسؤول عبر «إعادة تعيين كلمة المرور وتنزيل keytab» — ولا يُقرأ من التخزين أبدًا. ويحتفظ تغيير كلمة المرور أو المناوبة بالنسخة التي استُبدلت — على الأكثر krb5.retainedKeyVersions، كل منها لمدة krb5.retainedKeyTtlS — فتبقى التذكرة الصادرة تحتها مقبولة إلى أن كان يمكن أن تنتهي، بينما تستخدم المصادقة المسبقة والإصدار المفتاح الحالي فقط؛ وينهي «إسقاط النسخ السابقة» تلك النافذة. ومفتاح krbtgt عشوائي ومخزَّن ويُناوَب منذ 2026-09-23 (متطلب krbtgt-key أعلاه). ومنذ 2026-09-15 يملك كل نطاق ثقة يكون krb5.enabled فيه مفعّلًا KDC ونطاق Kerberos ومفاتيح خاصة به، على المنفذ المشترك."
+  },
+  "mode.why.skipsOutboundTlsVerification": {
+    "en": "ed44b27a848b9e29",
+    "text": "التحقق من شهادة من يجيب طلبًا صادرًا ليس اختياريًا هناك. سمِّ CA خاصة في إعداد ملف CA المطابق بدلًا من ذلك."
+  },
+  "mode.why.spoilsOnPurpose": {
+    "en": "f2438188e89315dd",
+    "text": "لا يجوز لعيب متعمّد أن يجعل استجابة خاطئة هناك. اختبر عميلًا مقابله في نطاق تطوير."
+  },
+  "mode.why.believesAssertedSelectors": {
+    "en": "0c7a45212f5facd9",
+    "text": "المحدد الذي يدّعيه حمل العمل عن نفسه مطالبة لم يفحصها شيء، ولا يصدّق وضع المنتج واحدة أبدًا."
+  },
+  "mode.why.servesUnattestedEntries": {
+    "en": "2585acdb95860080",
+    "text": "لا تجيب Workload API المتصل إلا بمدخلات التسجيل التي تطابقها محدداته المُثبَتة هناك، ولا تجيبه بكل المدخلات أبدًا."
+  },
+  "mode.why.acceptsCredentialsWithoutStatus": {
+    "en": "30f821c6bf407329",
+    "text": "بيانات الاعتماد التي أصدرها هذا النطاق ولا تُظهر مرجع حالة قد تكون واحدة أُبطلت، لذا يشترط Verifier مرجعًا هناك. وown-only مسموح، ويعفي oid4vp.statusOptionalIssuers مُصدرًا موثوقًا لا ينشر حالة."
+  },
+  "mode.why.usesBrokenAlgorithms": {
+    "en": "6a758f6a4b95efd8",
+    "text": "توقيعات SHA-1 ونقل مفاتيح RSA PKCS#1 v1.5 وMD5 في HTTP Digest وأنواع enctype في Kerberos التي يهملها RFC 8429 (rc4-hmac) مكسورة، ولا يستخدم وضع المنتج أيًا منها. والقيم الأقوى مسموحة."
+  },
+  "mode.why.issuesUnsignedAssertions": {
+    "en": "ee4b4a8ecd3ef9b3",
+    "text": "كل تأكيد SAML، وكل Response في SAML 1.1، موقَّع هناك (saml-profiles-2.0-os 4.1.4.5، oasis-sstc-saml-bindings-1.1 4.1.2.4). اختبر طرفًا معتمدًا مقابل تأكيد غير موقَّع في نطاق تطوير."
+  },
+  "mode.why.acceptsUnverifiedAttestation": {
+    "en": "3f571035da5396d2",
+    "text": "يُتحقق من كل بيان إثبات WebAuthn يصل هناك، ويُرفض المزور بدلًا من تسجيله. وverify-if-present وrequire-trusted مسموحان."
+  },
+  "mode.why.servesWithoutSecurityHeader": {
+    "en": "fb66d1b60cae1193",
+    "text": "تقول مواصفة SPIFFE Workload Endpoint (القسم 3) إن الاستدعاء من دون ترويسة workload.spiffe.io يجب رفضه MUST."
+  },
+  "mode.why.derivesKrbtgtFromPassword": {
+    "en": "25b530ec6472a47f",
+    "text": "مفتاح krbtgt عشوائي هناك، يُصنع مرة واحدة لكل نطاق ويبقى مختومًا في الدليل، فلا تُقرأ له كلمة مرور."
+  },
+  "mode.why.opensManagementApi": {
+    "en": "307e3194ee040685",
+    "text": "تشترط واجهة الإدارة دائمًا رمز وصول هناك، لأن بوابتها هي البوابة الوحيدة لوحدة التحكم؛ ثبّت adminApi.clientSecret قبل البدء حتى يمكن سك واحد."
+  },
+  "mode.why.default": {
+    "en": "108a941d7ea44a81",
+    "text": "الإعداد لوضع التطوير فقط."
+  }
+}

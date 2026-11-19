@@ -1,0 +1,350 @@
+{
+  "listeners.builtin.main.name": {
+    "en": "9dc3805bbb46619d",
+    "text": "मुख्य पोर्ट"
+  },
+  "listeners.builtin.main.what": {
+    "en": "431d7c6fda5c0cfb",
+    "text": "प्रत्येक HTTP प्रोटोकॉल, कंसोल और पोर्टल।"
+  },
+  "listeners.builtin.ldap.name": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "listeners.builtin.ldap.what": {
+    "en": "177408f6a3cbe157",
+    "text": "अंतर्निहित निर्देशिका, बिना एन्क्रिप्शन।"
+  },
+  "listeners.builtin.ldaps.name": {
+    "en": "9618bbe69ddd3eb5",
+    "text": "LDAPS"
+  },
+  "listeners.builtin.ldaps.what": {
+    "en": "f40218d728835152",
+    "text": "TLS पर अंतर्निहित निर्देशिका।"
+  },
+  "listeners.builtin.debugger.name": {
+    "en": "2bdecd403c36b3de",
+    "text": "प्रोटोकॉल डीबगर"
+  },
+  "listeners.builtin.debugger.what": {
+    "en": "5e758f21cab3cbd0",
+    "text": "अंतर्निहित प्रोटोकॉल डीबगर, जहाँ एक अंतर्निहित हो।"
+  },
+  "listeners.builtin.kdc.name": {
+    "en": "50337c0a4e94b039",
+    "text": "Kerberos KDC"
+  },
+  "listeners.builtin.kdc.what": {
+    "en": "3f7729c5149376d6",
+    "text": "TCP और UDP 88; Kerberos संदेश, TLS नहीं।"
+  },
+  "listeners.builtin.revocation.name": {
+    "en": "384cb54062bffd4b",
+    "text": "निरसन (सादा HTTP)"
+  },
+  "listeners.builtin.revocation.what": {
+    "en": "55a30857a7345fe6",
+    "text": "CRL और OCSP सादे HTTP पर, जैसा RFC 5280 अनुभाग 8 माँगता है।"
+  },
+  "listeners.builtin.spiffe-workload.name": {
+    "en": "8c6c635f7d593551",
+    "text": "SPIFFE Workload API (TCP)"
+  },
+  "listeners.builtin.spiffe-workload.what": {
+    "en": "42f169eed1663fe6",
+    "text": "TLS नहीं: विनिर्देश का ट्रांसपोर्ट कॉलर का नेटवर्क है, जिसे product केवल वहीं देता है जहाँ उसे प्रमाणित घोषित किया गया हो।"
+  },
+  "listeners.builtin.spiffe-server.name": {
+    "en": "5373db72c7e9bae7",
+    "text": "SPIRE Server API"
+  },
+  "listeners.builtin.spiffe-server.what": {
+    "en": "e4a22cf64fca967f",
+    "text": "प्रत्येक विश्वास क्षेत्र के trust domain के अधीन पारस्परिक TLS।"
+  },
+  "listeners.builtin.spiffe-server.clientAuth": {
+    "en": "6ff4a4e99a607b89",
+    "text": "माँगा जाता है, आवश्यक नहीं: अभी तक बिना SVID वाले एजेंट को AttestAgent तक पहुँचना होगा (प्रोटोकॉल का)"
+  },
+  "listeners.builtin.spiffe-broker.name": {
+    "en": "4eeddd04a30a0491",
+    "text": "SPIFFE Broker API"
+  },
+  "listeners.builtin.spiffe-broker.what": {
+    "en": "560d5e79517fa839",
+    "text": "spiffe.brokers में ब्रोकरों के लिए पारस्परिक TLS।"
+  },
+  "listeners.builtin.spiffe-broker.clientAuth": {
+    "en": "588e0284f9d55b20",
+    "text": "आवश्यक: ब्रोकर का X509-SVID (प्रोटोकॉल का)"
+  },
+  "listeners.builtin.cell.name": {
+    "en": "178e409afed3c530",
+    "text": "सेलों के बीच चैनल"
+  },
+  "listeners.builtin.cell.what": {
+    "en": "da35fbcaf99404a1",
+    "text": "एक सेवा के सेलों के बीच पारस्परिक TLS; सदैव TLS 1.3।"
+  },
+  "listeners.builtin.cell.clientAuth": {
+    "en": "11980b13bc20d54a",
+    "text": "आवश्यक: दूसरे सेल का प्रमाणपत्र (प्रोटोकॉल का)"
+  },
+  "listeners.policy.nodeDefault": {
+    "en": "2a77fdd39a1fe033",
+    "text": "(नोड डिफ़ॉल्ट)"
+  },
+  "listeners.policy.opensslDefault": {
+    "en": "bcdb3bd6dae8bd33",
+    "text": "(OpenSSL डिफ़ॉल्ट)"
+  },
+  "listeners.policy.notBound": {
+    "en": "58c8d4b93b0f0599",
+    "text": "इस नोड पर बाउंड नहीं"
+  },
+  "listeners.policy.protocolTrust": {
+    "en": "4a4ba3c3bbf2a9fd",
+    "text": "(प्रोटोकॉल का अपना trust bundle)"
+  },
+  "listeners.policy.ownFile": {
+    "en": "d50b3852e4f7f274",
+    "text": "इसकी अपनी फ़ाइल {{file}}"
+  },
+  "listeners.policy.ownFileAndRoot": {
+    "en": "002be94bf76acfc0",
+    "text": "इसकी अपनी फ़ाइल {{file}} और सेवा Root"
+  },
+  "listeners.policy.anchors": {
+    "en": "6788dbdb070b901c",
+    "text": "सेवा के एंकर"
+  },
+  "listeners.policy.anchorsAndRoot": {
+    "en": "e8f30dd045f13fd7",
+    "text": "सेवा के एंकर और सेवा Root"
+  },
+  "listeners.applications.home.label": {
+    "en": "91b2dbada3ab1fa1",
+    "text": "मुख्य द्वार"
+  },
+  "listeners.applications.home.what": {
+    "en": "45245b5eb4a5b2c5",
+    "text": "GET /, इसकी छवि, दस्तावेज़, नियम और नीति पृष्ठ तथा विश्वास क्षेत्रों की सूची।"
+  },
+  "listeners.applications.authn.label": {
+    "en": "72f0c79fe76b583e",
+    "text": "प्रमाणीकरण सेवा"
+  },
+  "listeners.applications.authn.what": {
+    "en": "1d66f74984228996",
+    "text": "साइन-इन सेवा और उसके द्वितीय कारक, वॉलेट, SPNEGO और प्रमाणपत्र साइन-इन, तथा साइन-आउट।"
+  },
+  "listeners.applications.portal.label": {
+    "en": "00cf214ba77e7497",
+    "text": "उपयोगकर्ता पोर्टल"
+  },
+  "listeners.applications.portal.what": {
+    "en": "ae78f5077c808641",
+    "text": "वे पृष्ठ जो उन्हें देख रहे व्यक्ति के हैं, और वह खाता API जिससे वे बनते हैं।"
+  },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "रिपोर्ट"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "वे रिपोर्ट जो यहाँ कोई व्यक्ति चला सकता है, और वह API जिससे वे बनती हैं।"
+  },
+  "listeners.applications.admin-console.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "व्यवस्थापक कंसोल"
+  },
+  "listeners.applications.admin-console.what": {
+    "en": "01585f76e46f24d9",
+    "text": "/admin पर कंसोल, उसकी स्क्रिप्ट और उसके पृष्ठ।"
+  },
+  "listeners.applications.management-api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "प्रबंधन API"
+  },
+  "listeners.applications.management-api.what": {
+    "en": "f87960a0be10dbb1",
+    "text": "/admin-api, मशीन से पहुँच योग्य प्रत्येक कंसोल नियंत्रण।"
+  },
+  "listeners.applications.oauth-oidc.label": {
+    "en": "ca2ce1b840c94ea6",
+    "text": "OAuth 2.0 / OpenID Connect"
+  },
+  "listeners.applications.oauth-oidc.what": {
+    "en": "2186eb305111cd6a",
+    "text": "प्राधिकरण सर्वर और OpenID प्रदाता, उनके डिस्कवरी दस्तावेज़ और एक्सेस-टोकन स्थिति सूची।"
+  },
+  "listeners.applications.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "listeners.applications.saml2.what": {
+    "en": "e31f5a124e3105ff",
+    "text": "SAML 2.0 पहचान प्रदाता।"
+  },
+  "listeners.applications.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "listeners.applications.saml11.what": {
+    "en": "3f8a5e529e26ea47",
+    "text": "SAML 1.1 पहचान प्रदाता।"
+  },
+  "listeners.applications.ws-trust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "listeners.applications.ws-trust.what": {
+    "en": "6a7c8cd71b884bfd",
+    "text": "WS-Trust सुरक्षा टोकन सेवा।"
+  },
+  "listeners.applications.ws-federation.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "listeners.applications.ws-federation.what": {
+    "en": "d46418b8851b7875",
+    "text": "निष्क्रिय अनुरोधकर्ता प्रोफ़ाइल और उसका मेटाडेटा।"
+  },
+  "listeners.applications.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "फेडरेशन"
+  },
+  "listeners.applications.federation.what": {
+    "en": "9dd9fae01faa7bb2",
+    "text": "विदेशी पहचान सेवाओं के साथ फेडरेशन संबंध।"
+  },
+  "listeners.applications.oidfed.label": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "listeners.applications.oidfed.what": {
+    "en": "3ad47704e5adf5bf",
+    "text": "Entity Configuration और फेडरेशन एंडपॉइंट।"
+  },
+  "listeners.applications.oid4vc.label": {
+    "en": "3ed217bd349c451a",
+    "text": "सत्यापन योग्य क्रेडेंशियल"
+  },
+  "listeners.applications.oid4vc.what": {
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, DID और स्थिति सूचियाँ।"
+  },
+  "listeners.applications.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "listeners.applications.scim.what": {
+    "en": "753bc4eccff231fc",
+    "text": "निर्देशिका में प्रोविज़निंग।"
+  },
+  "listeners.applications.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "listeners.applications.ssf.what": {
+    "en": "0755a2e473f064ed",
+    "text": "Shared Signals ट्रांसमीटर।"
+  },
+  "listeners.applications.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "listeners.applications.gnap.what": {
+    "en": "f787462ada9a2720",
+    "text": "GNAP प्राधिकरण सर्वर और उसके इंटरैक्शन पृष्ठ।"
+  },
+  "listeners.applications.xacml.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "listeners.applications.xacml.what": {
+    "en": "fbd4d4a27b747323",
+    "text": "नीति निर्णय बिंदु, उसकी नीतियाँ और दूरस्थ PEP के द्वार।"
+  },
+  "listeners.applications.authzen.label": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "listeners.applications.authzen.what": {
+    "en": "26f176a9b231df2f",
+    "text": "AuthZEN Authorization API: XACML इंजन पर पहुँच मूल्यांकन, और उसका मेटाडेटा दस्तावेज़।"
+  },
+  "listeners.applications.uma.label": {
+    "en": "6d9ae1cf94d49aa6",
+    "text": "उपयोगकर्ता-प्रबंधित पहुँच"
+  },
+  "listeners.applications.uma.what": {
+    "en": "2bf34c3abf834191",
+    "text": "UMA 2.0 संरक्षण API (संसाधन पंजीकरण और अनुमति टिकट), दावा इंटरैक्शन पृष्ठ और uma2-configuration दस्तावेज़।"
+  },
+  "listeners.applications.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "listeners.applications.acme.what": {
+    "en": "2398dbe02edc11de",
+    "text": "ACME द्वारा प्रमाणपत्र नामांकन।"
+  },
+  "listeners.applications.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "listeners.applications.est.what": {
+    "en": "0792aaa5bdd515bb",
+    "text": "EST द्वारा प्रमाणपत्र नामांकन।"
+  },
+  "listeners.applications.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "listeners.applications.scep.what": {
+    "en": "2b96ead3c4a041ba",
+    "text": "SCEP द्वारा प्रमाणपत्र नामांकन।"
+  },
+  "listeners.applications.pki.label": {
+    "en": "b34129880663423f",
+    "text": "प्रमाणपत्र प्राधिकरण"
+  },
+  "listeners.applications.pki.what": {
+    "en": "8b280b2baedbdfe6",
+    "text": "CRL, OCSP, CA प्रमाणपत्र और शृंखलाएँ, तथा क्रिप्टोग्राफ़िक मेटाडेटा दस्तावेज़।"
+  },
+  "listeners.applications.kerberos.label": {
+    "en": "43c19a093b34b581",
+    "text": "Kerberos"
+  },
+  "listeners.applications.kerberos.what": {
+    "en": "00e0e7e4163fd250",
+    "text": "MS-KKDCP, HTTPS पर Kerberos KDC।"
+  },
+  "listeners.applications.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "listeners.applications.spiffe.what": {
+    "en": "76b7e20cfb090f52",
+    "text": "SPIFFE बंडल एंडपॉइंट।"
+  },
+  "listeners.applications.tls.label": {
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
+  },
+  "listeners.applications.tls.what": {
+    "en": "22e07124e7ed4aca",
+    "text": "वह सर्वर प्रमाणपत्र जिसे यह सेवा प्रस्तुत करती है।"
+  },
+  "listeners.map.sentences.rpIdNotCommon": {
+    "en": "629aac67a80b3ff9",
+    "text": "साइन-ऑन सत्र पढ़ने वाले अनुप्रयोग होस्ट नाम {{hosts}} पर हैं, और webauthn.rpId ({{rpId}}) ऐसा डोमेन नहीं जिसके अंतर्गत वे सब हों: एक पर पंजीकृत पासकी दूसरे पर उपयोग योग्य नहीं। webauthn.rpId को उस डोमेन पर सेट करें जिसे authn.cookieDomain नाम देता है।"
+  },
+  "listeners.map.sentences.rpIdEmpty": {
+    "en": "d82c2e645f3ef21a",
+    "text": "साइन-ऑन सत्र पढ़ने वाले अनुप्रयोग होस्ट नाम {{hosts}} पर हैं, और webauthn.rpId रिक्त है, इसलिए प्रत्येक अपना आश्रित पक्ष है: एक पर पंजीकृत पासकी दूसरे पर उपयोग योग्य नहीं। webauthn.rpId को उस डोमेन पर सेट करें जिसे authn.cookieDomain नाम देता है।"
+  }
+}

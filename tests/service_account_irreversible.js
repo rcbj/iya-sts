@@ -47,13 +47,13 @@
 //      permanent note in its place; the Make carries the unfolded warning
 //      and a REQUIRED, unnamed checkbox ahead of it, which every other
 //      button of the form passes over (`formnovalidate`); the new-user
-//      screen warns beside its box; and every one of the seven locales has
-//      the new strings and none of the old.
+//      screen warns beside its box; and every base catalog has the new
+//      strings and none of the old.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
 
-require('../common/i18n');
+const i18n = require('../common/i18n');
 const fs = require('fs');
 const path = require('path');
 const realms = require('../common/realms');
@@ -73,7 +73,6 @@ const log = require('bunyan').createLogger({
   level: process.env.LOG_LEVEL || 'info' });
 
 const PASSWORD = 'Sv1c-F0r-G00d-Pa55word!x';
-const LOCALES = ['en', 'es', 'fr', 'fil', 'sv', 'zh-Hans', 'zh-Hant'];
 
 function realmId(stem) {
   log.debug('Entering realmId().');
@@ -423,10 +422,17 @@ function theConsole(t) {
           'C4. the new-user screen warns beside its Service account box');
   const dir = path.join(__dirname, '..', 'common', 'locales',
                         'consoleUsers');
+  // Base catalogs from catalogs.json. A regional overlay is not a second
+  // language, and a language added to the index is checked here.
+  const locales = i18n.catalogs().filter(function (c) {
+    return !c.base;
+  }).map(function (c) {
+    return c.tag;
+  });
   const wanted = ['irreversibleWarning', 'irreversibleConfirm',
                   'permanentNote'];
   const problems = [];
-  LOCALES.forEach(function (locale) {
+  locales.forEach(function (locale) {
     const catalog = JSON.parse(fs.readFileSync(path.join(dir, locale +
                                                          '.json'), 'utf8'));
     wanted.forEach(function (key) {
@@ -443,7 +449,7 @@ function theConsole(t) {
     });
   });
   t.check(problems.length === 0,
-          'C5. all seven locales have the three new strings and neither ' +
+          'C5. every base catalog has the three new strings and neither ' +
           'old one', problems.join('; '));
   log.debug('Leaving theConsole().');
 }

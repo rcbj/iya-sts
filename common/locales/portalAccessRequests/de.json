@@ -1,0 +1,15 @@
+{
+  "sub": "Die AuthZEN-Zugriffsanfragen, die Sie als genehmigende Person benennen: Der Durchsetzungspunkt einer Anwendung wurde bei etwas abgelehnt, das die Richtlinie des Bereichs zu erfragen erlaubt, und wartet auf eine der Personen, die die Richtlinie genannt hat. <strong>Das Genehmigen gewährt für sich allein nichts</strong>: Die Anwendung fragt erneut und legt die Genehmigung bei, und die Richtlinie des Bereichs entscheidet von Neuem.",
+  "off": "Zugriffsanfragen sind in diesem Bereich ausgeschaltet.",
+  "none": "Es wartet keine Zugriffsanfrage auf Sie.",
+  "asks": "Ein Durchsetzungspunkt erbittet diesen Zugriff:",
+  "subject": "Für",
+  "action": "Zu",
+  "resource": "Auf",
+  "application": "Anwendung",
+  "requester": "Gefragt von",
+  "waits": "Sie wartet bis {when}.",
+  "approve": "Genehmigen",
+  "deny": "Ablehnen",
+  "done": "{status, select, approved {Die Zugriffsanfrage ist genehmigt. Die Anwendung kann jetzt erneut fragen.} denied {Die Zugriffsanfrage ist abgelehnt.} other {Die Zugriffsanfrage ist {status}.}}"
+}

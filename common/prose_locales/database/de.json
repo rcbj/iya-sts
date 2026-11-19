@@ -1,0 +1,158 @@
+{
+  "database.what": {
+    "en": "fd1bf6aaf183abc6",
+    "text": "Alles, was PostgreSQL diesem Dienst über sich selbst mitteilt, und der Zustand des Schemas, das dieser Dienst darin besitzt."
+  },
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "persistence.mode ist \"{{mode}}\", daher hat dieser Dienst keine Datenbank, über die er berichten könnte. `memory` schreibt überhaupt nichts und `ldif` schreibt Dateien nach RFC 2849 — keines von beiden hat eine Verbindung, einen Pool oder einen Katalog. Setzen Sie persistence.mode auf `postgres` (es wirkt nur nach einem Neustart: der Speicher wird geöffnet, bevor der Listener bindet)."
+  },
+  "persistence.why.noStore": {
+    "en": "e62c0b01e6b2db48",
+    "text": "persistence.mode ist \"postgres\" und dieser Prozess hat KEINEN GEÖFFNETEN SPEICHER. Das ist ein Fehler und keine Konfiguration: der Speicher wird von persistence.start() geöffnet, bevor der Listener bindet, und ein Fehler dort ist fatal — bei einem laufenden Dienst in diesem Zustand wurde der Speicher also unter ihm angehalten. Das Startprotokoll nennt, was geschehen ist."
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "der geöffnete Treiber meldet keine Metrikfunktion, was einen Build von persistence_postgres.js bedeutet, der älter ist als 2026-09-11."
+  },
+  "persistence.status.coordinating": {
+    "en": "f47d265e224db6e9",
+    "text": "Prozesse an diesem Speicher KOORDINIEREN sich: jede Änderung wird in ein monotones Log innerhalb der Transaktion geschrieben, die sie vorgenommen hat, und jeder Prozess wendet an, was die anderen festgeschrieben haben. Ein Anstoß (LISTEN/NOTIFY von postgres) oder eine Abfrage (MariaDB) macht das nur zeitnah — das Log ist der Vertrag, sodass ein verpasster Anstoß Latenz kostet und niemals eine Änderung. Was NICHT geteilt wird, sind Sockets: der KDC, die LDAP-Listener, der Hauptport und die Sockets von SPIFFE gehören jeweils einem Prozess. Ein Einmalwert — ein Autorisierungscode, ein DPoP-jti, ein Kerberos-Authentifikator — wird über alle Prozesse hinweg genau einmal verbraucht, durch eine atomare Beanspruchung im Speicher. Was dieser Dienst AUSSTELLT — Sitzungen, Token, Codes, Artefakte, Kerberos-Tickets, die Zähler und das Auditprotokoll — wird im PRODUCT-Modus auf einem Datenbankspeicher (postgres oder MariaDB) persistiert, verschlüsselt unter demselben Schlüsselverschlüsselungsschlüssel wie die Signierschlüssel, und in keiner anderen Konfiguration: der Entwicklungsmodus erzeugt den Signierschlüssel bei jedem Start neu, sodass ein wiederhergestelltes Token gegen nichts geprüft würde."
+  },
+  "persistence.status.notCoordinating": {
+    "en": "bc390848ef2237ae",
+    "text": "Persistenz ist in dieser Konfiguration keine Koordination. Zwei Prozesse, die auf einen Speicher zeigen, halten jeweils eine eigene Kopie im Arbeitsspeicher und sehen die Schreibvorgänge des anderen erst nach einem Neustart. Setzen Sie persistence.coordinate auf einem Datenbankspeicher, um das zu ändern. Was dieser Dienst AUSSTELLT — Sitzungen, Token, Codes, Artefakte, Kerberos-Tickets, die Zähler und das Auditprotokoll — wird im PRODUCT-Modus auf einem Datenbankspeicher (postgres oder MariaDB) persistiert, verschlüsselt unter demselben Schlüsselverschlüsselungsschlüssel wie die Signierschlüssel, und in keiner anderen Konfiguration: der Entwicklungsmodus erzeugt den Signierschlüssel bei jedem Start neu, sodass ein wiederhergestelltes Token gegen nichts geprüft würde."
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS, sslmode={{sslmode}}; das Serverzertifikat wird gegen die Vertrauensanker dieses Prozesses geprüft."
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "72f7138134696ef9",
+    "text": "WARNUNG — TLS, sslmode={{sslmode}}, aber das Serverzertifikat wird NICHT GEPRÜFT (persistence.databaseTlsRejectUnauthorized ist aus), daher ist der Datenbankserver NICHT AUTHENTIFIZIERT: alles, was an seiner Adresse antworten kann, kann sich für ihn ausgeben und jede Zeile lesen und schreiben, die dieser Dienst speichert. Die Verbindung ist verschlüsselt, und das ist alles. Schalten Sie die Einstellung wieder ein; persistence.databaseTlsCaFile nennt die CA des Servers, wo node ihr noch nicht vertraut."
+  },
+  "persistence.status.tlsDefaultVerified": {
+    "en": "494e7b1b9be20828",
+    "text": "TLS — die Verbindungszeichenfolge setzt kein sslmode, und dieser Dienst wählt jede Datenbank über TLS an; das Serverzertifikat wird gegen die Vertrauensanker dieses Prozesses geprüft."
+  },
+  "persistence.status.tlsDefaultUnverified": {
+    "en": "67a6b00f57bdfed8",
+    "text": "WARNUNG — TLS (die Verbindungszeichenfolge setzt kein sslmode, und dieser Dienst wählt jede Datenbank über TLS an), aber das Serverzertifikat wird NICHT GEPRÜFT (persistence.databaseTlsRejectUnauthorized ist aus), daher ist der Datenbankserver NICHT AUTHENTIFIZIERT: alles, was an seiner Adresse antworten kann, kann sich für ihn ausgeben und jede Zeile lesen und schreiben, die dieser Dienst speichert. Die Verbindung ist verschlüsselt, und das ist alles. Schalten Sie die Einstellung wieder ein; persistence.databaseTlsCaFile nennt die CA des Servers, wo node ihr noch nicht vertraut."
+  },
+  "persistence.status.tlsPreferVerified": {
+    "en": "cc68c8b462e11562",
+    "text": "TLS, sslmode=prefer — nur über TLS angewählt: libpq würde bei prefer auf eine Verbindung im Klartext zurückfallen, und dieser Dienst tut das nie; das Serverzertifikat wird gegen die Vertrauensanker dieses Prozesses geprüft."
+  },
+  "persistence.status.tlsPreferUnverified": {
+    "en": "2a65ebb396c30cb4",
+    "text": "WARNUNG — TLS, sslmode=prefer, nur über TLS angewählt (libpq würde bei prefer auf eine Verbindung im Klartext zurückfallen, und dieser Dienst tut das nie), aber das Serverzertifikat wird NICHT GEPRÜFT (persistence.databaseTlsRejectUnauthorized ist aus), daher ist der Datenbankserver NICHT AUTHENTIFIZIERT: alles, was an seiner Adresse antworten kann, kann sich für ihn ausgeben und jede Zeile lesen und schreiben, die dieser Dienst speichert. Die Verbindung ist verschlüsselt, und das ist alles. Schalten Sie die Einstellung wieder ein; persistence.databaseTlsCaFile nennt die CA des Servers, wo node ihr noch nicht vertraut."
+  },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS, sslmode=verify-full; das Serverzertifikat wird gegen die Vertrauensanker dieses Prozesses geprüft und sein Hostname wird geprüft, wie es sslmode verlangt, ganz gleich, was persistence.databaseTlsRejectUnauthorized sagt."
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS, sslmode=verify-ca; das Serverzertifikat wird gegen die Vertrauensanker dieses Prozesses geprüft, wie es sslmode verlangt, ganz gleich, was persistence.databaseTlsRejectUnauthorized sagt — sein Hostname wird aber NICHT geprüft: verify-ca vertraut, so wie libpq es liest, jedem Zertifikat, das eine vertrauenswürdige Stelle ausgestellt hat. Verwenden Sie verify-full, um den Namen ebenfalls zu prüfen."
+  },
+  "persistence.status.trustCaFile": {
+    "en": "2e641ceb50a4206c",
+    "text": "Die Vertrauensanker für diese Verbindung sind die Zertifikate in {{file}} (persistence.databaseTlsCaFile), anstelle des Standard-Vertrauensspeichers dieses Prozesses."
+  },
+  "persistence.status.caFileUnusable": {
+    "en": "ce51e3182e53d854",
+    "text": "NICHT ANGEWÄHLT — persistence.databaseTlsCaFile nennt {{file}}, und das kann nicht gelesen werden oder enthält kein Zertifikat, daher startet dieser Dienst damit nicht."
+  },
+  "persistence.status.refusedClear": {
+    "en": "7a7f8a490bcde6cf",
+    "text": "NICHT ANGEWÄHLT — sslmode={{sslmode}} verlangt eine Verbindung im Klartext, die dieser Dienst niemals öffnet, daher startet er mit dieser Verbindungszeichenfolge nicht."
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7c0ce538219125e3",
+    "text": "NICHT ANGEWÄHLT — die Verbindungszeichenfolge ist keine postgres://-URL, daher lässt sich nicht sagen, ob sie im Klartext angewählt würde, und dieser Dienst startet damit nicht."
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "die Verbindungszeichenfolge ist keine URL; über sie wird nichts angezeigt, weil sie ein Passwort enthält."
+  },
+  "postgres.probes.server.what": {
+    "en": "5f2f23d3ae4629e6",
+    "text": "Welches PostgreSQL das ist, ALS WER dieser Dienst verbunden ist, und wie lange der Server bereits läuft."
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "Wie viel Plattenplatz diese Datenbank belegt."
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "Jeder Zähler, den PostgreSQL für diese Datenbank führt: Commits und Rollbacks, gelesene Blöcke gegenüber im Cache gefundenen Blöcken, Tupel in jeder Richtung, Deadlocks, temporäre Dateien sowie die I/O- und Sitzungszeiten, soweit der Server sie erfasst."
+  },
+  "postgres.probes.conflicts.what": {
+    "en": "b171f5d8749419c1",
+    "text": "Abfragen, die durch Recovery-Konflikte abgebrochen wurden. Auf einem Server, der kein Standby ist, alles null, und das ist hier der gewöhnliche Fall."
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "Wie viele Backends diese Datenbank hat, gemessen am Limit des Servers."
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "Eine Zeile je Backend dieser Datenbank. Ein Backend, das einer anderen Rolle gehört, erscheint als Zeile, deren Zustand und Abfrage vorenthalten werden; das wird einer Rolle ohne Überwachung angezeigt."
+  },
+  "postgres.probes.locks.what": {
+    "en": "b7988c9a1fc05949",
+    "text": "Gehaltene und erwartete Sperren, nach Modus. Eine wartende Sperre ist hier fast immer dieser Dienst, der über den Request-Worker-Pool mit sich selbst konkurriert."
+  },
+  "postgres.probes.bgwriter.what": {
+    "en": "169cdf45721570c1",
+    "text": "Der Background Writer. ELF Spalten vor PostgreSQL 17 und VIER ab 17, als die Checkpoint-Zähler daraus verschoben wurden — deshalb fragt dies alle ab, statt einzelne zu benennen."
+  },
+  "postgres.probes.checkpointer.what": {
+    "en": "44d4dac2b65ef0c4",
+    "text": "Der Checkpointer. Seit PostgreSQL 17 eine eigene Sicht; davor sind diese Zähler das Ende von pg_stat_bgwriter oben."
+  },
+  "postgres.probes.wal.what": {
+    "en": "eeb96fbac1a1b242",
+    "text": "Erzeugung des Write-Ahead-Logs. PostgreSQL 14 und später."
+  },
+  "postgres.probes.archiver.what": {
+    "en": "23ad655ebaa038a8",
+    "text": "WAL-Archivierung. Alles null, sofern archive_mode nicht eingeschaltet ist, und das ist er in keinem Stack, den dieses Repository ausliefert."
+  },
+  "postgres.probes.replication.what": {
+    "en": "77067e6962902928",
+    "text": "Standbys, die von diesem Server streamen. LEER ist die gewöhnliche Antwort, und es ist auch das, was einer Rolle ohne pg_monitor gezeigt wird, wenn es Standbys GIBT — eine leere Tabelle hier sind also zwei verschiedene Sachverhalte, und die Seite sagt, welchen davon sie nicht unterscheiden kann."
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "Jeder Zähler, den PostgreSQL je Tabelle führt: sequenzielle Scans und Index-Scans, Tupel in jeder Richtung, lebende und tote Zeilen, und wann jede zuletzt per Vacuum bereinigt und analysiert wurde."
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "Block-I/O je Tabelle: wie viel aus dem Puffer-Cache kam und wie viel von der Platte, für den Heap, seine Indizes und sein TOAST."
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "Wie viel Plattenplatz jede Tabelle belegt, aufgeteilt in den Heap, seine Indizes und sein TOAST, mit der Zeilenschätzung des Planers."
+  },
+  "postgres.probes.indexes.what": {
+    "en": "626ac6a37d500551",
+    "text": "Jeder Index, wie oft er gescannt wurde, wie groß er ist und ob er ein Primärschlüssel oder eindeutig ist."
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "Jede Spalte jeder Tabelle, die dieser Dienst besitzt, mit ihrem Typ, ob sie null sein darf, und ihrem Vorgabewert."
+  },
+  "postgres.probes.constraints.what": {
+    "en": "9712b4c09c544e54",
+    "text": "Primärschlüssel, Eindeutigkeitsbedingungen, Fremdschlüssel und Prüfbedingungen."
+  },
+  "postgres.probes.settings.what": {
+    "en": "f4d476f237a76b71",
+    "text": "Jede Einstellung, die ein Betreiber gegenüber ihrem eingebauten Vorgabewert geändert hat, und wo sie gesetzt wurde — plus die wenigen, auf die es ankommt, ob sie jemand angefasst hat oder nicht."
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "In dieser Datenbank installierte Erweiterungen."
+  }
+}

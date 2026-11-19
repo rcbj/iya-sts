@@ -1,0 +1,1906 @@
+{
+  "crypto.sentences.oneModule": {
+    "en": "89ae1e6707cdc9ab",
+    "text": "common/crypto.js هو المكان الوحيد الذي توقّع فيه هذه الخدمة وتتحقق وتشفّر وتفك التشفير. قبل 2026-08-27 كانت تؤدي العمليات الأربع في نحو عشرين موضعًا، منها ستة موقّعين لـ XML وأربعة متحقّقين من توقيع XML."
+  },
+  "crypto.sentences.signingCertificateIssued": {
+    "en": "ccb74c3fcf226008",
+    "text": "صادرة عن جهة إصدار JOSE لهذا النطاق تحت جذر الخدمة"
+  },
+  "crypto.sentences.signingWhat": {
+    "en": "f7404c1e2d82ed3b",
+    "text": "مفتاح RSA الوحيد للنطاق. يوقّع كل رمز وصول، وكل رمز تحديث، وID Token الافتراضي، وكل مستند XML تصدره هذه الخدمة."
+  },
+  "crypto.sentences.postQuantumWhat": {
+    "en": "d1e5e7645744f3f2",
+    "text": "تُنشأ عند أول استخدام لا عند البدء — توليد مفتاح SLH-DSA واحد يستغرق معظم الثانيتين، وهي تكلفة كانت ستُدفع عن كل نطاق سواء طلب أحد توقيعًا ما بعد كمّي أم لا. جلب JWKS الأول على نطاق هو ما يوجدها."
+  },
+  "crypto.sentences.bbsWhat": {
+    "en": "906077034776820c",
+    "text": "يُنشأ عند أول استخدام، مثل مفاتيح ما بعد الكم. يُنشر على شكل `publicKeyMultibase` في مستند DID لا على شكل JWK، لأن مفتاح BLS ليست له تمثيلة JWK يُدفع إليها."
+  },
+  "crypto.sentences.tlsWhat": {
+    "en": "35681a509d8441ff",
+    "text": "{{summary}}. يُولَّد المفتاح عند كل بدء وتصدّقه جهة إصدار TLS تحت وسيط العملية حيثما وُجد تسلسل هرمي — ما لم يوفّر `tls.certificateFile` الزوج بدلًا من ذلك. تشترك فيه LDAPS 636 و— عندما يكون `global.https` مفعّلًا — المنفذ الرئيسي ومستمع المصحّح."
+  },
+  "crypto.sentences.listenerSummary": {
+    "en": "2a1315844d834040",
+    "text": "{{key}}، {{issuer}}، صالح حتى {{notAfter}}"
+  },
+  "crypto.sentences.listenerUnreadable": {
+    "en": "724ae89d2a9a816d",
+    "text": "غير قابل للقراءة بواسطة node، صالح حتى {{notAfter}}"
+  },
+  "crypto.sentences.listenerIssuedBy": {
+    "en": "637d641d5f35ce2e",
+    "text": "صادر عن {{issuer}}"
+  },
+  "crypto.sentences.listenerIssuedByChainOne": {
+    "en": "bc6822b39335d61a",
+    "text": "صادر عن {{issuer}} (مقدَّم مع {{n}} شهادة فوقه)"
+  },
+  "crypto.sentences.listenerIssuedByChainMany": {
+    "en": "2f869cd5d1f97c09",
+    "text": "صادر عن {{issuer}} (مقدَّم مع {{n}} شهادات فوقه)"
+  },
+  "crypto.sentences.pkiCertificateBinding": {
+    "en": "2d72d4ec39f7cf95",
+    "text": "{{member}} — SHA-256 على DER، base64url"
+  },
+  "crypto.sentences.ldapsTransport": {
+    "en": "29459972b5e8fe87",
+    "text": "TLS، على شهادة الخادم المشتركة"
+  },
+  "crypto.sentences.spiffeAuthorityPki": {
+    "en": "c60444730e80e729",
+    "text": "{{keyType}} — جهة إصدار SPIFFE لهذا النطاق، تحت جذر الخدمة"
+  },
+  "crypto.sentences.spiffeAuthoritySelfSigned": {
+    "en": "9ad0068d9cf973fe",
+    "text": "{{keyType}} — موقَّع ذاتيًا: ليس لهذا النطاق جهة شهادات"
+  },
+  "crypto.sentences.spiffeAuthorityNone": {
+    "en": "98ca0d518997f8a4",
+    "text": "لا شيء بعد"
+  },
+  "crypto.sentences.webauthnUvChecked": {
+    "en": "a16940eb3be81667",
+    "text": "{{mode}} — مطلوب ويُتحقق منه مقابل علامة UV الموقَّعة"
+  },
+  "crypto.sentences.webauthnUvRequested": {
+    "en": "46a9952f4713d986",
+    "text": "{{mode}} — مطلوب فقط؛ لا يُرفض شيء بناءً عليه"
+  },
+  "crypto.sentences.totpInUse": {
+    "en": "491869a05f6f78db",
+    "text": "{{name}} — ما يحصل عليه تسجيل جديد"
+  },
+  "crypto.sentences.totpSecret": {
+    "en": "bb442c325bb6fe24",
+    "text": "{{bits}} بتًا، {{encoding}}"
+  },
+  "crypto.sentences.totpLive": {
+    "en": "87c1e9d28ffb4842",
+    "text": "{{digits}} أرقام، كل {{period}} ثانية، يُتسامح مع {{window}} خطوة (خطوات) من الانحراف على أي من الجانبين"
+  },
+  "crypto.sentences.codesEntropy": {
+    "en": "c4d0c03046e6da5f",
+    "text": "{{bits}} بتًا لكل رمز، {{count}} رموز من {{length}} محرفًا من أبجدية حجمها {{size}}"
+  },
+  "crypto.sentences.codesAlphabet": {
+    "en": "d8a72dc58f835d17",
+    "text": "{{alphabet}} — محارف base32، اختيرت هنا لأنه لا يوجد زوج منها يلتبس، وليست مشتركة مع صف TOTP أعلاه"
+  },
+  "crypto.sentences.codesLegacyComparison": {
+    "en": "0461fbbf6b72b08d",
+    "text": "مجموعة كُتبت قبل 2026-09-11: {{comparison}}"
+  },
+  "crypto.sentences.emailCode": {
+    "en": "7d9bef7355b70ed9",
+    "text": "ستة أرقام عشرية من crypto.randomInt()، مع الإبقاء على الأصفار البادئة"
+  },
+  "crypto.sentences.emailLinkToken": {
+    "en": "4f34264954dc7cc2",
+    "text": "256 بتًا من crypto.randomBytes()، base64url"
+  },
+  "crypto.sentences.emailAtRest": {
+    "en": "270607a9609c73d2",
+    "text": "scrypt، عبر crypto.hashSecret()، في خطوة تسجيل الدخول"
+  },
+  "crypto.sentences.dbscMac": {
+    "en": "6d623cb602324457",
+    "text": "HMAC-SHA-256 تحت سر العنقود dbsc، على النطاق والجلسة وتاريخ الانتهاء"
+  },
+  "crypto.sentences.dbscKey": {
+    "en": "00612e39f9ee2ec1",
+    "text": "JWK العام وبصمته وفق RFC 7638، على الجلسة"
+  },
+  "crypto.sentences.jweGcmNote": {
+    "en": "738d45485f10fb8b",
+    "text": "AEAD: مفتاح واحد، وسمة واحدة."
+  },
+  "crypto.sentences.jweCbcNote": {
+    "en": "31dbbd47a0e04c86",
+    "text": "CEK هو مفتاح MAC يليه مفتاح AES، والسمة هي HMAC-{{hash}} مقطوعة إلى نصف طولها."
+  },
+  "crypto.sentences.tlsDefaults": {
+    "en": "404bc0f7f4f4729a",
+    "text": "إعدادات OpenSSL الافتراضية في Node، باستثناء الحد الأدنى للبروتوكول (`tls.minVersion`، TLS 1.2 افتراضيًا) وقائمة التشفير (`tls.ciphers`، قائمة node عندما تكون فارغة) على LDAPS 636 والمنفذ الرئيسي. لا تختار هذه الخدمة أي منحنى — وما تضبطه عدا ذلك هو أي المقابس TLS وأي شهادة تخدمها."
+  },
+  "crypto.sentences.socketMain": {
+    "en": "83b9398392ab48f7",
+    "text": "المنفذ الرئيسي (عندما يكون global.https مفعّلًا)"
+  },
+  "crypto.sentences.socketDebugger": {
+    "en": "277abe82f40632d7",
+    "text": "مستمع المصحّح (عندما يكون global.https مفعّلًا)"
+  },
+  "crypto.param.selfSigned": {
+    "en": "125ce3085aa6bf99",
+    "text": "موقَّع ذاتيًا"
+  },
+  "crypto.keyEstablishment.jweOutSurface": {
+    "en": "d2aa3e07f69c7123",
+    "text": "JWE تشفّره هذه الخدمة إلى عميل — ID Token وLogout Token وUserInfo وJARM واستبطان JWT واستجابة Credential في OID4VCI"
+  },
+  "crypto.keyEstablishment.jweOutOn": {
+    "en": "185d94e3a2bf618d",
+    "text": "يسجّل العميل `alg` من نوع ML-KEM أو من HPKE-8 إلى HPKE-16 (`id_token_encrypted_response_alg` وإخوته) وينشر مفتاح AKP مطابقًا — HPKE-10-KE هو X-Wing — ويُشفَّر كل واحد منها به (`keys.offerKemEncryption` مفعّل)."
+  },
+  "crypto.keyEstablishment.jweOutOff": {
+    "en": "7277b2789e28697b",
+    "text": "متوقف افتراضيًا: `keys.offerKemEncryption` متوقف، فلا تُعلَن أي خوارزمية ML-KEM أو HPKE ولا تُقبل عند التسجيل. ترفض حزمة مطابقة OpenID وبعض مكتبات العملاء قائمة اكتشاف تسمّي خوارزميات لا تعرفها."
+  },
+  "crypto.keyEstablishment.jweInSurface": {
+    "en": "c10485c5cccaca78",
+    "text": "JWE يُرسَل إلى هذا النطاق — كائنات طلب مشفّرة، وتأكيدات RFC 7523 / 7522، وطلبات Credential في OID4VCI"
+  },
+  "crypto.keyEstablishment.jweInHeld": {
+    "en": "210505600241cdc0",
+    "text": "يحتفظ هذا النطاق بمفاتيح فك التشفير لـ {{algs}} (`keys.encryptionKemAlgs`)، منشورة في JWKS الخاصة به ومعلَن عنها في قوائم فك التشفير."
+  },
+  "crypto.keyEstablishment.jweInOff": {
+    "en": "8d920fdcbb4ea950",
+    "text": "متوقف، وعن قصد: `keys.encryptionKemAlgs` فارغ، فلا يوجد مفتاح AKP في JWKS لهذا النطاق ولا تُعلَن أي خوارزمية ML-KEM أو HPKE لفك التشفير. مفتاح AKP نوع مفاتيح لا تحلّله مكتبات JOSE لدى كثير من العملاء بعد، فنشره خيار للمسؤول (rcbj, #82)."
+  },
+  "crypto.keyEstablishment.federationSurface": {
+    "en": "3f594dc7fbebb416",
+    "text": "الاتحاد — ID Token لشريك OpenID Connect مشفّر إلى مفتاح علاقة"
+  },
+  "crypto.keyEstablishment.federationHeld": {
+    "en": "358d8a6a9b318fca",
+    "text": "تحتفظ {{relationships}} بمفتاح x-wing أو ml-kem-768 (fedEncryptionKeyType)، منشورًا في JWKS الخاصة بالعلاقة."
+  },
+  "crypto.keyEstablishment.federationNone": {
+    "en": "14fd09aadd8a0fcd",
+    "text": "لكل علاقة: fedEncryptionKeyType بقيمة x-wing (HPKE-10-KE) أو ml-kem-768 على علاقة OpenID Connect. لا تملك أي علاقة واحدًا؛ ولا يستطيع SAML 2.0 وWS-Federation ذلك (XML Encryption)."
+  },
+  "crypto.keyEstablishment.vpSurface": {
+    "en": "6baf471c665ac6b8",
+    "text": "استجابات OID4VP المشفّرة (direct_post.jwt, dc_api.jwt)"
+  },
+  "crypto.keyEstablishment.vpOffered": {
+    "en": "849d86b5d19e6d58",
+    "text": "يعرض كل طلب {{algs}} (مفتاحًا صُنع للمعاملة الواحدة) قبل مفتاح P-256 ECDH-ES الذي يتطلبه HAIP أو إلى جانبه، فتستخدمه المحفظة التي تستطيع ذلك (`oid4vp.responseEncryptionKeyAlgs`)."
+  },
+  "crypto.keyEstablishment.vpOnly": {
+    "en": "44a7464ddcf375d6",
+    "text": "لا يُعرض إلا ECDH-ES (`oid4vp.responseEncryptionKeyAlgs`)."
+  },
+  "crypto.keyEstablishment.refreshSurface": {
+    "en": "3f22f83a49b55c9e",
+    "text": "رموز التحديث (مختومة إلى هذا النطاق نفسه)"
+  },
+  "crypto.keyEstablishment.refreshPq": {
+    "en": "6758fcba4a4a35dd",
+    "text": "مختوم بـ {{alg}} إلى زوج مفاتيح مشتق من سر رمز التحديث للنطاق."
+  },
+  "crypto.keyEstablishment.refreshClassical": {
+    "en": "24e071b986638635",
+    "text": "مختوم بـ {{alg}}؛ يمكن اختيار أي خوارزمية ML-KEM أو من HPKE-8 إلى 16 في `oauth2.refreshTokenEncryptionAlg`، وهو لا يحتاج إلى مفتاح ولا يغيّر شيئًا يراه العميل."
+  },
+  "crypto.keyEstablishment.tlsSurface": {
+    "en": "416b130491f7d0f2",
+    "text": "TLS — المنفذ الرئيسي وLDAPS ومستمع المصحّح"
+  },
+  "crypto.keyEstablishment.tlsPq": {
+    "en": "b68367c2a8d321c1",
+    "text": "تأتي المجموعات الهجينة (X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024) أولًا في `tls.groups` (#212)، ويتفاوض node في صورة الخدمة — OpenSSL 3.5 — عليها مع أي عميل يعرض واحدة."
+  },
+  "crypto.keyEstablishment.tlsNone": {
+    "en": "b032759b3e0d7e2f",
+    "text": "`tls.groups` لا يسمّي أي مجموعة هجينة ML-KEM."
+  },
+  "crypto.keyEstablishment.xmlSurface": {
+    "en": "5eae0076f7a6157c",
+    "text": "XML Encryption — تأكيدات SAML وWS-Federation وWS-Trust"
+  },
+  "crypto.keyEstablishment.xmlHow": {
+    "en": "c37ae0c7c030acc0",
+    "text": "نقل المفتاح RSA-OAEP أو اتفاق المفتاح ECDH-ES. لا يعرّف XML Encryption 1.1 أي KEM ولا نقل مفتاح ما بعد كمّي، ولم يُضف أي مستند W3C أو IETF واحدًا — وجواب CMS، وهو KEMRecipientInfo في RFC 9629، ليس له نظير XML. هذه فجوة في مكدس المواصفات، لا إعدادًا تُرك متوقفًا."
+  },
+  "crypto.keyEstablishment.draftMlKem": {
+    "en": "f6d7c744b504a044",
+    "text": "draft-ietf-jose-pqc-kem-05 — آخر مراجعة فيها نص JOSE؛ و-06 (2026-07-06) لـ COSE فقط. `priv` في AKP هو بذرة d||z ذات 64 ثمانيًا صحّح -06 بها ثمانيات -05 الاثنتين والثلاثين."
+  },
+  "crypto.keyEstablishment.draftHpke": {
+    "en": "185d1e99a7a7ab4e",
+    "text": "draft-ietf-jose-hpke-encrypt-22 (من HPKE-0 إلى HPKE-7)، فوق draft-ietf-hpke-hpke؛ وKEM الخاصة بـ draft-ietf-hpke-pq-05"
+  },
+  "crypto.keyEstablishment.draftHybrid": {
+    "en": "14ac1097493134f5",
+    "text": "draft-reddy-cose-jose-pqc-hybrid-hpke-11 (من HPKE-8 إلى HPKE-16)، مسودة فردية انتهت في 2026-08-20 والمستند الوحيد الذي يسمّي خوارزمية JWE هجينة"
+  },
+  "crypto.keyEstablishment.what": {
+    "en": "b84af2bfe888da27",
+    "text": "هذا هو النصف الذي يهم في أقرب وقت: يُتحقق من التوقيع عند تقديمه، فخوارزمية توقيع تسقط في 2035 مشكلة في 2035، بينما يمكن الاحتفاظ بنص مشفّر التُقط اليوم وفتحه حين تصل الآلة. لدى JWE هنا إنشاء مفاتيح ما بعد كمّي وهجين PQ/T — ML-KEM، وHPKE فوق ML-KEM أو هجين (X-Wing هو HPKE-10) — ويضع TLS المجموعات الهجينة أولًا. ما يبقى كلاسيكيًا مذكور أدناه مع سببه، وكل واحدة من خوارزميات JWE هذه من Internet-Draft."
+  },
+  "crypto.keyEstablishment.whatWouldClose": {
+    "en": "ea8450559eeb91ec",
+    "text": "يحتاج XML Encryption إلى مواصفة قبل أن يكون له تنفيذ. تصبح خوارزميات JWE معيارًا حين تصبح مسوداتها كذلك؛ وحتى ذلك الحين يختار المسؤول إدخال نطاق في نشر مفتاح لها، ويختار العميل الدخول بتسجيل واحد."
+  },
+  "crypto.standards.jws.coverage": {
+    "en": "a0c6c0c5333f0961",
+    "text": "full للخوارزميات المذكورة أدناه. يُنتَج التسلسل المضغوط ويُقرأ في كل مكان؛ ويُقرأ تسلسل JSON المسطَّح لدى عائلة واحدة بالضبط، ACME، لأن RFC 8555 القسم 6.2 يتطلبه (يُعاد تركيب كل طلب في الشكل المضغوط ويتحقق منه الدالة نفسها). لا يُنتَج التسلسل العام لـ JSON ولا يُقرأ؛ ولا شيء هنا يطلب واحدًا."
+  },
+  "crypto.standards.jws.what": {
+    "en": "862303371dc5663b",
+    "text": "الغلاف لكل رمز تصدره هذه الخدمة ولكل تأكيد يُسلَّم إليها. جدول واحد للخدمة كلها — `JWS_ALGS` في `common/crypto.js` — لأنه كان هناك اثنان ذات مرة، وهكذا صار DPoP يقبل مجموعة خوارزميات مختلفة عن كل ما عداها من دون سبب اختاره أحد."
+  },
+  "crypto.standards.jwe.coverage": {
+    "en": "251f48e95fd0f14b",
+    "text": "partial: تسلسل مضغوط، وهي تشفّر بقائمة أطول مما تفك به التشفير. هذا اللاتناظر مقصود — فما تستقبله مشفّر إلى مفتاح RSA الذي تنشره، ولا تحتفظ بمفتاح EC خاص لتتفق به."
+  },
+  "crypto.standards.jwe.what": {
+    "en": "991c797c32f2038b",
+    "text": "استجابة UserInfo مشفّرة، وأي شيء يرسله عميل مشفّرًا إلى مفتاح هذه الخدمة. عائلة CBC-HMAC هنا لأن `A128CBC-HS256` هو ما يحصل عليه عميل OpenID Connect افتراضيًا: سجّل `userinfo_encrypted_response_alg` ولا تقل شيئًا عن `enc`، ويكون القسم 2 من مواصفة التسجيل قد اختاره لك."
+  },
+  "crypto.standards.jwk.coverage": {
+    "en": "30637f1756016b71",
+    "text": "full للنشر. لا يحمل JWKS المنشور عضو `alg`، وغيابه مقصود: يجعله RFC 7517 القسم 4.4 اختياريًا ويقول إنه يسمّي الخوارزمية المقصودة، ومفتاح RSA واحد هنا يوقّع ستًا منها. كان يقول `RS256` حتى 2026-08-28 وكان ذلك وعدًا توقفت الخدمة عن الوفاء به — يرفض Web Crypto استيراد JWK يختلف `alg` فيه عن العملية المطلوبة منه."
+  },
+  "crypto.standards.jwk.what": {
+    "en": "c0a4c4242da20c76",
+    "text": "كيف يُنشر كل مفتاح عام هنا، وكيف يُقرأ مفتاح العميل نفسه. بصمة RFC 7638 هي ما يربط إليه DPoP."
+  },
+  "crypto.standards.jwt.coverage": {
+    "en": "007e59f3363125e7",
+    "text": "full لما تصدره؛ و`partial` لما تقرأه، لأنها لا تتحقق من أي رمز وصول لم تصدره إلا عند UserInfo."
+  },
+  "crypto.standards.jwt.what": {
+    "en": "71a4f9ece0aa9a3b",
+    "text": "مجموعة المطالبات داخل JWS. يُطبَّق `oauth2.clockSkewS` حيثما تعيد هذه الخدمة قراءة رمز وقّعته، في موضع واحد منذ 2026-08-27 — أربعة من مواضع الاستدعاء العشرة التي كانت تفعل ذلك توقفت بهدوء."
+  },
+  "crypto.standards.thumbprint.coverage": {
+    "en": "43bf5a528e56416c",
+    "text": "full لـ RSA وEC وOKP وoct، وهو كل نوع مفتاح يعرّف RFC أعضاء له. لا توجد بصمة لـ `AKP`، نوع مفتاح ما بعد الكم، ولهذا تُستبعد خوارزميات PQ من DPoP."
+  },
+  "crypto.standards.thumbprint.what": {
+    "en": "3738772040c6c429",
+    "text": "تقنين واحد، وSHA-256 واحد، وموضع واحد — كان هنا تنفيذان له قبل 2026-08-27."
+  },
+  "crypto.standards.dpop.coverage": {
+    "en": "97405f66eaffc812",
+    "text": "full: فحوصات القسم 4.3 الاثنا عشر كلها، وربط `cnf.jkt` على رموز الوصول والتحديث، و`dpop_jkt`، وكشف إعادة `jti` ومصافحة nonce بالشكلين. ليس مطلوبًا افتراضيًا — وضع nonce يجعل الإثباتات أحدث لا إلزامية — لكن يمكن لنطاق أن يتطلبه: `oauth2.accessTokenRequireDpop` عند كل مورد و`oauth2.refreshTokenRequireDpop` عند نقطة نهاية الرمز، وكلاهما متوقف افتراضيًا. يتطلب ملف FAPI قيدًا على المرسِل، DPoP أو TLS المتبادل، والعملاء العامون لوحدة تحكم المسؤول وبوابة المستخدم مرتبطون دائمًا بـ DPoP."
+  },
+  "crypto.standards.dpop.what": {
+    "en": "fd2e6cef9f5dc069",
+    "text": "قيد المرسِل الذي يجعل رمز الوصول المسروق بلا قيمة من دون المفتاح. قائمة خوارزمياته مرشّح فوق جدول JWS المشترك — غير متماثل، وليس ما بعد كمّي — لا جدولًا خاصًا به."
+  },
+  "crypto.standards.mtls.coverage": {
+    "en": "d10a6eaf8ebf09b2",
+    "text": "partial: طريقتا مصادقة العميل كلتاهما ورمز الوصول المرتبط بالشهادة. يحوّل شهادة تم التحقق منها إلى بصمة ولا يحوّلها أبدًا إلى تسجيل دخول."
+  },
+  "crypto.standards.mtls.what": {
+    "en": "3e588c6d2a0eca04",
+    "text": "`x5t#S256` هو SHA-256 بترميز base64url لـ DER الشهادة — DER لا PEM، وهو الخطأ الذي يبدو صحيحًا في سجل ولا يطابق شيئًا."
+  },
+  "crypto.standards.pkce.coverage": {
+    "en": "2727b9104835cdc1",
+    "text": "full لـ `S256` و`plain`. في وضع RFC 9700 يُسحب `plain` وتصبح القائمة المعلَنة `S256` وحدها."
+  },
+  "crypto.standards.pkce.what": {
+    "en": "71ccd02e8a1c70cf",
+    "text": "SHA-256 على متحقّق الرمز. الموضع الوحيد في هذه الخدمة حيث التجزئة هي خاصية الأمان كلها."
+  },
+  "crypto.standards.xmldsig.coverage": {
+    "en": "6ac11d8fcf045168",
+    "text": "partial: توقّع هذه الخدمة بـ RSA-SHA256 وحده، وتتحقق من أي شيء في الجدول أدناه — RSA وRSASSA-PSS وECDSA وHMAC عبر أربع تجزئات. التوقيعات المغلَّفة فقط؛ ولا تنتج توقيعًا منفصلًا أو مغلفًا إلا توقيع ربط Redirect، وهو آلية مختلفة."
+  },
+  "crypto.standards.xmldsig.what": {
+    "en": "65d7098a43b07f40",
+    "text": "الغلاف لكل مستند XML تصدره هذه الخدمة. منذ 2026-08-27 هو `xmldsig.js` الخاص بمشروع الأصل، مضمَّنًا مطابقًا بايتًا ببايت، وهو الطرف الآخر لمعظم هذه التبادلات — فيقنّن الطرفان بالرمز نفسه، ولا يمكن أن يبقى خلاف حول c14n خفيًا إلى أن يصير توقيعًا يتحقق في جانب ولا يتحقق في الآخر."
+  },
+  "crypto.standards.xmlenc.coverage": {
+    "en": "dbb840eef5ab3a75",
+    "text": "partial: أربعة تشفيرات كتلية وعمليتا نقل مفتاح، تلف عنصرًا واحدًا في كل مرة. ليس التنفيذ المضمَّن وذلك استثناء مقصود — مخرجات الاثنين متوافقة بايتًا بالفعل، وما لدى هذا وليس لدى الآخر هو التشخيص."
+  },
+  "crypto.standards.xmlenc.what": {
+    "en": "88fff06d7d7b1664",
+    "text": "كل رسالة يقولها هذا عمدًا بصوت عالٍ: تشفيرا CBC ليسا مصادَقَين و`rsa-1_5` مكسور بهجوم Bleichenbacher. يُعرض كلاهما لأن مزوّدي الخدمة الحقيقيين يتطلبونهما، وخدمة تعرض الخيار الآمن فقط لا يمكن استخدامها لإظهار ما يفعله الخيار غير الآمن."
+  },
+  "crypto.standards.c14n.coverage": {
+    "en": "dcdbea06a9c35da8",
+    "text": "partial: الخوارزميتان كلتاهما والتوأمان `#WithComments` كلاهما. لا يُعرض C14N 1.1 — فرقه كله في كيفية وراثة `xml:base` و`xml:lang` و`xml:space` إلى شجرة فرعية منفصلة، والمحرك لا ينفّذ تلك الوراثة، وخيار يسمّي طريقة لا يؤديها أسوأ من خيار غائب."
+  },
+  "crypto.standards.c14n.what": {
+    "en": "ca991439b4559070",
+    "text": "الحصري حمّال وهو الافتراضي في كل مكان هنا. يُوقَّع التأكيد قائمًا بذاته ثم يُضمَّن داخل RSTR أو Response أو `wresult` يصرّح ببادئات خاصة به، فيسحب التقنين الشامل إعلانات الأسلاف تلك إلى التجزئة وقت التحقق — فيفشل التوقيع عند كل طرف معتمِد بينما يتحقق تمامًا هنا، وهو أسوأ شكل لخلل تُطارده."
+  },
+  "crypto.standards.wss.coverage": {
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal، وهذا الصف هو ما يُقرأ قبل طلب \"WS-Integrity\" أو \"WS-Encryption\" — ولا أحدهما مستند موجود. WSS مواصفة واحدة نصف سلامتها هو XML Signature على جسم SOAP وTimestamp داخل ترويسة `<wsse:Security>` ونصف سريتها هو XML Encryption مطبَّق بالطريقة نفسها. هذه الخدمة لا تفعل أيًا منهما. لا توقّع مغلف SOAP، ولا تشفّر جسم SOAP، ولا تنتج Timestamp ولا تتحقق من توقيع على مستوى الرسالة في طلب."
+  },
+  "crypto.standards.wss.what": {
+    "en": "d6dcd66e6476aa91",
+    "text": "ما تفعله هو ملف رمز SAML: تأكيد SAML موقَّع يُحمل داخل جسم SOAP، مع `<wsse:SecurityTokenReference>` يسمّيه بواسطة `KeyIdentifier`، و`<wsse:BinarySecurityToken>` حيث طُلب رمز X.509. تقرأ ترويسة `<wsse:Security>` لطالب من أجل بيانات اعتماد وللشهادة التي يُشفَّر إليها. يستطيع `xmldsig.js` المضمَّن إنتاج توقيع `<wsse:Security>` حقيقي — `signSoapMessage()` فيه ويستخدمه المصحّح — ولا شيء هنا يستدعيه."
+  },
+  "crypto.standards.krb5.coverage": {
+    "en": "33a060bc7143a706",
+    "text": "partial: أربعة ملفات AES وRC4-HMAC تُنفَّذ، وDES و3DES للفك فقط. الملف المبسَّط واشتقاق المفتاح بحسب استخدام المفتاح والمشوّش وCTS كلها حقيقية — تصل اختبارات المتجهات إلى كل طبقة على حدة، لأن تشفيرًا ناجحًا من طرف إلى طرف قد يخفي خطأين يعوّض أحدهما الآخر."
+  },
+  "crypto.standards.krb5.what": {
+    "en": "6c3cb428090dfdcf",
+    "text": "العائلة الوحيدة هنا من دون تشفير بالمفتاح العام. تأتي السرية والسلامة كلتاهما من مفتاح متماثل طويل الأمد واحد، ولهذا بالضبط هذا هو الباب الوحيد في هذه الخدمة الذي يتحقق فعلًا من بيانات اعتماد."
+  },
+  "crypto.standards.gssapi.coverage": {
+    "en": "3955b6b4a25e305e",
+    "text": "partial: آلية Kerberos فقط، مع تبادل MIC. لا NTLM، ولا تفاوض آليات يستحق الاسم — هناك آلية واحدة للتفاوض."
+  },
+  "crypto.standards.gssapi.what": {
+    "en": "4aaf48ef02c4f689",
+    "text": "الغلاف الذي يحمل AP-REQ عبر HTTP. لا يضيف تشفيرًا خاصًا به: MIC هو مجموع اختباري لـ Kerberos يُحسب بمفتاح الآلية."
+  },
+  "crypto.standards.x509.coverage": {
+    "en": "5e34667c87a2bbca",
+    "text": "partial: جذر واحد للخدمة، ووسيط لكل نطاق ثقة (وواحد للعملية) وجهة إصدار لكل حالة استخدام، فيكون مسار الورقة بطول أربع شهادات وSVID تحت جهة CA تالية لـ SPIFFE بطول خمس. تُنشر قوائم CRL وفق RFC 5280 وOCSP وفق RFC 6960 لكل CA، وتُفحص الشهادة المقدَّمة مقابلها تحت pki.revocationCheck. يُحتفظ بها في وضع PRODUCT فقط، حيث يستمر مخزن المفاتيح؛ وفي وضع DEVELOPMENT يُعاد بناء التسلسل الهرمي عند كل بدء. ومن دون تسلسل هرمي (pki.autoBuild متوقف) يحتفظ المفتاح بالشهادة الموقَّعة ذاتيًا التي وُلد بها، وترتد جهة SPIFFE للنطاق إلى جهة موقَّعة ذاتيًا."
+  },
+  "crypto.standards.x509.what": {
+    "en": "0bd1dc7400215c5a",
+    "text": "مفتاح CA هو مفتاح التسلسل، يُختار في /admin/pki (`pki.keyAlgorithm`، RSA 2048 افتراضيًا؛ وتفضّل جهة إصدار SPIFFE منحنى EC P-256)؛ ومفتاح التوقيع RSA 2048، وشهادة TLS هي ما يطلبه `tls.certificateAlgorithms`. يقرر `spiffe.x509KeyType` المفتاح في كل SVID. SUBJECTALTNAME هو الموضع الوحيد للأسماء على شهادة TLS — قال RFC 6125 إن CN يُتجاهل منذ 2011."
+  },
+  "crypto.standards.tls.coverage": {
+    "en": "33822c9691deb784",
+    "text": "minimal: إعدادات OpenSSL الافتراضية في node، إلا حيث يضيّقها إعدادان على LDAPS 636 والمنفذ الرئيسي — `tls.minVersion` (TLS 1.2 افتراضيًا) و`tls.ciphers` (قائمة node عندما تكون فارغة). لا تختار هذه الخدمة أي منحنى؛ وما تضبطه عدا ذلك هو أي المقابس TLS وأي شهادة تخدمها."
+  },
+  "crypto.standards.tls.what": {
+    "en": "a3c8abc13508c6c3",
+    "text": "تشترك LDAPS 636 والمنفذ الرئيسي ومستمع المصحّح في شهادة واحدة. `STS_HTTPS=false` هو الطريق المدعوم للعودة إلى HTTP الصريح، لا مخرج طوارئ."
+  },
+  "crypto.standards.cose.coverage": {
+    "en": "35d0b5526ad54ff2",
+    "text": "partial: تحليل COSE_Key والتحقق من التوقيع للخوارزميات أدناه. لا يكتب أي بنية COSE ولا يقرأ COSE_Encrypt."
+  },
+  "crypto.standards.cose.what": {
+    "en": "7b6ab5c285065ab0",
+    "text": "كيف يصل المفتاح العام لاعتماد WebAuthn. قارئ CBOR وتعيين COSE خاصان بهذا المستودع ولا يشاركان أي رمز مع المصحّح، وهو ما يجعل الاثنين فحصًا مستقلًا أحدهما للآخر."
+  },
+  "crypto.standards.webauthn.coverage": {
+    "en": "4610e926ac80ab7d",
+    "text": "partial: نصف الطرف المعتمِد. يُتحقق فعلًا من توقيعات التسجيل والتأكيد، وكذلك من بيانات الإثبات (#105) — الصيغ الثماني كلها وسلاسلها وخدمة بيانات FIDO الوصفية — تحت webauthn.attestationPolicy."
+  },
+  "crypto.standards.webauthn.what": {
+    "en": "ea84aed02de27496",
+    "text": "يغطي التوقيع `authenticatorData || SHA-256(clientDataJSON)` وتُقارن تجزئة معرّف RP داخل بيانات المصادق تلك بايتًا ببايت مع SHA-256 لمجال الأصل."
+  },
+  "crypto.standards.digest.coverage": {
+    "en": "427fc3ecbf538bfc",
+    "text": "partial: `qop=auth` مع SHA-256 وSHA-512-256 وMD5 ومتغيراتها `-sess`، مع عدّادات nonce وقيم nonce منتهية و`Authentication-Info`. لا `qop=auth-int`."
+  },
+  "crypto.standards.digest.what": {
+    "en": "cf6005726f6143e0",
+    "text": "أحد الموضعين في هذه الخدمة حيث تُفحص كلمة المرور فعلًا، ولا بد من ذلك: كلمة المرور مدخل للتجزئة، فخادم يقبل أي شيء لا يستطيع حساب الاستجابة التي يتوقعها العميل."
+  },
+  "crypto.standards.hoba.coverage": {
+    "en": "b17c97ab09503261",
+    "text": "partial: الخوارزمية 0 (RSA-SHA256) فقط، مع التحقق الفعلي من التوقيع مقابل المفتاح المسجَّل."
+  },
+  "crypto.standards.hoba.what": {
+    "en": "519e56806159f70f",
+    "text": "بديل لكلمة المرور: يحتفظ العميل بزوج مفاتيح محصور في أصل واحد، ويسجّل النصف العام، ويوقّع كتلة من nonce والخوارزمية والأصل والنطاق ومعرّف المفتاح وتحدّي الخادم. يجوز لأي أحد تسجيل مفتاح — تلك هي البوابة الدوّارة — لكن توقيعًا لا يتحقق مقابل المفتاح المسجَّل تحت `kid` ذاك يُرفض."
+  },
+  "crypto.standards.sdjwt.coverage": {
+    "en": "2d231e5864c82088",
+    "text": "partial: تجزئات `_sd` مع `_sd_alg: sha-256`، والإفصاحات، والنوع `dc+sd-jwt`. ربط المفتاح بإثبات حيازة المحفظة عند الإصدار."
+  },
+  "crypto.standards.sdjwt.what": {
+    "en": "2e65e3747a37aeb8",
+    "text": "إفصاح انتقائي بالتجزئة: يحمل الاعتماد تجزئة كل مطالبة ويسلّم الحائز ما يختار كشفه."
+  },
+  "crypto.standards.dataintegrity.coverage": {
+    "en": "a3a1c4d7b9f3d4d4",
+    "text": "partial: الإصدار، والتحقق من إثبات أساسي، والتحقق من إثبات مشتق. حزمة التشفير BLS12381-SHA-256."
+  },
+  "crypto.standards.dataintegrity.what": {
+    "en": "28e302a01c047d5c",
+    "text": "التوقيع الوحيد القائم على الاقتران في هذه الخدمة، والإفصاح الانتقائي الوحيد هنا الذي ليس تجزئة. ما يجب مشاركته مع الطرف البعيد هو الشكل المقنَّن — يوقّع bbs-2023 عبارات RDF مقنَّنة — ولهذا تُضمَّن سياقات JSON-LD بدلًا من جلبها."
+  },
+  "crypto.standards.did.coverage": {
+    "en": "c5075ca6beddd229",
+    "text": "partial: تحليل `did:web`، ومستند ينشر مفاتيح هذه الخدمة، واعتماد ربط المجال."
+  },
+  "crypto.standards.did.what": {
+    "en": "40ddc5fd877325e6",
+    "text": "كيف تجد المحفظة المفتاح الذي يتحقق من اعتماد يكون `iss` فيه DID. يُنشر مفتاح BBS على شكل `publicKeyMultibase` لأنه ليست له تمثيلة JWK يُدفع إليها."
+  },
+  "crypto.standards.httpsig.coverage": {
+    "en": "ce26dda6f26f398b",
+    "text": "partial: توقيع الطلب والاستجابة والتحقق منهما مع كل مكوّن مشتق ومعامل مكوّن، و`;req` يربط استجابة بطلبها، وتوقيعات متعددة، وكل خوارزمية JWS تتحدث بها هذه الخدمة (بما فيها ما بعد الكم) إلى جانب الست المسجَّلة، وContent-Digest مع sha-256 وsha-512. لم يُنفَّذ Repr-Digest وحقول Want- والمقطورات."
+  },
+  "crypto.standards.httpsig.what": {
+    "en": "e5ca4ef8dd596c94",
+    "text": "إثبات المفتاح المفضَّل لدى GNAP، وملف تواقيع HTTP في FAPI 2.0 عند خوادم موارد OAuth (طلبات موقَّعة داخلة، واستجابات موقَّعة خارجة). قاعدة التوقيع هي ما يجب أن يبنيه الطرفان مطابقًا، بايتًا ببايت، من رسالة حلّلها كل منهما على حدة — لذا كُتب مُسلسِل الحقول البنيوية في `common/structured_fields.ts` بدلًا من استعارته، ويُضبط على متجهات اختبار RFC نفسها. التوقيع والتحقق هما `common/crypto.js` القسم 14."
+  },
+  "crypto.standards.macaroon.coverage": {
+    "en": "cd6de0c7e0abd87e",
+    "text": "partial: تحفّظات الطرف الأول والتضييق. لا تحفّظات لطرف ثالث، فلا توجد macaroon تفريغ."
+  },
+  "crypto.standards.macaroon.what": {
+    "en": "8fd19c5836aec908",
+    "text": "اعتماد حامل يمكن لحائزه أن يضيّقه من دون أن يسأل أحدًا، بإلحاق تحفّظ وإعادة مفتاح سلسلة HMAC. يجب أن يحتفظ المتحقّق بمفتاح الجذر، ولهذا فإن macaroon هو صيغة GNAP الوحيدة من دون مادة تحقق عامة."
+  },
+  "crypto.standards.biscuit.coverage": {
+    "en": "80fb7c8db4101849",
+    "text": "partial: توقيعات جذر وكتل Ed25519، وحقائق Datalog، وفحوصات وكتل تضييق، يتحقق منها مُخوِّل يعمل تحت حدود. لا كتل لطرف ثالث."
+  },
+  "crypto.standards.biscuit.what": {
+    "en": "d26de21ef48f4222",
+    "text": "رمز بمفتاح عام يمكن لحائزه تضييقه دون اتصال، مثل macaroon، لكن يمكن لأي من يحتفظ بالمفتاح العام الجذر التحقق منه. منطق التفويض فيه Datalog يُحمل داخل الرمز، فيعمل المتحقّق دائمًا بحدود للزمن والتكرار."
+  },
+  "crypto.standards.cms.coverage": {
+    "en": "abe1a25e47d96baf",
+    "text": "partial: SignedData بموقّع واحد وسمات موقَّعة، يُتحقق منها على بايتات السمات كما استُقبلت وتُكتب مرتبة DER؛ وEnvelopedData مع KeyTransRecipientInfo (RSA PKCS#1 v1.5 وOAEP) ومحتوى AES-CBC؛ وSignedData منحط للشهادات فقط مع شهادات وقوائم CRL. لا KeyAgreeRecipientInfo، ولا بيانات مصادَق عليها أو مضغوطة، ولا توقيعات مضادة."
+  },
+  "crypto.standards.cms.what": {
+    "en": "0f35f026a507dc11",
+    "text": "الغلاف الذي يقرأه SCEP ويكتبه (scep/scep_cms.ts): طلب يوقّعه الطالب ويُشفَّر إلى RA، وCertRep يوقّعه RA وشهادته مشفّرة إلى الطالب."
+  },
+  "crypto.families.pki.signs": {
+    "en": "fdcf723f4622f28f",
+    "text": "شهادات. يوقّع الجذر نفسه مرة واحدة للخدمة؛ ويوقّع وسيطًا لكل نطاق ثقة وواحدًا للعملية؛ ويوقّع كل وسيط جهة إصدار لكل حالة استخدام؛ وتوقّع كل جهة إصدار أوراق حالة استخدامها — مفاتيح التوقيع والاستماع الخاصة بالخدمة، وأزواج المفاتيح الصادرة للتطبيقات والأشخاص. خوارزمية التوقيع هي المختارة للتسلسل ويقيّدها عائلة مفتاح المُصدِر لا الموضوع، وهو الخطأ الذي يمضي رأس `common/crypto_impl/x509.js` نفسه فقرة فيه: استيراد مفتاح تحت تجزئة والتوقيع بأخرى ينتج شهادة تختلف خوارزميتها المصرَّح بها عن توقيعها الفعلي، ويبلّغ `openssl verify` عنها كتوقيع سيئ لا يسمّي أيًا منهما."
+  },
+  "crypto.families.pki.verifies": {
+    "en": "e27202f2b20a852a",
+    "text": "مسار شهادة. عندما يصل تأكيد RFC 7523 حاملًا ترويسة `x5c`، يُفحص كل رابط — التوقيع واسم المُصدِر ونافذة الصلاحية — ويجب أن ينتهي المسار عند جذر الخدمة ويمر عبر وسيط هذا النطاق نفسه. النصف الثاني هو حد النطاق: كل النطاقات تشترك في الجذر، فسلسلة تبلغه فحسب لا تثبت شيئًا عن أي نطاق أصدرها — وسلسلة مثبتة في مكان آخر تتحقق من كل رابط ولا تثبت شيئًا هنا على الإطلاق."
+  },
+  "crypto.families.pki.encrypts": {
+    "en": "15a9d95d58ee2384",
+    "text": "لا شيء بنفسه. في وضع PRODUCT يُختم التسلسل الذي بناه بـ AES-256-GCM تحت مفتاح تشفير المفاتيح، بواسطة common/keystore.js، في عائلة صفوف `sts_keys` نفسها كمفاتيح التوقيع — تسلّمه هذه الوحدة ولا تقوم بالتشفير."
+  },
+  "crypto.families.pki.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.pki.hashes": {
+    "en": "fed52b623a3769f0",
+    "text": "SHA-256 افتراضيًا لتوقيع الشهادة، وSHA-384 أو SHA-512 حيث بُني التسلسل بهما. SHA-256 مرة أخرى لبصمات الشهادة ولبصمة JWK وفق RFC 7638 التي يُشتق منها `kid` الصادر — يُشتق kid من مادة المفتاح في كل مكان في هذه الخدمة، فلا تستطيع نسختان نشر اسم واحد فوق مفتاحين. **يُعرض SHA-1 ويُعلَّم ضعيفًا**: \"هل يرفض مكدسي شهادة SHA-1؟\" سؤال ينبغي أن يستطيع المصحّح طرحه، ولا شيء يتخذها افتراضيًا."
+  },
+  "crypto.families.pki.keys": {
+    "en": "8e818de04abfd952",
+    "text": "زوج مفاتيح جذر واحد للخدمة، ووسيط لكل نطاق ثقة وواحد للعملية، وجهة إصدار تحت كل منها لكل حالة استخدام، بالإضافة إلى واحد لكل زوج مفاتيح صادر. لا تغادر مفاتيح CA الخاصة هذه العملية أبدًا. مفتاح التطبيق يفعل: يُسلَّم مرة واحدة عند الإصدار، ويُكتب على مدخلة دليل ذلك التطبيق تحت `oauthAssertionPrivateKey` — **مختومًا بـ AES-256-GCM تحت مفتاح تشفير المفاتيح نفسه الذي للتسلسل فوقه حيثما يعمر ذلك المفتاح العملية**، فتفريغ الدليل أو ملف ldif أو صف قاعدة بيانات أو نسخة احتياطية يحتفظ بنص مشفّر. تفتحه وحدة التحكم وواجهة الإدارة لمتصل يحتفظ ببيانات اعتماد، لأن زوج مفاتيح صادرًا لا يستطيع مشغّل جمعه هو زوج لا يستطيع أحد استخدامه. في وضع DEVELOPMENT يُكتب واضحًا، حيث مفتاح تشفير المفاتيح عابر ولا يبقى بعد إعادة التشغيل التي تبقى المدخلة بعدها. لا تحتفظ هذه الخدمة بنسخة ثانية في أي من الحالين. ومنذ 2026-09-11 يجوز لشخص أن يحتفظ بواحد أيضًا، تحت `stsAssertionPrivateKey` على مدخلته `ou=users` الخاصة، مختومًا تحت المفتاح نفسه وبالآلية نفسها. الفرق هو طريق الخروج: يُفتح مفتاح التطبيق لقارئ لديه اعتماد بواسطة `applications.js`، ويُسلَّم مفتاح الشخص مرة واحدة عند الإصدار ولا يُسلَّم بعدها، لأنه لا شيء هنا يرسم مدخلة شخص عبر وحدة تفتحها."
+  },
+  "crypto.families.pki.algorithms.0.what": {
+    "en": "3f46b56fa1d40dc3",
+    "text": "ترميز الشهادة"
+  },
+  "crypto.families.pki.algorithms.0.how": {
+    "en": "9c9c3be17d02f8b6",
+    "text": "X.509 v3، DER، عبر pkijs وasn1js — common/crypto_impl/x509.js، رمز PKI الخاص بمشروع الأصل، مطابق بايتًا. مرمّز واحد لهذه الخدمة ولصفحة PKI / X.509 في ذلك المشروع."
+  },
+  "crypto.families.pki.algorithms.1.what": {
+    "en": "1b9e0c9e96801219",
+    "text": "خوارزميات مفتاح CA المعروضة"
+  },
+  "crypto.families.pki.algorithms.2.what": {
+    "en": "9c2f276500b33a1d",
+    "text": "خوارزميات توقيع الشهادة المعروضة"
+  },
+  "crypto.families.pki.algorithms.3.what": {
+    "en": "d7548daf57cc5a45",
+    "text": "من تلك، المعروضة عن قصد والمعلَّمة ضعيفة"
+  },
+  "crypto.families.pki.algorithms.4.what": {
+    "en": "f048d7205f8503a3",
+    "text": "الطبقات الثلاث"
+  },
+  "crypto.families.pki.algorithms.5.what": {
+    "en": "a44bc2db8740f560",
+    "text": "بصمة الشهادة"
+  },
+  "crypto.families.pki.algorithms.5.how": {
+    "en": "a4f69d39eeec5cec",
+    "text": "SHA-256 على DER"
+  },
+  "crypto.families.pki.algorithms.6.what": {
+    "en": "57afb1b90615a720",
+    "text": "`kid` للمفتاح الصادر"
+  },
+  "crypto.families.pki.algorithms.6.how": {
+    "en": "81f96a08bbb65569",
+    "text": "بصمة JWK وفق RFC 7638، SHA-256، مقطوعة إلى 16 محرفًا"
+  },
+  "crypto.families.pki.algorithms.7.what": {
+    "en": "4ced5cc355ad9abc",
+    "text": "الإبطال المنشور"
+  },
+  "crypto.families.pki.algorithms.7.how": {
+    "en": "df05e121a9b3e0b0",
+    "text": "قوائم CRL وفق RFC 5280 وOCSP وفق RFC 6960، واحدة من كل منهما لكل جهة شهادات — يوقّع القائمة مُصدِر، فقائمة لكل نطاق لن يكون لها مُصدِر صالح. تُوقَّع بـ CA نفسها لا بشهادة مستجيب مفوَّض (RFC 6960 القسم 4.2.2.2)، فيتحقق العميل بالمرتكز الذي لديه بالفعل. كل شهادة تصدرها هذه الخدمة تسمّي CRL الخاصة بها عبر http وldap الصريحين ومستجيبها في Authority Information Access — أبدًا https أو ldaps، وهو ما يقول RFC 5280 القسم 8 إن على CA ألا تكتبه في امتداد."
+  },
+  "crypto.families.pki.algorithms.8.what": {
+    "en": "5b01411fa6de40bb",
+    "text": "الإبطال المفحوص"
+  },
+  "crypto.families.pki.algorithms.9.what": {
+    "en": "55718f5523bcb7a5",
+    "text": "فحص الإبطال — كيف تُوثَّق CRL أجنبية"
+  },
+  "crypto.families.pki.algorithms.9.how": {
+    "en": "52dc68ed3e333313",
+    "text": "يُتحقق من توقيعها مقابل شهادة المُصدِر (الشهادة التالية صعودًا في السلسلة المقدَّمة)، ويجب أن يطابق اسم مُصدِرها، وامتداد حرج لا تنفّذه هذه الخدمة يجعلها غير قابلة للاستخدام (RFC 5280 القسم 6.3.3)، وتُستخدم حتى nextUpdate أو pki.revocationCrlMaxAgeS، أيهما أقرب. لا يُفحص النقل بالشهادة: التوقيع هو المصادقة، وشهادة خادم CRL نفسه تشكّل سلسلة عادة إلى CA قيد الفحص. تُتحقق CRL غير المباشرة مقابل شهادة cRLIssuer الذي تسمّيه الشهادة المقدَّمة، ويجب أن تحمل cRLSign وتشكّل سلسلة إلى المسار المقدَّم — مأخوذة من السلسلة، أو جهات هذه الخدمة، أو pki.revocationCrlIssuersFile، أو عنوان caIssuers في Authority Information Access الخاص بـ CRL نفسها؛ ودلتا مقابل الموقّع نفسه كقاعدتها. تُجلب القوائم عبر http أو https أو ldaps (ldap الصريح فقط عندما يسمح pki.revocationLdap بذلك)؛ ويجب أن تشكّل شهادة دليل ldaps سلسلة إلى مخزن node أو pki.revocationLdapCaFile. قائمة في عنوان لا يُطلب هي حالة تعذّر إثباتها، تُرفض تحت الفشل الصارم (STS-PKI-0188)؛ وشهادة لا تسمّي قائمة ولا مستجيبًا تُرفض في product (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190)، والتي تحمل noRevAvail وفق RFC 9608 لا تُفحص."
+  },
+  "crypto.families.pki.algorithms.10.what": {
+    "en": "d3bae1bd728d5ec3",
+    "text": "فحص الإبطال — كيف تُوثَّق استجابة OCSP أجنبية"
+  },
+  "crypto.families.pki.algorithms.10.how": {
+    "en": "26cd67f1d656bdd9",
+    "text": "يحمل الطلب CertID بقيمة SHA-1 (معرّف ملف RFC 5019، لا توقيعًا) وnonce من 32 ثمانيًا. يجب أن يوقّع الاستجابة مُصدِر الشهادة، أو مستجيب مفوَّض وقّع المُصدِر شهادته بـ id-kp-OCSPSigning (RFC 6960 القسم 4.2.2.2)؛ ويُرفض nonce مختلف يُعاد صداه بوصفه إعادة إرسال؛ ويجب أن يكون thisUpdate وnextUpdate حديثين ضمن pki.revocationClockSkewS. يُبحث عن حالة المستجيب المفوَّض نفسه في CRL التي تسمّيها شهادته (أبدًا عبر OCSP) ما لم تحمل id-pkix-ocsp-nocheck؛ ولا تُستخدم أجوبة المُبطَل، ولا تُستخدم أجوبة المجهول تحت الفشل الصارم."
+  },
+  "crypto.families.pki.algorithms.11.what": {
+    "en": "41d27abb839f6ea4",
+    "text": "فحص الإبطال — شهادة مسجَّلة"
+  },
+  "crypto.families.pki.algorithms.11.how": {
+    "en": "066dcdbbf97f711a",
+    "text": "شهادة مسجَّلة لا مقدَّمة — x5c لمفتاح RFC 7523، أو شهادة RFC 7522، أو fedSigningCertificate أو x5c لمفتاح شريك اتحاد، أو شهادة في oid4vp.trustedIssuerCertificates — تُفحص بالطريقة نفسها عندما تتحقق من توقيع، ويُجلب مُصدِروها من عنوان caIssuers الخاص بها. مفتاح عارٍ بلا شهادة ليس لديه ما يُفحص ويُبلَّغ عنه كذلك."
+  },
+  "crypto.families.pki.algorithms.12.what": {
+    "en": "20d318d0fe44aae4",
+    "text": "أين تعيش مفاتيح CA الخاصة"
+  },
+  "crypto.families.user-portal.signs": {
+    "en": "9febb36f585ca159",
+    "text": "لا شيء تصدره. لا تصدر البوابة رمزًا ولا تأكيدًا ولا شهادة — تغيّر بيانات الاعتماد بدلًا من إصدارها. يوقّع وقت تشغيلها، في المتصفح، شيئًا واحدًا: إثبات DPoP وفق RFC 9449 (ES256) في كل استدعاء `/account-api` وعند نقطة نهاية الرمز، بمفتاح P-256 ولّده WebCrypto غير قابل للاستخراج لتحميل تلك الصفحة."
+  },
+  "crypto.families.user-portal.verifies": {
+    "en": "8a095d27cbed0ab1",
+    "text": "كل استدعاء `/account-api`، عند بوابته (account-api/account_api.ts): رمز الوصول هو `at+jwt` وفق RFC 9068 يُتحقق منه تحت مفتاح توقيع هذا النطاق (أي جيل)، ويُفحص مُصدِره وجمهوره، ويُطابق ربط DPoP بإثبات تتحقق منه البوابة — ولا يُقبل أبدًا كـ Bearer. الشخص الذي يسمّيه هو الحساب الوحيد الذي يتصرف عليه. وإلى جانب ذلك، كلمة مرور مقدَّمة (التغيير يعيد إثبات الحالية) مقابل تجزئة scrypt على مدخلة الشخص نفسه، ورمز رابط التفعيل أو إعادة تعيين كلمة المرور مقابل تجزئة scrypt للصادر، ويُقارَن كل منهما في وقت ثابت عبر common/crypto.js. يتحقق وقت التشغيل من استجابة تفويض JARM مقابل JWKS للنطاق حيث يرسل النطاق واحدة. يتحقق authn/webauthn.js من تأكيد WebAuthn؛ ووقت التشغيل يشغّل المراسم فقط."
+  },
+  "crypto.families.user-portal.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.user-portal.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.user-portal.hashes": {
+    "en": "2955567f83fe0eee",
+    "text": "scrypt (RFC 7914) لكلمة المرور ولرمز رابط التفعيل أو إعادة التعيين، كل منهما مع 16 بايتًا عشوائيًا من الملح، بالتكلفة التي يسمّيها security.passwordHashLogN وpasswordHashR وpasswordHashP (N=2^15 وr=8 وp=1 افتراضيًا)، مخزَّنة على شكل `$scrypt$N$r$p$salt$hash` حتى يمكن رفع التكلفة لاحقًا من دون إبطال ما هو مخزَّن بالفعل. **ليست تجزئة**: كلمة المرور منخفضة القصور، والتجزئة السريعة فوق واحدة تبعد قائمة كلمات عن أن تكون كلمة المرور. SHA-256 في المتصفح لتحدّي PKCE S256 ولـ `ath` في إثبات DPoP، وهما عمل مختلف — ربط طلب بتسجيل دخول وإثبات برمز، لا حماية سر في حالة السكون."
+  },
+  "crypto.families.user-portal.keys": {
+    "en": "7a356445be1d2a7b",
+    "text": "لا شيء على الخادم. يعيش زوج مفاتيح DPoP في المتصفح: P-256، يولّده WebCrypto ونصفه الخاص غير قابل للاستخراج، يُحفظ في الذاكرة ويذهب مع الصفحة، وكل رمز يُصدر للبوابة مرتبط ببصمته. الرموز نفسها يوقّعها خادم التفويض للنطاق (صف OAuth2 / OIDC). لم يعد هناك مفتاح CSRF: ذهب مفتاح HMAC لكل عملية مع رمز CSRF وملف تعريف ارتباط الجلسة الذي كان يحرسه (#568)."
+  },
+  "crypto.families.user-portal.algorithms.0.what": {
+    "en": "2e88a42ac4b1c9fa",
+    "text": "كلمة المرور ورمز الرابط في حالة السكون"
+  },
+  "crypto.families.user-portal.algorithms.0.how": {
+    "en": "51254f21a3bc3036",
+    "text": "scrypt، N=32768 وr=8 وp=1 افتراضيًا (security.passwordHash*)، مفتاح 32 بايتًا، ملح عشوائي 16 بايتًا"
+  },
+  "crypto.families.user-portal.algorithms.1.what": {
+    "en": "8117839e71d9cf2c",
+    "text": "مقارنة أي منهما"
+  },
+  "crypto.families.user-portal.algorithms.1.how": {
+    "en": "3c3507a38f025c3d",
+    "text": "مساواة بوقت ثابت"
+  },
+  "crypto.families.user-portal.algorithms.2.what": {
+    "en": "e9ec660a650f5513",
+    "text": "رمز الوصول عند /account-api"
+  },
+  "crypto.families.user-portal.algorithms.2.how": {
+    "en": "87be1920112e9844",
+    "text": "at+jwt وفق RFC 9068، يُتحقق منه تحت مفتاح توقيع هذا النطاق، مرتبط بـ DPoP"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "إثبات DPoP (المتصفح)"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 بمفتاح WebCrypto P-256 غير قابل للاستخراج لكل تحميل صفحة"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.signs": {
+    "en": "8728ccd393fd7e6c",
+    "text": "لا شيء يصدره تقرير. يوقّع وقت التشغيل، في المتصفح، شيئًا واحدًا: إثبات DPoP وفق RFC 9449 (ES256) في كل استدعاء `/report-api` وعند نقطة نهاية الرمز، بمفتاح P-256 ولّده WebCrypto غير قابل للاستخراج لتحميل تلك الصفحة."
+  },
+  "crypto.families.reporting.verifies": {
+    "en": "294c4447e5523292",
+    "text": "كل استدعاء `/report-api`، عند بوابته (report/report_api.ts): رمز الوصول هو `at+jwt` وفق RFC 9068 يُتحقق منه تحت مفتاح توقيع هذا النطاق (أي جيل)، ويُفحص مُصدِره وجمهوره، ويُطابق ربط DPoP بإثبات تتحقق منه البوابة — ولا يُقبل أبدًا كـ Bearer. يتحقق وقت التشغيل من استجابة تفويض JARM مقابل JWKS للنطاق حيث يرسل النطاق واحدة."
+  },
+  "crypto.families.reporting.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.reporting.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.reporting.hashes": {
+    "en": "2ddfe2e29749ce1c",
+    "text": "SHA-256 لبايتات تقرير منتهٍ، تُخزَّنة إلى جانبها (`sts_report_artifacts.sha256`) وتُفحص عند إعادة قراءة النتيجة. SHA-256 في المتصفح لتحدّي PKCE S256 ولـ `ath` في إثبات DPoP."
+  },
+  "crypto.families.reporting.keys": {
+    "en": "feaa838ac5fb9b97",
+    "text": "لا شيء على الخادم. يعيش زوج مفاتيح DPoP في المتصفح: P-256، يولّده WebCrypto ونصفه الخاص غير قابل للاستخراج، يُحفظ في الذاكرة ويذهب مع الصفحة. الرموز نفسها يوقّعها خادم التفويض للنطاق (صف OAuth2 / OIDC)."
+  },
+  "crypto.families.reporting.algorithms.0.what": {
+    "en": "63f37962dc3dfb33",
+    "text": "رمز الوصول عند /report-api"
+  },
+  "crypto.families.reporting.algorithms.0.how": {
+    "en": "87be1920112e9844",
+    "text": "at+jwt وفق RFC 9068، يُتحقق منه تحت مفتاح توقيع هذا النطاق، مرتبط بـ DPoP"
+  },
+  "crypto.families.reporting.algorithms.1.what": {
+    "en": "e097c8970e32cda3",
+    "text": "إثبات DPoP (المتصفح)"
+  },
+  "crypto.families.reporting.algorithms.1.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 بمفتاح WebCrypto P-256 غير قابل للاستخراج لكل تحميل صفحة"
+  },
+  "crypto.families.reporting.algorithms.2.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.reporting.algorithms.2.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.algorithms.3.what": {
+    "en": "80ea1ab36a2e5c55",
+    "text": "بايتات التقرير المخزَّنة"
+  },
+  "crypto.families.reporting.algorithms.3.how": {
+    "en": "9d40176053fec31b",
+    "text": "SHA-256، يُحفظ مع الأثر ويُفحص عند القراءة"
+  },
+  "crypto.families.gnap.signs": {
+    "en": "ad4b982edb070f2c",
+    "text": "صيغ رمز الوصول الخمس، ثلاث منها ليست JWT. يمر jwt-signed بالموقّع نفسه ككل JWT آخر هنا، وترويسته `typ` هي gnap-at+jwt (#157)؛ ويُوقَّع biscuit بمفتاح Ed25519 للنطاق (توقيع الكتلة الخاص بـ Biscuit)؛ وتحمل مقدرة ZCAP-LD إثبات Data Integrity في الحزمة التي يسمّيها gnap.zcapCryptosuite — eddsa-jcs-2022 افتراضيًا، أو mldsa44-jcs-2024 أو slhdsa128-jcs-2024 بمفتاح ما بعد الكم للنطاق، أو Ed25519Signature2020 للتوافق؛ وmacaroon سلسلة HMAC-SHA256 تحت مفتاح مشتق لكل خادم موارد. ويوقّع أيضًا استجابة HTTP بـ RFC 9421 عندما تطلب نسخة عميل واحدة."
+  },
+  "crypto.families.gnap.verifies": {
+    "en": "0128ae60345397de",
+    "text": "كل طلب تقدّمه نسخة عميل، بالمفتاح الذي قدّمته: توقيع رسالة HTTP وفق RFC 9421 (مع تغطية الجسم بـ Content-Digest وفق RFC 9530)، أو شهادة TLS متبادل (يُستشار الإبطال؛ سلسلة إلى مخزن ثقة العملاء وربط بمدخلة التطبيق تحت gnap.mtlsTrust=pki، وهو افتراضي product)، أو JWS منفصل على الجسم أو JWS مرفق يحمله. يُتحقق من تدوير المفتاح تحت المفتاحين كليهما. يُثبَت خادم موارد يستدعي الاستبطان أو التسجيل بالطريقة نفسها، وتُتحقق كل صيغة رمز عند الاستبطان."
+  },
+  "crypto.families.gnap.encrypts": {
+    "en": "fd3d73b7072a0617",
+    "text": "jwt-encrypted: JWT موقَّع لـ GNAP داخل JWE — إلى مفتاح خادم الموارد نفسه (RSA-OAEP-256 أو ECDH-ES+A256KW، مع `gnap.jweEnc`) عندما تحمل مدخلة تطبيقه واحدًا، وإلا `dir` مع A256GCM تحت مفتاح مشتق من النطاق حتى لا يستطيع فتحه إلا خادم التفويض هذا."
+  },
+  "crypto.families.gnap.decrypts": {
+    "en": "5a6336f65e8343ba",
+    "text": "رمز jwt-encrypted مشفّر تحت `dir`، عند الاستبطان. الرمز المشفّر إلى مفتاح خادم موارد معتم هنا، وذلك هو القصد من التشفير إليه."
+  },
+  "crypto.families.gnap.hashes": {
+    "en": "a478d2fd912623b6",
+    "text": "SHA-256 وSHA-512 لـ Content-Digest؛ وتجزئة التفاعل في القسم 4.2.3 بأي طريقة تجزئة Named Information يحسبها node (SHA-2 وSHA-3، بما فيها الأشكال المقطوعة)؛ وSHA-256 لبصمة JWK وبصمة شهادة وتجزئة موافقة متذكَّرة؛ وSHA-256 لرمز الوصول من أجل `ath` في إثبات JWS."
+  },
+  "crypto.families.gnap.keys": {
+    "en": "596e3e172bf64684",
+    "text": "مفتاح نسخة العميل هو هوية العميل — JWK أو شهادة أو بصمة شهادة أو مرجع إلى مفتاح على مدخلة التطبيق. يُختم مفتاح متماثل مشترك (gnapSymmetricKey) ومفتاح جذر macaroon (gnapMacaroonKey) في حالة السكون تحت مفتاح تشفير مفاتيح العملية. مفاتيح macaroon وdir اشتقاقات HKDF-SHA256 من سر النطاق مع فاصل مجال لكل منها."
+  },
+  "crypto.families.gnap.whatItDoesNot": {
+    "en": "a0a7f11d9b8bed02",
+    "text": "لا يقبل طلبًا غير مُثبَت لرمز مرتبط، ولا يوجد إعداد يجعله يقبل: إثبات مفتاح GNAP هو البروتوكول لا خيار تصلّب. الاختياري هو رمز Bearer، الذي يوقفه gnap.bearerTokens. لم تُنفَّذ تحفّظات الطرف الثالث في Macaroon ولا كتل الطرف الثالث في Biscuit ولا إثباتات استدعاء ZCAP."
+  },
+  "crypto.families.gnap.algorithms.0.what": {
+    "en": "0acd0a9999d15131",
+    "text": "صيغ رمز الوصول"
+  },
+  "crypto.families.gnap.algorithms.1.what": {
+    "en": "9b4d9be6956c3850",
+    "text": "طرق إثبات المفتاح"
+  },
+  "crypto.families.gnap.algorithms.2.what": {
+    "en": "3017e5b92c8dca35",
+    "text": "صيغ المفتاح"
+  },
+  "crypto.families.gnap.algorithms.3.what": {
+    "en": "6b925880a910e023",
+    "text": "خوارزميات توقيع رسالة HTTP"
+  },
+  "crypto.families.gnap.algorithms.4.what": {
+    "en": "7d3b20ad8cfcdfc1",
+    "text": "خوارزميات Content-Digest"
+  },
+  "crypto.families.gnap.algorithms.5.what": {
+    "en": "3d3974ea5d2bc632",
+    "text": "تشفير محتوى jwt-encrypted، عبر gnap.jweEnc"
+  },
+  "crypto.families.openid-federation.signs": {
+    "en": "deb6cc962655484e",
+    "text": "كل بيان اتحاد يصنعه نطاق — تهيئة الكيان وبيانات التابع وعلامات الثقة التي يصدرها واستجابات resolve وحالة علامة الثقة والمفاتيح التاريخية — على شكل JWT ذات نوع (RFC 8725 3.11) بمفتاح كيان الاتحاد للنطاق، مفتاح يُبقى بعيدًا عن كل مفتاح بروتوكول (OpenID Federation 1.1 3.1.1)."
+  },
+  "crypto.families.openid-federation.verifies": {
+    "en": "3d96827548ae76be",
+    "text": "كل بيان في سلسلة ثقة مقابل المفاتيح التي يسمّيها البيان فوقه، والأخير مقابل المفاتيح المضبوطة لمرتكز الثقة (10.2)؛ وتهيئة كيان مقابل مفاتيحه نفسها؛ وعلامة ثقة مقابل مفاتيح مُصدِرها كما تُثبت عبر سلسلة المُصدِر نفسها (7.3)، وتفويضها مقابل المالك الذي يسمّيه المرتكز (7.2.2). يجب أن يسمّي kid مفتاحًا واحدًا بالضبط؛ ويُرفض HMAC وnone."
+  },
+  "crypto.families.openid-federation.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.openid-federation.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.openid-federation.hashes": {
+    "en": "de5f85f4b8049f51",
+    "text": "SHA-256 لبصمة RFC 7638 التي يكونها kid كل مفتاح، ولتسمية مدخلة سجل باسم الكيان أو العلامة التي تتناولها."
+  },
+  "crypto.families.openid-federation.keys": {
+    "en": "8407e160ab2fe530",
+    "text": "جدول مفتاح كيان اتحاد واحد لكل نطاق (oidfed.signingAlg، ES256 افتراضيًا، ويُعرض ML-DSA)، على مدخلة ou=oidfed للنطاق مع ختم الأنصاف الخاصة تحت مفتاح تشفير المفاتيح حيثما تستمر المفاتيح؛ ومفتاح تالٍ يُنشر مسبقًا، والمفاتيح المتقاعدة تُنشر عبر oidfed.keyOverlapDays وتُحفظ لنقطة نهاية المفاتيح التاريخية إلى الأبد، وتُسقط أنصافها الخاصة عند التقاعد. المفاتيح المثبتة لكل مرتكز ثقة وتابع هي مفاتيح عامة في السجل."
+  },
+  "crypto.families.openid-federation.whatItDoesNot": {
+    "en": "bb73b0a66ac9741b",
+    "text": "لا يصادق عميلًا عند نقطة نهاية اتحاد (8.8 — \"none\" هو الافتراضي والطريقة الوحيدة هنا)، ولا يوقّع بيان اتحاد بمفتاح بروتوكول ولا العكس."
+  },
+  "crypto.families.openid-federation.algorithms.0.what": {
+    "en": "b8a1589c947f6093",
+    "text": "خوارزميات مفتاح كيان الاتحاد المعروضة"
+  },
+  "crypto.families.openid-federation.algorithms.1.what": {
+    "en": "38bc9028c0d9c2d4",
+    "text": "مفاتيح هذا النطاق الجديدة، عبر oidfed.signingAlg"
+  },
+  "crypto.families.openid-federation.algorithms.2.what": {
+    "en": "b0e042f34dd410d1",
+    "text": "التوقيعات المتحقَّق منها في بيانات الاتحاد"
+  },
+  "crypto.families.xacml.signs": {
+    "en": "f25654e9962f4f24",
+    "text": "لا شيء. القرار ليس رمزًا ولا يحمل توقيعًا."
+  },
+  "crypto.families.xacml.verifies": {
+    "en": "876b7d98bbc03953",
+    "text": "لا شيء في مسار القرار. يُتحقق من شهادة عميل PEP البعيد في طبقة TLS (انظر TLS / mutual TLS)، لا هنا."
+  },
+  "crypto.families.xacml.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.xacml.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.xacml.hashes": {
+    "en": "cb519e6f900e9b51",
+    "text": "واحدة، وليست أمنًا. رمز مزامنة PEP البعيد هو SHA-256 على مستندات كل سياسة مفعَّلة بالإضافة إلى أيها الجذر — طريقة رخيصة لـ PEP ليسأل \"هل تغيّر شيء\" ويحصل على 304، ولا أكثر. لا يصادق شيئًا ولا يُقارَن بأي شيء يقدّمه متصل كبيانات اعتماد، فيبقى صحيحًا حتى لو كان CRC."
+  },
+  "crypto.families.xacml.keys": {
+    "en": "b8e87648cce690ed",
+    "text": "لا شيء. لا يشارك أي مفتاح من أي نوع في بلوغ قرار."
+  },
+  "crypto.families.xacml.whatItDoesNot": {
+    "en": "6d7c9938306101b5",
+    "text": "لا يوقّع قرارًا، فقرار انتقل بين عمليتين لا يحمل سلامة خاصة به ويرتكز كليًا على النقل. ذلك موقف لا فجوة: توقيع قرار يحتاج إلى أن يحتفظ PEP بمفتاح ويتحقق منه، ومقدمة هذه الخدمة كلها أن الجزء المهم هو السياسة لا التوصيلات."
+  },
+  "crypto.families.xacml.algorithms.0.what": {
+    "en": "c10d5f9e12000a4e",
+    "text": "لا يُوقَّع شيء ولا يُتحقق منه ولا يُشفَّر ولا يُفك تشفيره هنا"
+  },
+  "crypto.families.xacml.algorithms.1.what": {
+    "en": "00642c75836a2377",
+    "text": "رمز مزامنة PEP البعيد، وهو كاشف تغيير لا آلية أمن"
+  },
+  "crypto.families.authzen.signs": {
+    "en": "ab66b57e4b31b350",
+    "text": "لا شيء. القرار قيمة JSON منطقية ولا يحمل توقيعًا؛ ومستند البيانات الوصفية غير موقَّع (لا يُنتَج signed_metadata)."
+  },
+  "crypto.families.authzen.verifies": {
+    "en": "6d407b4bb19e8a28",
+    "text": "بيانات اعتماد المتصل، بواسطة الطبقة التي تملكها: شهادة عميل بواسطة طبقة TLS ومخزن ثقة العملاء (انظر TLS / mutual TLS)، ورمز وصول بواسطة تحقق JWS الخاص بهذا النطاق (انظر OAuth2 / OIDC)، وتحت mtls+bearer قيمة x5t#S256 للرمز وفق RFC 8705 مقابل الشهادة المقدَّمة."
+  },
+  "crypto.families.authzen.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.authzen.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.authzen.hashes": {
+    "en": "c88ad2cce036fcf4",
+    "text": "بصمة SHA-256 للشهادة المقدَّمة، تُقارَن مع cnf للرمز تحت mtls+bearer."
+  },
+  "crypto.families.authzen.keys": {
+    "en": "1eb2c695a5178870",
+    "text": "لا شيء خاص به. تتحقق مفاتيح توقيع النطاق من الرموز التي يقبلها، كما في كل مكان آخر."
+  },
+  "crypto.families.authzen.whatItDoesNot": {
+    "en": "11e5f968c5b7cf60",
+    "text": "لا يوقّع قرارًا: يرتكز القرار على النقل، كما يفعل قرار XACML."
+  },
+  "crypto.families.authzen.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "لا يُوقَّع شيء ولا يُشفَّر ولا يُفك تشفيره هنا"
+  },
+  "crypto.families.authzen.algorithms.1.what": {
+    "en": "349171490df64541",
+    "text": "بصمة الشهادة التي يُقارَن بها رمز مرتبط (RFC 8705)"
+  },
+  "crypto.families.uma-2-0.signs": {
+    "en": "c22ee886c8b04abd",
+    "text": "لا شيء خاص به. رمز الطرف الطالب هو رمز وصول وفق RFC 9068 يوقّعه النطاق عبر القمع الواحد (انظر OAuth2 / OIDC)؛ وتذكرة إذن ورمز مطالبات مستمر هما مقبضان عشوائيان، لا توقيعان."
+  },
+  "crypto.families.uma-2-0.verifies": {
+    "en": "b4864c9dcb80100e",
+    "text": "رمز واجهة الحماية (PAT)، وهو رمز وصول، بواسطة تحقق JWS الخاص بهذا النطاق (انظر OAuth2 / OIDC)، مع إثبات DPoP أو ربط شهادة RFC 8705 حيث يحمل واحدًا؛ وclaim_token مدفوع، وهو ID Token من هذا النطاق أو من مُصدِر تأكيدات مُعلَن، بالطريقة نفسها."
+  },
+  "crypto.families.uma-2-0.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.uma-2-0.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.uma-2-0.hashes": {
+    "en": "d0596b4d7e7d1faa",
+    "text": "SHA-256 الذي تُخزَّن تحته تذكرة إذن ورمز مطالبات مستمر، فلا يحتفظ المخزن بمقبض عامل."
+  },
+  "crypto.families.uma-2-0.keys": {
+    "en": "5ee5db5c94943e3d",
+    "text": "لا شيء خاص به. توقّع مفاتيح توقيع النطاق RPT وتتحقق من PAT، كما في كل مكان آخر."
+  },
+  "crypto.families.uma-2-0.whatItDoesNot": {
+    "en": "68ffcefb9ff39fa2",
+    "text": "لا يوقّع قرارًا ولا إذنًا: الإذن مطالبة في RPT، وتوقيع RPT هو توقيع OAuth."
+  },
+  "crypto.families.uma-2-0.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "لا يُوقَّع شيء ولا يُشفَّر ولا يُفك تشفيره هنا"
+  },
+  "crypto.families.uma-2-0.algorithms.1.what": {
+    "en": "2a781ca079088054",
+    "text": "التجزئة التي تُخزَّن تحتها تذكرة أو PCT"
+  },
+  "crypto.families.oauth2-oidc.signs": {
+    "en": "ba9dd042c619d87e",
+    "text": "كل رمز وصول ورمز تحديث، ورمز ID Token، بمفتاح RSA الخاص بنطاق الثقة بخوارزمية RS256. العميل الذي يسجّل `id_token_signed_response_alg` يحصل على تلك الخوارزمية بدلًا منها، لرمز ID Token ورمز Logout Token في القناة الخلفية على السواء (القسم 2.4: المفاتيح نفسها التي لرموز ID Token)، من جدول JWS المشترك — كل منحنى، ومنحنيا Edwards كلاهما، وما بعد الكم والمركّبة. واستجابة UserInfo الموقَّعة بالطريقة نفسها، إضافة إلى عائلة HMAC (تُوقَّع بـ `client_secret` الخاص بذلك العميل، ولهذا لا تحتاج إلى مفتاح منشور) و`none`. **واستجابة استبطان JWT وفق RFC 9701** (2026-09-13)، من النوع `token-introspection+jwt`، بخوارزمية RS256 أو بالخوارزمية `introspection_signed_response_alg` التي سجّلها خادم الموارد — الجدول نفسه وعائلة HMAC، وليس `none` أبدًا. **واستجابة مورد** (#178): توقيع رسالة HTTP وفق RFC 9421 موسوم بـ `fapi-2-response`، بمفتاح النطاق الذي يسمّيه `oauth2.httpSignatureResponseAlg` (ES256 افتراضيًا؛ ويُعرَض ML-DSA)، على الاستجابة، وبواسطة `;req`، على الطلب الذي تجيب عنه."
+  },
+  "crypto.families.oauth2-oidc.verifies": {
+    "en": "8f530ebb541fc71d",
+    "text": "كائن طلب (RFC 9101، 2026-09-13)، يوقّعه العميل بمفتاح سجّله أو بسرّه، ويُفك تشفير ما شُفّر إلى مفتاح RSA أو EC المنشور لنطاق الثقة هذا بقيمة `use: \"enc\"` أو إلى ذلك السر. إثباتات DPoP (RFC 9449)، وتأكيدات العميل `private_key_jwt` و`client_secret_jwt`، وكل رمز وصول يُسلَّم عند نقطة نهاية محمية — مقابل JWKS الخاص به، مع تطبيق `oauth2.clockSkewS`. **وتوقيع XML**، وهو الشيء الوحيد في هذه العائلة الذي ليس JWS: يضع RFC 7522 تأكيد SAML 2.0 في معلمي الطلب نفسيهما اللذين يضع RFC 7523 فيهما JWT، فتتحقق نقطة نهاية الرمز من توقيع XML مغلّف على <saml:Assertion> عبر المحرك المضمَّن نفسه الذي يوقّع به `/saml2`. يُفحص مقابل شهادة مُسجَّلة على الطرف المُؤكِّد وليس أبدًا مقابل شهادة يحملها المستند في ds:KeyInfo الخاص به، والفحص مقابل الشهادة المضبوطة هو ما يتخطاه التنفيذ الساذج — وهذا أشد من مسار `x5c` الذي يسمح به RFC 7523، لأن السلسلة تثبت أن النطاق أصدر مفتاحًا ولا تقول شيئًا عن التطبيق الذي يحمله. **وطلب مورد موقَّع** (#178): توقيع RFC 9421 موسوم بـ `fapi-2-request` عند كل خادم موارد، بالمفتاح الذي يسمّيه keyid في jwks أو jwks_uri المُسجَّلين للعميل، وContent-Digest للطلب وفق RFC 9530."
+  },
+  "crypto.families.oauth2-oidc.encrypts": {
+    "en": "e3a5330c42e05359",
+    "text": "استجابة UserInfo لعميل سجّل `userinfo_encrypted_response_alg`، واستجابة استبطان JWT لمن سجّل `introspection_encrypted_response_alg`: تسلسل JWE المضغوط، بـ RSA-OAEP أو ECDH-ES إلى مفتاح العميل نفسه، وJWT متداخل عند التوقيع. **وكل رمز تحديث** (2026-09-12): يُختم JWT الموقَّع بوصفه JWT متداخلًا (`cty: JWT`، RFC 7519 القسم 11.2) إلى مفاتيح نطاق الثقة هذا نفسه، بموجب `oauth2.refreshTokenEncryptionAlg` و`…Enc` — أي خوارزمية لإدارة المفاتيح ينفّذها جدول JWE المشترك، إلى مفتاح RSA الخاص بالنطاق أو مفتاح EC أو سر خاص به. لا يرى أي عميل تلك المفاتيح ولا يحتاج إليها."
+  },
+  "crypto.families.oauth2-oidc.decrypts": {
+    "en": "2b53f4f465776fac",
+    "text": "JWE مُشفَّر إلى مفتاح RSA الخاص بهذه الخدمة، بخوارزمية RSA-OAEP-256 فقط — قائمة أقصر مما يُشفَّر به عن قصد، لأنه لا يحتفظ بمفتاح EC خاص للاتفاق. **ورمز تحديث**، بموجب أي خوارزمية تسمّيها ترويسته، قبل أن تقرأ منحة التحديث أو الاستبطان أو الإبطال أو تبادل الرموز أي شيء فيه؛ ويُرفض رمز التحديث غير المُشفَّر."
+  },
+  "crypto.families.oauth2-oidc.hashes": {
+    "en": "4e7cfb95ddd04fc5",
+    "text": "`at_hash` و`c_hash` هما النصف الأيسر من SHA-256 للرمز؛ وPKCE `S256` هو SHA-256 على متحقِّق الرمز؛ و`cnf.jkt` بصمة JWK وفق RFC 7638 (SHA-256) و`cnf[\"x5t#S256\"]` هو SHA-256 لترميز DER لشهادة العميل."
+  },
+  "crypto.families.oauth2-oidc.whatItDoesNot": {
+    "en": "8d259f93358c4bbf",
+    "text": "لا يتحقق من أي رمز وصول لم يصدره، إلا عند UserInfo. لا يُجلب `jwks_uri` الخاص بالعميل (#120) إلا بموجب سياسة الصادر، ولعميل لم يسجّل `jwks` مضمَّنًا فقط."
+  },
+  "crypto.families.oauth2-oidc.algorithms.0.what": {
+    "en": "6b88c7f4acfda628",
+    "text": "الرموز التي تصدرها هذه الخدمة افتراضيًا"
+  },
+  "crypto.families.oauth2-oidc.algorithms.1.what": {
+    "en": "4061cd4b31da8060",
+    "text": "توقيعات استجابة المورد (RFC 9421, oauth2.httpSignatureResponseAlg)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.2.what": {
+    "en": "56ef2b0cc6f54335",
+    "text": "رمز ID Token، حين يسجّل عميل واحدًا"
+  },
+  "crypto.families.oauth2-oidc.algorithms.3.what": {
+    "en": "7f4c7f19d506a5ac",
+    "text": "استجابة UserInfo"
+  },
+  "crypto.families.oauth2-oidc.algorithms.4.what": {
+    "en": "1bd11ab0955e8290",
+    "text": "استجابة استبطان JWT (RFC 9701)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.5.what": {
+    "en": "f80ef0758c850e59",
+    "text": "تشفير استجابة استبطان JWT (RFC 9701)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.6.what": {
+    "en": "ee79eb44634d7a69",
+    "text": "توقيع كائن الطلب (RFC 9101)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.7.what": {
+    "en": "bc7822342ad3ba50",
+    "text": "فك تشفير كائن الطلب (RFC 9101)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.8.what": {
+    "en": "4f2f583388edb490",
+    "text": "إثبات DPoP"
+  },
+  "crypto.families.oauth2-oidc.algorithms.9.what": {
+    "en": "ba753c9e11eb8f43",
+    "text": "تأكيد العميل"
+  },
+  "crypto.families.oauth2-oidc.algorithms.10.what": {
+    "en": "648f1a07777e17bd",
+    "text": "إدارة مفاتيح JWE (صادر)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.11.what": {
+    "en": "30e457f0295c4b6a",
+    "text": "إدارة مفاتيح JWE (وارد)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.12.what": {
+    "en": "dce5f5fa4d35a642",
+    "text": "تشفير محتوى JWE"
+  },
+  "crypto.families.oauth2-oidc.algorithms.13.what": {
+    "en": "66653d219c100db3",
+    "text": "تشفير رمز التحديث (إلى مفاتيح نطاق الثقة هذا نفسه)"
+  },
+  "crypto.families.federation.signs": {
+    "en": "4f58817f19139f26",
+    "text": "طلب SAML 2.0 `<AuthnRequest>` الذي يرسله إلى موفّر هوية أجنبي، مغلّفًا، بخوارزمية RSA-SHA256 على exclusive c14n — الموقِّع نفسه الذي يمر به كل مستند آخر هنا — و`<LogoutRequest>` الذي يُبلغ شريكًا بتسجيل خروج من هنا، مغلّفًا أو بوصفه توقيع الاستعلام المنفصل لربط Redirect."
+  },
+  "crypto.families.federation.verifies": {
+    "en": "b986e6fffdabc6e3",
+    "text": "هذا جوهر الميزة. استجابة SAML الخاصة بالشريك وتأكيد Assertion داخلها، يُفحص كل منهما على حدة وعلى الشهادة المضبوطة على العلاقة — وليس أبدًا على شهادة يحملها المستند في `ds:KeyInfo` الخاص به، والفحص مقابل الشهادة المضبوطة هو ما يتخطاه التنفيذ الساذج. رمز ID Token الخاص بالشريك بوصفه JWS عاديًا مقابل مفاتيح الشريك المنشورة. تسجيل خروج الشريك — طلب SAML `<LogoutRequest>` أو رمز Back-Channel Logout Token — مقابل المفاتيح المضبوطة نفسها، ويُرفض إن كان غير موقَّع ما لم تُوقف العلاقة `fedRequireSignedLogout`، وهو ما لا يسمح به إلا وضع التطوير."
+  },
+  "crypto.families.federation.decrypts": {
+    "en": "c5308d3c65d9cca0",
+    "text": "ما يشفّره شريك إلى مفتاح العلاقة نفسه: `<EncryptedAssertion>`، أو `<EncryptedID>` أو `<EncryptedAttribute>` داخل تأكيد تم التحقق منه أو داخل `<LogoutRequest>`، ورمز WS-Federation، ورمز ID Token أو Logout Token بصيغة JWE — بموجب خوارزمية إدارة مفاتيح واحدة وخوارزمية تشفير محتوى واحدة بالضبط تقبلهما العلاقة. يُتحقق من توقيع التأكيد على نصه الواضح، ومن توقيع الاستجابة Response على النص المُشفَّر كما وصل؛ ويجب أن يحتوي JWE على JWT موقَّع. كل فشل في فك التشفير إجابة واحدة، حتى لا تكون ACS عرافًا."
+  },
+  "crypto.families.federation.hashes": {
+    "en": "2d3c2fd5b62d8002",
+    "text": "أيًا كان ما يسمّيه `DigestMethod` الخاص بالشريك، من الجدول المضمَّن أدناه."
+  },
+  "crypto.families.federation.keys": {
+    "en": "8f9899d181079f3d",
+    "text": "زوج مفاتيح تشفير واحد لكل علاقة SAML 2.0 أو WS-Federation أو OpenID Connect، يُنشأ عند إنشاء العلاقة: RSA 3072 أو EC P-256 تحت وسيط Intermediate الخاص بنطاق الثقة، أو لـ OpenID Connect المفتاح X-Wing أو ML-KEM-768، وهما لا يحملان شهادة. يُختم نصفه الخاص تحت مفتاح تشفير المفاتيح حيثما تُحفَظ المفاتيح؛ ويُبقي التدوير المفتاح الذي حلّ محله طوال `federation.encryptionKeyGraceS`، ولا يُنشر إلا المفتاح الحالي. وما يوقّعه يوقّعه بمفتاح التوقيع الخاص بنطاق الثقة."
+  },
+  "crypto.families.federation.whatItDoesNot": {
+    "en": "76366a6354696014",
+    "text": "لا يشفّر شيئًا مما يرسله، ولا يستعلم من أي شريك عن جلسة: ما يصل إلى الجلسة بعد تسجيل الدخول هو تسجيل خروج الشريك، الذي ينهيها، وقيمة SAML `SessionNotOnOrAfter` التي أرسلها عند تسجيل الدخول، والتي تحدّها. في وضع المنتج يرفض تأكيدًا بنص واضح يعبر المتصفح ما لم تضبط العلاقة `fedAllowUnencrypted`؛ وتُرفض AES-CBC وRSA PKCS #1 v1.5 في كل وضع. البوابة على الموقِّع وعلى الموضوع (#109): بعد توقيع تم التحقق منه لا يُسجَّل الدخول إلا للشخص المرتبط به موضوع الشريك. هذا هو السطح الوحيد هنا حيث غياب الفحص تجاوز للمصادقة لكل بروتوكول في العملية — انظر federation/CLAUDE.md."
+  },
+  "crypto.families.federation.algorithms.0.what": {
+    "en": "7c3206a1a259cf99",
+    "text": "توقيع الطلب الصادر"
+  },
+  "crypto.families.federation.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "توقيع الوارد، أي منها"
+  },
+  "crypto.families.federation.algorithms.2.what": {
+    "en": "1a25a971a5ba739e",
+    "text": "رمز ID Token الوارد"
+  },
+  "crypto.families.federation.algorithms.3.what": {
+    "en": "c53f0beeb485d23e",
+    "text": "أنواع مفاتيح التشفير"
+  },
+  "crypto.families.federation.algorithms.4.what": {
+    "en": "51df0d2b33ed2512",
+    "text": "إدارة مفاتيح XML Encryption، واحدة منها"
+  },
+  "crypto.families.federation.algorithms.5.what": {
+    "en": "b6c8a81b07dedcf0",
+    "text": "تشفير محتوى XML Encryption، واحد منها"
+  },
+  "crypto.families.federation.algorithms.6.what": {
+    "en": "1cabfdebd09f6040",
+    "text": "إدارة مفاتيح JWE، واحدة منها"
+  },
+  "crypto.families.federation.algorithms.7.what": {
+    "en": "97af5681ca47c186",
+    "text": "تشفير محتوى JWE، واحد منها"
+  },
+  "crypto.families.federation.algorithms.8.what": {
+    "en": "4912e5bb4c7ef303",
+    "text": "مرفوض في كل وضع"
+  },
+  "crypto.families.saml-2-0.signs": {
+    "en": "cae50b198b378a2b",
+    "text": "التأكيدات والاستجابات وطلبات LogoutRequest وبيانات التعريف لكل موفّر خدمة — مغلّفة، بخوارزمية RSA-SHA256، وبترميز معياري حصري، مع `<ds:Signature>` مباشرة بعد `<Issuer>` حيث يضعه المخطط. يُوقَّع ربط HTTP Redirect على نحو مختلف، وذلك صنيع المواصفة لا صنيع هذه الخدمة: إنه توقيع منفصل على ثمانيات سلسلة الاستعلام، ويسمّي `SigAlg` الخوارزمية بوصفه معاملًا."
+  },
+  "crypto.families.saml-2-0.verifies": {
+    "en": "4e8292c2dfea891b",
+    "text": "توقيعات AuthnRequest وLogoutRequest وLogoutResponse وArtifactResolve الخاصة بموفّر الخدمة (منذ 2026-09-17) — توقيع الاستعلام المنفصل لربط Redirect، أو توقيع ربط SimpleSign على قيم النموذج، أو توقيع مغلّف — مقابل الشهادات المُسجَّلة لموفّر الخدمة (RSA وEC وEdDSA وDSA وML-DSA وSLH-DSA)، وليس أبدًا الشهادة التي في الطلب؛ وتوقيع مستند بيانات تعريف تم استهلاكه نفسه مقابل شهادة المدخلة أو مراسي الثقة لنطاق الثقة؛ ومصنوعات Artifact الخاصة به. يُفك تشفير `<EncryptedID>` الخاص بموفّر الخدمة بدلًا من التحقق منه."
+  },
+  "crypto.families.saml-2-0.encrypts": {
+    "en": "fc0f0e879fca3b40",
+    "text": "التأكيد داخل الاستجابة Response، بوصفه `<EncryptedAssertion>`، ومعرّف NameID في LogoutRequest بوصفه `<EncryptedID>` — لكل تطبيق، إلى الشهادة المحفوظة على مدخلته. يُوقَّع أولًا ثم يُشفَّر، وهو الترتيب الذي يتوقعه كل موفّر خدمة: التوقيع داخل النص المُشفَّر وهو ما يبقى بعد فك التشفير."
+  },
+  "crypto.families.saml-2-0.decrypts": {
+    "en": "428824d407f646cc",
+    "text": "`<EncryptedID>` يرسله موفّر الخدمة في LogoutRequest، إلى مفتاح RSA الخاص بنطاق الثقة."
+  },
+  "crypto.families.saml-2-0.hashes": {
+    "en": "d825722f0bd1bef5",
+    "text": "SHA-256 لبصمة Reference؛ وSHA-1 داخل RSA-OAEP-MGF1P، لأن ذلك ما يعنيه URI وليس اختيارًا صنعته هذه الخدمة."
+  },
+  "crypto.families.saml-2-0.whatItDoesNot": {
+    "en": "30efb1054d4e7582",
+    "text": "لا يقبل توقيع SHA-1 إلا إذا كان saml.allowSha1Signatures مُشغَّلًا — وليس أبدًا في وضع المنتج، الذي لا يوقّع أيضًا بـ rsa-sha1 ولا يغلّف مفتاحًا بـ rsa-1_5 ولا يفك تغليف واحد — ولا MD5 ولا MAC ولا توقيعًا قائمًا على تجزئة ذات حالة على الإطلاق. موفّر خدمة لا تحمل له هذه الخدمة شهادة، مع تشغيل التشفير، يحصل على التأكيد بالنص الواضح، وبصوت عالٍ، في وضع التطوير، ويُرفض في وضع المنتج؛ ومن ينشر في بيانات تعريفه مفتاح تشفير يُشفَّر إليه في الوضعين كليهما."
+  },
+  "crypto.families.saml-2-0.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "التوقيع"
+  },
+  "crypto.families.saml-2-0.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "توقيع الوارد، أي منها"
+  },
+  "crypto.families.saml-2-0.algorithms.2.what": {
+    "en": "652091f367e363c5",
+    "text": "شفرة كتلية (saml2.encryptionAlgorithm)"
+  },
+  "crypto.families.saml-2-0.algorithms.3.what": {
+    "en": "62bf49b6ee453a1e",
+    "text": "نقل المفتاح (saml2.keyTransportAlgorithm)"
+  },
+  "crypto.families.saml-2-0.algorithms.4.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "الشفرات الكتلية المعروضة"
+  },
+  "crypto.families.saml-2-0.algorithms.5.what": {
+    "en": "b224b153758d7f54",
+    "text": "وسائل نقل المفاتيح المعروضة"
+  },
+  "crypto.families.saml-1-1.signs": {
+    "en": "60dc72ccb0685a15",
+    "text": "التأكيدات واستجابات Browser/POST، بخوارزمية RSA-SHA256 على exclusive c14n، عبر الموقِّع نفسه. يختلف الموضع، والسبب القواعد لا التشفير: ليس لتأكيد 1.1 عنصر `<Issuer>` — في 1.1 يكون المُصدِر سمة — ولذا فإن «بعد المُصدِر» ليس موضعًا موجودًا ويوضع التوقيع في النهاية. تُوقَّع الاستجابة Response أولًا، قبل التأكيد الذي تحمله."
+  },
+  "crypto.families.saml-1-1.verifies": {
+    "en": "f11251a4b826b873",
+    "text": "لا شيء: ليس في SAML 1.1 رسالة طلب يُتحقق من توقيع عليها."
+  },
+  "crypto.families.saml-1-1.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 لبصمة Reference."
+  },
+  "crypto.families.saml-1-1.whatItDoesNot": {
+    "en": "035395f48a6d34a3",
+    "text": "ليس في SAML 1.1 تشفير على الإطلاق — جاء `<EncryptedAssertion>` مع 2.0 — ولا رسالة طلب يُتحقق من توقيع عليها. يسمّي URI المرجع `AssertionID` أو `ResponseID`، وهذا كل السبب في أن الموقِّع المشترك يحل المعرّف بالبحث عن واحد بدلًا من أن يُملى عليه اسمه."
+  },
+  "crypto.families.saml-1-1.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "التوقيع"
+  },
+  "crypto.families.ws-federation.signs": {
+    "en": "038da0701eacf8e7",
+    "text": "تأكيد SAML داخل `wresult`، بأي إصدار طلبه الطرف المعتمد، عبر الموقِّع المشترك."
+  },
+  "crypto.families.ws-federation.verifies": {
+    "en": "02c1a08782ac0629",
+    "text": "لا شيء: طلب تسجيل الدخول لا يحمل توقيعًا."
+  },
+  "crypto.families.ws-federation.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 لبصمة Reference."
+  },
+  "crypto.families.ws-federation.whatItDoesNot": {
+    "en": "c0aea7549def7066",
+    "text": "لا يزيّف `wauth` — فالطلب الذي لا تستطيع الجلسة تلبيته تصعيد، وAuthenticationMethod هو ما فعلته الجلسة — ولا يُلغي مرجع `wreqptr` — فجلب URL سجّله أحدهم هو تزوير طلب من جانب الخادم مرفق به استشهاد."
+  },
+  "crypto.families.ws-federation.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "التوقيع"
+  },
+  "crypto.families.ws-trust.signs": {
+    "en": "65b99eb9fa477ac2",
+    "text": "تأكيد SAML في RequestSecurityTokenResponse، بالإصدار 1.1 أو 2.0، عبر الموقِّع المشترك."
+  },
+  "crypto.families.ws-trust.verifies": {
+    "en": "e1450965d276d357",
+    "text": "يقرأ بيانات اعتماد مقدِّم الطلب في `<wsse:Security>` والشهادة `<ds:X509Certificate>` في طلب موقَّع — والأخيرة لمعرفة الجهة التي يُشفَّر إليها. في وضع المنتج تُتحقق كلمة مرور UsernameToken مقابل `userPassword` الخاص بالشخص، أو مقابل أسرار العميل الخاصة بالتطبيق؛ ويصدّق وضع التطوير ذلك، باستثناء المحجوز `invalid`."
+  },
+  "crypto.families.ws-trust.encrypts": {
+    "en": "fa359afa3450379c",
+    "text": "مع `?encrypt=1`، التأكيد 2.0 المُصدَر، إلى الشهادة الموجودة في توقيع الطلب. الجدولان نفسهما كما في SAML 2.0، لأنه النص البرمجي نفسه — تعيد `saml/saml2.ts` تصديره."
+  },
+  "crypto.families.ws-trust.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 لبصمة Reference."
+  },
+  "crypto.families.ws-trust.whatItDoesNot": {
+    "en": "a65f60d0f2191130",
+    "text": "لا يجيب عن كل طلب لرمز لصالح شخص آخر: يُحسم `OnBehalfOf` (انتحال) و`ActAs` (تفويض) بسياسة الإصدار على ضوابط التفويض في مدخلتَي مقدِّم الطلب والموضوع — يُرفض في وضع المنتج، ويُسجَّل بوصفه ما كان سيُرفض في وضع التطوير. ولا يُنتج مظروف SOAP موقَّعًا خاصًا به — انظر WS-Security أدناه، وهو الصف الذي يبيّن ما تفعله هذه الخدمة وما لا تفعله بتلك المواصفة."
+  },
+  "crypto.families.ws-trust.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "التوقيع"
+  },
+  "crypto.families.ws-trust.algorithms.1.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "الشفرات الكتلية المعروضة"
+  },
+  "crypto.families.ws-trust.algorithms.2.what": {
+    "en": "b224b153758d7f54",
+    "text": "وسائل نقل المفاتيح المعروضة"
+  },
+  "crypto.families.kerberos.signs": {
+    "en": "d0004d29106d6b55",
+    "text": "رد PKINIT (#179): البنية KDCDHKeyInfo، في CMS SignedData مع SHA-256، بشهادة KDC الخاصة بنطاق الثقة (ECDSA افتراضيًا). وغير ذلك لا شيء بمعنى المفتاح العام. تأتي السلامة من مجموع اختباري بمفتاح (HMAC-SHA1-96 أو HMAC-SHA-256-128 أو HMAC-SHA-384-192 أو HMAC-MD5) تحت مفتاح مُشتق من المفتاح الطويل الأجل لرقم استخدام مفتاح تلك الرسالة."
+  },
+  "crypto.families.kerberos.verifies": {
+    "en": "fac18bcfa8ced4dd",
+    "text": "المصادقة المسبقة — AuthPack الموقَّع في PKINIT ومسار شهادته ضمن ذلك — وكل authenticator في AP-REQ، والمجاميع الاختبارية أعلاه. هذا هو الباب الوحيد في هذه الخدمة الذي يتحقق فعلًا من بيانات اعتماد، وليس اختيارًا للسياسة: في Kerberos تكون كلمة المرور هي المفتاح، لذا حتى لو قبل KDC أي شيء لظل مضطرًا إلى اختيار مفتاح لا يستطيع العميل تخمينه. انتقل التساهل إلى سياسة الحساب بدلًا من ذلك — كلمة مرور واحدة مشتركة، وحساب يُنشأ لأي اسم."
+  },
+  "crypto.families.kerberos.encrypts": {
+    "en": "4f7b84df5e4c1070",
+    "text": "كل جزء مُشفَّر من كل رسالة: الجزء enc-part في AS-REP، والتذكرة، والـ authenticator، وTGS-REP. AES في وضع CTS مع confounder، أو RC4-HMAC."
+  },
+  "crypto.families.kerberos.decrypts": {
+    "en": "b736df153bccfa13",
+    "text": "الأمر نفسه، في الاتجاه الآخر، بما في ذلك تذكرة خدمة حقيقية تُقدَّم عند `/authn/spnego`."
+  },
+  "crypto.families.kerberos.hashes": {
+    "en": "6b01eb6b40541434",
+    "text": "PBKDF2-HMAC-SHA1 (RFC 3962) أو PBKDF2-HMAC-SHA-256/384 (RFC 8009) لـ string-to-key؛ وMD4 (تجزئة NT) لـ RC4-HMAC، وهي بلا ملح، ولهذا لا يهم اكتشاف الملح إلا لـ AES."
+  },
+  "crypto.families.kerberos.whatItDoesNot": {
+    "en": "564dfc55115cbde1",
+    "text": "لا نقل مفتاح بـ RSA في PKINIT (يُتفق على مفتاح الرد دائمًا بـ Diffie-Hellman)، ولا PKINIT لما بعد الكم، وهو ما لا توجد له مواصفة. DES و3DES لفك الترميز فقط — سُمّيا حتى تُعرض لقطة التقاط بصدق، ولا يُنفَّذان أبدًا."
+  },
+  "crypto.families.kerberos.algorithms.0.what": {
+    "en": "8b12881e65e625c4",
+    "text": "أنواع التشفير المُنفَّذة"
+  },
+  "crypto.families.spnego.signs": {
+    "en": "df250490aa6ca80f",
+    "text": "لا شيء من عنده. قيمة MIC في `negTokenResp` مجموع اختباري لـ Kerberos على التفاوض، يُحسب بمفتاح الآلية."
+  },
+  "crypto.families.spnego.verifies": {
+    "en": "d809021f4e9d84a9",
+    "text": "طلب AP-REQ داخل رمز GSS، عبر acceptor الخاص بـ Kerberos — بما في ذلك ذاكرة التخزين المؤقت لإعادة الإرسال، وهو الفحص الوحيد عند هذا الباب الذي يكون غيابه خللًا أمنيًا لا خللًا في المطابقة."
+  },
+  "crypto.families.spnego.decrypts": {
+    "en": "a46cdba23bd3e592",
+    "text": "الـ authenticator في AP-REQ، تحت المفتاح الطويل الأجل للخدمة."
+  },
+  "crypto.families.spnego.hashes": {
+    "en": "2230ed54174ccefc",
+    "text": "أيًا كان ما يستخدمه المجموع الاختباري لنوع التشفير المتفاوض عليه."
+  },
+  "crypto.families.spnego.whatItDoesNot": {
+    "en": "85057be5d17ba628",
+    "text": "لا يضيف فحصًا خاصًا به فوق فحص الـ acceptor، ولا يتفاوض على آلية غير Kerberos v5."
+  },
+  "crypto.families.spnego.algorithms.0.what": {
+    "en": "d09ab09f9ee0e400",
+    "text": "الآلية المتفاوض عليها"
+  },
+  "crypto.families.spiffe.signs": {
+    "en": "99f5793498f36e41",
+    "text": "شهادات X509-SVID، تحت SPIFFE Issuing CA الخاص بنطاق الثقة هذا — وهي CA تحت وسيط Intermediate الخاص بالنطاق وجذر Root الخاص بالخدمة، فتنشر الحزمة الجذر ويحمل SVID كلًا من Issuing CA والوسيط Intermediate في سلسلته. نطاق ثقة بلا تسلسل هرمي يرجع إلى سلطة موقعة ذاتيًا، فتكون عندئذٍ مرساة نفسها. رموز JWT-SVID هي JWS عادية، من سلطة JWT تُولَّد عند كل بدء في أي من الوضعين. يثبّت كل نوع مفتاح خوارزمية توقيع الشهادة وقيمة JWS `alg` معًا — والشهادة التي تختلف خوارزميتها المعلنة عن توقيعها الفعلي تُفسَّر على أكمل وجه وتُرفض برسالة عن توقيع، من غير تسمية أي تجزئة."
+  },
+  "crypto.families.spiffe.verifies": {
+    "en": "3d9b175cf83a0c70",
+    "text": "شهادة X509-SVID عبر TLS المتبادل على منفذ TCP لواجهة SPIRE Server API، ورمز JWT-SVID عند `ValidateJWTSVID`."
+  },
+  "crypto.families.spiffe.hashes": {
+    "en": "3d8ab87bbee0aaf7",
+    "text": "SHA-256 على DER الخاص بـ SVID حيثما يُسجَّل واحد، وبصمة توقيع الشهادة نفسها، التي تتبع نوع المفتاح."
+  },
+  "crypto.families.spiffe.whatItDoesNot": {
+    "en": "34749d8581fa8262",
+    "text": "لا يشهد لمتصل بـ Workload API عبر TCP — يُشهَد لمتصلي مقبس Unix ولكل agent، وتقول مواصفة Workload API إنه MUST NOT authenticate. لا يسجّل أي SVID يصدره، فلا يُبطَل واحد إلا بتسمية رقمه التسلسلي يدويًا؛ وإبطال SPIFFE Issuing CA الخاص بنطاق الثقة على /admin/pki هو ما يرفض كل SVID تحته عند SPIRE Server API. يسجّل الدليل من لا يزال يجوز أن يُصدَر له واحد، وهو ادّعاء مختلف. يتاح Ed25519 لمفتاح X509-SVID (ولسلطة احتياطية موقعة ذاتيًا) ولا يتاح لسلطة JWT، وهو حد في `jsonwebtoken` لا في المواصفة."
+  },
+  "crypto.families.spiffe.algorithms.0.what": {
+    "en": "ab46510f58c0af97",
+    "text": "أنواع المفاتيح المعروضة (SVID، وسلطة الاحتياط، وسلطة JWT)"
+  },
+  "crypto.families.spiffe.algorithms.1.what": {
+    "en": "1ab9e59d403cfe7f",
+    "text": "سلطة X.509 في نطاق الثقة هذا"
+  },
+  "crypto.families.spiffe.algorithms.2.what": {
+    "en": "bddc2c1047bd1bfb",
+    "text": "مفتاح X509-SVID في نطاق الثقة هذا"
+  },
+  "crypto.families.spiffe.algorithms.3.what": {
+    "en": "e0c4b0f50d03be7d",
+    "text": "سلطة JWT في نطاق الثقة هذا"
+  },
+  "crypto.families.scim.signs": {
+    "en": "0f56021e8d3293fb",
+    "text": "لا شيء. لا يصدر أي بيانات اعتماد — إنها العائلة الوحيدة هنا التي تكتفي بفحصها."
+  },
+  "crypto.families.scim.verifies": {
+    "en": "90704e4d59344987",
+    "text": "بيانات اعتماد بأيٍّ من المخططات الستة التي يسمّيها القسم 2 من RFC 7644. تحتاج مخططات OAuth إلى رمز أصدرته هذه الخدمة يحمل `scim:read` أو `scim:write`، ويُفحص توقيع HOBA مقابل المفتاح العام الذي سجّله العميل. في وضع التطوير يحسب HTTP Digest الاستجابة على كلمة المرور المضبوطة الوحيدة، وتنجح في Basic أي كلمة مرور عدا واحدة؛ وفي وضع المنتج يتحقق Basic من كلمة المرور مقابل `userPassword` المُجزَّأ الخاص بالشخص ولا يُعرَض Digest."
+  },
+  "crypto.families.scim.hashes": {
+    "en": "8b5fd034b1743a03",
+    "text": "Digest وفق RFC 7616: SHA-256 وSHA-512-256 وMD5، كل منها مع متغيره `-sess`، تُعرَض الأقوى أولًا لأن القسم 3.7 يقول ذلك ولأن العميل يأخذ أول ما يفهمه. يُفحص كل منها مقابل openssl الذي تملكه هذه العملية فعلًا، فلا يسمّي تحدٍّ خوارزمية لا يستطيع الخادم حسابها."
+  },
+  "crypto.families.scim.whatItDoesNot": {
+    "en": "9d23420bb1b23ff7",
+    "text": "لا يخزّن كلمة مرور تخصه — كلمة مرور Digest إعداد. (`active: false` يعطّل الحساب فعلًا، منذ 2026-09-17.)"
+  },
+  "crypto.families.scim.algorithms.0.what": {
+    "en": "61a2c91673703a02",
+    "text": "مخططات المصادقة"
+  },
+  "crypto.families.scim.algorithms.1.what": {
+    "en": "6e2f80bf9cfaabad",
+    "text": "Digest"
+  },
+  "crypto.families.scim.algorithms.2.what": {
+    "en": "8ffb36406b3f2925",
+    "text": "HOBA"
+  },
+  "crypto.families.shared-signals.signs": {
+    "en": "ad10748a9c91a0d6",
+    "text": "كل رمز حدث أمني، وهو المستند في هذه الخدمة الأجدر بأن يُفكَّر في خوارزميته. يسجّل SET أن شيئًا قد حدث، ويمنع القسم 4.1.4 من RFC 8417 انتهاء صلاحيته، فيُقرأ بعد زمن طويل من كتابته — وتلك هي الحالة التي تدور حولها فعلًا حجة الحصاد الآن وفك التشفير لاحقًا. يمر التوقيع بالموقِّع نفسه الذي يمر به كل JWT آخر هنا، فيبلغ `ssf.signingAlgorithm` الجدول كله: RS256 افتراضيًا، وعائلتا PS وES، وEdDSA، وما بعد الكم — ML-DSA بثلاثة أحجام، وSLH-DSA بحجمين، والخوارزميات المركّبة الست ML-DSA + التقليدية. يستغرق توقيع SLH-DSA ما يصل إلى ثانية ويجري على مجمع خيوط libuv، فتظل هذه الخدمة تجيب وينتظر المستقبِل."
+  },
+  "crypto.families.shared-signals.verifies": {
+    "en": "eb64e2686979148b",
+    "text": "رمز الوصول على كل استدعاء لإدارة التدفق، بالفحص نفسه الذي تستخدمه كل نقطة نهاية محمية أخرى هنا، ورمز SET يُدفع إلى المستقبِل الخاص بوحدة التحكم أو بالبوابة مقابل JWKS الخاص بهذه الخدمة."
+  },
+  "crypto.families.shared-signals.encrypts": {
+    "en": "3a0ce36975e5d5a1",
+    "text": "لا شيء. ليس في SSF ملف تعريف لـ SET مُشفَّر — يسمح RFC 8417 بـ SET ملفوف في JWE، ولا هذه الخدمة ولا أي مُرسِل منشور يُصدر واحدًا، فما يحمي الحدث أثناء العبور هو TLS على نقطة نهاية التسليم، ولهذا تُتحقق شهادة المستقبِل — ومنذ #171 تُتحقق في وضع المنتج مهما قال `ssf.pushSkipTlsVerification`."
+  },
+  "crypto.families.shared-signals.decrypts": {
+    "en": "58ee378a4cea46f2",
+    "text": "لا شيء، للسبب نفسه."
+  },
+  "crypto.families.shared-signals.hashes": {
+    "en": "022790fa40b66490",
+    "text": "أيًا كان ما تقتضيه خوارزمية التوقيع المختارة، ولا شيء من عنده: لا يحمل SET بصمة لأي شيء على النحو الذي يحمل به رمز ID Token قيمة `at_hash`."
+  },
+  "crypto.families.shared-signals.whatItDoesNot": {
+    "en": "66fb8f17d972a92b",
+    "text": "يوقّع توقيعًا سيئًا عن قصد حين يُطلب منه ذلك. يغيّر `ssf.breakSetSignature` محرفًا واحدًا من التوقيع بعد التوقيع، فيقبل مستقبِل لا يتحقق حدثًا لم يوقّعه شيء. هو محرف لا بتر، عن عمد: يفشل التوقيع المبتور في فك ترميز base64url ويُبلَّغ بوصفه رمزًا MALFORMED، وذلك خلل مختلف عن خلل التوقيع السيئ لمن يخضع للاختبار. وضع التطوير فقط: يتجاهله نطاق ثقة في وضع المنتج ويرفض ضبطه (#104)."
+  },
+  "crypto.families.shared-signals.algorithms.0.what": {
+    "en": "e1abd835e83344ac",
+    "text": "رموز الأحداث الأمنية، في الوقت الحالي"
+  },
+  "crypto.families.shared-signals.algorithms.1.what": {
+    "en": "0011f3fa76892e63",
+    "text": "أي منها، عبر ssf.signingAlgorithm"
+  },
+  "crypto.families.shared-signals.algorithms.2.what": {
+    "en": "61a2c91673703a02",
+    "text": "مخططات المصادقة"
+  },
+  "crypto.families.ldap.signs": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.ldap.verifies": {
+    "en": "77beffdc6d964fc9",
+    "text": "كلمة مرور الربط البسيط، في وضع المنتج، مقابل `userPassword` بتجزئة scrypt للمدخلة — بعد رفض الربط المجهول، وأي ربط على المنفذ الواضح 389، وكلمة المرور الفارغة، وأي DN أو عنوان تجاوز حد فشل الربط. ثم تُفوَّض الكتابات هناك (للمسؤول أي شيء، ولغيره بضع سمات من مدخلته) وتحتاج القراءة إلى ربط. في وضع التطوير ينجح كل ربط — أي DN وأي كلمة مرور والمجهول، على 389 وعلى 636 سواء بسواء — ولا يُفوَّض شيء. في الوضعين تُرفض كلمة المرور الوحيدة المكتوبة `invalid`، حتى يمكن تمرين مسار الفشل لدى العميل."
+  },
+  "crypto.families.ldap.encrypts": {
+    "en": "de2261d41092316b",
+    "text": "مستمع LDAPS على 636 هو TLS، على الشهادة التي يحتفظ بها `tls/tls_server.js` — مُصدَّقة تحت جذر الخدمة — والتي يقدّمها أيضًا المنفذ الرئيسي ومستمع debugger. تقف مجموعة معالجات واحدة ومخزن واحد خلف منفذي الدليل كليهما."
+  },
+  "crypto.families.ldap.decrypts": {
+    "en": "f009e2342690a9e8",
+    "text": "الاتصال نفسه، في الاتجاه الآخر."
+  },
+  "crypto.families.ldap.hashes": {
+    "en": "2486a4ede1f05d87",
+    "text": "يُخزَّن `userPassword` بوصفه تجزئة scrypt في الوضعين كليهما، عبر crypto.hashSecret()، أيًا كان الباب الذي كتبه — ومن ذلك إضافة LDAP أو تعديلها. يرفض وضع المنتج قيمة أُرسلت مُجزَّأة سلفًا، إذ لا يمكن إخضاعها لسياسة كلمة المرور؛ ويُبقي وضع التطوير القيمة كما أُعطيت، وهكذا ينتقل دليل بين مثيلين."
+  },
+  "crypto.families.ldap.whatItDoesNot": {
+    "en": "4b8955de2d74cab1",
+    "text": "يجيب بآلية SASL واحدة هي EXTERNAL، وفقط حين يطلب 636 شهادة عميل — تنشر DSE الجذر عندئذٍ `supportedSASLMechanisms` وتحذفها في غير ذلك بدلًا من نشرها فارغة، لأن سمة LDAP لها دائمًا قيمة واحدة على الأقل، والفارغة ليست ادّعاءً أضعف بل سمة مشوّهة. فلا ربط GSSAPI، ولا StartTLS: المنفذ 636 هو TLS من البايت الأول."
+  },
+  "crypto.families.ldap.algorithms.0.what": {
+    "en": "896a443631bae685",
+    "text": "نقل LDAPS"
+  },
+  "crypto.families.pki-x-509.signs": {
+    "en": "ece532b86564b74e",
+    "text": "لا شيء بذاته — الشهادات التي تُقدّمها هذه الخدمة تصدر عن `common/pki.js` (صف PKI أعلاه) على مفاتيح تُصنع هنا. شهادة التوقيع هي مفتاح RSA 2048 الخاص بنطاق الثقة، مُصدَّقة مرتين، من سلطتَي الإصدار JOSE وXML. تصدر شهادة خادم TLS عن TLS Issuing CA تحت وسيط Intermediate الخاص بالعملية، على مفتاح يُولَّد عند كل بدء، ومعها subjectAltName وهو المكان الوحيد للأسماء، لأن RFC 6125 قال إن CN يُتجاهل منذ 2011. سلطة SPIFFE هي SPIFFE Issuing CA الخاص بنطاق الثقة. تتسلسل جميعها إلى جذر Root واحد، يبقيه وضع المنتج في مخزن المفاتيح ويعيد وضع التطوير بناءه عند كل بدء. ومن دون تسلسل هرمي، أو عند ضبط `tls.certificateFile`، تكون الشهادة موقعة ذاتيًا أو هي المُورَدة."
+  },
+  "crypto.families.pki-x-509.verifies": {
+    "en": "9a6b03049e4c72de",
+    "text": "شهادة عميل تُقدَّم على المنفذ الرئيسي (أو على مستمع debugger، الذي يطلب بالطريقة نفسها)، مقابل مراسي مخزن الثقة (ومنها جذر الخدمة Root بموجب `tls.trustIssuedClientCertificates`)، مع فحص إبطالها بموجب `pki.revocationCheck` — ثم يحوّل `GET /tls/sign-in` الشهادة التي تم التحقق منها إلى جلسة في نطاق الثقة التابع للسلطة التي وقّعتها، في حين تربط مصادقة العميل وفق RFC 8705 الشهادة برمز. لا يطلب LDAPS 636 شهادة عميل."
+  },
+  "crypto.families.pki-x-509.encrypts": {
+    "en": "36e58d75de057d83",
+    "text": "كل بايت على LDAPS 636، وحين يكون `global.https` مُشغَّلًا (كل ملف appconfig في env/ يضبطه، منذ 2026-08-30)، على المنفذ الرئيسي ومستمع debugger. تبادل المفاتيح هو الافتراضي في OpenSSL لدى node؛ وعلى 636 والمنفذ الرئيسي يكون الحد الأدنى للبروتوكول `tls.minVersion` (TLS 1.2 افتراضيًا) والأطقم `tls.ciphers` (قائمة node حين تكون فارغة)."
+  },
+  "crypto.families.pki-x-509.decrypts": {
+    "en": "002a94032db09f02",
+    "text": "الأمر نفسه."
+  },
+  "crypto.families.pki-x-509.hashes": {
+    "en": "c6bb4311866e3099",
+    "text": "SHA-256 حيثما تُسمَّى شهادة: على DER لتأكيد `x5t#S256` وفق RFC 8705 وبصمة `/tls`، وعلى المفتاح العام لدبوس SPKI الذي تحمله حزمة الاختبارات."
+  },
+  "crypto.families.pki-x-509.whatItDoesNot": {
+    "en": "d82e95d63fdba050",
+    "text": "لا يمكن التحقق من الجلب الأول للمرساة — لم يبقَ مستمع واضح تُجلب منه، فيُجرى الجلب مع إيقاف التحقق. في وضع التطوير يلزم إعادة ذلك الجلب بعد كل إعادة تشغيل، لأن الجذر Root يُعاد بناؤه؛ وفي وضع المنتج، ومع شهادة مُورَدة، يلزم مرة واحدة. تُرفض شهادة تطبيق بوصفها تسجيل دخول: إنها بيانات اعتماد عميل وفق RFC 8705."
+  },
+  "crypto.families.pki-x-509.algorithms.0.what": {
+    "en": "4293457d8bfdfe50",
+    "text": "شهادة الخادم"
+  },
+  "crypto.families.pki-x-509.algorithms.1.what": {
+    "en": "2c65407a378b57b8",
+    "text": "ربط الشهادة"
+  },
+  "crypto.families.webauthn-ctap.signs": {
+    "en": "4da1e2515e736e7d",
+    "text": "لا شيء. المصادق هو من يوقّع؛ وهذه الخدمة هي الطرف المعتمد، وهو النصف الذي يكتفي بالفحص."
+  },
+  "crypto.families.webauthn-ctap.verifies": {
+    "en": "d8daa1e1b9b11704",
+    "text": "التسجيل، وبيان التصديق الخاص به (توقيعات packed وtpm وandroid-key وandroid-safetynet وfido-u2f وapple وcompound، وخوارزميات COSE ES256/384/512 وRS256/384/512 وPS256/384/512 وEdDSA وML-DSA-44/65/87)، وكل تأكيد: التوقيع على `authenticatorData || SHA-256(clientDataJSON)`، مقابل المفتاح العام COSE الذي سجّلته بيانات الاعتماد."
+  },
+  "crypto.families.webauthn-ctap.hashes": {
+    "en": "2e2a1dacb370539f",
+    "text": "SHA-256 مرتين — تجزئة بيانات العميل التي يغطيها التوقيع، وتجزئة معرّف RP داخل بيانات المصادق، وتُقارن بايتًا ببايت مع SHA-256 لنطاق الأصل."
+  },
+  "crypto.families.webauthn-ctap.whatItDoesNot": {
+    "en": "d1ebaf94158094a0",
+    "text": "منذ #105 يتحقق من بيان التصديق — صيغ القسم 8 الثماني كلها في WebAuthn Level 3، والسلسلة مقابل المراسي المضبوطة وجذور خدمة البيانات الوصفية FIDO، والإبطال، وتقارير حالة MDS — بموجب `webauthn.attestationPolicy`، وهو متوقف افتراضيًا في وضع التطوير فقط. يعرض التسجيل خوارزميات أقل مما يقبل المتحقِّق، عن عمد: ما ينتجه مصادق المنصة فعلًا هو ما أتى الشخص لرؤيته هنا. خيار المراسم الوحيد الذي تفحصه هذه الخدمة أيضًا هو `webauthn.userVerification`، لأن علم UV داخل البايتات التي وقّعها المصادق."
+  },
+  "crypto.families.webauthn-ctap.algorithms.0.what": {
+    "en": "5fc293ab8b154f42",
+    "text": "ما يُعرَض عند التسجيل"
+  },
+  "crypto.families.webauthn-ctap.algorithms.1.what": {
+    "en": "8931ff19e45887e4",
+    "text": "ما يُقبَل عند التحقق"
+  },
+  "crypto.families.webauthn-ctap.algorithms.2.what": {
+    "en": "4c2c115ca08db2af",
+    "text": "المنحنيات"
+  },
+  "crypto.families.webauthn-ctap.algorithms.3.what": {
+    "en": "8b134177fe992d91",
+    "text": "التحقق من المستخدم"
+  },
+  "crypto.families.one-time-passwords-totp.signs": {
+    "en": "4d15a52bf511dc2e",
+    "text": "لا شيء يغادر هذه الخدمة. قيمة HOTP هي HMAC مبتور — RFC 4226 القسم 5.3 — فتحسب هذه العائلة MAC بمفتاح ثم تقارنه، ولهذا تسكن البدائية في common/crypto.js إلى جوار كل توقيع آخر هنا لا في الوحدة التي تقرر السياسة."
+  },
+  "crypto.families.one-time-passwords-totp.verifies": {
+    "en": "071552dc11014cdd",
+    "text": "رمزًا يُقدَّم، بحساب HMAC لكل خطوة زمنية في نافذة الانحراف والمقارنة بزمن ثابت. تُحسب كل خطوة حتى بعد حدوث تطابق، عن عمد: العودة المبكرة تجعل الزمن المستغرق معتمدًا على أي خطوة طابقت، وذلك عراف أفضل من مقارنة الأرقام التي تتكبد هذه الخدمة جعلها بزمن ثابت."
+  },
+  "crypto.families.one-time-passwords-totp.encrypts": {
+    "en": "c18d0d11279cb6c0",
+    "text": "السر المشترك في حالة السكون، في وضع المنتج — AES-256-GCM تحت مفتاح تشفير المفاتيح نفسه الذي يحمي مفاتيح التوقيع، عبر common/keystore.js. في وضع التطوير يُخزَّن بترميز base32، لأن مفتاح تشفير المفاتيح هناك يُولَّد لكل تشغيل، والختم كان سيعني مصادقًا يتوقف عن العمل بصمت عند إعادة التشغيل التالية."
+  },
+  "crypto.families.one-time-passwords-totp.decrypts": {
+    "en": "d2cefc498eff5443",
+    "text": "السر نفسه، للتحقق من رمز. **هذه هي بيانات الاعتماد الوحيدة في هذه الخدمة التي يمكن استرجاعها** — فكلمة المرور تجزئة scrypt ولا يمكن إلا المقارنة بها، والتحقق من رمز لمرة واحدة يعني حسابه. ليس ذلك ضعفًا في RFC 6238؛ إنه معنى «السر المشترك»، وهو عين السبب في أن هذه الآلية عامل ثانٍ هنا ولا يمكن جعلها عاملًا أولًا أبدًا."
+  },
+  "crypto.families.one-time-passwords-totp.hashes": {
+    "en": "decb0b31d14255e5",
+    "text": "SHA-1 أو SHA-256 أو SHA-512، داخل HMAC وليس في أي مكان آخر."
+  },
+  "crypto.families.one-time-passwords-totp.whatItDoesNot": {
+    "en": "512b47bf629fcfe5",
+    "text": "لا يخبر أحدًا أبدًا بالرمز الحالي، ولا يُلحق أحدًا أبدًا عند شاشة تسجيل الدخول — فالإلحاق يعني إظهار سر، لذا يحدث حيث يكون الشخص مصادَقًا بالفعل أو يحمل رابط تفعيل. لا يوجد HOTP قائم على عدّاد بوصفه آلية مصادقة، ولا بروتوكول إعادة مزامنة: نافذة الانحراف هي كل ما يُعرَض لساعة تنحرف."
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.0.what": {
+    "en": "0c410835b8ade404",
+    "text": "HMAC (المعامل المُلحَق، لا المعامل الحي)"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.1.what": {
+    "en": "89645198ddad3fa6",
+    "text": "البتر"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.2.what": {
+    "en": "7f1e853e5a5aa7bf",
+    "text": "السر المشترك"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.3.what": {
+    "en": "e08e19def21e22b2",
+    "text": "الإعدادات الحية"
+  },
+  "crypto.families.recovery-codes.signs": {
+    "en": "e07d5c09c87dcaf1",
+    "text": "لا شيء. لا MAC ولا توقيع في أي موضع من هذه الآلية — رمز الاسترداد سلسلة عشوائية تُفحص مقابل تجزئة مخزَّنة لواحد منها، وذلك كل الفرق عن صف TOTP أعلاه حيث «الرمز» HMAC مبتور."
+  },
+  "crypto.families.recovery-codes.verifies": {
+    "en": "430daa72e518a39a",
+    "text": "رمزًا يُقدَّم، مقابل كل مدخلة في مجموعة الشخص — كل منها تجزئة scrypt تُفحص بـ crypto.verifySecret()، على التوازي على مجمع خيوط libuv في شاشة تسجيل الدخول — وتُفحص جميعها حتى بعد التطابق، فلا يعتمد الزمن على أي رمز طابق. يُفحص الشكل أولًا، فتُرفض كلمة مرور كُتبت في المربع بسبب محارفها ولا تكلف تجزئة على الإطلاق. المدخلة المكتوبة قبل 2026-09-11 هي الرمز نفسه وتُقارَن بـ crypto.constantTimeEquals()."
+  },
+  "crypto.families.recovery-codes.decrypts": {
+    "en": "b54e014c105f44df",
+    "text": "مجموعة كُتبت قبل 2026-09-11 في وضع المنتج فقط، وكانت مختومة بـ AES-256-GCM تحت مفتاح تشفير المفاتيح وتُفتح عبر common/keystore.js لفحص رمز. لا شيء كُتب منذئذٍ مُشفَّر."
+  },
+  "crypto.families.recovery-codes.hashes": {
+    "en": "8fbdc5e4a28b0f77",
+    "text": "كل رمز، تجزئة scrypt واحدة لكل منها، عبر crypto.hashSecret() — الدالة نفسها والشكل المخزَّن نفسهما كما في userPassword وstsActivationToken — في اللحظة الوحيدة التي تكون فيها الرموز بالنص الواضح: حين يؤكد الشخص أنه حفظها. التجزئات ليست سرًا وتُخزَّن بالنص الواضح كمصفوفة JSON واحدة على مدخلة الشخص، وإلى جانبها الأعداد، حتى تقول وحدة التحكم «7 من 10 غير مستخدمة» من دون اجتياز المصفوفة."
+  },
+  "crypto.families.recovery-codes.whatItDoesNot": {
+    "en": "650840850ca2aba6",
+    "text": "لا يُظهر رمزًا مخزَّنًا مرة أخرى أبدًا — لا لوحدة التحكم ولا لـ /admin-api ولا للشخص الذي يملكه: تُعرض المجموعة مرة واحدة، في الاستجابة التي ولّدتها، ولا تُخزَّن أصلًا حتى يؤكدها مالكها. لا يولّد مجموعة من تلقاء نفسه أبدًا: يولّد الشخص واحدة على /portal/mfa، وإلحاق عامل ثانٍ لا يفعل غير إثارة مطالبة بذلك. تأكيد مجموعة جديدة يستبدل القديمة، وإجراء Clear من مشغّل يزيل مجموعة من دون إصدار أخرى. لا تُرحَّل مجموعة كتبها بناء أقدم. وليس هنا مخطط قائم على عدّاد أو مشتق: هذه سلاسل عشوائية، ولا يقول شيء في رمز واحد شيئًا عن الذي يليه."
+  },
+  "crypto.families.recovery-codes.algorithms.0.what": {
+    "en": "40536dd8a0e2d0c7",
+    "text": "التوليد"
+  },
+  "crypto.families.recovery-codes.algorithms.1.what": {
+    "en": "bb846881f6a5075c",
+    "text": "الإنتروبيا"
+  },
+  "crypto.families.recovery-codes.algorithms.2.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "الأبجدية"
+  },
+  "crypto.families.recovery-codes.algorithms.3.what": {
+    "en": "571527339d0e3e34",
+    "text": "المقارنة"
+  },
+  "crypto.families.recovery-codes.algorithms.4.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "في حالة السكون"
+  },
+  "crypto.families.email-codes-and-links.signs": {
+    "en": "469daea0865e7d80",
+    "text": "لا شيء. الرمز أو الرابط سر عشوائي يُفحص مقابل تجزئة مخزَّنة لواحد؛ والرسالة التي يركبها يوقّعها DKIM فقط حيث يُضبَط نقل SMTP لذلك (انظر البريد)."
+  },
+  "crypto.families.email-codes-and-links.verifies": {
+    "en": "3368b2038045996a",
+    "text": "رمز أو رمز رابط يُقدَّم، مقابل تجزئة scrypt على خطوة تسجيل الدخول، بـ crypto.verifySecret() على مجمع العمال؛ وربط المتصفح للرابط، بوصفه SHA-256 لـ cookie الذي ضُبط عند الإرسال."
+  },
+  "crypto.families.email-codes-and-links.hashes": {
+    "en": "f7ea8e1a659a8cce",
+    "text": "كل سر مرة واحدة، بـ crypto.hashSecret() (scrypt)، عند إصداره — لا يُخزَّن الرمز أو الرمز المميز نفسه أبدًا، وتطرح قناة البريد متن الرسالة المرسلة. ويُخزَّن cookie الربط بوصفه SHA-256."
+  },
+  "crypto.families.email-codes-and-links.whatItDoesNot": {
+    "en": "ce5ddd6002061926",
+    "text": "لا يُعد أبدًا عاملًا مقاومًا للتصيد ولا تصعيدًا للمخاطر، ولا يرسل بريدًا إلى عنوان لم يُتحقق منه، ولا يُبقي سرًا بعد عشر دقائق أو استخدام ثانٍ."
+  },
+  "crypto.families.email-codes-and-links.algorithms.0.what": {
+    "en": "340f463033e0fd5d",
+    "text": "الرمز"
+  },
+  "crypto.families.email-codes-and-links.algorithms.1.what": {
+    "en": "d93d75ab47922b92",
+    "text": "رمز الرابط"
+  },
+  "crypto.families.email-codes-and-links.algorithms.2.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "في حالة السكون"
+  },
+  "crypto.families.device-bound-session-credentials.signs": {
+    "en": "51177dacf9719f29",
+    "text": "لا شيء. التحدي وcookie المقيَّد هما من نوع MAC لا توقيعان: هذه الخدمة وحدها تفحصهما."
+  },
+  "crypto.families.device-bound-session-credentials.verifies": {
+    "en": "d8ef54ef33b1612f",
+    "text": "إثبات dbsc+jwt من المتصفح، عبر crypto.verifyCompactJws() مع تثبيت الخوارزمية: عند التسجيل بالمفتاح الذي في ترويسته، وعند كل تحديث بالمفتاح الذي قُيِّدت إليه الجلسة."
+  },
+  "crypto.families.device-bound-session-credentials.hashes": {
+    "en": "886bd748da150493",
+    "text": "المفتاح المقيَّد بوصفه بصمة RFC 7638، وكل تحدٍّ بوصفه التجزئة التي يصرفه cluster_claims بموجبها."
+  },
+  "crypto.families.device-bound-session-credentials.whatItDoesNot": {
+    "en": "f8a4e58cdc2ad4fa",
+    "text": "لا يقبل أبدًا alg none، ولا مفتاحًا ثانيًا للجلسة الواحدة، ولا التحدي مرتين."
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.0.what": {
+    "en": "7fbb3ccf9640651f",
+    "text": "الإثبات"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.1.what": {
+    "en": "d2e757eb4313c2c9",
+    "text": "التحدي وcookie المقيَّد"
+  },
+  "crypto.families.device-bound-session-credentials.algorithms.2.what": {
+    "en": "e3a367643d49d35f",
+    "text": "المفتاح المقيَّد"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
+    "en": "30d11da1c63a38f1",
+    "text": "اعتماد SD-JWT VC بوصفه JWS من RS256 مع `_sd_alg: sha-256`، واعتماد W3C من نوع `ldp_vc` مع إثبات Data Integrity بـ `bbs-2023` — BLS12-381-SHA-256، وهو توقيع قائم على الاقتران والوحيد في هذه الخدمة. مفتاحه ليس JWK، ويُنشر بوصفه `publicKeyMultibase` بدلًا من حشره في شكل لا يلائمه."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.verifies": {
+    "en": "c0036a45ed2b60bc",
+    "text": "إثبات حيازة المحفظة عند نقطة نهاية الاعتماد، ويجب أن يكون JWS غير متماثل — لا MAC أبدًا ولا `none` أبدًا — وعرضًا عند المتحقِّق، بما في ذلك إثبات bbs-2023 مشتق، وهو شكل الإفصاح الانتقائي حين لا يكون SD-JWT."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.hashes": {
+    "en": "c5832c6dab4733ea",
+    "text": "SHA-256 لكل بصمة إفصاح في SD-JWT، وداخل طقم تشفير BBS لتعيين الرسائل."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.whatItDoesNot": {
+    "en": "30ac22a7b1387e83",
+    "text": "لا يتحقق من شيء في قيم الاعتماد، وهي مختلقة، والعرض المتحقق منه لا يُسجّل دخول أحد إلا عند /authn/wallet، ولا يكون ذلك إلا لـ SD-JWT VC مقيَّد بالحائز أصدره نطاق الثقة هذا — لا عند باب الحانة أبدًا، ولا على توقيع مُصدِر أجنبي أبدًا."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.0.what": {
+    "en": "7bea7584da7de03b",
+    "text": "توقيع الاعتماد"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.1.what": {
+    "en": "5c9c19ca8b4d7044",
+    "text": "إثبات حيازة المحفظة"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.2.what": {
+    "en": "82a6225da8149a43",
+    "text": "بصمة الإفصاح"
+  },
+  "crypto.families.acme.signs": {
+    "en": "0e2e7b69729b7927",
+    "text": "كل شهادة يسلّمها، بمفتاح ACME Issuing CA الخاص بنطاق الثقة هذا، عبر common/pki.js's issueEnrolled(). ولا شيء سوى ذلك: استجابة ACME هي JSON عادي عبر TLS، ويحمل Replay-Nonce قيمة HMAC لا توقيعًا."
+  },
+  "crypto.families.acme.verifies": {
+    "en": "b6ea5d2aab528d1d",
+    "text": "JWS المسطَّح لكل طلب، بمفتاح الحساب الذي يسمّيه jwk أو kid، وبالخوارزمية التي سمّتها الترويسة وحدها (عبر common/crypto.js's verifyCompactJws)؛ وJWS الداخلي لتغيير المفتاح key-change بالمفتاح الجديد؛ وHMAC الخاص بـ External Account Binding بالمفتاح المُصدَر تحت kid الخاص به، بزمن ثابت وفي كل وضع؛ وإثبات حيازة CSR في common/cert_enrollment.ts."
+  },
+  "crypto.families.acme.encrypts": {
+    "en": "e233f6d30d606df3",
+    "text": "مفتاح HMAC الخاص بـ External Account Binding، يُختم بـ AES-256-GCM تحت مفتاح تشفير المفاتيح على المدخلة التي أُصدر لها، حيثما يعمر ذلك المفتاح أطول من العملية."
+  },
+  "crypto.families.acme.decrypts": {
+    "en": "3f1b161b12e519d1",
+    "text": "مفتاح HMAC ذاك، للتحقق من الربط. لا شيء على السلك."
+  },
+  "crypto.families.acme.hashes": {
+    "en": "6817583ce52ea878",
+    "text": "SHA-256 لبصمة مفتاح الحساب (RFC 7638)، ولـ MAC الخاص بـ Replay-Nonce، ولبصمة كل شهادة في سجل المدخلة."
+  },
+  "crypto.families.acme.keys": {
+    "en": "2c6d9e02c3b932ed",
+    "text": "مفتاح ACME Issuing CA واحد لكل نطاق ثقة تحت وسيط Intermediate الخاص بالنطاق؛ والمفتاح العام لكل حساب (RSA بما لا يقل عن 2048 بتًا، أو P-256/P-384/P-521 أو Ed25519)، يُحفظ JWK عامًا ويُوجد ببصمة RFC 7638؛ ومفتاح العميل نفسه لكل شهادة؛ وسر لكل تشغيل يُشتق تحته MAC الخاص بـ Replay-Nonce، يُشارَك مع عمال الطلب المتفرعين ولا يُدوَّن أبدًا."
+  },
+  "crypto.families.acme.whatItDoesNot": {
+    "en": "61718f6daa70f201",
+    "text": "لا يُرى مفتاح خاص أبدًا: ACME لا يقبل غير CSR. يُرفض مفتاح حساب لما بعد الكم، لأن نوع مفتاحه بلا بصمة RFC 7638 والحساب يُوجد بمفتاحه. لا تُصدَر شهادة لمفتاح KEM، لأنه لا يستطيع توقيع إثبات الحيازة. إن JWS هو تسلسل JSON المسطَّح الذي يشترطه RFC 8555، ولا تقرأه هذه الخدمة إلا هنا."
+  },
+  "crypto.families.acme.algorithms.0.what": {
+    "en": "6fd2e09cab511244",
+    "text": "توقيعات مفتاح الحساب"
+  },
+  "crypto.families.acme.algorithms.1.what": {
+    "en": "ee010a599d2a0404",
+    "text": "رموز MAC لـ External Account Binding"
+  },
+  "crypto.families.acme.algorithms.2.what": {
+    "en": "394a5e94275d9df1",
+    "text": "أسباب الإبطال المقبولة من مشترك"
+  },
+  "crypto.families.acme.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "حاوية الشهادة"
+  },
+  "crypto.families.est.signs": {
+    "en": "e9aa41aa13c5b6e9",
+    "text": "كل شهادة يسلّمها، بمفتاح EST Issuing CA الخاص بنطاق الثقة هذا، عبر common/pki.js's issueEnrolled() — المُرمِّز نفسه الذي تصدر عنه كل شهادة أخرى هنا. رسائل CMS من النوع certs-only التي يعيدها منحلة: SignedData فيه شهادات ومن غير موقِّع، فلا تحمل توقيعًا خاصًا بها ويُعتمَد على الشهادات التي بداخلها."
+  },
+  "crypto.families.est.verifies": {
+    "en": "d40d37c4bd83de49",
+    "text": "إثبات الحيازة وفق PKCS#10 — توقيع الطلب بمفتاحه العام، الكلاسيكي وما بعد الكم، في common/cert_enrollment.ts — وفي المصادقة بالشهادة، مسار شهادة العميل إلى وسيط Intermediate الخاص بنطاق الثقة هذا وجذر الخدمة Root مع الرجوع إلى الإبطال. لا يُتحقق من قالب /serverkeygen: يُستبدل مفتاحه."
+  },
+  "crypto.families.est.encrypts": {
+    "en": "2f48e10a9ad6494d",
+    "text": "المفتاح الخاص لزوج مفاتيح ولّده الخادم، يُختم بـ AES-256-GCM تحت مفتاح تشفير المفاتيح على المدخلة، حيثما يعمر ذلك المفتاح أطول من العملية. وهو ليس مُشفَّرًا إلى العميل (RFC 7030 القسم 4.4.1.2): يُرفض الطلب الذي يطلب ذلك، ولا ينتقل المفتاح إلا داخل TLS."
+  },
+  "crypto.families.est.decrypts": {
+    "en": "8d5c676935439726",
+    "text": "لا شيء على السلك."
+  },
+  "crypto.families.est.hashes": {
+    "en": "78ff84df2eb09c64",
+    "text": "SHA-256 لبصمة كل شهادة على سجل المدخلة."
+  },
+  "crypto.families.est.keys": {
+    "en": "ff234d2e35568446",
+    "text": "مفتاح EST Issuing CA واحد لكل نطاق ثقة، تحت وسيط Intermediate الخاص بالنطاق؛ ومفتاح العميل نفسه لكل ما يُلحقه؛ ولـ /serverkeygen زوج مفاتيح يُولَّد هنا بخوارزمية القالب (بما في ذلك ML-KEM، من أجل key-encipherment)، ويُعاد مرة واحدة."
+  },
+  "crypto.families.est.whatItDoesNot": {
+    "en": "0fbae781db5fb46b",
+    "text": "CMC الكامل، وربط القناة tls-unique (ليس في TLS 1.3 شيء منه)، ومفتاح ولّده الخادم وهو مُشفَّر. لا يمكن إلحاق مفتاح KEM عبر /simpleenroll، لأنه لا يستطيع توقيع إثبات الحيازة."
+  },
+  "crypto.families.est.algorithms.0.what": {
+    "en": "42710d1e9ca4dc7a",
+    "text": "خوارزميات توقيع CSR التي يعلن عنها /csrattrs"
+  },
+  "crypto.families.est.algorithms.1.what": {
+    "en": "0d5abf11fe24b9c0",
+    "text": "خوارزميات المفاتيح التي يولّدها الخادم"
+  },
+  "crypto.families.est.algorithms.2.what": {
+    "en": "c62bb06b4e213c58",
+    "text": "حاوية المفتاح الخاص"
+  },
+  "crypto.families.est.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "حاوية الشهادة"
+  },
+  "crypto.families.scep.signs": {
+    "en": "9cbcb1a72f470540",
+    "text": "كل شهادة يصدرها، بمفتاح SCEP Issuing CA الخاص بنطاق الثقة هذا عبر common/pki.js's issueEnrolled()؛ وكل CertRep، بمفتاح RA — CMS SignedData على سمات موقَّعة مرتبة وفق DER، بخوارزمية sha256WithRSAEncryption (SHA-384/512 حين استخدمها الطلب)."
+  },
+  "crypto.families.scep.verifies": {
+    "en": "cf05562a26d80aaf",
+    "text": "توقيع SignedData من مقدِّم الطلب على سماته الموقَّعة وعلى messageDigest للمحتوى (SHA-256 وSHA-384 وSHA-512؛ يُتحقق من موقِّعي RSA أو ECDSA، ثم يُرفض موقِّع ECDSA لأنه لا يمكن تشفير رد إليه)؛ وإثبات الحيازة وفق PKCS#10؛ وفي RenewalReq وGetCert وGetCRL مسار شهادة الموقِّع إلى وسيط Intermediate الخاص بنطاق الثقة هذا مع الرجوع إلى الإبطال؛ وكلمة مرور التحدي، بمقارنة SHA-256 بزمن ثابت."
+  },
+  "crypto.families.scep.encrypts": {
+    "en": "e41a0442f653089f",
+    "text": "محتوى certs-only في CertRep ذي الحالة SUCCESS، إلى شهادة موقِّع مقدِّم الطلب: نقل المفتاح RSAES-PKCS1-v1_5 وحجم مفتاح AES-CBC الذي استخدمه الطلب."
+  },
+  "crypto.families.scep.decrypts": {
+    "en": "902b7d23d39fba20",
+    "text": "يُفك pkcsPKIEnvelope بالمفتاح الخاص لـ RA: RSAES-PKCS1-v1_5 (عبر node-forge، لأن node يرفض فك التشفير الخاص لـ PKCS#1 v1.5) أو RSAES-OAEP، ثم AES-128/192/256-CBC. يُستبدل فك التغليف الفاشل ببايتات مفتاح عشوائية حتى يكون خطأ الحشو والمفتاح الخطأ إجابة واحدة."
+  },
+  "crypto.families.scep.hashes": {
+    "en": "47b332491bb2a39b",
+    "text": "SHA-256 لسر تحدٍّ، ولـ CSR، ولمفتاح موقِّع، من أجل تماثل المعاملة عند تكرارها؛ وخوارزميات بصمة الرسالة المذكورة أعلاه."
+  },
+  "crypto.families.scep.keys": {
+    "en": "555e1d50d89646a1",
+    "text": "مفتاح SCEP Issuing CA واحد لكل نطاق ثقة، وزوج مفاتيح RA واحد لكل نطاق — RSA وفق scep.raKeyAlgorithm، ورقة من تلك الـ CA، يُحفَظ في صف PKI الخاص بالنطاق (مختومًا مع التسلسل الهرمي في وضع المنتج) ويُعاد إصداره خلال ثلاثين يومًا من انتهاء الصلاحية. لا يُرى مفتاح مقدِّم الطلب أبدًا."
+  },
+  "crypto.families.scep.whatItDoesNot": {
+    "en": "4a19c5629d38be11",
+    "text": "توقيعات SHA-1 أو MD5، وتشفير المحتوى بـ DES أو 3DES (يُرفض badAlg)، ومفتاح مقدِّم طلب ليس RSA، وKeyAgreeRecipientInfo وGetNextCACert وPENDING."
+  },
+  "crypto.families.scep.algorithms.0.what": {
+    "en": "19e34a0379a1db34",
+    "text": "بصمات الطلب المقبولة"
+  },
+  "crypto.families.scep.algorithms.1.what": {
+    "en": "96ce29f429f2a103",
+    "text": "توقيعات الطلب المُتحقَّق منها"
+  },
+  "crypto.families.scep.algorithms.2.what": {
+    "en": "3ada8d30fb7fbaa7",
+    "text": "شفرات المحتوى المقبولة"
+  },
+  "crypto.families.scep.algorithms.3.what": {
+    "en": "ce3dfd4aca5eb72b",
+    "text": "وسائل نقل المفاتيح المقبولة"
+  },
+  "crypto.families.scep.algorithms.4.what": {
+    "en": "ce72ec23c64b378f",
+    "text": "البصمات المرفوضة"
+  },
+  "crypto.families.scep.algorithms.5.what": {
+    "en": "2a3243f281f3be54",
+    "text": "الشفرات المرفوضة"
+  },
+  "crypto.families.scep.algorithms.6.what": {
+    "en": "88868db59d8a7d1e",
+    "text": "توقيع CertRep"
+  },
+  "crypto.families.scep.algorithms.7.what": {
+    "en": "b8d71b508570c5bd",
+    "text": "نقل مفتاح CertRep"
+  },
+  "crypto.hashing.fixed.0.what": {
+    "en": "572fc67678eccd94",
+    "text": "JWK المعياري بعد تجزئته. ذلك ما يربط به `cnf.jkt` الرمز المقيَّد بـ DPoP، وهو سبب امتناع خوارزميات ما بعد الكم عن DPoP — يعرّف RFC 7638 الأعضاء المطلوبة لـ RSA وEC وOKP وoct، وليس `AKP` في أيٍّ من تلك القوائم."
+  },
+  "crypto.hashing.fixed.1.what": {
+    "en": "789f03952b2a25a9",
+    "text": "على DER الخاص بالشهادة، بترميز base64url. الـ DER لا PEM، وهو الخطأ الذي يبدو صائبًا في السجل ولا يطابق شيئًا."
+  },
+  "crypto.hashing.fixed.2.what": {
+    "en": "8b86d10dedfeb4c0",
+    "text": "على متحقِّق الرمز. في وضع RFC 9700 يُسحب `plain` ويصبح هذا الأسلوب الوحيد المعلَن."
+  },
+  "crypto.hashing.fixed.3.what": {
+    "en": "af8ddc4be27e9471",
+    "text": "القسم 3.1.3.6: النصف الأيسر من بصمة الرمز بترميز ASCII، بترميز base64url. النصف هو الجزء الذي يتركه الناس."
+  },
+  "crypto.hashing.fixed.4.what": {
+    "en": "f40f7e4f1dcfa612",
+    "text": "كل بصمة إفصاح في اعتماد SD-JWT VC."
+  },
+  "crypto.hashing.fixed.5.what": {
+    "en": "2181a5f9381ac153",
+    "text": "يغطي التوقيع `authenticatorData || SHA-256(clientDataJSON)`، وتجزئة معرّف RP داخل بيانات المصادق تلك هي SHA-256 لنطاق الأصل، تُقارَن بايتًا ببايت."
+  },
+  "crypto.hashing.fixed.5.where": {
+    "en": "5b03dda25987cfe3",
+    "text": "تجزئة بيانات العميل في WebAuthn"
+  },
+  "crypto.hashing.fixed.6.what": {
+    "en": "5b899812c1a1ae4a",
+    "text": "على DER الخاص بـ SVID، حيثما يُسجَّل إصدار مقابل مدخلة في الدليل."
+  },
+  "crypto.hashing.fixed.6.where": {
+    "en": "f28d649163220153",
+    "text": "هوية SVID في SPIFFE"
+  },
+  "crypto.hashing.fixed.7.what": {
+    "en": "c49939c25a7e8ccc",
+    "text": "يسمّي `kid` مفتاحًا، ولذا يُشتق من مادة المفتاح العامة نفسها. كان ثابتًا مرة، فنشر مثيلان من هذه الخدمة اسمًا واحدًا فوق مفتاحين مختلفين — يطابق المتحقِّق kid مطابقة تامة، ويجرّب ذلك المفتاح، ويبلّغ عن توقيع سيئ."
+  },
+  "crypto.hashing.fixed.7.where": {
+    "en": "5a3cb59275a8e560",
+    "text": "معرّفات المفاتيح (`kid`)"
+  },
+  "crypto.hashing.fixed.8.what": {
+    "en": "8274ca190e064807",
+    "text": "RFC 3962 لملفات تعريف AES-SHA1 وRFC 8009 لملفات AES-SHA2. يأتي عدد التكرارات والملح من ETYPE-INFO2 الخاص بـ KDC."
+  },
+  "crypto.hashing.fixed.8.where": {
+    "en": "cb8714e609cbe20f",
+    "text": "تحويل السلسلة إلى مفتاح string-to-key في Kerberos"
+  },
+  "crypto.hashing.weak.0.why": {
+    "en": "212d04701d52594e",
+    "text": "تهجئات XMLDSIG هي توصية سنة 2000 الأصلية، وهي ما لا يزال عدد كبير من الأطراف المعتمدة المنشورة يرسله. إن `rsa-oaep-mgf1p` هو SHA-1 بحكم التعريف — فالـ URI يعني ذلك — ويحمل `rsa-oaep` الأحدث بصمته في عنصر ابن، ويُعرَض منذ #168 مع SHA-256 وMGF1-SHA-256، وهو ما تنشره علاقة الاتحاد وتشترطه. إن HMAC-SHA1-96 في RFC 3962 هو MAC لا ادّعاء مقاومة للتصادم، وهو ما يستخدمه Active Directory إلى اليوم."
+  },
+  "crypto.hashing.weak.0.where": {
+    "en": "13f9c1ea5d995805",
+    "text": "XMLDSIG `#sha1` و`rsa-sha1`؛ RSA-OAEP-MGF1P؛ HMAC-SHA1-96 لنوعي Kerberos etype 17 و18"
+  },
+  "crypto.hashing.weak.1.why": {
+    "en": "04261c070ac406f5",
+    "text": "إن RC4-HMAC هو ما يتراجع إليه معظم القاعدة المُثبَّتة من عملاء Kerberos، وMD5 Digest هو ما تتحدث به معظم القاعدة المُثبَّتة من عملاء Digest. يُعرَض كلاهما أخيرًا وليس أي منهما توصية."
+  },
+  "crypto.hashing.weak.1.where": {
+    "en": "5a60ff8915455c4c",
+    "text": "Kerberos RC4-HMAC (etype 23)؛ HTTP Digest"
+  },
+  "crypto.hashing.weak.2.why": {
+    "en": "21b7cc730abd3500",
+    "text": "هذا ما هو عليه etype. إنه بلا ملح، ولهذا لا يهم اكتشاف الملح إلا مع AES."
+  },
+  "crypto.hashing.weak.2.where": {
+    "en": "cf9bbd71941b23b8",
+    "text": "تجزئة NT، داخل string-to-key الخاص بـ RC4-HMAC"
+  },
+  "crypto.signatures.other.0.what": {
+    "en": "cccbf692b80811e7",
+    "text": "BLS12-381 G2 مع مجموعة التشفير SHA-256، بوصفه إثبات W3C Data Integrity. التوقيع الوحيد هنا القائم على الاقتران، والإفصاح الانتقائي الوحيد الذي ليس تجزئة."
+  },
+  "crypto.signatures.other.1.what": {
+    "en": "183b0aafb0db82b8",
+    "text": "RFC 7486. فوق كتلة تضم الرقم العشوائي والخوارزمية والأصل ونطاق الثقة ومعرّف المفتاح وتحدي الخادم، مقابل مفتاح عام سجّله العميل."
+  },
+  "crypto.signatures.other.1.label": {
+    "en": "c99c992832df60da",
+    "text": "خوارزمية HOBA 0 (RSA-SHA256)"
+  },
+  "crypto.signatures.other.2.what": {
+    "en": "080c17e1422d21ee",
+    "text": "HMAC-SHA1-96 (الأنواع etypes 17 و18) وHMAC-SHA-256-128 (19) وHMAC-SHA-384-192 (20) وHMAC-MD5 (23)، كل منها تحت مفتاح مشتق من المفتاح الطويل الأجل لرقم استخدام المفتاح الخاص بتلك الرسالة. أرقام الاستخدام هي ما يختل: فالرقم الخطأ ينتج عدم تطابق في المجموع الاختباري ولا أي عرض آخر."
+  },
+  "crypto.signatures.other.2.label": {
+    "en": "4a4b2ce0b267e0cb",
+    "text": "مجاميع Kerberos الاختبارية ذات المفتاح"
+  },
+  "crypto.signatures.other.3.what": {
+    "en": "9b34ad7078774fa9",
+    "text": "SHA-256 مع RSA لشهادات التوقيع وشهادات TLS؛ وأيًا كان ما يقتضيه `spiffe.x509KeyType` لـ SVID."
+  },
+  "crypto.signatures.other.3.label": {
+    "en": "fe859f25e5d2fbae",
+    "text": "توقيعات شهادات X.509"
+  },
+  "crypto.pq.algorithms.what": {
+    "en": "86c7af6a76fda4b9",
+    "text": "ML-DSA هي FIPS 204 وSLH-DSA هي FIPS 205 — توقيع شبكي وآخر قائم على التجزئة، وهما رهانان مختلفان وكلاهما هنا لهذا السبب. المركّبات الستة هي draft-ietf-jose-pq-composite-sigs: توقيع ML-DSA واحد وتوقيع تقليدي واحد على الرسالة نفسها، ويجب أن يتحقق كلاهما، لذلك لا يكون الزوج أضعف من نصفه الأقوى. يحمل كل منها فاصل نطاق في الرسالة المركّبة وفي سلسلة سياق ML-DSA، وهو ما يمنع إعادة تشغيل توقيع صُنع لمركّب واحد بوصفه توقيعًا لآخر."
+  },
+  "crypto.pq.algorithms.independence": {
+    "en": "3cdf2b7a57681a4e",
+    "text": "الأولية الشبكية هي OpenSSL 3.5 الخاص بـ node (#363)، حيث يستخدم المصحّح @noble/post-quantum، لذلك يُراجَع ML-DSA نفسه بين تنفيذين. كل ما حوله مكتوب هنا من المواصفات، والنصف التقليدي من كل مركّب يعمل على OpenSSL الخاص بـ node لا على مكتبة المنحنى التي يستخدمها الطرف البعيد. هناك تكون للمراجعة المتبادلة قيمتها: فسوء فهم مشترك للإطار يتفق مع نفسه اتفاقًا تامًا ولا يتبادل التشغيل مع أي شيء."
+  },
+  "crypto.pq.signatures.0.surface": {
+    "en": "43b13a17ca0ec49f",
+    "text": "ID Token"
+  },
+  "crypto.pq.signatures.0.how": {
+    "en": "529fa3a0343d70ce",
+    "text": "يسجّل العميل `id_token_signed_response_alg`، والقائمة المعلَنة هي جدول JWS المشترك — لذلك يمكن اختيار كل خوارزمية من ML-DSA وSLH-DSA والمركّبات."
+  },
+  "crypto.pq.signatures.1.surface": {
+    "en": "fe8507eede42f0e1",
+    "text": "استجابة UserInfo الموقّعة"
+  },
+  "crypto.pq.signatures.1.how": {
+    "en": "c088631501cab27c",
+    "text": "تُؤخذ إدخالات ما بعد الكم من الجدول المشترك بمرشّح لا بسردها، لذلك لا يمكن أن تتأخر هذه القائمة عنه."
+  },
+  "crypto.pq.signatures.2.surface": {
+    "en": "cf12c2348883a409",
+    "text": "نشر JWKS"
+  },
+  "crypto.pq.signatures.2.how": {
+    "en": "6278d02404536b1e",
+    "text": "يُنشر كل مفتاح ما بعد كم بوصفه JWK من النوع `AKP` وله `kid` خاص به، حتى يستطيع العميل التحقق من واحد فعليًا بدل أن يُعرَض عليه فحسب. تُصنع عند أول استخدام، وهذا ما يجعل أول جلب لـ JWKS على نطاق ثقة بطيئًا."
+  },
+  "crypto.pq.signatures.3.surface": {
+    "en": "627636b4e140b9ec",
+    "text": "رموز الوصول ورموز التحديث"
+  },
+  "crypto.pq.signatures.3.how": {
+    "en": "b1af7e79ec3085c8",
+    "text": "RS256، دائمًا. `signJwt()` هو المسار الوحيد الذي يسجّل رمزًا في عدّادات وحدة التحكم، وهو يوقّع بمفتاح RSA الخاص بنطاق الثقة."
+  },
+  "crypto.pq.signatures.4.surface": {
+    "en": "9199abebcef8fe6e",
+    "text": "إثباتات DPoP"
+  },
+  "crypto.pq.signatures.4.how": {
+    "en": "0b0a7888ad6cfa27",
+    "text": "عمدًا، وهو الاستبعاد الأجدر بالاهتمام هنا. يُربَط إثبات DPoP عبر `cnf.jkt`، وهي بصمة JWK في RFC 7638 — ولا يعرّف RFC 7638 الأعضاء المطلوبة إلا لـ RSA وEC وOKP وoct فقط. مفتاح ML-DSA هو `kty: \"AKP\"`، ولم تُسجَّل له أي بصمة، لذلك فإن إثباتًا موقَّعًا بواحد منه يتحقق تمامًا ولا يرتبط بأي شيء. الفجوة في الربط لا في التوقيع."
+  },
+  "crypto.pq.signatures.5.surface": {
+    "en": "85f00831d63f0dfa",
+    "text": "كل توقيع XML — SAML 2.0 وSAML 1.1 وWS-Federation وWS-Trust والاتحاد"
+  },
+  "crypto.pq.signatures.5.how": {
+    "en": "2835531d7d7db342",
+    "text": "RSA-SHA256. ليس في XMLDSIG أي SignatureMethod مسجَّل لما بعد الكم، لذلك لا يوجد ما يُختار: هذه فجوة في مكدس المواصفات لا في هذه الخدمة."
+  },
+  "crypto.pq.signatures.6.surface": {
+    "en": "fa5f732d88799b31",
+    "text": "شهادات X.509 وSPIFFE SVID"
+  },
+  "crypto.pq.signatures.6.how": {
+    "en": "eb2d0cae1421130c",
+    "text": "RSA 2048 أو منحنى إهليلجي. أنواع مفاتيح سلطة SPIFFE هي EC P-256/384/521 وRSA 2048/4096 وEd25519 — وكلها مكسورة بخوارزمية Shor."
+  },
+  "crypto.pq.signatures.7.surface": {
+    "en": "3ed217bd349c451a",
+    "text": "بيانات الاعتماد القابلة للتحقق"
+  },
+  "crypto.pq.signatures.7.how": {
+    "en": "197a934d4f2a9aa9",
+    "text": "RS256 لـ SD-JWT VC، و`bbs-2023` لـ `ldp_vc` — توقيع قائم على الاقتران، وهو أكثر تعرضًا من ECDSA العادي إن كان هناك فرق."
+  },
+  "crypto.pq.signatures.8.surface": {
+    "en": "03f7f9d91f479718",
+    "text": "تأكيدات WebAuthn"
+  },
+  "crypto.pq.signatures.8.how": {
+    "en": "d2274d309abdae8b",
+    "text": "ES256 أو RS256 أو EdDSA، وليس هذا اختيار هذه الخدمة: فالمصادِق هو الذي يوقّع، ولا تسجّل COSE أي خوارزمية ما بعد كم تنتجها أداة مصادقة المنصة."
+  },
+  "crypto.pq.symmetric.what": {
+    "en": "657d0ce4c2df4646",
+    "text": "تكلف خوارزمية Grover جذرًا تربيعيًا بدل أن تكسر هذه مباشرة، لذلك الإجابة هي طول المفتاح. لا يتأثر AES-256 وSHA-384 بأي معنى عملي؛ ويحتفظ AES-128 وSHA-256 بهامش أقل ما زال يُعد كافيًا. ولذلك فإن Kerberos هي العائلة هنا الأقل تأثرًا بأي من هذا — فهي الوحيدة التي لا تتضمن تشفيرًا بمفتاح عام على الإطلاق — وهذا عكس ما توحي به سمعتها. وما هو خاطئ في RC4-HMAC وMD5 وMD4 لا علاقة له بالحواسيب الكمومية."
+  },
+  "crypto.pq.symmetric.strongest": {
+    "en": "d169ec1de3f8e13c",
+    "text": "aes256-cts-hmac-sha384-192 (etype 20)، وAES-256-GCM لتشفير XML، وA256GCM لـ JWE."
+  },
+  "crypto.codes.source": {
+    "en": "cfde0ca5c8d97444",
+    "text": "crypto.randomInt() لكل محرف — بعيّنة رفض داخل node، لذلك لا يعتمد الانتظام على أن حجم الأبجدية يقسم 256."
+  },
+  "crypto.codes.atRest": {
+    "en": "c12e485fcef80c57",
+    "text": "تجزئة scrypt لكل رمز، عبر crypto.hashSecret() — الدالة نفسها والشكل المخزَّن نفسه كما في userPassword — حتى تستطيع هذه الخدمة التحقق من الرمز ولا تستطيع إظهاره مرة أخرى أبدًا، بما في ذلك لمالكه. المجموعة التي كتبها بناء قبل 2026-09-11 تحتفظ بالرموز نفسها وما زالت تُقبل، رمزًا فرمزًا، إلى أن يولّد مالكها مجموعة جديدة."
+  },
+  "crypto.codes.comparisonOfAHash": {
+    "en": "44128280e8823464",
+    "text": "crypto.verifySecret() في زمن ثابت مقابل كل تجزئة مخزَّنة على التوالي، على مجمع خيوط libuv حيث يكون الباب غير متزامن."
+  },
+  "crypto.param.codes.comparison": {
+    "en": "0862bafae6ad7324",
+    "text": "crypto.constantTimeEquals()، بعد تحويل الحروف إلى كبيرة وإسقاط المسافات والشرطات التي تطبعها هذه الخدمة نفسها."
+  },
+  "crypto.param.totp.encoding": {
+    "en": "d9613131364834bc",
+    "text": "base32 وفق RFC 4648، من دون حشو، كما يتوقع otpauth Key Uri Format."
+  }
+}
