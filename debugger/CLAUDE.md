@@ -318,10 +318,13 @@ costs the rest of the service nothing.
 
 ## Not done, said plainly
 
-* **No over-HTTP job** in `tests/protocol/` drives the full browser sign-in
-  through a real embedded tree, because no launcher yet builds the debugger
-  image; the parent project's own suite still runs against its standalone client
-  and api.
+* **The over-HTTP job runs in development only.** Since the image embeds
+  the published tree by default (#1717), `tests/protocol/sts_debugger_signin.js`
+  drives the full sign-in through the real embedded tree and api child in the
+  `memory` mode; every product mode leaves the debugger off, so it is skipped
+  there with the reason. That `DPoP` reaches the api child unchanged is not
+  observable over the wire (no api route forwards it) and stays
+  `tests/debugger_server.js`'s.
 * **A docker port mapping whose host and container numbers differ breaks the
   sign-in** unless `global.publicBaseUrl` is pinned: the authorization base is the
   browser's host on the MAIN PORT the process knows, which is the container's.
