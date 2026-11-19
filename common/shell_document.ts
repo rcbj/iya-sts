@@ -525,6 +525,74 @@ class ShellDocument {
               bytes.length + " bytes.");
   }
 
+  // AN OPENAPI DOCUMENT, COMPRESSED WHERE THE REQUEST ACCEPTS IT (GitHub run
+  // 44544256231, memory mode). `GET /admin-api/openapi.json` is about 7 MB,
+  // and the console fetches it before it sends a form. Over HTTP/2, Chrome
+  // sometimes stops delivering such a body to the page part-way — 4 to 5 MB
+  // in — although this service has written all of it and closed the stream,
+  // and while every other request on the same connection (a small API call,
+  // a 1.2 MB console file) is answered in milliseconds. The form then waited
+  // for ever, and a person pressing Remove saw nothing happen. Compressed,
+  // the document is about 0.5 MB on the wire. Measured with the suite
+  // image's Chrome 152 over a docker network, reloading the console and
+  // fetching the document through its own runtime: 11 stalls in about 650
+  // rounds uncompressed, none in 440 compressed.
+  //
+  // ONLY FOR A DOCUMENT WITH NO SECRET AND NOTHING A CALLER CHOSE IN IT, which
+  // the OpenAPI documents are: BREACH (see the header) needs both in one
+  // compressed answer. So it is the caller that decides, by calling this,
+  // never a rule about size. It wraps `end()` rather than `send()`, so the
+  // answer's model check (`common/response_models.ts`) and the call log read
+  // the JSON, and only the bytes handed to the connection are compressed.
+  /**
+   * Compresses the body this response is about to end with, in the coding
+   * the request accepts, and says `Vary: Accept-Encoding` either way. Call
+   * it before the answer is sent.
+   *
+   * @param req - the request
+   * @param res - the response, not yet sent
+   * @returns nothing
+   */
+  static compressDocument(req: Json, res: Json): void {
+    log.debug("Entering ShellDocument.compressDocument().");
+    res.vary('Accept-Encoding');
+    const encoding = ShellDocument.acceptedEncoding(
+      req.headers && req.headers['accept-encoding']);
+    if (!encoding) {
+      log.debug("Leaving ShellDocument.compressDocument(). Identity.");
+      return;
+    }
+    const end = res.end;
+    res.end = function compressedEnd(chunk?: Json, how?: Json,
+                                      cb?: Json): Json {
+      log.debug("Entering compressedEnd().");
+      res.end = end;
+      // A HEAD, a 304 and an answer with no body end with no chunk: theirs
+      // is the response's own end, untouched.
+      if (chunk === undefined || chunk === null ||
+          typeof chunk === 'function' || res.headersSent ||
+          res.getHeader('Content-Encoding')) {
+        log.debug("Leaving compressedEnd(). Nothing to compress.");
+        return end.apply(res, arguments);
+      }
+      const coding = (typeof how === 'string' ? how
+                                              : 'utf8') as BufferEncoding;
+      const bytes = Buffer.isBuffer(chunk) ? chunk
+        : Buffer.from(String(chunk), coding);
+      const packed = encoding === 'br'
+        ? zlib.brotliCompressSync(bytes, { params: {
+            [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: bytes.length } })
+        : zlib.gzipSync(bytes, { level: 6 });
+      res.setHeader('Content-Encoding', encoding);
+      res.setHeader('Content-Length', String(packed.length));
+      log.debug("Leaving compressedEnd(). " + encoding + ", " + bytes.length +
+                " bytes as " + packed.length + ".");
+      return end.call(res, packed, typeof how === 'function' ? how : cb);
+    };
+    log.debug("Leaving ShellDocument.compressDocument(). " + encoding + ".");
+  }
+
   /**
    * Reads a surface's built file and the `.br` and `.gz` beside it. A tree
    * that was never built (a checkout) has none: `raw` is then the
