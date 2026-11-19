@@ -64,6 +64,11 @@
 //      slot — discovery, the listing, the deliveries — so none is closer to
 //      the last than 1000 / rate ms; a rate that is not a whole number is
 //      refused.
+//   T. A ROW IS NEVER AHEAD OF ITS ENTRY (run #500): where writes commit
+//      later, a directory change's row is written only once the directory
+//      has committed, and a sweep catches up with the store before it
+//      attempts anything — the two halves that stop a node sending a
+//      person read from a replica that lacks the change.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -619,6 +624,7 @@ async function changes(t) {
           'C1. a change is a PUT to the linked id, and a 412 re-reads and ' +
           'tries again with If-Match', JSON.stringify(bob.body));
   await observedClientsKept(t, dn);
+  await commitOrder(t, dn);
   // D: a resource already there under the userName, with no externalId.
   sp.users['sp-pre'] = { id: 'sp-pre', v: 1, body: {
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
@@ -642,6 +648,69 @@ async function changes(t) {
           'E1. a disabled person is deactivated there (active false)',
           JSON.stringify(sp.users['sp-pre'].body));
   log.debug('Leaving changes().');
+}
+
+// T (run #500): the ORDER of a row and its entry across processes. A second
+// instance over the same stores, never installed, with the persistence
+// hooks replaced: a commit that is held, and a read barrier that records
+// what had been sent when it ran.
+async function commitOrder(t, dn) {
+  log.debug('Entering commitOrder().');
+  const client = 'basic-' + RUN;
+  const queued = function () {
+    log.debug('Entering queued().');
+    const view = scimClients.view({ client: client });
+    log.debug('Leaving queued().');
+    return Number(view.client && view.client.queues.counts.queued) || 0;
+  };
+  let release = null;
+  const held = new Promise(function (resolve) {
+    release = resolve;
+  });
+  const barriers = [];
+  const instance = new scimClients.ScimClients(Object.assign(
+    scimClients.ScimClients.defaultDeps(), {
+      writesCommitLater: function () {
+        return true;
+      },
+      directoryCommitted: function () {
+        return held.then(function () {
+          return [{ written: true }];
+        });
+      },
+      catchUp: function () {
+        barriers.push({ requests: sp.requests.length, queued: queued() });
+        return Promise.resolve({ caughtUp: true });
+      }
+    }));
+  const before = queued();
+  instance.observe({ kind: 'updated', dn: dn, username: 'bob' + RUN,
+                     realm: realms.currentId(), before: {}, after: {} });
+  await new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+  const whileHeld = queued();
+  release();
+  await new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+  const afterCommit = queued();
+  t.check(before === 0 && whileHeld === 0 && afterCommit === 1,
+          'T1. a change\'s row is written only once the directory write ' +
+          'it is for has committed', JSON.stringify({ before: before,
+            whileHeld: whileHeld, afterCommit: afterCommit }));
+  const sent = sp.requests.length;
+  await instance.delivery.sweep();
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 150);
+  });
+  t.check(barriers.length === 1 && barriers[0].requests === sent &&
+          barriers[0].queued === 1 && sp.requests.length > sent,
+          'T2. a sweep catches up with the store before it attempts a due ' +
+          'row, and then sends it', JSON.stringify({ barriers: barriers,
+            sent: sent, after: sp.requests.length }));
+  await drain();
+  log.debug('Leaving commitOrder().');
 }
 
 // C2–C3 (#625): the clients a directory change is observed for are kept by
