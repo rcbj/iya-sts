@@ -2082,5 +2082,37 @@
   "xacmlPepClusters.schema.attributes.description.what": {
     "en": "769286563bacdcb4",
     "text": "Was ein Administrator beim Anlegen über den Cluster gesagt hat."
+  },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "2fc947c1194f5438",
+    "text": "WAHR oder FALSCH: die Elemente öffnen, die die Anfragezuordnung dieser Anwendung nennt, und damit wstrust.encryptRequest außer Kraft setzen. Eingeschaltet ist eine Anfrage, deren AppliesTo diese Anwendung ist, ein FailedCheck, wenn die Zuordnung leer ist, ein Ausdruck ein im Klartext angekommenes Element trifft, ein Ausdruck nichts von dem aus dem Geheimtext Wiederhergestellten trifft, oder ein Geheimtext sich nicht mit den XML-Encryption-Schlüsseln dieses Vertrauensbereichs öffnet. Eine Anfrage, deren AppliesTo im Geheimtext verborgen ist, wird nur geöffnet, wenn der Schalter des ganzen Dienstes eingeschaltet ist; die dadurch aufgedeckte Anwendung wird dann an ihren eigenen Schalter gehalten. Ausgeschaltet wird Geheimtext für diese Anwendung abgelehnt statt geöffnet."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "64d29149c3c87cba",
+    "text": "DIE ELEMENTE EINER WS-TRUST-ANFRAGE, DIE VERSCHLÜSSELT ANKOMMEN MÜSSEN, je ein XPath-1.0-Ausdruck. Die Teilmenge ist `/`, `//`, `*`, ein Elementname, `prefix:local`, eine Vereinigung mit `|` und die Prädikate `local-name()`, `namespace-uri()` und `@attr`, verbunden durch `and`. Jeder Ausdruck muss mindestens ein Element auswählen, das aus einem xenc:EncryptedData vom Typ Element wiederhergestellt wurde. Ein Ausdruck außerhalb dieser Teilmenge ist ein RequestFailed. Ein SOAP-Header, der SOAP-Body oder irgendein Element darf genannt werden, für jeden Tokentyp."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "WAHR oder FALSCH: die Elemente, die die Antwortzuordnung dieser Anwendung nennt, durch xenc:EncryptedData ersetzen und damit wstrust.encryptResponse außer Kraft setzen. Die Antwort wird im Klartext aufgebaut, und dann werden diese Elemente ersetzt, für jeden Tokentyp. Ein Fehler bleibt im Klartext. Eingeschaltet, und die Verschlüsselung lässt sich nicht abschließen — kein Empfänger, eine Zuordnung, die nichts trifft, oder eine Chiffre, die das Zertifikat des Empfängers nicht annimmt — ist die Anfrage in beiden Modi ein Fehler."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "DIE ELEMENTE EINER WS-TRUST-ANTWORT, DIE VERSCHLÜSSELT WERDEN, je ein XPath-1.0-Ausdruck, dieselbe Teilmenge wie wstrustEncryptRequestElements. Ein SOAP-Header, der SOAP-Body oder irgendein Element darf genannt werden. Ein Ausdruck, der in der aufgebauten Antwort nichts trifft, ist ein Fehler."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "Die Blockchiffre für die WS-Trust-Antworten dieser Anwendung — aes256-gcm, aes128-gcm, aes256-cbc oder aes128-cbc — und damit wird wstrust.encryptionAlgorithm außer Kraft gesetzt. Ein Element wst:EncryptionAlgorithm darf diese Chiffre nennen, mit ihrem Kurznamen oder ihrem XML-Encryption-URI, nur solange die Antwortverschlüsselung für diese Anwendung eingeschaltet ist."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "DAS ZERTIFIKAT, AN DAS EINE WS-TRUST-ANTWORT VERSCHLÜSSELT WIRD, Base64-DER oder PEM. Ist es gesetzt, ist es der Empfänger, und ein Zertifikat, das sich nicht lesen lässt, ist ein Fehler statt eines Schritts zur nächsten Quelle. Ist es nicht gesetzt, ist der Empfänger das Zertifikatelement, das wstrustResponseRecipientXPath auswählt, oder, wenn auch dieser Ausdruck nicht gesetzt ist, das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Wie der Inhaltsschlüssel für die WS-Trust-Antworten dieser Anwendung gewickelt wird — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) oder rsa-1_5 — und damit wird wstrust.keyTransportAlgorithm außer Kraft gesetzt. Ein Empfänger, dessen Zertifikat EC ist, wird per ECDH-ES verschlüsselt, was immer dies sagt. Ein Element wst:EncryptWith darf diesen Algorithmus nennen, mit seinem Kurznamen oder seinem XML-Encryption-URI, nur solange die Antwortverschlüsselung für diese Anwendung eingeschaltet ist."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "EIN XPATH-AUSDRUCK, DER DAS ZERTIFIKATELEMENT AUSWÄHLT, AN DAS EINE WS-TRUST-ANTWORT VERSCHLÜSSELT WIRD: ein ds:X509Certificate oder ein BinarySecurityToken, dessen ValueType auf #X509v3 endet. Dieselbe Teilmenge wie die Elementzuordnungen. Ist er gesetzt und wählt nichts aus, oder wählt er ein Element, das keines dieser beiden ist, gibt es keinen Empfänger, und die nächste Quelle wird nicht versucht. Ein ausgewähltes Zertifikatelement, dessen Text kein Zertifikat ist, ist ein Fehler der abgeschlossenen Verschlüsselung, und die nächste Quelle wird nicht versucht. Ist er nicht gesetzt, ist der Empfänger das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt — das BinarySecurityToken, auf das die Referenz dieser Signatur zeigt, oder ein ds:X509Certificate im KeyInfo dieser Signatur. Ein Thumbprint, ein Subject Key Identifier oder ein Aussteller und eine Seriennummer ist kein Zertifikatelement."
   }
 }

@@ -2082,5 +2082,37 @@
   "xacmlPepClusters.schema.attributes.description.what": {
     "en": "769286563bacdcb4",
     "text": "ما قاله المسؤول عن العنقود عند إنشائه."
+  },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "2fc947c1194f5438",
+    "text": "TRUE أو FALSE: افتح العناصر التي تسميها خريطة طلب هذا التطبيق، متجاوزًا wstrust.encryptRequest. عند التشغيل، الطلب الذي يكون AppliesTo الخاص به هذا التطبيق هو FailedCheck عندما تكون الخريطة فارغة، أو يطابق تعبير عنصرًا وصل واضحًا، أو لا يطابق تعبير شيئًا استُعيد من النص المشفّر، أو لا يُفتح نص مشفّر بمفاتيح XML Encryption لهذا النطاق. الطلب الذي يكون AppliesTo مخفيًا داخل النص المشفّر لا يُفتح إلا عندما يكون مفتاح الخدمة كلها قيد التشغيل؛ ثم يُحمَّل التطبيق الذي يكشفه ذلك الفتح مفتاحه الخاص. عند الإيقاف يُرفض النص المشفّر لهذا التطبيق بدلًا من فتحه."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "64d29149c3c87cba",
+    "text": "عناصر طلب WS-TRUST التي يجب أن تصل مشفّرة، تعبير XPath 1.0 لكل منها. المجموعة الجزئية هي `/` و`//` و`*` واسم عنصر و`prefix:local` واتحاد بـ `|` والمحمولات `local-name()` و`namespace-uri()` و`@attr`، مربوطة بـ `and`. يجب أن يحدّد كل تعبير عنصرًا واحدًا على الأقل استُعيد من xenc:EncryptedData من النوع Element. التعبير خارج هذه المجموعة الجزئية هو RequestFailed. يجوز تسمية ترويسة SOAP أو جسم SOAP أو أي عنصر، لأي نوع من الرموز."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE أو FALSE: استبدل العناصر التي تسميها خريطة استجابة هذا التطبيق بـ xenc:EncryptedData، متجاوزًا wstrust.encryptResponse. تُبنى الاستجابة واضحة ثم تُستبدل تلك العناصر، لأي نوع من الرموز. يبقى الخطأ واضحًا. عند التشغيل، وتعذّر إتمام التشفير — لا مستلم، أو خريطة لا تطابق شيئًا، أو تشفير لا تقبله شهادة المستلم — يكون الطلب خطأ في الوضعين."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "عناصر استجابة WS-TRUST التي تُشفَّر، تعبير XPath 1.0 لكل منها، المجموعة الجزئية نفسها كما في wstrustEncryptRequestElements. يجوز تسمية ترويسة SOAP أو جسم SOAP أو أي عنصر. التعبير الذي لا يطابق شيئًا في الاستجابة التي بُنيت هو خطأ."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "تشفير الكتلة المستخدم لاستجابات WS-Trust لهذا التطبيق — aes256-gcm أو aes128-gcm أو aes256-cbc أو aes128-cbc — متجاوزًا wstrust.encryptionAlgorithm. يجوز لعنصر wst:EncryptionAlgorithm أن يسمي هذا التشفير، باسمه القصير أو بمعرّف URI لـ XML Encryption، فقط ما دام تشفير الاستجابة قيد التشغيل لهذا التطبيق."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "الشهادة التي تُشفَّر إليها استجابة WS-TRUST، بترميز DER بصيغة base64 أو PEM. عندما تُعيَّن تكون هي المستلم، والشهادة التي لا تُقرأ خطأ بدلًا من النزول إلى المصدر التالي. عندما لا تُعيَّن يكون المستلم عنصر الشهادة الذي يحدده wstrustResponseRecipientXPath، أو، عندما لا يُعيَّن ذلك التعبير أيضًا، أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "كيف يُغلَّف مفتاح المحتوى لاستجابات WS-Trust لهذا التطبيق — rsa-oaep-mgf1p أو rsa-oaep (SHA-256، MGF1-SHA-256) أو rsa-1_5 — متجاوزًا wstrust.keyTransportAlgorithm. المستلم الذي شهادته EC يُشفَّر إليه بـ ECDH-ES مهما قال هذا. يجوز لعنصر wst:EncryptWith أن يسمي هذه الخوارزمية، باسمها القصير أو بمعرّف URI لـ XML Encryption، فقط ما دام تشفير الاستجابة قيد التشغيل لهذا التطبيق."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "تعبير XPATH يحدّد عنصر الشهادة الذي تُشفَّر إليه استجابة WS-TRUST: ds:X509Certificate أو BinarySecurityToken ينتهي ValueType الخاص به بـ #X509v3. المجموعة الجزئية نفسها كما في خرائط العناصر. عندما يُعيَّن ولا يحدّد شيئًا، أو يحدّد عنصرًا ليس أحد هذين، لا يوجد مستلم ولا يُجرَّب المصدر التالي. عنصر الشهادة المحدَّد الذي ليس نصه شهادة هو خطأ تشفير مكتمل، ولا يُجرَّب المصدر التالي. عندما لا يُعيَّن يكون المستلم أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب — BinarySecurityToken الذي تشير إليه مرجعية ذلك التوقيع، أو ds:X509Certificate في KeyInfo ذلك التوقيع. البصمة أو Subject Key Identifier أو المُصدِر والرقم التسلسلي ليس عنصر شهادة."
   }
 }

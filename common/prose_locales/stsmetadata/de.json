@@ -2524,8 +2524,8 @@
     "text": "NON-SPEC (#594). Mit ?id= das, was eine Wallet dem Notification Endpoint über die Credential mitgeteilt hat, die notification_id nennt: das Ereignis, seine Beschreibung und wann (404 für eine id, die dieser Issuer nicht ausgestellt hat). Admin Read; bis #594 das nur für die Entwicklung vorhandene /oid4vci/notification/:id."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST eines SOAP-RequestSecurityToken; die Verteilung erfolgt über wst:RequestType (Issue, Renew, Validate, Cancel) und gibt eine RSTR zurück. GET beschreibt den Endpunkt. ?encrypt=1 anfügen, damit die ausgestellte Zusicherung als EncryptedAssertion zurückkommt."
+    "en": "dd027a41936ae3af",
+    "text": "POST eines SOAP-RequestSecurityToken; die Verteilung erfolgt über wst:RequestType (Issue, Renew, Validate, Cancel) und gibt eine RSTR zurück. GET beschreibt den Endpunkt. Eine Anwendung kann verlangen, dass benannte Elemente der Anfrage und der Antwort XML Encryption (xenc:EncryptedData) sind. Eine Nachricht, die dieser Zuordnung nicht entspricht, ist ein Fehler, und die Verarbeitung stoppt."
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",
