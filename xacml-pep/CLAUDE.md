@@ -1698,7 +1698,16 @@ that plus the registered PEP name, so **a pull that changes any of it — a
 rotated secret, a re-issued chain, registration completing — builds a new
 relying party** and stops the old receiver; the
 library's session store is handed from one to the next
-(`set_session_store`), so a rotation signs nobody out. `proxy.reconcile()`
+(`set_session_store`), so a rotation signs nobody out. **So is the DPoP key
+(run #543)**: the library makes one per `RelyingParty` when given no
+`dpopKey`, so a rebuild between a sign-in's PAR (its `dpop_jkt`) and its
+callback redeemed the code with a NEW key, the service refused it
+(`invalid_grant`, `STS-OAUTH-0205`) and the browser got 401
+`STS-XPEP-0083` — and the tokens in the kept session store were bound to
+the old key too. `RpSet` makes one P-256 key per client, once, and hands it
+to every build as `dpopKey`, outside the digest (a secret, and nothing a
+pull changes). `proxy_tests::a_sign_in_survives_its_relying_party_being_rebuilt`
+fails without it. `proxy.reconcile()`
 runs after every poll (`main.rs`) and builds what the pull calls for and
 drops what it no longer does; a request also builds one on demand. **No
 secret is logged, kept in a `Debug` line (`RpClient`'s is redacted) or shown

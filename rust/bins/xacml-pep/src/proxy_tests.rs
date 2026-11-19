@@ -82,6 +82,13 @@ struct ServiceState {
     /// Sessions signed out at the service whose access tokens the identity
     /// endpoint now refuses (403), before any signal says so.
     ended: HashSet<String>,
+    /// Discovery advertises DPoP (ES256), so the library binds its codes
+    /// and tokens to a key.
+    dpop: bool,
+    /// The `dpop_jkt` the next code is bound to: the token endpoint
+    /// refuses a proof from any other key (`invalid_grant`), as the
+    /// service does (RFC 9449 section 10, `STS-OAUTH-0205`).
+    dpop_jkt: Option<String>,
 }
 
 /// What the application has seen of its SAML sessions.
@@ -268,6 +275,25 @@ fn session_revoked(key: &PKey<Private>, issuer: &str, sid: &str) -> String {
     )
 }
 
+/// The RFC 7638 thumbprint of the EC key in a DPoP proof's header, as the
+/// service computes the `jkt` it compares with a code's `dpop_jkt`.
+fn proof_thumbprint(proof: &str) -> Option<String> {
+    let header = proof.split('.').next()?;
+    let header: Value = serde_json::from_slice(
+        &oidc_caep_risc::b64url_decode(header, "a DPoP proof").ok()?,
+    )
+    .ok()?;
+    let jwk = &header["jwk"];
+    let canonical = format!(
+        "{{\"crv\":\"{}\",\"kty\":\"{}\",\"x\":\"{}\",\"y\":\"{}\"}}",
+        jwk["crv"].as_str()?,
+        jwk["kty"].as_str()?,
+        jwk["x"].as_str()?,
+        jwk["y"].as_str()?
+    );
+    Some(b64url_encode(&openssl::sha::sha256(canonical.as_bytes())))
+}
+
 /// The client authentication the token endpoint takes:
 /// `client_secret_basic` for either application.
 fn authenticated(headers: &HeaderMap) -> Option<String> {
@@ -290,10 +316,12 @@ async fn service(
     state.lock().unwrap().issuer = base.clone();
     let discovery = {
         let base = base.clone();
+        let s0 = state.clone();
         move || {
             let b = base.clone();
+            let dpop = s0.lock().unwrap().dpop;
             async move {
-                Json(json!({
+                let mut doc = json!({
                     "issuer": b,
                     "authorization_endpoint": format!("{}/authorize", b),
                     "token_endpoint": format!("{}/token", b),
@@ -307,7 +335,11 @@ async fn service(
                     "code_challenge_methods_supported": ["S256"],
                     "grant_types_supported":
                         ["authorization_code", "client_credentials"]
-                }))
+                });
+                if dpop {
+                    doc["dpop_signing_alg_values_supported"] = json!(["ES256"]);
+                }
+                Json(doc)
             }
         }
     };
@@ -479,7 +511,7 @@ async fn service(
                         "token_type": "Bearer", "expires_in": 300 })),
                 );
             }
-            let (issuer, expect, who) = {
+            let (issuer, expect, who, bound) = {
                 let g = s.lock().unwrap();
                 (
                     g.issuer.clone(),
@@ -487,7 +519,27 @@ async fn service(
                     g.who.clone().unwrap_or_else(|| {
                         ("urn:uuid:carol".to_string(), "carol".to_string())
                     }),
+                    g.dpop_jkt.clone(),
                 )
+            };
+            let proof_jkt = headers
+                .get("dpop")
+                .and_then(|v| v.to_str().ok())
+                .and_then(proof_thumbprint);
+            if let Some(bound) = bound {
+                if proof_jkt.as_deref() != Some(bound.as_str()) {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "error": "invalid_grant",
+                            "error_description": "the code is bound to \
+                             another DPoP key" })),
+                    );
+                }
+            }
+            let token_type = if proof_jkt.is_some() {
+                "DPoP"
+            } else {
+                "Bearer"
             };
             let Some((challenge, nonce, sid)) = expect else {
                 return (StatusCode::BAD_REQUEST, Json(json!({})));
@@ -514,7 +566,7 @@ async fn service(
                     "id_token":
                         id_token(&key, &issuer, &client, &nonce, &sid, &access,
                                  &who),
-                    "access_token": access, "token_type": "Bearer",
+                    "access_token": access, "token_type": token_type,
                     "expires_in": 300 })),
             )
         }
@@ -1722,6 +1774,60 @@ async fn the_session_flow_through_the_library_and_a_sign_out_at_the_service() {
 /// SIGNALS ON: the library's receiver on the service's poll stream ends a
 /// proxy session a CAEP session-revoked names, and the next access sees
 /// it gone from the library's cache.
+impl Harness {
+    /// A pull that changes what `CLIENT`'s relying party is built from
+    /// (its scopes), and the reconcile every poll runs after it: the party
+    /// is rebuilt, as a rotated secret or a re-issued chain rebuilds it.
+    async fn rebuild_the_application_party(&self, scopes: &[&str]) {
+        let cert_pem =
+            String::from_utf8(self.saml_signer.1.to_pem().unwrap()).unwrap();
+        let mut doc =
+            configuration(&self.upstream_base, &self.service_base, &cert_pem);
+        doc["realm"]["clients"][CLIENT]["scopes"] = json!(scopes);
+        self.sync.receive_proxy(&doc, None);
+        self.proxied.reconcile().await;
+    }
+}
+
+/// RUN #543: the relying party was rebuilt between a sign-in's
+/// authorization request and its callback, the new party redeemed the code
+/// with a DPoP key of its own, and the service refused the code
+/// (`STS-OAUTH-0205`): the browser got 401 `STS-XPEP-0083`. Every build of
+/// a client signs with one key, so the sign-in completes.
+#[tokio::test]
+async fn a_sign_in_survives_its_relying_party_being_rebuilt() {
+    let h = harness().await;
+    h.service.lock().unwrap().dpop = true;
+    // Built again with the provider now offering DPoP.
+    h.rebuild_the_application_party(&["openid", "profile", "email"])
+        .await;
+    let q = h.send_to_sign_in("/app/page", "sid-dpop").await;
+    let jkt = member(&q, "dpop_jkt");
+    assert!(
+        !jkt.is_empty(),
+        "the library binds the code to its key: {:?}",
+        q
+    );
+    h.service.lock().unwrap().dpop_jkt = Some(jkt);
+    h.service.lock().unwrap().live.insert("sid-dpop".into());
+    // A pull changes the client while the browser is at the service.
+    h.rebuild_the_application_party(&["openid", "profile"])
+        .await;
+    let r = h.come_back("c1", &member(&q, "state")).await;
+    assert_eq!(
+        r.status(),
+        302,
+        "the code is redeemed with the key it was bound to: {}",
+        r.text().await.unwrap_or_default()
+    );
+    // And a sign-in started on the rebuilt party binds the same key.
+    let again = h.send_to_sign_in("/app/other", "sid-dpop-2").await;
+    assert_eq!(
+        member(&again, "dpop_jkt"),
+        h.service.lock().unwrap().dpop_jkt.clone().unwrap()
+    );
+}
+
 #[tokio::test]
 async fn a_caep_session_revoked_ends_access() {
     let h = harness().await;
