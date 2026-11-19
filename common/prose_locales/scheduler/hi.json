@@ -1,0 +1,746 @@
+{
+  "sched.jobs.attribute-sources.refresh.title": {
+    "en": "f3af7a728e869ac5",
+    "text": "विशेषता स्रोत: निर्धारित ताज़ाकरण"
+  },
+  "sched.jobs.attribute-sources.refresh.describe": {
+    "en": "e753a576c8530ce3",
+    "text": "विश्वास क्षेत्र के लोगों का अगला पृष्ठ प्रत्येक उस विशेषता स्रोत से पढ़ता है जिसका निर्धारित अंतराल आ चुका है, और उसे उनकी प्रविष्टियों पर लिखता है (#94)। प्रत्येक स्रोत पर प्रति रन attributeSources.refreshBatch लोग।"
+  },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "ऑडिट निर्यात"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "प्रत्येक प्रक्रिया में, प्रत्येक विश्वास क्षेत्र के लिए: इस प्रक्रिया की अपनी नई ऑडिट घटनाएँ उस विश्वास क्षेत्र के सक्षम गंतव्यों तक पहुँचाता है। एक गंतव्य की विफलता बाकी को नहीं रोकती। वितरण कम से कम एक बार होता है।"
+  },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "खाता सेट समाप्ति"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "प्रत्येक ब्राउज़र के खाता सेट को अद्यतन करता है (#561): जिस खाते का सत्र समाप्त हो गया उसे साइन आउट के रूप में याद रखा जाता है, authn.rememberedAccountDays से अधिक देर याद रखा गया हटा दिया जाता है, और खाली सेट मिटा दिया जाता है।"
+  },
+  "sched.jobs.authn.session-expiry.title": {
+    "en": "0d2b2447af869e65",
+    "text": "सत्र समाप्ति"
+  },
+  "sched.jobs.authn.session-expiry.describe": {
+    "en": "5631096a0aa7c62f",
+    "text": "प्रत्येक साइन-ऑन सत्र को समाप्त करता है जिसका जीवनकाल या निष्क्रियता समय-सीमा बीत चुकी हो, और प्रत्येक विश्वास क्षेत्र में एक विषय के अपने अतिरिक्त सत्रों में से अधिक से अधिक उस क्षेत्र का authn.sessionShedPerSweep।"
+  },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "AuthZEN पहुँच अनुरोध समाप्ति"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "प्रत्येक लंबित AuthZEN पहुँच अनुरोध (#1180) को उसके expires_at के बाद expired में ले जाता है — उसकी ऑडिट पंक्ति लिखकर और उसका कॉलबैक भेजकर — और समाप्त हुए को समाप्त होने के एक दिन बाद हटाता है, या यदि अनुमोदन बाद में समाप्त हुआ हो तो तब। पढ़ना स्वयं समय-सीमा लागू करता है, इसलिए यह अभिलेख और सफ़ाई है, निर्णय कभी नहीं।"
+  },
+  "sched.jobs.caches.eject-expired.title": {
+    "en": "0cd05b8d7db4c75b",
+    "text": "अवधि-समाप्त कैश प्रविष्टियों की बेदखली"
+  },
+  "sched.jobs.caches.eject-expired.describe": {
+    "en": "1ae2468f3087d86b",
+    "text": "इस प्रक्रिया में प्रत्येक कैश और रीप्ले-भंडार की वह प्रविष्टि मिटाता है जिसका जीवनकाल बीत चुका है — केवल रखरखाव: प्रत्येक भंडार अवधि-समाप्त प्रविष्टि को वहीं अस्वीकार करता है जहाँ वह उसे पढ़ता है।"
+  },
+  "sched.jobs.cluster.claims-purge.title": {
+    "en": "263ab3366839b277",
+    "text": "अवधि-समाप्त दावों की सफ़ाई"
+  },
+  "sched.jobs.cluster.claims-purge.describe": {
+    "en": "b3ee8feee29a65c0",
+    "text": "एकल-उपयोग दावों को, जिनका जीवनकाल बीत चुका है, उस तालिका से मिटाता है जिसे प्रत्येक नोड साझा करता है।"
+  },
+  "sched.jobs.cluster.node-snapshot.title": {
+    "en": "8be187108d31777e",
+    "text": "नोड स्नैपशॉट"
+  },
+  "sched.jobs.cluster.node-snapshot.describe": {
+    "en": "2831c3d3902f9ad4",
+    "text": "इस नोड के निगरानी → वर्कर पूल और → नोड स्वास्थ्य दृश्य साझा भंडार में लिखता है, प्रत्येक नोड नाम पर एक पंक्ति, ताकि प्रत्येक नोड उन पृष्ठों पर प्रत्येक नोड दिखाए (#332)।"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.title": {
+    "en": "83b1b328de6501ab",
+    "text": "नोड स्नैपशॉट निष्कासन"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.describe": {
+    "en": "d94b5f29e1a3b672",
+    "text": "उस नोड का वर्कर पूल और नोड स्वास्थ्य स्नैपशॉट मिटाता है जो अब सक्रिय क्लस्टर सदस्य नहीं रहा, जब वह cluster.nodeSnapshotRetentionHours से पुराना हो; किसी सक्रिय सदस्य का कभी नहीं, और सदस्यता न पढ़ी जा सके तब कुछ भी नहीं (#332)।"
+  },
+  "sched.jobs.cluster.rate-window-purge.title": {
+    "en": "10451e2a1990b97a",
+    "text": "समाप्त दर-सीमा विंडो की सफ़ाई"
+  },
+  "sched.jobs.cluster.rate-window-purge.describe": {
+    "en": "772463775db370a2",
+    "text": "बीत चुकी दर-सीमा विंडो उस तालिका से मिटाता है जिसे प्रत्येक नोड साझा करता है।"
+  },
+  "sched.jobs.devices.android-status-recheck.title": {
+    "en": "fe97755c55eeb3e2",
+    "text": "Android सत्यापन पुनःजाँच"
+  },
+  "sched.jobs.devices.android-status-recheck.describe": {
+    "en": "610a48914c017400",
+    "text": "सक्रिय Android सत्यापन स्थिति-सूची से प्रत्येक संग्रहीत Android शृंखला के बारे में पूछता है — डिवाइस कुंजियाँ और WebAuthn क्रेडेंशियल, प्रत्येक विश्वास क्षेत्र में — और जिन्हें वह निरस्त या निलंबित करता है उन्हें घटाता है: स्वयं-अभिकथित, ऑडिट किया गया, CAEP credential-change। केवल उन लोगों और डिवाइसों को पढ़ता है जिन्हें एक रखने वाला चिह्नित किया गया है, एक बार में एक पृष्ठ, और उस विश्वास क्षेत्र को छोड़ता है जहाँ पिछली पुनःजाँच के बाद न तो सूची बदली और न पंजीकरण। सूची सक्रिय होने पर चलता है, और प्रतिदिन।"
+  },
+  "sched.jobs.devices.android-status-refresh.title": {
+    "en": "95d19bd56eac78af",
+    "text": "Android सत्यापन स्थिति-सूची का डाउनलोड"
+  },
+  "sched.jobs.devices.android-status-refresh.describe": {
+    "en": "af65a7bf379c0b71",
+    "text": "Google की Android कुंजी सत्यापन स्थिति-सूची devices.androidStatusUrl से डाउनलोड करता है और उसे जोखिम डेटासेट android.attestation-status के रूप में लोड करता है: कौन से सत्यापन प्रमाणपत्र निरस्त या निलंबित हैं। प्रतिदिन (devices.androidStatusRefreshS); सक्रिय सूची के समान सूची कुछ भी लोड नहीं करती।"
+  },
+  "sched.jobs.federation.client-certificate-renew.title": {
+    "en": "f37b7eff9973c660",
+    "text": "फ़ेडरेशन क्लाइंट प्रमाणपत्र नवीकरण"
+  },
+  "sched.jobs.federation.client-certificate-renew.describe": {
+    "en": "655fd604e686a4d3",
+    "text": "प्रत्येक FAPI 1.0 Advanced फ़ेडरेशन संबंध को, जिसके पास कोई नहीं है, TLS क्लाइंट प्रमाणपत्र जारी करता है, और प्रत्येक को जिसका प्रमाणपत्र federation.clientCertificateRenewDays के भीतर समाप्त होता है, उसी विषय वाला नया प्रमाणपत्र।"
+  },
+  "sched.jobs.federation.encryption-key-retire.title": {
+    "en": "0c323ec372941184",
+    "text": "फ़ेडरेशन एन्क्रिप्शन कुंजी की सेवानिवृत्ति"
+  },
+  "sched.jobs.federation.encryption-key-retire.describe": {
+    "en": "c8990a4ca5b5163e",
+    "text": "प्रत्येक फ़ेडरेशन संबंध से वह एन्क्रिप्शन कुंजी हटाता है जिसे चक्रण ने बदला था, जब federation.encryptionKeyGraceS बीत जाए। कुंजी उस क्षण पहले ही डिक्रिप्ट करना बंद कर चुकी होती है; यह उसे प्रविष्टि से हटा देता है।"
+  },
+  "sched.jobs.federation.partner-refresh.title": {
+    "en": "5354cb5ed3b1e58f",
+    "text": "फ़ेडरेटेड सत्रों का साझेदार ताज़ाकरण"
+  },
+  "sched.jobs.federation.partner-refresh.describe": {
+    "en": "6fc466ab1fe4b653",
+    "text": "fedRefreshTokens चालू वाले OpenID Connect संबंध के लिए: प्रत्येक सत्र के, जिसके पास साझेदार टोकन है, टोकन को देय होने पर ताज़ा करता है, जाँचता है कि नया ID Token और UserInfo अभी भी उसी व्यक्ति का नाम लेते हैं, और जब साझेदार अस्वीकार करे या उत्तर ऐसा न करे तो सत्र समाप्त करता है (#930)।"
+  },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "फ़ेडरेटेड प्रोविज़निंग निष्क्रियता सफ़ाई"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "उस व्यक्ति को अक्षम करता है जिसका एकमात्र साइन इन पथ एक फ़ेडरेशन संबंध है, जब federationLastSeen उस संबंध के fedProvisionIdleMinutes से पुराना हो जाए। खाली या 0 सभी को छोड़ देता है। प्रविष्टि और लिंक रखे जाते हैं। स्थानीय पासवर्ड, या किसी अन्य संबंध से लिंक, अछूता रहता है।"
+  },
+  "sched.jobs.gnap.grant-expiry.title": {
+    "en": "ed1bb7e24484e928",
+    "text": "GNAP: अवधि-समाप्त अनुदान"
+  },
+  "sched.jobs.gnap.grant-expiry.describe": {
+    "en": "7e87c3407b68cee0",
+    "text": "प्रत्येक GNAP अनुदान को अंतिम रूप देता है जिसकी सहभागिता या अनुदान जीवनकाल (gnap.grantLifetimeS) समाप्त हो चुका है और जिसे उसके बाद किसी अनुरोध ने नहीं छुआ, कारण दर्ज करते हुए (#432), और उतनी अवधि तक अप्रयुक्त प्रत्येक इंस्टेंस अभिलेख मिटाता है (#1221)।"
+  },
+  "sched.jobs.gnap.spend-purge.title": {
+    "en": "cefadb9704ec0cd1",
+    "text": "GNAP: समाप्त अनुदानों की सीमाएँ"
+  },
+  "sched.jobs.gnap.spend-purge.describe": {
+    "en": "71471822b228b1b8",
+    "text": "प्रत्येक GNAP अनुदान की सीमाओं के लिए रखे चालू योग मिटाता है, जब अनुदान समाप्त हो चुका हो और उसका कोई टोकन प्रस्तुत न किया जा सके (#432)।"
+  },
+  "sched.jobs.keys.data-key-count.title": {
+    "en": "c6e6cb1a17fd0095",
+    "text": "डेटा एन्क्रिप्शन कुंजी के मानों की गिनती"
+  },
+  "sched.jobs.keys.data-key-count.describe": {
+    "en": "1563aab7487de8a6",
+    "text": "भंडार के एक ही पास में प्रत्येक डेटा एन्क्रिप्शन कुंजी के अंतर्गत सील मानों की गिनती करता है, और प्रत्येक गिनती उसकी कुंजी पर /admin/encryption के लिए रखता है।"
+  },
+  "sched.jobs.keys.data-key-reencrypt.title": {
+    "en": "e83b2a80fc8ab721",
+    "text": "डेटा पुनः-एन्क्रिप्शन और कुंजी विनाश"
+  },
+  "sched.jobs.keys.data-key-reencrypt.describe": {
+    "en": "b8460307f2319fea",
+    "text": "प्रतिस्थापित डेटा एन्क्रिप्शन कुंजी के अंतर्गत अभी भी सील प्रत्येक मान को वर्तमान कुंजी के अंतर्गत पुनः सील करता है, और प्रतिस्थापित कुंजी को तब नष्ट करता है जब उसके अंतर्गत कुछ भी सील न रहे और वह keys.dataKeyRetireAfterDays से प्रतिस्थापित रही हो।"
+  },
+  "sched.jobs.keys.data-key-rotate.title": {
+    "en": "7e230b0aa64dfb58",
+    "text": "डेटा एन्क्रिप्शन कुंजी चक्रण"
+  },
+  "sched.jobs.keys.data-key-rotate.describe": {
+    "en": "afd86bfabb1a98ab",
+    "text": "प्रत्येक डेटा एन्क्रिप्शन कुंजी को, जिसने keys.dataKeyRotationDays की अवधि तक नए मान सील किए हों, एक उत्तराधिकारी देता है, जिसे उसके अंतर्गत कुछ भी सील होने से keys.dataKeyActivationLeadSeconds पहले प्रकाशित किया जाता है; पुनः-एन्क्रिप्शन कार्य फिर वह पुनः सील करता है जिसे पुरानी कुंजी ने सील किया था।"
+  },
+  "sched.jobs.keys.data-key-rotate-now.title": {
+    "en": "13aab83fb56f4e4f",
+    "text": "डेटा एन्क्रिप्शन कुंजी चक्रण, हाथ से"
+  },
+  "sched.jobs.keys.data-key-rotate-now.describe": {
+    "en": "a4d23163545ebff6",
+    "text": "अब प्रत्येक संग्रहीत डेटा एन्क्रिप्शन कुंजी का चक्रण करता है — या एक विश्वास क्षेत्र की, या एक वर्ग की; जिन कुंजियों को वे बदलती हैं वे सील सामग्री को तब तक खोलती रहती हैं जब तक वह पुनः सील न हो।"
+  },
+  "sched.jobs.keys.kek-rotate-now.title": {
+    "en": "56ce4e44eba4fdbf",
+    "text": "कुंजी-एन्क्रिप्शन कुंजी चक्रण, हाथ से"
+  },
+  "sched.jobs.keys.kek-rotate-now.describe": {
+    "en": "57116faef542211d",
+    "text": "अपनी कुंजी प्रबंधन सेवा में कुंजी-एन्क्रिप्शन कुंजी का नया संस्करण बनाता है और प्रत्येक डेटा एन्क्रिप्शन कुंजी को उसके नीचे पुनः लपेटता है। केवल KMS की कुंजी के लिए।"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.title": {
+    "en": "fa4e83114be4d14c",
+    "text": "krbtgt कुंजी चक्रण"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.describe": {
+    "en": "c85b767fff8efbb2",
+    "text": "प्रत्येक विश्वास क्षेत्र की krbtgt कुंजी — जिसके अंतर्गत प्रत्येक TGT सील होता है — को अगले kvno पर नई यादृच्छिक कुंजी से बदलता है, जब वह krb5.krbtgtRotationIntervalDays पुरानी हो जाए; बदली हुई कुंजी को उतनी देर रखता है जितनी उसके अंतर्गत कोई TGT जीवित रह सकता है, और तब नहीं जब पिछले चक्रण का रखा संस्करण अभी अपनी विंडो में हो। जिस product विश्वास क्षेत्र के पास कोई न हो, उसे पहली कुंजी देता है। प्रत्येक रन का परिणाम kvno, अंतिम चक्रण और अगला कब देय है, बताता है।"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.title": {
+    "en": "09f54cab8475d618",
+    "text": "krbtgt कुंजी चक्रण, हाथ से"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.describe": {
+    "en": "6fffa44535aa160d",
+    "text": "विश्वास क्षेत्र की krbtgt कुंजी का अब चक्रण करता है। invalidate के साथ कोई पिछला संस्करण नहीं रखता: इससे पहले जारी प्रत्येक TGT अस्वीकार होता है, और एक Shared Signals घटना ऐसा बताती है।"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "LDAP कनेक्शन मिरर रखरखाव"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "उन नोडों के मिरर किए LDAP कनेक्शन मिटाता है जो अब सदस्य नहीं रहे, और जीवनकाल बीत चुके साइन-आउट निर्देश भी।"
+  },
+  "sched.jobs.mail.deliver.title": {
+    "en": "2bb1b3533e3e44d6",
+    "text": "मेल आउटबॉक्स डिलीवरी"
+  },
+  "sched.jobs.mail.deliver.describe": {
+    "en": "b1ea77995ea52a10",
+    "text": "प्रत्येक देय कतारबद्ध संदेश भेजता है — वह पुनःप्रयास जिसका बैकऑफ़ बीत चुका हो, वह लीज़ जो समाप्त हो गई हो, पुनःप्रारंभ के बाद बहाल पंक्ति — mail.retentionS के बाद भी लंबित किसी को डेड-लेटर करता है, और उसके बाद की समाप्त पंक्तियाँ हटाता है।"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.title": {
+    "en": "4cbeb4551a77fd01",
+    "text": "बैक-चैनल लॉगआउट सफ़ाई"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.describe": {
+    "en": "0b2f79f86bc38003",
+    "text": "प्रत्येक देय Logout Token डिलीवरी भेजता है — वह पुनःप्रयास जिसका बैकऑफ़ बीत चुका हो, वह लीज़ जो समाप्त हो गई हो, पुनःप्रारंभ के बाद बहाल पंक्ति — और oauth2.backchannelLogoutRetentionS के बाद भी लंबित किसी को डेड-लेटर करता है।"
+  },
+  "sched.jobs.oauth2.ciba-sweep.title": {
+    "en": "f971b3b6fdbe4dff",
+    "text": "CIBA सफ़ाई"
+  },
+  "sched.jobs.oauth2.ciba-sweep.describe": {
+    "en": "89f25abc272e9c08",
+    "text": "प्रत्येक देय CIBA पिंग और पुश का प्रयास करता है, oauth2.cibaNotifyRetentionS के बाद भी लंबित को डेड-लेटर करता है, उन बैकचैनल प्रमाणीकरण अनुरोधों को अवधि-समाप्त करता है जिनका समय पर उत्तर नहीं मिला, और एक घंटे से अधिक पहले समाप्त हुए को हटाता है।"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.title": {
+    "en": "fa4263e54da3a7de",
+    "text": "क्लेम प्रदाता: लिंक किए टोकन का ताज़ाकरण"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.describe": {
+    "en": "72166ea059d3fc98",
+    "text": "प्रत्येक व्यक्ति का टोकन उस क्लेम प्रदाता पर, जिसे उन्होंने लिंक किया, समाप्त होने से पहले ताज़ा करता है, और वे लिंक अनुरोध हटाता है जिन्हें किसी ने पूरा नहीं किया (#147)।"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.title": {
+    "en": "e4f6d805130bd62e",
+    "text": "क्लाइंट सीक्रेट समाप्ति"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.describe": {
+    "en": "bf894947ce420111",
+    "text": "प्रत्येक अनुप्रयोग के प्रत्येक क्लाइंट सीक्रेट की जाँच करता है: oauth2.clientSecretExpiryWarningDays के भीतर समाप्त होने वाला एक रखने वाले अनुप्रयोग के लिए एक ऑडिट पंक्ति, और उस अनुप्रयोग के लिए जिसके प्रत्येक सीक्रेट की अवधि समाप्त हो चुकी हो; तथा वे अवधि-समाप्त सीक्रेट हटाता है जिनके साथ अनुप्रयोग एक अवधि-शेष सीक्रेट भी रखता है — उसका अंतिम कभी नहीं, जो रहता है और product में अस्वीकार होता है।"
+  },
+  "sched.jobs.oauth2.command-sweep.title": {
+    "en": "e200c4ae261a2eb6",
+    "text": "OpenID Provider Commands सफ़ाई"
+  },
+  "sched.jobs.oauth2.command-sweep.describe": {
+    "en": "fb4789a8030f5374",
+    "text": "प्रत्येक देय Command Token डिलीवरी भेजता है — वह पुनःप्रयास जिसका बैकऑफ़ बीत चुका हो, वह लीज़ जो समाप्त हो गई हो, पुनःप्रारंभ के बाद बहाल पंक्ति — oauth2.commandRetentionS के बाद भी लंबित किसी को डेड-लेटर करता है, और अवधि-समाप्त कॉलबैक टोकन तथा समाप्त टेनेंट रन हटाता है।"
+  },
+  "sched.jobs.oauth2.device-code-sweep.title": {
+    "en": "d3bada4835d70dba",
+    "text": "डिवाइस प्राधिकरण: अवधि-समाप्त कोड"
+  },
+  "sched.jobs.oauth2.device-code-sweep.describe": {
+    "en": "9c1da47db8a08725",
+    "text": "उन RFC 8628 डिवाइस कोड को अवधि-समाप्त करता है जिन्हें समय पर किसी ने अनुमोदित नहीं किया, और एक घंटे से अधिक पहले समाप्त हुए को हटाता है (#150)।"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.title": {
+    "en": "3a8c69653b6b768b",
+    "text": "क्षणिक विषय: अवधि-समाप्त मैपिंग"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.describe": {
+    "en": "86f9e46ec5a00f92",
+    "text": "प्रत्येक क्षणिक विषय पहचानकर्ता को हटाता है जिसके टोकन और सत्र अब उपयोग में नहीं रह सकते (#149)।"
+  },
+  "sched.jobs.oauth2.expired-token-purge.title": {
+    "en": "9ae64452fa61c48d",
+    "text": "अवधि-समाप्त ट्रैक किए टोकनों का निष्कासन"
+  },
+  "sched.jobs.oauth2.expired-token-purge.describe": {
+    "en": "f3b55c35762b6af1",
+    "text": "उन टोकन अभिलेखों को मिटाता है जो अपनी समाप्ति और oauth2.expiredTokenRetentionS के बाद हैं, तथा समाप्त हो चुके टोकनों के निरसन।"
+  },
+  "sched.jobs.oauth2.grant-management-purge.title": {
+    "en": "38d564339874ba6d",
+    "text": "Grant Management: अवधि-समाप्त अनुदान"
+  },
+  "sched.jobs.oauth2.grant-management-purge.describe": {
+    "en": "46dabea2677465d2",
+    "text": "प्रत्येक OAuth अनुदान को हटाता है जिसका अंतिम टोकन समाप्त हो चुका है, और अनुदान के अंतर्गत जारी प्रत्येक टोकन का अभिलेख जब वह समाप्त हो (#142)।"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.title": {
+    "en": "1b76c505917f3b58",
+    "text": "अवधि-समाप्त प्रयुक्त-अभिकथन सफ़ाई"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.describe": {
+    "en": "e47edb491dd535ca",
+    "text": "RFC 7523 और RFC 7522 अभिकथनों को, जिनका जीवनकाल बीत चुका है, उस एक-बार-हमेशा इतिहास से मिटाता है जिसे प्रत्येक नोड साझा करता है।"
+  },
+  "sched.jobs.oidfed.collection-crawl.title": {
+    "en": "6853316e0728d95d",
+    "text": "OpenID Federation Entity Collection क्रॉल"
+  },
+  "sched.jobs.oidfed.collection-crawl.describe": {
+    "en": "7c517525f3e272f7",
+    "text": "विश्वास क्षेत्र के नीचे प्रत्येक एंटिटी पर चलता है — प्रत्येक को, उसकी अपनी सूची लाने से पहले, विश्वास क्षेत्र तक हल किया जाता है — और संग्रह एंडपॉइंट के लिए जो मिले उसे रखता है (#136)।"
+  },
+  "sched.jobs.oidfed.key-rotate.title": {
+    "en": "f6185cae95e3ee7c",
+    "text": "OpenID Federation कुंजी चक्रण"
+  },
+  "sched.jobs.oidfed.key-rotate.describe": {
+    "en": "d896be46e875fb02",
+    "text": "प्रत्येक विश्वास क्षेत्र की Federation Entity Keys को एक चक्रण आगे रखता है — अगली कुंजी, हस्ताक्षर से पहले प्रकाशित — और तब चक्रण करता है जब वर्तमान कुंजी oidfed.keyRotationDays से पुरानी हो और अगली पूरे oidfed.keyOverlapDays तक प्रकाशित रही हो।"
+  },
+  "sched.jobs.oidfed.key-rotate-now.title": {
+    "en": "cd07acae980819dc",
+    "text": "OpenID Federation कुंजी चक्रण, हाथ से"
+  },
+  "sched.jobs.oidfed.key-rotate-now.describe": {
+    "en": "22011c13ae57b8ff",
+    "text": "विश्वास क्षेत्र की Federation Entity Key का अब चक्रण करता है — या, आपात में, वर्तमान और अगली कुंजियों को समझौताग्रस्त मानकर निरस्त करता है और उन्हें बदल देता है।"
+  },
+  "sched.jobs.oidfed.registrations-expire.title": {
+    "en": "44fe44470d028a2d",
+    "text": "समाप्त हो चुके OpenID Federation पंजीकरण"
+  },
+  "sched.jobs.oidfed.registrations-expire.describe": {
+    "en": "183fddf95526a70b",
+    "text": "OpenID Federation Trust Chain से पंजीकृत प्रत्येक क्लाइंट को हटाता है जिसका पंजीकरण समाप्त हो चुका है (12.3)। प्रत्येक एंडपॉइंट ऐसे क्लाइंट को पहले से अज्ञात मानकर उत्तर देता है; यह केवल प्रविष्टि को टिके रहने से रोकता है।"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "सीखे गए पासकी क्लाइंटों की सफ़ाई"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "उन पासकी क्लाइंटों (#1112) को हटाता है जिनकी सारी विफलताएँ webauthn.clientLearningWindowHours से बाहर हो चुकी हैं और जिन्हें कभी सीखा नहीं गया। पहले से सीखा क्लाइंट तब तक रखा जाता है जब तक उससे पंजीकरण सफल न हो जाए या उसे साफ़ न कर दिया जाए।"
+  },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "पासकी रिपोर्ट पुनर्गणना"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "निगरानी → पासकी (#942) के लिए विश्वास क्षेत्र की पासकी की गिनती करता है: एल्गोरिथ्म और लेन के अनुसार, केवल पोस्ट-क्वांटम, केवल शास्त्रीय, या दोनों रखने वाले लोग, और कौन से प्रमाणक मॉडल कौन से एल्गोरिथ्म रखते हैं। केवल पासकी रखने वाले लोगों को पढ़ता है, एक बार में एक पृष्ठ; उसके बाद किए गए परिवर्तन लिखे जाते ही जोड़ दिए जाते हैं।"
+  },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "अनुदान-समूह अनुक्रमणिका बैकफ़िल"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "#1306 से पहले लिखी प्रत्येक निर्देशिका प्रविष्टि को उसकी अनुदान विशेषताओं की grantinggroup अनुक्रमणिका कुंजियाँ देता है, भंडार का एक पृष्ठ एक बार में, ताकि फ़ेडरेटेड प्रोविज़निंग का भंडार-प्रश्न उस समूह को पा सके जिसे ऐसी प्रविष्टि नाम देती है; भंडार को एक बार पूर्ण चिह्नित करता है, और तब से बंद रहता है (#1311)।"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.title": {
+    "en": "2e5c5abaf78a47c9",
+    "text": "अवधि-समाप्त निर्मित पंक्तियों का निष्कासन"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.describe": {
+    "en": "51b75ecbc03ac6ba",
+    "text": "इस क्लस्टर के भंडार से (सेल के रूप में परिनियोजित सेवा में, इस सेल का अपना डेटाबेस), 5000 के बैचों में और प्रति रन प्रत्येक प्रकार के अधिक से अधिक 20 बैच, वे निर्मित पंक्तियाँ मिटाता है जिन्हें कोई प्रारंभ फिर नहीं पढ़ेगा: अपनी समाप्ति के बाद की, अब परिभाषित न रहे विश्वास क्षेत्र की (एक घंटे से अधिक पहले लिखी गई), और बिना समाप्ति वाले अल्पकालिक भंडार की वे पंक्तियाँ जो persistence.mintedRetention से पुरानी हों।"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "अवधि-समाप्त निर्मित पंक्तियों का निष्कासन, वैश्विक स्तर"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "सेल के रूप में परिनियोजित सेवा में, वैश्विक स्तर के डेटाबेस से निर्मित पंक्ति के वही तीन प्रकार मिटाता है, उन्हीं बैचों में; इसका रन वैश्विक स्तर में दावा किया जाता है, इसलिए एक सेल प्रत्येक स्लॉट चलाता है। एक डेटाबेस वाली सेवा में बंद, जहाँ दूसरा निष्कासन इसे कवर करता है।"
+  },
+  "sched.jobs.persistence.tombstone-purge.title": {
+    "en": "1eba3997d260e28f",
+    "text": "अवधि-समाप्त टॉम्बस्टोन सफ़ाई"
+  },
+  "sched.jobs.persistence.tombstone-purge.describe": {
+    "en": "56aed2e95604a1b4",
+    "text": "समाप्त निर्मित पंक्तियों के persistence.mintedRetention से पुराने टॉम्बस्टोन इस क्लस्टर के भंडार से मिटाता है, 5000 के बैचों में और प्रति रन अधिक से अधिक 20 बैच (सेल के रूप में परिनियोजित सेवा में, इस सेल का अपना डेटाबेस)।"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "अवधि-समाप्त टॉम्बस्टोन सफ़ाई, वैश्विक स्तर"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "सेल के रूप में परिनियोजित सेवा में, वैश्विक स्तर के डेटाबेस से समाप्त निर्मित पंक्तियों के persistence.mintedRetention से पुराने टॉम्बस्टोन मिटाता है, उन्हीं बैचों में; इसका रन वैश्विक स्तर में दावा किया जाता है, इसलिए एक सेल प्रत्येक स्लॉट चलाता है। एक डेटाबेस वाली सेवा में बंद, जहाँ दूसरी सफ़ाई इसे कवर करती है।"
+  },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "पिन किए प्रमाणपत्रों का ऑडिट"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "विश्वास क्षेत्र के प्रत्येक पिन किए प्रमाणपत्र और प्रत्येक हस्ताक्षरकर्ता ट्रस्टस्टोर प्रविष्टि को paranoid PKI मोड की जाँचों के अधीन रखता है, वह परिणाम रखता है जिसे /admin/pki/trust दिखाता है, और जो बदला उसे लॉग करता है और मेल करता है।"
+  },
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
+    "text": "साइन-इन के बाद गतिविधि मेल"
+  },
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "चल रही साइन-इन-पश्चात गतिविधि जिन लोगों तक पहुँचती है (#1111), उन्हें साइन इन का अनुस्मारक मेल करता है, जहाँ गतिविधि फिर उनसे पोस्ट-क्वांटम पासकी पंजीकृत करने को कहती है। प्रति रन एक कर्सर के बाद प्रत्येक आरंभ की गई गतिविधि की जनसंख्या (विश्वास क्षेत्र, या उसके समूहों का सम्मिलित समुच्चय) का एक अंश पढ़ता है, केवल उन लोगों को मेल करता है जिनके लिए गतिविधि देय है, अनुस्मारक अंतराल के भीतर या उसकी अधिकतम के बाद कभी नहीं, और प्रति रन प्रत्येक आरंभ की गई गतिविधि की एक ऑडिट पंक्ति लिखता है।"
+  },
+  "sched.jobs.process.memory-report.title": {
+    "en": "b84bcf99d45e1ee1",
+    "text": "मेमोरी रिपोर्ट"
+  },
+  "sched.jobs.process.memory-report.describe": {
+    "en": "d4a21d654747ddc9",
+    "text": "इस प्रक्रिया में रन का सार उसकी भूमिका और मेमोरी के साथ दर्ज करता है: रेज़िडेंट आकार, उपयोग किया और कुल हीप, हीप सीमा, बाहरी मेमोरी और ऐरे बफ़र। लॉग पंक्ति debug है (#341)।"
+  },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "रिपोर्ट निर्माण सफ़ाई"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "प्रत्येक प्रक्रिया में: उन रिपोर्ट फ़ाइलों को ताज़ा रखता है जिन्हें यह प्रक्रिया बना रही है, और risk.uploadDirectory से उस रिपोर्ट निर्माण को मिटाता है जिसे किसी सक्रिय प्रक्रिया ने report.asyncMaxMs और पंद्रह मिनट तक नहीं छुआ — जो निर्माण बीच में रोक देने वाली प्रक्रिया पीछे छोड़ गई।"
+  },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "रिपोर्ट कार्य"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "इस विश्वास क्षेत्र के कतारबद्ध रिपोर्ट कार्यों पर दावा करता है, समवर्ती सीमाओं तक, और प्रत्येक आर्टिफ़ैक्ट लिखता है।"
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "इस नोड पर रिपोर्ट कार्य"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "रिपोर्टिंग नोड की report.drain की प्रति। यह कुछ नहीं करता जब तक यह प्रक्रिया ops.reporting न रखे।"
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "रिपोर्ट प्रतिधारण"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "अपने प्रतिधारण के बाद के रिपोर्ट आर्टिफ़ैक्ट मिटाता है, अपने प्रतिधारण के बाद की समाप्त कार्य पंक्तियाँ हटाता है, और उस चल रहे कार्य को विफल करता है जिसकी फ़ेंस जा चुकी हो।"
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "इस नोड पर रिपोर्ट प्रतिधारण"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "रिपोर्टिंग नोड की report.retention की प्रति। यह कुछ नहीं करता जब तक यह प्रक्रिया ops.reporting न रखे।"
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "रिपोर्ट अनुसूचियाँ"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "प्रत्येक देय रिपोर्ट परिभाषा के लिए, उसके स्वामी के रूप में, एक कार्य कतार में डालता है, जब तक वह स्वामी क्वेरी अभी भी चला सकता है। संग्रहीत पैरामीटर डिफ़ॉल्ट उपयोग होते हैं। कोई एक अनुपस्थित हो तो स्लॉट बना रहता है।"
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "इस नोड पर रिपोर्ट अनुसूचियाँ"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "रिपोर्टिंग नोड की report.schedule की प्रति। यह कुछ नहीं करता जब तक यह प्रक्रिया ops.reporting न रखे।"
+  },
+  "sched.jobs.risc.opt-out-effective.title": {
+    "en": "04bdbc25402e8321",
+    "text": "प्रभावी हो रहे RISC ऑप्ट-आउट"
+  },
+  "sched.jobs.risc.opt-out-effective.describe": {
+    "en": "8aeeb2e505277a9f",
+    "text": "प्रत्येक खाते के लिए RISC opt-out-effective भेजता है जिसके धारक ने /portal/signals पर कम से कम risc.optOutDelayHours पहले ऑप्ट आउट किया और रद्द नहीं किया (RISC 1.0 section 2.8), जिससे खाता ऑप्ट-आउट स्थिति में जाता है।"
+  },
+  "sched.jobs.risk.dataset-directory.title": {
+    "en": "73f11f291cb6c096",
+    "text": "जोखिम डेटासेट निर्देशिका आयात"
+  },
+  "sched.jobs.risk.dataset-directory.describe": {
+    "en": "8dfa5a10279b18b3",
+    "text": "संचालक ने risk.datasetsDirectory में जो प्रत्येक डेटासेट रखा, उसे उसके मैनिफ़ेस्ट के अनुसार आयात करता है, सत्यापित करके सक्रिय करता है; पहले से दर्ज संस्करण फिर लोड नहीं होता।"
+  },
+  "sched.jobs.risk.mds-refresh.title": {
+    "en": "e7e41553eb6e60e0",
+    "text": "FIDO मेटाडेटा डाउनलोड"
+  },
+  "sched.jobs.risk.mds-refresh.describe": {
+    "en": "86a8a6e4f0464f5a",
+    "text": "FIDO MDS3 BLOB को risk.mdsUrl से डाउनलोड करता है और जब उसका सीरियल सक्रिय वाले से नया हो तो आयात करता है — FIDO रूट तक सत्यापित, उसकी शृंखला का निरसन जाँचा गया, fido-mds3 शर्तों की दर्ज स्वीकृति के अंतर्गत। प्रतिदिन (risk.mdsRefreshS), और प्रति घंटा जब सक्रिय BLOB अपने nextUpdate के बाद हो।"
+  },
+  "sched.jobs.risk.rescore.title": {
+    "en": "73f6fff62d4516f9",
+    "text": "सक्रिय सत्रों की जोखिम पुनःजाँच"
+  },
+  "sched.jobs.risk.rescore.describe": {
+    "en": "b0d47f656c2b3bf8",
+    "text": "प्रत्येक सक्रिय साइन-ऑन सत्र को सक्रिय डेटासेट और विफलता इतिहास के विरुद्ध पुनः जाँचता है, और जो अधिक जोखिम भरा हो गया हो उसका जोखिम बढ़ाता है — अब Tor या अस्वीकृति सूची पर पता, अनुमान लगाया जा रहा पासवर्ड — ताकि उस पर प्रत्येक टोकन नए जोखिम पर तय हो, और HIGH में पहुँचने वाले व्यक्ति को जोखिम-प्रतिक्रिया नीति उत्तर दे।"
+  },
+  "sched.jobs.risk.retention.title": {
+    "en": "649264448d64d03c",
+    "text": "जोखिम प्रतिधारण"
+  },
+  "sched.jobs.risk.retention.describe": {
+    "en": "fbb862c0e9dfc9d1",
+    "text": "risk.supersededRetentionDays से अधिक पहले प्रतिस्थापित डेटासेट संस्करणों और अस्वीकृत संस्करणों की पंक्तियाँ मिटाता है, risk.failureRetentionDays से पुरानी विफलताएँ, तथा risk.assessmentRetentionDays के बाद के आकलन और risk.historyRetentionDays के बाद का मॉडल इतिहास।"
+  },
+  "sched.jobs.risk.stalled-imports.title": {
+    "en": "752cf482464d7ae2",
+    "text": "रुके हुए जोखिम आयात"
+  },
+  "sched.jobs.risk.stalled-imports.describe": {
+    "en": "92f0f81938bbebfd",
+    "text": "प्रत्येक डेटासेट संस्करण को अस्वीकृत चिह्नित करता है (STS-RISK-0035) जो risk.importStallMinutes तक बिना प्रगति लोडिंग में रहा — वह आयात जिसकी प्रक्रिया बीच में रुक गई — और उसने जो पंक्तियाँ लिखी थीं उन्हें हटाता है।"
+  },
+  "sched.jobs.risk.upload-cleanup.title": {
+    "en": "13380873b2cfb982",
+    "text": "जोखिम अपलोड सफ़ाई"
+  },
+  "sched.jobs.risk.upload-cleanup.describe": {
+    "en": "758dfacad5326b05",
+    "text": "प्रत्येक प्रक्रिया में: उन डेटासेट अपलोड को ताज़ा रखता है जिन्हें यह प्रक्रिया आयात कर रही है, और risk.uploadDirectory से उस अपलोड को मिटाता है जिसे किसी सक्रिय प्रक्रिया ने risk.importStallMinutes तक नहीं छुआ — जो आयात बीच में रोक देने वाली प्रक्रिया पीछे छोड़ गई।"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "SAML सेवा प्रदाता मेटाडेटा ताज़ाकर्ता"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "प्रत्येक सेवा प्रदाता का वह मेटाडेटा फिर लाता है जो अपने cacheDuration के बाद है, उसके samlSpMetadataUrl से या MDQ उत्तरदाता से; अपने validUntil के बाद का दस्तावेज़ अस्वीकार होता है।"
+  },
+  "sched.jobs.scheduler.history.title": {
+    "en": "90b5d921c8c2f750",
+    "text": "शेड्यूलर रन इतिहास"
+  },
+  "sched.jobs.scheduler.history.describe": {
+    "en": "395a5d6b46d20680",
+    "text": "प्रति कार्य, उसके अंतिम scheduler.runHistoryCount रन या उसके अंतिम scheduler.runHistoryHours रखता है, जो भी अधिक हो, और हमेशा उसका नवीनतम रन; शेष मिटाता है — तथा हटाए गए विश्वास क्षेत्र का नाम लेने वाली प्रत्येक पंक्ति — 2000 के बैचों में, प्रति रन अधिक से अधिक 25।"
+  },
+  "sched.jobs.scim-client.deliver.title": {
+    "en": "a61c6de73b133149",
+    "text": "आउटबाउंड SCIM डिलीवरी"
+  },
+  "sched.jobs.scim-client.deliver.describe": {
+    "en": "0f6f8f579a0da361",
+    "text": "प्रत्येक आउटबाउंड SCIM क्लाइंट की देय डिलीवरी — नए परिवर्तन और पुनःप्रयास समान रूप से — उसके सेवा प्रदाता को भेजता है, एक बार में scimClient.concurrency, क्लाइंट को तब छोड़ता है जब वह अपने बैकऑफ़ से रुका हो, और कतारों को उनके प्रतिधारण तक सीमित रखता है (#552)।"
+  },
+  "sched.jobs.scim-client.reconcile.title": {
+    "en": "6c7875103a7e0df5",
+    "text": "आउटबाउंड SCIM पुनर्मिलन"
+  },
+  "sched.jobs.scim-client.reconcile.describe": {
+    "en": "f7662303b08a899d",
+    "text": "प्रत्येक आउटबाउंड SCIM क्लाइंट का पुनर्मिलन करता है जिसका scimClientReconcileMinutes आ चुका हो: उसके दायरे का प्रत्येक व्यक्ति और समूह पुश होता है, और जो उसका सेवा प्रदाता इस विश्वास क्षेत्र के externalId के अंतर्गत रखता है तथा अब दायरे में नहीं, उसका प्रावधान हटा दिया जाता है (#552)।"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.title": {
+    "en": "64baab64578fd68f",
+    "text": "सेवा-खाता पिछला पासवर्ड सफ़ाई"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.describe": {
+    "en": "ea76ac1aa4f768fc",
+    "text": "चक्रित सेवा खाते का पिछला पासवर्ड साफ़ करता है जब उसका ओवरलैप समाप्त हो जाए। ओवरलैप वहाँ जाँचा जाता है जहाँ पासवर्ड पढ़ा जाता है, इसलिए यह रखरखाव है।"
+  },
+  "sched.jobs.service-accounts.rotate.title": {
+    "en": "6a7f6e4e2a5b87f5",
+    "text": "सेवा-खाता पासवर्ड चक्रण"
+  },
+  "sched.jobs.service-accounts.rotate.describe": {
+    "en": "c0a19d2107a20be6",
+    "text": "प्रत्येक सेवा खाते को, जो पुश गंतव्य नामित करता है, अंतराल बीतने पर नया पासवर्ड देता है (सेवा-खाता नीति): पहले गंतव्य पर पुश, पुश सफल होने के बाद ही कमिट, पिछला पासवर्ड ओवरलैप तक स्वीकार। विफल पुश कुछ नहीं बदलता।"
+  },
+  "sched.jobs.service-accounts.rotate-now.title": {
+    "en": "f07e35fb1b7ff49c",
+    "text": "सेवा-खाता पासवर्ड चक्रण, हाथ से"
+  },
+  "sched.jobs.service-accounts.rotate-now.describe": {
+    "en": "1a51777caf07724c",
+    "text": "एक सेवा खाते के पासवर्ड का अब चक्रण करता है, जैसा प्रति घंटा कार्य करता: पहले पुश, फिर कमिट।"
+  },
+  "sched.jobs.signing.retire.title": {
+    "en": "18591df12ae7ddce",
+    "text": "सेवानिवृत्त हस्ताक्षर कुंजी सफ़ाई"
+  },
+  "sched.jobs.signing.retire.describe": {
+    "en": "34bd339dcd1027c2",
+    "text": "प्रत्येक सेवानिवृत्त हस्ताक्षर कुंजी हटाता है जिसकी रियायत अवधि बीत चुकी हो, और उसके जारीकर्ता CA की सूची पर उसके प्रमाणपत्र को प्रतिस्थापित करता है।"
+  },
+  "sched.jobs.signing.rotate.title": {
+    "en": "63864371a41c9128",
+    "text": "हस्ताक्षर कुंजी चक्रण"
+  },
+  "sched.jobs.signing.rotate.describe": {
+    "en": "e5971267a8efd579",
+    "text": "विश्वास क्षेत्र की प्रत्येक हस्ताक्षर इकाई को अगली कुंजी देता है, जो कुछ भी हस्ताक्षर करने से पहले प्रकाशित होती है, और प्रत्येक अगली कुंजी को तब पदोन्नत करता है जब वह पूरे एक अंतराल (signing.rotationIntervalDays) तक प्रकाशित रह चुकी हो; जिस कुंजी को वह बदलती है वह अपनी रियायत अवधि भर सत्यापन करती रहती है।"
+  },
+  "sched.jobs.signing.rotate-now.title": {
+    "en": "a78325432e1f3ccd",
+    "text": "हस्ताक्षर कुंजी चक्रण, हाथ से"
+  },
+  "sched.jobs.signing.rotate-now.describe": {
+    "en": "1eb024ca4b66e471",
+    "text": "विश्वास क्षेत्र की नामित हस्ताक्षर इकाइयों — या हर एक — का अब चक्रण करता है: प्रत्येक अगली कुंजी वर्तमान बन जाती है और जिस कुंजी को वह बदलती है वह सेवानिवृत्त हो जाती है, अपनी रियायत अवधि तक सत्यापन करती हुई।"
+  },
+  "sched.jobs.spiffe.authority-rotation.title": {
+    "en": "1fb758bdc13d49a3",
+    "text": "SPIFFE प्राधिकारी चक्रण"
+  },
+  "sched.jobs.spiffe.authority-rotation.describe": {
+    "en": "4f47ccc2e2ee9287",
+    "text": "विश्वास क्षेत्र के SPIFFE X.509 प्राधिकारी का चक्रण करता है जब वह अपने जीवनकाल का आधा पार कर चुका हो, और उसके JWT प्राधिकारी का जब वह spiffe.caTtl के आधे से पुराना हो; पुराने प्रकाशित रहते हैं (spiffe.retainedAuthorities)।"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.title": {
+    "en": "6111c578fd8cd145",
+    "text": "sigstore TUF ताज़ाकरण"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
+    "en": "23ca3d0e22f4d09a",
+    "text": "docker वर्कलोड अटेस्टर की छवि-हस्ताक्षर जाँचों के लिए TUF के माध्यम से sigstore ट्रस्ट रूट (Fulcio CAs, Rekor और CT लॉग कुंजियाँ) लाता है; विफल ताज़ाकरण अंतिम सत्यापित सेट रखता है।"
+  },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "SPIFFE लक्ष्य पुनर्मिलन"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "प्रत्येक चल रहे टास्क का निजी पता इस क्लस्टर के SPIFFE लक्ष्य समूहों में पंजीकृत करता है, और उस पते का पंजीकरण हटाता है जो अब किसी चल रहे टास्क के पास नहीं रहा (#323)।"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.title": {
+    "en": "825439e56379bcb0",
+    "text": "Shared Signals डेड-लेटर सफ़ाई"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.describe": {
+    "en": "e88db26ddb6a4159",
+    "text": "इस प्रक्रिया के अवधि-समाप्त डेड लेटर मिटाता है, देय मृत स्ट्रीम की जाँच करता है (केवल एक नोड), और पिछली सफ़ाई के बाद जो डेड-लेटर हुआ उसका सार लॉग करता है।"
+  },
+  "sched.jobs.ssf.foreign-poll.title": {
+    "en": "aca9d362728fd7b0",
+    "text": "फ़ेडरेशन साझेदारों का Shared Signals पोल"
+  },
+  "sched.jobs.ssf.foreign-poll.describe": {
+    "en": "51871a2d4ac5a3aa",
+    "text": "प्रत्येक फ़ेडरेशन संबंध का पोल करता है जिसकी साझेदार की Shared Signals स्ट्रीम पोल स्ट्रीम है (RFC 8936): उसमें रखे Security Event Tokens सत्यापित किए जाते हैं, उन पर कार्रवाई होती है और उन्हें स्वीकृति दी जाती है।"
+  },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "कंसोल और पोर्टल Shared Signals पोल"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "इस सेवा का अपना व्यवस्थापक कंसोल और उपयोगकर्ता पोर्टल प्रत्येक विश्वास क्षेत्र में अपनी स्ट्रीम पर प्रतीक्षारत Security Event Tokens एकत्र करते हैं, /ssf/poll से RFC 8936 पोल द्वारा — सत्यापित, दर्ज, उन पर कार्रवाई और स्वीकृत (#771)।"
+  },
+  "sched.jobs.ssf.stream-maintenance.title": {
+    "en": "7b2875452b588faa",
+    "text": "Shared Signals स्ट्रीम रखरखाव"
+  },
+  "sched.jobs.ssf.stream-maintenance.describe": {
+    "en": "bd4794eda9c5d2d2",
+    "text": "उस स्ट्रीम को विराम देता है, अक्षम करता है या मिटाता है जिसका रिसीवर ssf.inactivityTimeoutS की अवधि से निष्क्रिय रहा हो (SSF 1.0 section 8.1.1); विराम या अक्षमता की घोषणा पहले stream-updated घटना से करता है, और प्रत्येक सक्षम स्ट्रीम को सत्यापन घटना भेजता है जिसे इस ट्रांसमीटर से ssf.verificationEveryS तक कोई न मिली हो (section 8.1.4)।"
+  },
+  "sched.jobs.tls.ticket-key-rotate.title": {
+    "en": "8bb62416b0f1932c",
+    "text": "TLS सत्र-टिकट कुंजी चक्रण"
+  },
+  "sched.jobs.tls.ticket-key-rotate.describe": {
+    "en": "d685d1a2ff40e09e",
+    "text": "सक्रिय-सक्रिय क्लस्टर में प्रत्येक नोड के TLS लिसनरों की साझा सत्र-टिकट कुंजी को बदलता है, ताकि एक नोड का जारी किया टिकट दूसरे पर फिर शुरू हो सके। जिस कुंजी को वह बदलती है वह मिटा दी जाती है, जिससे यह सीमित होता है कि पुनः आरंभ सत्र के रहस्य टिकट से कितनी देर तक वापस लिए जा सकते हैं।"
+  },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "UMA समाप्ति"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "प्रत्येक User-Managed Access अनुमति टिकट, स्थायी क्लेम टोकन, RPT अभिलेख और लंबित स्वामी अनुमोदन को उसके जीवन के बाद हटाता है (#1168)। पढ़ना स्वयं समय-सीमा लागू करता है, इसलिए यह सफ़ाई है, निर्णय कभी नहीं।"
+  },
+  "sched.sentence.onDemand": {
+    "en": "92e0ecb68dc6ec36",
+    "text": "केवल माँग पर"
+  },
+  "sched.sentence.cron": {
+    "en": "1514dcdd2f8d083f",
+    "text": "cron {{cron}} (UTC)"
+  },
+  "sched.sentence.every": {
+    "en": "cad7aff2b61c1a2d",
+    "text": "प्रत्येक {{span}} (एक निश्चित अंतराल)"
+  },
+  "sched.sentence.everyFrom": {
+    "en": "e3f70e78d2f74d9a",
+    "text": "प्रत्येक {{span}} ({{setting}} से)"
+  },
+  "sched.sentence.noInterval": {
+    "en": "ea9235468f83c6bf",
+    "text": "कोई अंतराल नहीं (0)"
+  },
+  "sched.sentence.noIntervalFrom": {
+    "en": "d63051687e6eb040",
+    "text": "कोई अंतराल नहीं (0), {{setting}} से"
+  },
+  "sched.sentence.overdueTicking": {
+    "en": "e886381cac5c2371",
+    "text": "लीडर टिक कर रहा है; पिछला रन अभी चल रहा हो सकता है, या उसका दावा समाप्त नहीं हुआ है"
+  },
+  "sched.sentence.overdueSilent": {
+    "en": "6abb814e0bba89e8",
+    "text": "{{since}} के बाद से किसी लीडर ने टिक नहीं किया है"
+  },
+  "sched.sentence.offScheduler": {
+    "en": "b6e1b2eac4850f35",
+    "text": "scheduler.enabled बंद है"
+  },
+  "sched.sentence.offListed": {
+    "en": "bccf1db17ab66560",
+    "text": "scheduler.disabledJobs में नामित"
+  },
+  "sched.sentence.offZero": {
+    "en": "59bff00c7aa224e7",
+    "text": "{{setting}} 0 है, इसलिए कार्य बंद है"
+  },
+  "sched.sentence.offZeroFixed": {
+    "en": "81110f1e46dc1b16",
+    "text": "इसका अंतराल 0 है, इसलिए कार्य बंद है"
+  },
+  "sched.sentence.clockProcess": {
+    "en": "bd7af0544bafb825",
+    "text": "यह प्रक्रिया"
+  },
+  "sched.sentence.clockDatabase": {
+    "en": "4510afc0b42a97bf",
+    "text": "डेटाबेस"
+  },
+  "sched.param.sinceStart": {
+    "en": "0712f841eae1cd73",
+    "text": "यह सेवा शुरू हुई"
+  },
+  "schedAdmin.message.steppedDown": {
+    "en": "26017997a3d259cf",
+    "text": "शेड्यूलर के लीडर से पद छोड़ने को कहा गया। वह अपनी अगली टिक पर ऐसा करता है, और दूसरा नोड अपनी अगली हार्टबीट पर नेतृत्व संभालता है।"
+  },
+  "schedAdmin.message.queued": {
+    "en": "651740d298354de6",
+    "text": "{{job}} का एक रन कतार में है। शेड्यूलर का लीडर अपनी अगली टिक पर इसे शुरू करता है।"
+  },
+  "schedAdmin.message.queuedAgain": {
+    "en": "29c8136a0695fb5e",
+    "text": "{{job}} का एक रन कतार में है (एक पहले से था; यही वह है)। शेड्यूलर का लीडर अपनी अगली टिक पर इसे शुरू करता है।"
+  }
+}

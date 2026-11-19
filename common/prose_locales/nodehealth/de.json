@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "Dieser Knoten läuft nicht auf Linux ({{platform}}), daher gibt es keine cgroup-Dateien zu lesen."
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "Es gibt keine cgroup unter {{root}}: kein cgroup v2 ({{why}}) und keinen memory- oder cpuacct-Controller von cgroup v1."
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "Keine cgroup."
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "Die CPU-Zeit des Containers kann nicht gelesen werden: {{source}} — {{why}}."
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "Die CPU-Zeit des Containers konnte einmal und kein zweites Mal gelesen werden: {{why}}."
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "Der Container darf {{vcpus}} vCPU nutzen ({{version}}, {{file}}), und der Prozentsatz bezieht sich darauf."
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "Diese cgroup ({{version}}) hat kein {{file}}, daher hat sie kein eigenes CPU-Kontingent; der Prozentsatz bezieht sich auf die {{cpus}} CPU(s), die node als verfügbar meldet (os.availableParallelism())."
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "Kein CPU-Kontingent ({{version}}, {{file}} sagt keines): der Container darf jede CPU nutzen, die der Host ihm gibt, und der Prozentsatz bezieht sich auf die {{cpus}} CPU(s), die node als verfügbar meldet (os.availableParallelism())."
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "Die cgroup hat keine Drosselungszähler: ohne Kontingent gibt es nichts, wogegen gedrosselt werden kann."
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "Dieser Host mit cgroup v1 hat keinen memory-Controller für diesen Prozess."
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "Der Speicher des Containers kann nicht gelesen werden: {{source}} — {{why}}."
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "Der Container darf {{mib}} MiB nutzen ({{version}}, {{file}})."
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "Diese cgroup ({{version}}) hat kein {{file}}, daher hat sie kein eigenes Speicherlimit, und es gibt keinen Prozentsatz anzugeben."
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "Kein Speicherlimit ({{version}}, {{file}} sagt keines), daher gibt es keinen Prozentsatz anzugeben."
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "{{anon}} ist der eigene Speicher der Prozesse; {{file}} ist der Page-Cache, den der Kernel unter Druck zurückholt, bevor er irgendetwas beendet."
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "memory.stat kann nicht gelesen werden, daher ist nicht bekannt, woraus der Speicher besteht."
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "Vom ECS-Agenten (/task/stats), weil die cgroup hier nicht gelesen werden kann. Das Limit ist das des Containers, wie der Agent es meldet."
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "Vom ECS-Agenten (/task/stats), weil die cgroup hier nicht gelesen werden kann. Der Container hat kein eigenes Limit, daher ist das Limit das der ECS-TASK, {{mib}} MiB."
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "Vom ECS-Agenten (/task/stats), weil die cgroup hier nicht gelesen werden kann. Es gibt kein Limit, an dem gemessen werden könnte."
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "Der ECS-Agent meldet nur die Summe."
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "Der Container hat kein eigenes Speicherlimit (cgroup v{{version}}), daher ist das Limit das der ECS-TASK, {{mib}} MiB (/task Limits.Memory), und der Prozentsatz bezieht sich darauf."
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "Vom ECS-Agenten (/task/stats), zwischen seinen letzten beiden Stichproben, weil die cgroup hier nicht gelesen werden kann; der Prozentsatz bezieht sich auf die {{vcpus}} vCPU der ECS-TASK."
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "Vom ECS-Agenten (/task/stats), zwischen seinen letzten beiden Stichproben, weil die cgroup hier nicht gelesen werden kann; die Task nennt kein CPU-Limit, daher gibt es keinen Prozentsatz."
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "Der ECS-Agent meldet keine Drosselung."
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "Der Container hat kein eigenes CPU-Kontingent (cgroup v{{version}}), daher bezieht sich der Prozentsatz auf die {{vcpus}} vCPU der ECS-TASK (/task Limits.CPU)."
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "{{file}} konnte nicht gelesen werden ({{why}})"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "seine Statusdatei hat kein VmRSS"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "residente Größe und CPU-Zeit eines Threads sind die des ganzen Prozesses, daher stehen sie in der Zeile des Front-Prozesses (pid {{pid}}) und werden hier nicht wiederholt"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "seine residente Größe und seine CPU-Zeit sind die des ganzen Prozesses, jeden Worker-Thread eingeschlossen; seine Heap-Zahlen sind die seines Haupt-Threads"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "Front-Prozess"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "API des Protokoll-Debuggers"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "Worker-Thread der gehosteten Oberfläche {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "Protokoll-Worker-Thread {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "es hat ohne seinen Speicher geantwortet, daher wird nur seine residente Größe gezeigt, aus /proc"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}, daher wird nur seine residente Größe gezeigt, aus /proc"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "es hat nicht innerhalb von {{ms}}ms geantwortet (sein Speicher-Preload, debugger_api_status.js, antwortet, wenn es installiert ist)"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "es hat nicht innerhalb von {{ms}}ms geantwortet"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}; ein Thread hat keinen eigenen Eintrag in /proc, daher kann sein Heap nicht von außerhalb gelesen werden"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "Der API-Prozess des Protokoll-Debuggers konnte nicht nach seiner pid gefragt werden: {{error}}."
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "Die Worker für Requests und hosted-surface sind THREADS des Front-Prozesses (#364), daher sind ihre residente Größe und ihre CPU-Zeit die eigenen Zahlen des Front-Prozesses und werden einmal gezählt, in seiner Zeile. Die residente Summe ist die Summe über die {{rss}} Prozess(e), deren Größe gelesen werden konnte — den Front-Prozess und den API-Kindprozess des Debuggers —, sodass Seiten, die die beiden teilen (darunter der eigene Code von node), je einmal gezählt werden und die Summe memory.current des Containers übersteigen kann. Die Heap-Zahlen sind die {{heap}} V8-Isolate, die process.memoryUsage() selbst gemeldet haben: der Haupt-Thread des Front-Prozesses, jeder Worker-Thread und der Kindprozess; ein Kindprozess, der nicht rechtzeitig geantwortet hat, wird mit seiner residenten Größe aus /proc und ohne Heap gezeigt, und ein Worker-Thread, der das nicht hat, wird als unbeantwortet geführt, weil ein Thread keinen eigenen Eintrag in /proc hat. Post-Quantum-Signierung und scrypt haben seit #363 keine eigenen Prozesse mehr: sie laufen auf dem Thread-Pool von libuv, und ihr Speicher wird in dem Prozess gezählt, der angefragt hat."
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 ist nicht gesetzt: dieser Knoten ist keine Task von Amazon ECS (er läuft nicht auf Fargate oder einer ECS-Containerinstanz), daher gibt es keinen Endpunkt für Task-Metadaten, gegen den die cgroup gegengeprüft werden könnte."
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 ist gesetzt, aber der Endpunkt für Task-Metadaten hat nicht innerhalb von {{ms}}ms geantwortet: {{why}}."
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "Ein Teil des Endpunkts hat nicht geantwortet: {{whys}}. "
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "Ein Teil des Endpunkts hat nicht geantwortet: {{whys}}. Es gibt keine Statistiken für diesen Container in /task/stats."
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "Ein Teil des Endpunkts hat nicht geantwortet: {{whys}}. Es gibt keine Statistiken für diesen Container in /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "Es gibt keine Statistiken für diesen Container in /task/stats."
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "Es gibt keine Statistiken für diesen Container in /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "Die eigenen Zahlen des ECS-Agenten für diesen Container als Gegenprüfung der cgroup: der Agent nimmt Stichproben nach seinem eigenen Zeitplan, daher stimmen sie nicht auf das Byte oder das Prozent überein."
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "Das sind die Zahlen des Knotens {{node}} — seines Containers —, gezeichnet von seinem Front-Prozess, pid {{pid}}. Jeder Knoten eines Clusters ist ein eigener Container mit eigenen Zahlen."
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "Die Maschine, auf der dieser Container läuft — auf Fargate die Micro-VM, auf einer Workstation die ganze Workstation. NICHT der Container: sein freier Speicher und seine Last sagen nichts über das Limit des Containers."
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "Über die {{count}} Knoten, die nicht verschwunden sind und einen Snapshot haben, veraltete eingeschlossen und markiert. Die Limits werden nur summiert, wenn jeder Knoten eines hat."
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "es ist nicht vorhanden"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "es ist keine Zahl"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "es hat kein usage_usec"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "es gibt keinen cpuacct-Controller von cgroup v1"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "es hat ohne seinen Speicher geantwortet"
+  }
+}

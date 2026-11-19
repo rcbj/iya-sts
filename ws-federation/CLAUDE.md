@@ -371,7 +371,7 @@ WS-Federation has no language hint, so the order is #539's without one.
 **STS-WSFED-0026 echoes nothing**: no `wreply` row, and its language chooser
 returns to the realm's front door rather than to the link, because the
 refusal exists so that the address is not used. A new refusal owes a
-sentence in all seven base catalogs. `tests/wsfed_wauth_step_up.js` d3–d4.
+sentence in every base catalog. `tests/wsfed_wauth_step_up.js` d3–d4.
 
 ## What no test covers yet
 

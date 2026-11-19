@@ -15702,7 +15702,7 @@ none) for its activity. What reaches outside `post_login.ts`'s header:
   `dueFor()`, which with the policy off answered null for everybody, so a
   started activity mailed nobody unless the policy was also on (the page's
   `noActivity` warning said so). It now mails its people; the warning and
-  its key are gone from the page and the seven catalogs, and the API's
+  its key are gone from the page and every base catalog, and the API's
   `activityEnabled` is described as the POLICY's own answer.
 * **No new code.** Nothing new refuses or fails: a started store that
   cannot be read asks nobody through it (`runningActivities()` answers

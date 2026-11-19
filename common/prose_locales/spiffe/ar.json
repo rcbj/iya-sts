@@ -1,0 +1,334 @@
+{
+  "spiffe.auth.entities.local.label": {
+    "en": "8c31e6e7223097e2",
+    "text": "محلي"
+  },
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "وصل الاستدعاء على مقبس نطاق Unix. يثق خادم SPIRE حقيقي بمقبسه الخاص مباشرة — وهكذا تعمل واجهة spire-server CLI — والتحكم في الوصول هو أذونات نظام الملفات للمقبس. يفترض وضع التطوير تلك الحدود؛ ويتحقق وضع المنتج منها لكل اتصال: يُنشأ المقبس بصلاحية 0600 في دليل لا يبلغه المستخدمون الآخرون، ويكون uid المستدعي في النواة هو uid هذه الخدمة نفسها. يوقف `spiffe.trustLocalSocket` ذلك، فيطلب المقبس SVID كما يفعل منفذ TCP، وهو السبيل الوحيد لتجربة مسار العميل «رُفضتُ على المقبس»."
+  },
+  "spiffe.auth.entities.agent.label": {
+    "en": "11b39c93777e8f1f",
+    "text": "وكيل"
+  },
+  "spiffe.auth.entities.agent.what": {
+    "en": "f5f4dddd8dea737f",
+    "text": "قدّم المستدعي X509-SVID يكون SPIFFE ID فيه معرّف وكيل (/spire/agent/...) ويسمّي وكيلاً أشهد له هذا الخادم ولم يحظره. يُرفض الوكيل المحظور هنا لا عند AttestAgent وحده، وهذا ما يجعل الحظر على /admin/spiffe/agents ذا معنى لمستدعٍ يحمل SVID أصلاً."
+  },
+  "spiffe.auth.entities.admin.label": {
+    "en": "c1c224b03cd9bc7b",
+    "text": "مسؤول"
+  },
+  "spiffe.auth.entities.admin.what": {
+    "en": "2f07edbd784cf1ef",
+    "text": "SPIFFE ID الخاص بالمستدعي مسمّى في `spiffe.adminIds`، أو أن مدخل تسجيل لتلك الهوية معلَّم بـ `admin`. كلاهما، لأن SPIRE يملك الاثنين: admin_ids لا يحتاج إلى مدخل، والعلامة على المدخل هي ما يضبطه المشغّل من وحدة التحكم. هذا ما يتيح لمستدعٍ بعيد إدارة مداخل التسجيل."
+  },
+  "spiffe.auth.entities.downstream.label": {
+    "en": "8144a0c98691bdde",
+    "text": "تابع"
+  },
+  "spiffe.auth.entities.downstream.what": {
+    "en": "b756368b7b316586",
+    "text": "مدخل تسجيل لهوية المستدعي معلَّم بـ `downstream` — خادم SPIRE متداخل، يجوز له أن يطلب CA وسيطاً وينشر سلطة، ولا يجوز له غير ذلك."
+  },
+  "spiffe.auth.entities.anonymous.label": {
+    "en": "e7a8aa2df7e5d0b2",
+    "text": "مجهول"
+  },
+  "spiffe.auth.entities.anonymous.what": {
+    "en": "ac3d07cf4191b708",
+    "text": "لم تُقدَّم بيانات اعتماد، أو قُدّمت واحدة ولم يُتحقق منها. تبقى طريقتان مفتوحتين له، ولا بد منهما: AttestAgent، لأن الوكيل لا يملك SVID حتى يمنحه ذلك الاستدعاء واحداً، وGetBundle، لأن حزمة الثقة عامة بالتصميم."
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "SPIRE Server API فقط. منفذ TCP الخاص بها هو TLS متبادل: يقدّم المستدعي X509-SVID من مجال الثقة هذا، وتتحقق هذه الخدمة منه مقابل حزمة الثقة ومقابل نافذة صلاحية الشهادة نفسها، وتأخذ SPIFFE ID من subjectAltName من نوع URI (وليس من الموضوع أبداً)، وتصنّفه محلياً أو وكيلاً أو مسؤولاً أو تابعاً، وتفوّض الطريقة وفق policy_data.json الخاص بـ SPIRE، صفاً بصف. مقبس Unix الخاص بها هو كيان `local` ولا يحتاج إلى بيانات اعتماد، وهكذا تبلغ واجهة spire-server CLI خادماً حقيقياً. واجهة Workload API بمعزل عن كل ذلك عمداً: تنص مواصفاتها على أنه يجب ألا تُشترَط مصادقة العميل."
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "يطلب منفذ TCP شهادة عميل ولا يشترط واحدة، لأن AttestAgent مفتوح لمستدعٍ بلا SVID — فالوكيل لا يملك واحداً حتى يمنحه ذلك الاستدعاء إياه. اجلب الحزمة من نقطة نهاية الحزمة، وتحقق من هذا الخادم مقابلها، وأشهد."
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "بيانات الاعتماد المقبولة هي هوية هنا كأي هوية أخرى: تبلغ القمع نفسه الذي تستخدمه كل واحدة من عائلات البروتوكول الست عشرة، فيظهر حاملها على /admin/users ويحصل على مدخل في الدليل تحت ou=users — يُسمّى ببصمة، والمعرّف عليه بصفة `spiffeSubject`، ويُعاد استخدامه حين تصل الهوية نفسها مرة أخرى بطريق آخر. ثلاثة قبولات تفعل ذلك: X509-SVID عبر TLS متبادل (مرة لكل اتصال)، ووكيل يشهد، وJWT-SVID يُتحقق منه عند ValidateJWTSVID. الإصدار طريق رابع للدخول وليس واحداً من تلك الثلاثة: كل هوية يسكّ لها مجال الثقة هذا X509-SVID تحصل على المدخل نفسه، حاملاً الشهادة كالسمات الست `x509*` نفسها التي تكتبها شهادة عميل TLS متحقَّق منها — تُسنَد ولا تُلحَق، لأن SVID يُسكّ من جديد كل نصف عمر، وبجانبها `x509svidsIssued` وطابعا وقت. لا يُحتسب ذلك مصادقة، لأن إصدار بيانات اعتماد ليس تقديمها."
+  },
+  "spiffe.auth.state.credentialStatusNote": {
+    "en": "855b97377adf3b8a",
+    "text": "يسجّل المدخل أيضاً ما إذا كان لا يزال يجوز إصدار بيانات اعتماد للهوية هنا — `spiffeCredentialStatus`، مع سبب بجانبه. ذلك ليس حالة شهادة ولا شيء يقرأه مرة أخرى: لا إلغاء في SPIFFE، وSVID أُصدر أصلاً يُتحقق منه مقابل الحزمة حتى تنتهي صلاحيته مهما قال الدليل. ما يسجّله هو الأشياء الثلاثة التي تنهي قدرة هوية على الحصول على واحد جديد — حُذف آخر مدخل تسجيل لها، أو حُظر وكيلها، أو حُذف وكيلها — وكل منها قابل للعكس ويُسجَّل بالطريقة نفسها حين يُعكس. لا يُزال المدخل أبداً."
+  },
+  "spiffe.auth.tcpState.off": {
+    "en": "5f0ff49e8f1e1b08",
+    "text": "متوقف (spiffe.workloadPort يساوي 0)"
+  },
+  "spiffe.auth.tcpState.development": {
+    "en": "12b927026c850320",
+    "text": "يُخدَم (وضع التطوير، غير مشهود)"
+  },
+  "spiffe.auth.tcpState.notDeclared": {
+    "en": "1e5c1015bdfa2ef2",
+    "text": "لا يُخدَم (وضع المنتج، المصدر غير معلَن كمصادَق عليه)"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "لا يُخدَم (وضع المنتج، عنوان ربط شامل)"
+  },
+  "spiffe.auth.tcpState.declared": {
+    "en": "35c428d100879111",
+    "text": "يُخدَم (وضع المنتج، المصدر معلَن كمصادَق عليه)"
+  },
+  "spiffe.ca.keyTypes.ec-p256.what": {
+    "en": "ff74fafa4f874a30",
+    "text": "ما يصدره SPIRE افتراضياً وما توصي به مواصفة X509-SVID. وهو الافتراضي هنا للسبب نفسه."
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "منحنى أكبر، لعميل يقيّد نفسه بواحد."
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "أكبر أيضاً. يجدر معرفة أن توقيع P-521 واحداً تقريباً من كل 256 يكون أقصر ببايت من الـ 255 الأخرى، وهذه حافة توافق حقيقية ولهذا لدى x509.js دالة لها."
+  },
+  "spiffe.ca.keyTypes.rsa-2048.what": {
+    "en": "12b3f28c3feec919",
+    "text": "الحد الأدنى الذي تسمح به مواصفة X509-SVID لـ RSA. أبطأ في التوليد — وهو ملحوظ عند الإقلاع — وينتج SVID أكبر بكثير."
+  },
+  "spiffe.ca.keyTypes.rsa-4096.what": {
+    "en": "2bc20b52a500d180",
+    "text": "عدة ثوانٍ للتوليد عند الإقلاع، وهو ما يجدر معرفته قبل التساؤل لماذا لا تجيب نقطة نهاية الحزمة بعد."
+  },
+  "spiffe.ca.keyTypes.ed25519.what": {
+    "en": "c3a80a4d09d90afd",
+    "text": "مسموح به لـ X.509 في المواصفة. غير متاح لسلطة JWT: jsonwebtoken، تنفيذ JWS في هذه الخدمة، لا يوقّع EdDSA."
+  },
+  "spiffe.registry.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "الصنف المجرّد الذي يحمله كل مدخل."
+  },
+  "spiffe.registry.schema.objectClasses.applicationProcess.what": {
+    "en": "ede3b6433c8bf9fc",
+    "text": "الصنف المسجَّل الوحيد الذي يلائم: يجلب cn وdescription، فيكون اسم مدخل التسجيل سمة قياسية وإن تعذّر ذلك على أي شيء آخر فيه. الصنف نفسه الذي تستخدمه ou=applications، وللسبب نفسه."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeRegistrationEntry.what": {
+    "en": "e29ba68ce50f7bcf",
+    "text": "مُختَرَع. لا يحوي أي مخطط LDAP مسجَّل على SPIFFE ID أو معرّف أب أو محدّد — يحتفظ SPIRE بمداخله في SQL ولا يحتفظ بها شيء آخر في أي مكان — فلم يكن هناك ما يُستعار."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeAgent.what": {
+    "en": "c88b779329476cec",
+    "text": "مُختَرَع، للسبب نفسه، على المداخل تحت ou=agents."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryId.what": {
+    "en": "a7adc45dd92c5cad",
+    "text": "المفتاح: معرّف المدخل، وهو ما تسمّيه SPIRE Server API بـ `id` وما تسمّيه BatchUpdateEntry وBatchDeleteEntry. يُولَّد هنا في 32 محرفاً ست عشرياً ولا يُعاد استخدامه أبداً. الـ cn الخاص بالمدخل صيغة مختصرة منه، فهذه هي السمة التي يُبحث بها — وهو الترتيب الذي يملكه appIdentifier أصلاً في الحاوية المجاورة."
+  },
+  "spiffe.registry.schema.attributes.cn.what": {
+    "en": "fe58d352f611b9c3",
+    "text": "قيمة RDN: معرّف المدخل."
+  },
+  "spiffe.registry.schema.attributes.spiffeId.what": {
+    "en": "ff53d9e13c8c570a",
+    "text": "الهوية التي يمنحها هذا المدخل — SPIFFE ID الذي يُصدر لحِمل عمل مطابق. يُرفض إن لم يكن SPIFFE ID صالحاً، أو إن انتمى إلى مجال ثقة آخر، أو إن وقع تحت المسار المحجوز /spire."
+  },
+  "spiffe.registry.schema.attributes.spiffeParentId.what": {
+    "en": "ddbb1b173769e22d",
+    "text": "مَن يجوز له إصداره: SPIFFE ID للوكيل (أو لهذا الخادم) الذي يتدلّى هذا المدخل تحته. هو يقرر أي المداخل تخبر GetAuthorizedEntries وSyncAuthorizedEntries الوكيل عنها: تلك التي تحت SPIFFE ID الخاص به أو اسم عقدة مستعار تطابقه محدّداته، وترفض BatchNewX509SVID وNewJWTSVID على الوكيل أي مدخل آخر."
+  },
+  "spiffe.registry.schema.attributes.spiffeSelector.what": {
+    "en": "230a91f1fbed3a13",
+    "text": "قيمة واحدة لكل محدّد، تُكتب `type:value` — `unix:uid:1000` و`k8s:ns:default` و`docker:label:app:web`. النوع هو كل ما قبل النقطتين الأوليين والقيمة هي البقية كلها، بما فيها النقطتان، ولهذا تُخزَّن كسلسلة واحدة لا كزوج: التقسيم عند كل نقطتين هو كيف يصبح `docker:label:app:web` محدّداً لم يكتبه أحد."
+  },
+  "spiffe.registry.schema.attributes.spiffeX509SvidTtl.what": {
+    "en": "37276f0fda549069",
+    "text": "عمر X509-SVID التي ينتجها هذا المدخل، بالثواني. الغياب أو 0 يعني spiffe.svidTtl."
+  },
+  "spiffe.registry.schema.attributes.spiffeJwtSvidTtl.what": {
+    "en": "e2aed23ffc20b746",
+    "text": "الأمر نفسه لـ JWT-SVID. الغياب أو 0 يعني spiffe.jwtSvidTtl."
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "أسماء DNS في subjectAltName تُضاف إلى SVID إلى جانب SPIFFE ID. هذا ما يجعل SVID قابلاً للاستخدام من برمجيات TLS التي تتحقق من اسم المضيف ولا تستطيع قراءة SPIFFE ID."
+  },
+  "spiffe.registry.schema.attributes.spiffeFederatesWith.what": {
+    "en": "bccf448fc73ca351",
+    "text": "أسماء مجالات الثقة التي تُسلَّم حزمها إلى حِمل عمل يحمل هذه الهوية — X509SVIDResponse.federated_bundles. الاسم الذي لا حزمة له هنا يُسجَّل ولا يساهم بشيء، لأن علاقة اتحاد تُضبط قبل وصول الحزمة هي الترتيب المعتاد للأحداث."
+  },
+  "spiffe.registry.schema.attributes.spiffeHint.what": {
+    "en": "8798c1b61a4ef8c9",
+    "text": "إرشاد المشغّل حين يحصل حِمل العمل على أكثر من SVID واحد — `internal` و`external`. يُمرَّر إلى Workload API حرفياً؛ ولا شيء هنا يقرأه."
+  },
+  "spiffe.registry.schema.attributes.spiffeAdmin.what": {
+    "en": "fefc555630e7c657",
+    "text": "القيمة TRUE حيث يجوز للحامل استدعاء الطرق الإدارية في SPIRE Server API — المداخل والوكلاء والحزم وعلاقات الاتحاد وسكّ SVID — عبر TLS متبادل. مُفرَض في الوضعين: تجعل واجهة الخادم المستدعي `admin` حين يحمل مدخل غير منتهٍ لهويته هذه العلامة أو يسمّيه spiffe.adminIds، وترفض تلك الطرق لمستدعٍ بعيد ليس أياً منهما (مستدعي `local` على مقبس Unix الخاص هو الطريق الآخر للدخول). تُقرأ عند كل استدعاء، فيسري التغيير على الاستدعاء التالي."
+  },
+  "spiffe.registry.schema.attributes.spiffeDownstream.what": {
+    "en": "16aab8ec2a97d549",
+    "text": "القيمة TRUE حيث يكون الحامل خادم SPIRE تابعاً يجوز له أن يطلب CA وسيطاً (NewDownstreamX509CA) وينشر سلطة JWT أو WIT. مُفرَض في الوضعين: تُرفض تلك الطرق لمستدعٍ لا يعلّمه أي مدخل غير منتهٍ بأنه downstream، والعلامة لا تمنح شيئاً آخر."
+  },
+  "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
+    "en": "ed0325e0f3750709",
+    "text": "القيمة TRUE حيث يُكتب SVID إلى مكوّن مخزن SVID بدلاً من تسليمه إلى حِمل العمل. يُسجَّل ولا يُفعَل بشأنه — لا مكوّنات مخزن لدى هذه الخدمة."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryExpiresAt.what": {
+    "en": "0db77e4fbce00b1b",
+    "text": "متى يتوقف المدخل نفسه عن الانطباق، بالثواني منذ الحقبة. يختلف ذلك عن عمر SVID: هذا يحيل التسجيل إلى التقاعد. يُبقى المدخل المنتهي ويُبلَّغ عنه كمنتهٍ بدلاً من حذفه، لأن المدخل الذي اختفى لا يُميَّز ممن لم ينشئه أحد."
+  },
+  "spiffe.registry.schema.attributes.spiffeRevisionNumber.what": {
+    "en": "c6e398cd0674adf9",
+    "text": "يُزاد عند كل تغيير. تنشره SPIRE Server API ويستخدمه الوكيل ليميّز «المدخل الذي أحمله حالي» من «أحمل مدخلاً»."
+  },
+  "spiffe.registry.schema.attributes.spiffeOrigin.what": {
+    "en": "00f49586f429c433",
+    "text": "كيف وصل هذا المدخل إلى هنا: `seed` أو `console` أو `api` أو `grpc` أو `auto` (مُختَرَع لحِمل عمل لم يطابق شيئاً) أو `ldap`. وهو ما يميّز المدخل المُختَرَع من مدخل أراده أحد."
+  },
+  "spiffe.registry.schema.attributes.spiffeSvidsIssued.what": {
+    "en": "5c7d76f70131d771",
+    "text": "كم SVID أُصدر مقابل هذا المدخل. يُسنَد عند كل تغيير — فالعدّاد الذي يراكم القيم يكون بلا معنى — وهو رقم حي في مدخل الدليل، وهو ما لا يحتفظ به دليل حقيقي."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSvidAt.what": {
+    "en": "439b824bf18526c6",
+    "text": "GeneralizedTime، أحدث إصدار مقابل هذا المدخل."
+  },
+  "spiffe.registry.schema.attributes.spiffeCreatedAt.what": {
+    "en": "db6f43baf4cb0cf6",
+    "text": "GeneralizedTime. إلى جانب createTimestamp الخاص بالمدخل، لأن SPIRE Server API تنشر `created_at` كعدد، وينبغي أن يستطيع القارئ أن يرى أنهما اللحظة نفسها."
+  },
+  "spiffe.registry.schema.attributes.description.what": {
+    "en": "acd2638ccd119c56",
+    "text": "سطر واحد يقول من أين جاء هذا المدخل."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentId.what": {
+    "en": "1eb0478ad1d93963",
+    "text": "مفتاح مدخل الوكيل: SPIFFE ID الخاص بالوكيل، دائماً تحت المسار المحجوز /spire/agent."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestationType.what": {
+    "en": "a106e8d20ed4b9d0",
+    "text": "مُشهَد العقدة الذي تحقق من الوكيل — `join_token`، والأنواع الأخرى التي يسمّيها نطاق الثقة في spiffe.nodeAttestors. النوع الذي لا يتحقق منه أي مُشهَد هنا يُرفض عند AttestAgent، ولا يُسجَّل أبداً."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSelector.what": {
+    "en": "f1f7a49b8ce0625d",
+    "text": "المحدّدات التي أنتجها الإشهاد. تُختَرَع مما أرسله الوكيل، وللسبب نفسه."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentBanned.what": {
+    "en": "ef97460f95df0202",
+    "text": "القيمة TRUE حيث استُدعيت BanAgent. يُرفض الوكيل المحظور عند AttestAgent وRenewAgent — وهو من الرفضات القليلة في هذه الخدمة — لأن وكيلاً لا يمكن حظره يجعل زر الحظر كذبة."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentCanReattest.what": {
+    "en": "c422054beef1b8d8",
+    "text": "ما إذا كان يمكن تشغيل المُشهَد مرة أخرى بلا مشغّل. يُبلَّغ ذلك إلى الوكيل، وهو يقرر ما يفعله بشأنه."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSvidHash.what": {
+    "en": "fe13de3e1f4b825f",
+    "text": "SHA-256 على DER الخاص بـ SVID الحالي للوكيل، وهو ما يحمله spire.api.types.Agent وكيف يميّز المشغّل وكيلين بهوية واحدة."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentExpiresAt.what": {
+    "en": "137d83a05ee5c7c1",
+    "text": "متى تنتهي صلاحية ذلك SVID، بالثواني منذ الحقبة."
+  },
+  "spiffe.registry.schema.attributes.spiffeFirstSeen.what": {
+    "en": "41c766626dfff95d",
+    "text": "GeneralizedTime، متى أشهد هذا الوكيل أول مرة."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime، أحدث وقت."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestations.what": {
+    "en": "80dcd7993e4bf81c",
+    "text": "كم مرة أشهد أو جدّد. يُسنَد، ولا يُراكَم."
+  },
+  "spiffe.registry.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "هذه الخدمة"
+  },
+  "spiffe.registry.schema.from.thisRegistry": {
+    "en": "8838be25576d9b6a",
+    "text": "هذا السجل"
+  },
+  "spiffe.registry.schema.from.theCaller": {
+    "en": "58d987420aa2d78f",
+    "text": "المستدعي"
+  },
+  "spiffe.registry.schema.from.theAgent": {
+    "en": "c770ef7d03b69656",
+    "text": "الوكيل"
+  },
+  "spiffe.server.sentences.localTrusted": {
+    "en": "7ce165cd08ddff12",
+    "text": "بلا بيانات اعتماد. هذا المقبس هو كيان `local` ويُوثَق مباشرة، وهكذا تعمل واجهة spire-server CLI."
+  },
+  "spiffe.server.sentences.localVerified": {
+    "en": "7dd4a1d222fb239f",
+    "text": "بلا بيانات اعتماد، من عملية تعمل بـ uid هذه الخدمة نفسها: يتحقق وضع المنتج لكل اتصال من أن المقبس خاص، ويقرأ uid المستدعي من النواة قبل أن يصير كيان `local`."
+  },
+  "spiffe.server.sentences.nobodyLocal": {
+    "en": "26a2be079a082c09",
+    "text": "لا أحد هنا هو كيان `local`: يتحقق وضع المنتج من حدود المقبس ولا يستطيع ({{reason}}). قدّم X509-SVID لمسؤول على منفذ TCP."
+  },
+  "spiffe.server.sentences.uidUnreadable": {
+    "en": "f321bf28dac402e7",
+    "text": "لا يمكن قراءة uid الطرف الآخر — {{problem}}"
+  },
+  "spiffe.server.sentences.svidRequired": {
+    "en": "b1022e273acb8a23",
+    "text": "مطلوب X509-SVID حتى هنا (spiffe.trustLocalSocket متوقف)."
+  },
+  "spiffe.server.sentences.workloadNone": {
+    "en": "be5434a7e7f33920",
+    "text": "لا شيء، ويجب ألا يكون هناك شيء: مواصفة Workload Endpoint تمنع اشتراط واحد."
+  },
+  "spiffe.server.sentences.mutualTls": {
+    "en": "df42b23d461840a9",
+    "text": "TLS متبادل. تحقق من هذا الخادم مقابل حزمة الثقة، وقدّم X509-SVID الخاص بك، وتوقّع أن تُفوَّض لكل طريقة."
+  },
+  "spiffe.server.sentences.serverOpen": {
+    "en": "a63de7d174172dcf",
+    "text": "لا شيء — المصادقة متوقفة، فهذا المنفذ gRPC عادي وكل طريقة مفتوحة للجميع."
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "لا شيء، ويجب ألا يكون هناك شيء: مواصفة Workload Endpoint تمنع اشتراط واحد. الشبكة معلَنة لتصادق عناوين المصدر (spiffe.workloadTcpSourceAuthenticated)، فيُجاب المستدعي بالمداخل التي يختارها عنوان peer: الخاص به."
+  },
+  "spiffe.server.sentences.workloadTcpUnattested": {
+    "en": "e731874c85a7fe7b",
+    "text": "لا شيء، ويجب ألا يكون هناك شيء: مواصفة Workload Endpoint تمنع اشتراط واحد. لا شيء يشهد لمستدعٍ هنا (وضع التطوير): يؤمّن النشر هذا المنفذ بوسائل أخرى أو لا يعرّضه."
+  },
+  "spiffe.server.sentences.nothingListening": {
+    "en": "147d726457ddd091",
+    "text": "لا شيء يستمع هنا."
+  },
+  "spiffe.server.sentences.brokerMutualTls": {
+    "en": "e22213bd5a6bd3b4",
+    "text": "TLS متبادل. تحقق من هذا الخادم بوصفه spiffe://<trust domain>/spire/server مقابل حزمة الثقة، وقدّم X509-SVID لوسيط مسمّى في spiffe.brokers، وأرسل broker.spiffe.io: true في كل استدعاء."
+  },
+  "spiffe.server.sentences.attestationUnavailable": {
+    "en": "b953ffffd6a26296",
+    "text": "إشهاد حِمل العمل غير متاح هنا: {{problem}}"
+  },
+  "spiffe.server.param.notPrivate": {
+    "en": "0355a60c0364fe04",
+    "text": "المقبس ليس خاصاً"
+  },
+  "spiffe.workloadAttestors.unix.verifies": {
+    "en": "b33addc9d234b9f3",
+    "text": "الـ uid والـ gid والمجموعات التكميلية التي تبلّغ عنها النواة لعملية المستدعي، ومسار ملفه التنفيذي وSHA-256 الخاص به."
+  },
+  "spiffe.workloadAttestors.docker.verifies": {
+    "en": "dbc4e6b46bf5f4a8",
+    "text": "حاوية Docker التي تعمل فيها عملية المستدعي، كما يبلّغ Docker Engine عن تسمياتها وبيئتها وصورتها."
+  },
+  "spiffe.workloadAttestors.k8s.verifies": {
+    "en": "cbb91a49fc6c5525",
+    "text": "الـ pod في Kubernetes والحاوية اللذان تعمل فيهما عملية المستدعي، كما يبلّغ عنهما kubelet العقدة."
+  },
+  "spiffe.workloadAttestors.systemd.verifies": {
+    "en": "4489245ba637b456",
+    "text": "وحدة systemd التي تحمل عملية المستدعي، كما يبلّغ systemd عنها عبر D-Bus: معرّفها وملف الوحدة."
+  },
+  "spiffe.peer.notes.unreadable": {
+    "en": "6e59386d4e956f8f",
+    "text": "تعذّرت قراءة عملية الطرف الآخر، فلا يُشهَد إلا لـ uid وgid الخاصين بها"
+  },
+  "spiffe.peer.notes.otherNamespace": {
+    "en": "c35f6f344a47db55",
+    "text": "الطرف الآخر في فضاء أسماء pid آخر (pid 0)، فلا يُشهَد إلا لـ uid وgid الخاصين به — شارك فضاء أسماء pid للبقية"
+  }
+}

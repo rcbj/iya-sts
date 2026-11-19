@@ -1,0 +1,1714 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "eine Suche, die aus dem Cache beantwortet wurde"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "die Suche steht in einer Datei, die dieses Repository nicht bearbeitet"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "ACME-Nonces"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "Die Replay-Nonce-Werte, die dem ACME-Server bereits vorgelegt wurden (RFC 8555 Abschnitt 6.5), sodass jeder nur einmal akzeptiert wird."
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "Erzwungen: acme.maxSpentNonces verbrauchte Nonces pro Vertrauensbereich. Abgelaufene werden an der Grenze entfernt; eine weiterhin volle Historie VERWEIGERT die nächste Verwendung (Antwort badNonce), anstatt eine gültige zu vergessen."
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "Bis die Nonce abläuft; abgelaufene werden entfernt, wenn die Grenze erreicht ist."
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "eine bereits verbrauchte Nonce, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Summen des Konsolenindex, behalten"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Die Summen des Konsolenindex — Aufrufe, Token, Artefakte, Sitzungen, bekannte Benutzer und hier angemeldete Benutzer —, die /admin-api/status beantwortet. Die Benutzer zu zählen heißt, jede Identität des Registers aufzulösen, daher werden die Summen einige Sekunden behalten."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Strukturell: ein Satz Summen pro Vertrauensbereich, höchstens einmal gleichzeitig aufgebaut."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Fünfzehn Sekunden."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Bestand der Benutzerseite, behalten"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Jede Identität, die das Register hält, und jede Person im Verzeichnis, jeweils mit der Erfassung ihrer Anmeldedaten: worüber /admin/users und /admin-api/users blättern, filtern und zählen. Der Aufbau löst jedes Subjekt des Registers auf und liest den Eintrag jeder Person, daher behält das Blättern ihn, anstatt ihn für jede Seite neu aufzubauen."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Strukturell: ein Bestand pro Vertrauensbereich, höchstens einmal gleichzeitig aufgebaut."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Fünfzehn Sekunden, und sofort, wenn etwas unter dem ou=users des Vertrauensbereichs geschrieben wird, hier oder von einem anderen Prozess angewendet."
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "Auflistung des Anwendungsregisters"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "Jeder Anwendungseintrag eines Vertrauensbereichs, geparst, mit einer Suche je client_id, audience, AppliesTo und Berechtigung — sodass eine Seite oder eine Token-Anfrage nicht das gesamte Register je Frage parst."
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "Strukturell: eine Auflistung pro Vertrauensbereich, in der Größe von ou=applications (selbst durch applications.max begrenzt)."
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "Bis sich etwas unter dem ou=applications des Vertrauensbereichs ändert; das nächste Lesen parst es dann erneut."
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Anwendungseinträge, nach Bezeichner gelesen"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "Der Eintrag einer Anwendung und sein geparster Datensatz, nach Bezeichner, sodass die Prüfungen einer Anmeldung den Eintrag nicht je Frage lesen und parsen."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "Erzwungen: MAX_LOAD_MEMO (256) Bezeichner pro Vertrauensbereich; darüber hinaus werden die behaltenen Antworten verworfen."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Bis sich etwas unter dem ou=applications des Vertrauensbereichs ändert; das nächste Lesen fragt dann das Verzeichnis erneut."
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "Berechtigungen des Empfängers von Shared Signals"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "Welche Anwendung einen Strom von Shared Signals besitzt und welche Ereignisse sie empfangen darf, je Principal, sodass ein Sitzungsereignis nicht jede registrierte Anwendung durchläuft."
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "Erzwungen: 4096 Antworten pro Vertrauensbereich, die älteste wird verworfen und bei der nächsten Notwendigkeit erneut nachgeschlagen."
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "Bis sich etwas unter dem ou=applications des Vertrauensbereichs ändert; die nächste Suche leert dann die Antworten dieses Vertrauensbereichs."
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "Suchen in Attributquellen"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "Die Zeile, die eine Attributquelle für den Schlüssel einer Person geliefert hat, kurz behalten, sodass eine Häufung von Anmeldungen eine Abfrage ist (#94)."
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "Erzwungen: 2000 Zeilen pro Prozess, die älteste wird verworfen."
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "eine Anmeldung, beantwortet aus einer Suche von vor wenigen Sekunden"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "{{seconds}} s nach der Suche; eine Änderung der Quelle verwirft ihre Zeilen."
+  },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "Fenster der Anmeldesitzung"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "Die Anmeldesitzungen, die ein Prozess hält, wenn authn.sessionWindow eingeschaltet ist (#350). Ein Fehltreffer wird aus der versiegelten Zeile gelesen. Die Verdrängung vergisst die Kopie im Speicher, nachdem das Upsert festgeschrieben wurde, und beendet die Sitzung nicht."
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "Geparste Zertifikatsangaben"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "Subject, Aussteller und notAfter, die eine Zertifikatsliste anzeigt, und ob ein Zertifikat einen Post-Quanten-Schlüssel trägt, einmal je Zertifikat geparst für /admin/pki und GET /admin-api/certificates. Schlüssel ist der eigene SHA-256 des Zertifikats."
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "Erzwungen: 4096 Zertifikate, das älteste wird verworfen und beim nächsten Anzeigen erneut geparst."
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "Kein Ablauf: Schlüssel ist der Inhalt des Zertifikats, dessen Angaben sich nie ändern. Das Älteste geht zuerst, wenn voll."
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "Urteile über Authenticator-Geheimnisse"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "Ob jedes versiegelte Authenticator-Geheimnis (TOTP), nach dem dieser Prozess gefragt wurde, sich unter seinem Schlüsselverschlüsselungsschlüssel öffnen lässt (#352), sodass die Benutzerliste und die Liste des zweiten Faktors eine Registrierung als lesbar oder nicht lesbar melden können, ohne es bei jeder Anfrage zu entsiegeln. Schlüssel ist der versiegelte Text; der Wert ist ja oder nein, niemals das Geheimnis."
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "Erzwungen: 20000 Urteile; wenn voll, wird das älteste verworfen und dieses Geheimnis beim nächsten Nachfragen erneut geöffnet."
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "Bis sich die Schlüsselverschlüsselungsschlüssel ändern oder es verworfen wird, um Platz zu schaffen. Eine neue Registrierung ist ein neuer versiegelter Text und wird neu nachgefragt."
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "ein versiegeltes Geheimnis, dessen Urteil schon bekannt war, sodass es nicht geöffnet wurde"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "Statische Dateien des eingebetteten Debuggers"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "Die Client-Dateien des eingebetteten Debuggers, in die die Adresse dieses Dienstes eingesetzt ist, behalten je Dateiversion und Adresse, sodass der Debugger-Listener eine Datei nicht bei jeder Anfrage neu schreibt."
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "Erzwungen: 400 Dateien, die älteste wird verworfen und beim nächsten Ausliefern erneut gelesen."
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "Bis sich die Datei auf dem Datenträger ändert (eine neue Änderungszeit ist ein neuer Eintrag); das Älteste geht zuerst, wenn voll."
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "Herausforderungen der Geräteregistrierung"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "Die Herausforderungen, die /portal/devices für einen Schlüsselbeweis, eine Aussage von App Attest oder eine WebAuthn-Verknüpfung ausgestellt hat, und die Frische-Nonces, die EST /nonce für eine TPM-Schlüsselattestierung ausgestellt hat, jeweils gebunden an die Sitzung (oder das EST-Cookie), für die sie ausgestellt wurden, und einmal beantwortet."
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "Erzwungen: devices.maxChallenges pro Vertrauensbereich, die älteste wird beim Einfügen verworfen; eine je Sitzung und Zweck."
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "eine Herausforderung, die dieser Vertrauensbereich ausgestellt hat, sodass der Beweis geprüft wurde"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "Ereignisse des Geräteregisters"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "Eine Zeile je Gerät, das an der Grenze einer Person in diesem Vertrauensbereich erstellt, entfernt oder verdrängt wurde — was Überwachung → Geräte im Zeitverlauf zeichnet. Niemals ein Schlüssel, ein Geheimnis oder der Name eines Eigentümers."
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "Erzwungen: devices.eventsKept pro Vertrauensbereich, das älteste Ereignis wird beim Einfügen verworfen."
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "Bis devices.eventsKept neuere Ereignisse es verdrängen."
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "DPoP-Nonces"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "Vom Server ausgestellte DPoP-Nonces (RFC 9449 Abschnitt 8), sodass ein Beweis, der eine trägt, gegen das Ausgegebene geprüft werden kann."
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "Erzwungen: oauth2.dpopNonceCacheSize pro Vertrauensbereich; die älteste Nonce wird verworfen, und einem Client, der sie vorlegt, wird eine neue ausgehändigt."
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "eine als aktuell gefundene Nonce, sodass der Beweis akzeptiert wurde"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "DPoP-Beweis-IDs"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "Die jti jedes akzeptierten DPoP-Beweises, sodass ein Beweis für genau eine Anfrage gilt (RFC 9449 Abschnitt 11.1)."
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "Erzwungen: oauth2.dpopReplayCacheSize gültige IDs pro Vertrauensbereich. Eine volle Historie VERWEIGERT den nächsten Beweis (STS-OAUTH-0554), anstatt einen gültigen zu vergessen, wodurch dessen Replay wieder geöffnet würde."
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "ein bereits verwendeter Beweis, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "Index der Attributfreigabe in der Föderation"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "Welche Freigabeliste welches Partners für welche Anwendung gilt, aufgebaut aus ou=federations, sodass eine Token-Ausstellung das Register nicht durchläuft. Ein Index pro Vertrauensbereich."
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "Strukturell: ein Index pro Vertrauensbereich, mit einem Eintrag je Anwendung, die eine Freigabeliste hat."
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "federation.releaseIndexTtlMs ({{ms}} ms) nach dem Aufbau, oder sofort, wenn eine Föderationsbeziehung über diesen Dienst geschrieben wird."
+  },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "CDN-Edge-Bereiche"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies, in eine BlockList geparst, sodass eine Anfrage die Einstellung nicht erneut parst, um zu entscheiden, ob sie von einem CDN-Edge kam, der das Geheimnis dieser Bereitstellung tragen muss."
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Strukturell: eine geparste Kopie der Einstellung."
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "Bis sich der Text von global.edgeProxies ändert."
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "Bereiche vertrauenswürdiger Proxys"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "global.trustedProxies, in eine BlockList geparst, sodass eine Anfrage die Einstellung nicht erneut parst, um zu entscheiden, welcher weitergeleiteten Adresse zu vertrauen ist."
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Strukturell: eine geparste Kopie der Einstellung."
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "Bis sich der Text von global.trustedProxies ändert."
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "Widerrufene Biscuits"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "Die Widerrufskennungen jedes widerrufenen Biscuit-Zugriffstokens, veröffentlicht unter /gnap/biscuit/revocations für einen Ressourcenserver, der Biscuits selbst prüft."
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "Erzwungen: oauth2.maxRevokedJtis pro Vertrauensbereich — die eigene Grenze des Widerrufsregisters, für dasselbe Versprechen über dieselben Token. An der Grenze geht eine abgelaufene Zeile zuerst; andernfalls wird der ÄLTESTE Widerruf vergessen (STS-GNAP-0752), und dieses Biscuit wird von einem Ressourcenserver, der nur diese Liste prüft, erneut akzeptiert, bis es abläuft."
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "bis zum eigenen exp des widerrufenen Tokens."
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "die veröffentlichte Liste wurde gelesen"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "Nachgeschlagene Ressourcenbesitzer"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "Der Besitzer, den die gnapOwnerLookupUri eines Ressourcenservers für einen Bezeichner genannt hat, sodass Anfrage, Genehmigungsseite und Ausstellung eines Grants den Ressourcenserver einmal fragen (#432 Phase 5)."
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "Erzwungen: 1024 Besitzer pro Vertrauensbereich, der älteste wird verworfen und bei der nächsten Notwendigkeit erneut nachgeschlagen."
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "GNAP-Signaturen"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "Jede akzeptierte signierte GNAP-Anfrage (HTTP-Nachrichtensignaturen sowie angefügte oder losgelöste JWS), sodass eine abgefangene Anfrage nicht erneut gesendet werden kann."
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "Erzwungen: gnap.replayCacheSize gültige Signaturen pro Vertrauensbereich. Eine volle Historie VERWEIGERT die nächste signierte Anfrage (STS-GNAP-0718), anstatt eine gültige zu vergessen, wodurch deren Replay wieder geöffnet würde."
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "Das Doppelte von gnap.signatureMaxAgeS, nachdem sie gesehen wurde."
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "eine bereits gesehene Signatur, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "Schlüsselbezeichner nach RFC 9278"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "Die als kid unter keys.kidFormat=jwk-thumbprint-uri veröffentlichte JWK Thumbprint URI, mit der internen kid als Schlüssel, sodass eine Token-Signatur den Schlüssel nicht erneut aus seinem Zertifikat liest."
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "Erzwungen: 512 Schlüssel-IDs, die älteste wird verworfen und beim nächsten Anfordern erneut abgeleitet."
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "Kein Ablauf: eine interne kid wird aus dem Schlüssel abgeleitet, sodass sich ihre Antwort nie ändert. Das Älteste geht zuerst, wenn voll."
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "Zertifikatsketten, die unter dem Root enden"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "Ob die gespeicherte Kette einer Registerzeile unter dem aktuellen Root des Dienstes endet, was entscheidet, ob der Root an einen x5c-Header angehängt wird. Schlüssel sind der Fingerabdruck der Zeile und der des Root."
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Erzwungen: 512 Antworten, die älteste wird verworfen und beim nächsten Anfordern erneut ermittelt."
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Kein Ablauf: Schlüssel sind der Zertifikatsfingerabdruck und die kid, deren Antwort sich nie ändert. Das Älteste geht zuerst, wenn voll."
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "Übereinstimmungen von Zertifikat und Signierschlüssel"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "Ob eine Zeile des Zertifikatsregisters den Signierschlüssel enthält, gefragt, bevor ein Header x5c oder x5t#S256 auf ein Token gesetzt wird. Schlüssel sind der Fingerabdruck der Zeile und die kid des Schlüssels."
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Erzwungen: 512 Antworten, die älteste wird verworfen und beim nächsten Anfordern erneut ermittelt."
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Kein Ablauf: Schlüssel sind der Zertifikatsfingerabdruck und die kid, deren Antwort sich nie ändert. Das Älteste geht zuerst, wenn voll."
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "Zertifizierungsstellen"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "Die Hierarchie der Zertifizierungsstellen jedes Geltungsbereichs — der Root des Dienstes, das Intermediate eines Vertrauensbereichs und seine ausstellenden CAs — für das Signieren entschlüsselt gehalten, beim Start aus dem Datenspeicher gelesen oder von einem anderen Prozess übernommen."
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "Strukturell: eine Hierarchie pro Geltungsbereich (der Root des Dienstes, der Prozesszweig und eine je Vertrauensbereich), ersetzt statt ergänzt."
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "Kein Ablauf: ersetzt, wenn sich die Hierarchie hier oder auf einem anderen Knoten ändert, und mit ihrem Vertrauensbereich verworfen."
+  },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Abgeleitete Digest-Schlüssel"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "Der HMAC-Schlüssel, mit dem jede Bezeichnung eines schlüsselgebundenen Digests abgeleitet wird, sodass ein Digest nicht bei jedem Aufruf HKDF ausführt. Neben dem Schlüssel gehalten, aus dem er abgeleitet wurde und der bei jeder Verwendung verglichen wird."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Erzwungen: MAX_DERIVED_DIGEST_KEYS (64) Bezeichnungen; darüber hinaus wird jeder abgeleitete Schlüssel verworfen."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Bis sich der Schlüssel ändert, aus dem er abgeleitet wurde (ein neuer Digest-Schlüssel oder Schlüsselverschlüsselungsschlüssel), was bei jeder Verwendung geprüft wird."
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "Entschlüsselte Signierschlüssel"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "Das Signierschlüsselmaterial eines Vertrauensbereichs, unter dem Schlüsselverschlüsselungsschlüssel aus dem Persistenzspeicher entschlüsselt und für ein Leerlaufintervall gehalten, sodass stetiges Signieren nicht jedes Mal eine Entschlüsselung kostet. Nur der Produktmodus; Schlüssel des Entwicklungsmodus werden nie verschlüsselt gespeichert."
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "Strukturell: das Schlüsselmaterial eines Vertrauensbereichs je Vertrauensbereich, unabhängig von der Aufbewahrungsrichtlinie; die Richtlinie entscheidet nur, wie lange es gehalten wird."
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "Post-Quanten-Schlüsselsätze"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "Die Schlüssel ML-DSA und SLH-DSA jedes Vertrauensbereichs, erzeugt (oder aus dem gespeicherten Satz gelesen), sobald etwas sie zum ersten Mal braucht, und danach mit dem Schlüsselsatz des Vertrauensbereichs gehalten."
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "Strukturell: ein Post-Quanten-Satz pro Vertrauensbereich, gehalten mit dem Schlüsselsatz des Vertrauensbereichs."
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "Wie für den Schlüsselsatz des Vertrauensbereichs: kein Ablauf, verworfen, wenn der Vertrauensbereich entfernt oder seine Schlüssel ersetzt werden."
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "Signierschlüsselsätze"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "Die Signierschlüssel jedes Vertrauensbereichs (RSA, EC und der Post-Quanten-Satz, sobald danach gefragt wurde), beim ersten Gebrauch aufgebaut oder aus dem Schlüsselspeicher gelesen und danach für jede Signatur gehalten."
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "Strukturell: ein Schlüsselsatz pro Vertrauensbereich, mit dem Vertrauensbereich verworfen oder ersetzt, wenn seine Schlüssel rotiert oder übernommen werden."
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "Kein Ablauf: verworfen, wenn der Vertrauensbereich entfernt wird, seine Schlüssel rotiert werden oder die gespeicherten Schlüssel eines anderen Prozesses übernommen werden. Ein Eintrag je Vertrauensbereich, der signiert hat."
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "Kerberos-Authenticators"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "Jeder Authenticator, den der geschützte Dienst akzeptiert hat, sodass ein abgefangenes AP-REQ nicht zweimal vorgelegt werden kann. Pro Vertrauensbereich: der Vertrauensbereich, dessen Kerberos-Realm das Ticket ausgestellt hat."
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "Erzwungen: krb5.replayCacheMaxEntries pro Vertrauensbereich. Ein voller Cache VERWEIGERT den nächsten Authenticator, anstatt einen gültigen zu vergessen, wodurch dessen Replay wieder geöffnet würde."
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "ein bereits gesehener Authenticator, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "Kerberos-Langzeitschlüssel"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "Die Langzeitschlüssel jedes registrierten Principals, aus seinem Passwort mit string-to-key abgeleitet (oder aus der Schlüsselquelle gelesen), einmal je Verschlüsselungstyp, und danach für jedes Ticket gehalten."
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "Erzwungen: höchstens 4096 Principals halten gleichzeitig Schlüssel, eine Zeile je Verschlüsselungstyp; beim am längsten nicht verwendeten werden die Schlüssel gelöscht, und er leitet sie beim nächsten Ticket erneut ab oder liest sie erneut."
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "Kein Ablauf: verworfen mit dem Principal, wenn sein Datensatz ersetzt wird (eine Passwortänderung oder eine Wiederherstellung), oder wenn er jenseits der Grenze der am längsten nicht verwendete ist; niemals dauerhaft gespeichert."
+  },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Kerberos-Vertrauensschlüssel zwischen Realms"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "Die bereichsübergreifenden krbtgt-Principals, aufgebaut aus den Vertrauensdatensätzen dieses Vertrauensbereichs (ou=kerberosTrusts), jeweils mit den Schlüsseln, die aus seinem gemeinsamen Passwort abgeleitet oder aus seinem Siegel geöffnet wurden, gehalten für jedes Referral nach dem ersten."
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "Erzwungen: höchstens 512 pro Vertrauensbereich (zwei Schlüssel für jeden von höchstens 256 Datensätzen); der älteste wird verworfen und bei der nächsten Verwendung erneut aufgebaut."
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "Kein Ablauf: ersetzt in dem Augenblick, in dem sich sein Datensatz ändert (die Bytes des Datensatzes werden bei jeder Verwendung verglichen), und mit dem Datensatz verworfen; niemals dauerhaft gespeichert."
+  },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "Personen und Inhaber von Anmeldedaten, gezählt"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "Wie viele Personen der Vertrauensbereich definiert, wie viele ein Passwort halten, alle, die ein Anmeldedatenattribut halten (roh), und wie viele der bei Anmeldungen gesehenen Namen hier Personen sind: die Kacheln von /admin/users über das gesamte Verzeichnis, ohne es aufzulisten (#610)."
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "Strukturell: eine Zählung und eine Namenszahl pro Vertrauensbereich; die Zählung enthält die Personen, die Anmeldedaten halten, nicht alle."
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "Bis etwas unter dem ou=users des Vertrauensbereichs geschrieben wird, und in einem Prozess, der das Verzeichnis als Fenster auf den Datenspeicher hält, höchstens zehn Sekunden."
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "Geräteindex des Verzeichnisses"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "id, Schlüsselfingerabdrücke und der Hash des Geheimnisses von Native SSO jedes Geräteeintrags, auf seinen Eintrag unter ou=devices, sodass das Erkennen eines Geräts am Token-Endpunkt das Register nicht kopiert (#164)."
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "Bis etwas unter ou=devices geschrieben wird und eine Suche einen Fehltreffer hat; ein Treffer auf einen aktuellen Eintrag wartet nicht auf einen Neuaufbau. Ein Index pro Vertrauensbereich."
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "entryUUID-Index des Verzeichnisses"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "Die entryUUID jedes Eintrags (und ihre Aliasse) auf seinen DN; so finden ein Subjektbezeichner und eine SCIM-id eine Person."
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "Bis sich das Verzeichnis ändert und eine Suche einen Fehltreffer hat; ein Treffer auf einen aktuellen Eintrag wartet nicht auf einen Neuaufbau. Ein Index pro Vertrauensbereich."
+  },
+  "caches.store.ldap.gate-usernames.title": {
+    "en": "689e1e6184e6baf0",
+    "text": "Benutzernamen der Konsolenschranke"
+  },
+  "caches.store.ldap.gate-usernames.description": {
+    "en": "06f13f021c4a27e4",
+    "text": "In einem Prozess mit Verzeichnisfenster die Antwort darauf, wer einen Benutzernamen hält (niemand eingeschlossen), die die Schranke von /admin-api außerhalb des Event-Loops erfragt hat, sodass ihre synchronen Prüfungen nicht den Datenspeicher fragen. Nur von diesen Prüfungen gelesen; ein Anlegen fragt immer den Datenspeicher."
+  },
+  "caches.store.ldap.gate-usernames.bound": {
+    "en": "953882a7c140627a",
+    "text": "Erzwungen: 64 Benutzernamen pro Vertrauensbereich, der am längsten nicht erfragte wird zuerst verworfen."
+  },
+  "caches.store.ldap.gate-usernames.lifetime": {
+    "en": "43a85e1731c71231",
+    "text": "Bis etwas an, unter oder über dem ou=users des Vertrauensbereichs hier geschrieben oder von einem anderen Prozess repliziert wird; das nächste Aufwärmen der Schranke fragt erneut."
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "Gruppenindex des Verzeichnisses"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "Gruppenmitgliedschaft nach Mitglied und nach Gruppen-DN, sodass der Claim groups und jede Rollenprüfung nicht ou=groups durchlaufen."
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Bis das Verzeichnis so geschrieben wird, dass der Index die Änderung nicht aufnehmen kann; die nächste Suche baut ihn dann neu auf. Ein Index pro Vertrauensbereich."
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "memberOf-Claims, nach Gruppe"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "Für jede Gruppe die Einträge, deren eigenes memberOf sie nennt, sodass die Gruppen- und Listenseiten den Vertrauensbereich nicht einmal je Gruppe durchlaufen (#352)."
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "Strukturell: ein Index pro Vertrauensbereich, eine Zeile je memberOf-Wert."
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "Bis das Verzeichnis das nächste Mal irgendwo geschrieben wird."
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "Personen, als sortierte Schlüssel"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "Normalisierter DN und Benutzername jeder Person, in der Reihenfolge, in der allPersons() sie aufführt, sodass eine Seite mit Personen den Vertrauensbereich nicht je Anfrage durchläuft, normalisiert und sortiert (#352)."
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "Strukturell: eine Liste pro Vertrauensbereich, in der Größe von ou=users."
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "Bis etwas unter dem ou=users des Vertrauensbereichs geschrieben wird."
+  },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Dienstkonten des Verzeichnisses"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Die Namen der Dienstkonten eines Vertrauensbereichs, sodass eine Scope-Entscheidung, die fragt, ob eine Person eines besitzt, nicht das Verzeichnis nach allen fragt."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Strukturell: eine Liste pro Vertrauensbereich, in der Größe seiner Dienstkonten."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Bis ein Schreibvorgang einen Eintrag berührt, der ein Dienstkonto ist oder war; das nächste Lesen fragt dann das Verzeichnis erneut."
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "Container-Auflistungen des Verzeichnisses"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "Die Einträge unter einem Container (Anwendungen, Föderationen, Richtlinien und Ähnliches), behalten, bis darunter etwas geschrieben wird."
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "Erzwungen: 64 Container-Auflistungen pro Vertrauensbereich, die älteste wird verworfen und beim nächsten Anfordern erneut durchlaufen."
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "Bis ein Eintrag unter dem Container hinzugefügt, entfernt oder geschrieben wird, ohne anzugeben wo; ein Eintrag je aufgelistetem Container."
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "Benutzernamenindex des Verzeichnisses"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "Jeder Name, auf den eine Person antwortet (uid und RDN), auf ihren Eintrag unter ou=users, sodass eine Anmeldung das Verzeichnis nicht durchläuft."
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Bis das Verzeichnis so geschrieben wird, dass der Index die Änderung nicht aufnehmen kann; die nächste Suche baut ihn dann neu auf. Ein Index pro Vertrauensbereich."
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "entryUUIDs im Fenster"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "In einem Prozess mit Verzeichnisfenster der Schlüssel, unter dem die entryUUID einer Person oder eines Geräts zuletzt gefunden wurde, sodass ein Subjekt auf den Eintrag aufgelöst wird, den das Fenster hält, ohne den Datenspeicher erneut zu fragen (#773). Bei jeder Verwendung gegen die eigene entryUUID des Eintrags geprüft."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Erzwungen: ldap.workerCacheEntries pro Vertrauensbereich, der älteste wird zuerst verworfen."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Bis der genannte Eintrag das Fenster verlässt, umbenannt wird oder diese entryUUID nicht mehr trägt, was bei jeder Verwendung geprüft wird."
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "Postausgang"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "Eine Zeile je Nachricht, die dieser Dienst sendet: ihr Empfänger, ihr Zustand, ihre Versuche, wann sie als Nächstes fällig ist — und ihr Inhalt, solange sie ausstehend, tot oder erfasst ist, nie jedoch, sobald sie gesendet wurde. Die dauerhafte Warteschlange, die der Job mail.deliver abarbeitet."
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "Erzwungen: mail.maxRows pro Vertrauensbereich, die älteste FERTIGE Nachricht wird zuerst verworfen; eine ausstehende wird niemals verworfen, um Platz zu schaffen."
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "Bis mail.retentionS nach dem Einreihen, die älteste fertige zuerst jenseits von mail.maxRows pro Vertrauensbereich."
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "eine Nachricht, unterdrückt als Duplikat einer bereits für dieselbe Aktion innerhalb von mail.dedupWindowS eingereihten"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "Statuseinträge von Zugriffstoken"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "Der Index jedes gültigen Zugriffstokens in der Zugriffstoken-Statusliste dieses Vertrauensbereichs — Token nach OAuth RFC 9068 und die beiden JWT-Formate von GNAP — mit seiner jti, sodass das Bit aus dem Widerrufsregister berechnet werden kann."
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "89d41edd17bc8817",
+    "text": "Erzwungen: die Liste hält 16777216 Indizes pro Vertrauensbereich; eine Liste ohne freien Index VERWEIGERT das Prägen des Zugriffstokens (STS-OAUTH-0817), anstatt ein gültiges wiederzuverwenden."
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "solange das Zugriffstoken, das er beschreibt; sein Index ist danach wieder frei."
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "der Status eines Tokens wurde hier gefunden"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "Signierte Statuslisten von Zugriffstoken"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "Das letzte Status List Token für Zugriffstoken, das dieser Prozess für jeden Vertrauensbereich signiert hat, wiederverwendet, solange sich die Liste nicht geändert hat."
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "Erzwungen: 1024 signierte Listen für den Prozess, die älteste wird verworfen und beim nächsten Anfordern erneut signiert."
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "bis sich die Liste ändert, oder die Hälfte von oauth2.accessTokenStatusListTtlS."
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "eine Liste wurde ausgeliefert, ohne sie erneut zu signieren"
+  },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "Gepackte Statuslisten von Zugriffstoken"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "Die komprimierte Zugriffstoken-Statusliste, die dieser Prozess zuletzt für jeden Vertrauensbereich aufgebaut hat, wiederverwendet, bis sich ein ungültiges Bit ändert oder das früheste abläuft."
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "Strukturell: eine komprimierte Liste pro Vertrauensbereich. Ein Vertrauensbereich, der nicht mehr da ist, oder eine Liste, deren frühestes ungültiges Bit abgelaufen ist, wird vom Caches-Job verworfen."
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "bis sich ein ungültiges Bit ändert oder das früheste abläuft."
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "eine Liste wurde ausgeliefert, ohne sie erneut zu packen oder zu komprimieren"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "Herausforderungen der Client-Attestierung"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "Herausforderungen, ausgegeben für OAuth 2.0 Attestation-Based Client Authentication (draft-ietf-oauth-attestation-based-client-auth-11 Abschnitt 6), sodass ein Client Attestation PoP, der eine trägt, gegen das Ausgestellte geprüft werden kann."
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "Erzwungen: oauth2.clientAttestationChallengeCacheSize pro Vertrauensbereich; die älteste Herausforderung wird verworfen, und einem Client, der sie vorlegt, wird eine neue mit use_attestation_challenge ausgehändigt."
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "eine als aktuell gefundene Herausforderung, sodass der PoP akzeptiert wurde"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "oauth2.clientAttestationChallengeTtlS ({{seconds}} s) nach der Ausstellung."
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "Geparste authorization_details-Typen"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "Typdefinitionen nach RFC 9396, die auf Ressourcenanwendungen deklariert sind, geparst, und ihre JSON-Schemas einmal je unterschiedlichem Definitionstext kompiliert. Von jedem Vertrauensbereich geteilt, weil der Text der Schlüssel ist."
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "Erzwungen: 512 geparste Definitionen, die älteste wird verworfen und bei der nächsten Verwendung erneut geparst."
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "Kein Ablauf: Schlüssel ist der Definitionstext, sodass eine geänderte Definition ein neuer Eintrag ist. Das Älteste geht zuerst, wenn voll."
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "Zustellungen von Back-Channel Logout"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "Eine Zeile je Relying Party, der mitgeteilt wurde, dass eine Sitzung geendet hat (OpenID Connect Back-Channel Logout 1.0): ihr Zustand, ihre Versuche, wann sie als Nächstes fällig ist, und das signierte Logout Token. Die dauerhafte Warteschlange, die jeder Prozess abarbeitet; eine unzustellbare Nachricht bleibt, bis sie erneut versucht oder von der Aufbewahrung entfernt wird."
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "Erzwungen: oauth2.backchannelLogoutMaxRows pro Vertrauensbereich, die älteste FERTIGE Zustellung wird zuerst verworfen; eine ausstehende wird niemals verworfen, um Platz zu schaffen."
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "Bis oauth2.backchannelLogoutRetentionS nach dem Einreihen (fertig oder nicht), die älteste fertige zuerst jenseits von oauth2.backchannelLogoutMaxRows pro Vertrauensbereich."
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "eine Zustellung, die für diese Sitzung und diesen Client bereits eingereiht war, sodass ein zweiter Prozess, der dieselbe Sitzung beendete, nichts eingereiht hat"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "Abgerufene Client-Schlüsselsätze"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "Das JSON Web Key Set, mit dem die registrierte jwks_uri eines Clients geantwortet hat, sodass seine Client-Assertions, Request Objects und verschlüsselten Antworten seine Schlüssel ohne einen Abruf je Anfrage finden (#120)."
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "Erzwungen: 256 Schlüsselsätze pro Vertrauensbereich, der älteste wird verworfen und bei der nächsten Notwendigkeit erneut abgerufen."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Deklarierte authorization_details-Typen"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "Die Typen nach RFC 9396, die die Anwendungen eines Vertrauensbereichs deklarieren, jeweils mit der Ressource, die dafür antwortet, sodass eine Autorisierung nicht eine Ansicht aller Anwendungen aufbaut, um sie zu finden."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Strukturell: eine Antwort pro Vertrauensbereich, in der Größe der Typen, die seine Anwendungen deklarieren."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Bis sich etwas unter dem ou=applications des Vertrauensbereichs ändert; das nächste Lesen baut sie dann erneut auf."
+  },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "Opake Zugriffstoken"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "Die Claims jedes opaken Zugriffstokens, das dieser Vertrauensbereich ausgestellt hat, mit dem SHA-256 seines Handles als Schlüssel. Das Handle selbst wird nicht gespeichert."
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "Erzwungen: ein voller Bestand verweigert das Prägen (STS-OAUTH-0979), anstatt ein gültiges Token zu verdrängen. Die Obergrenze ist oauth2.maxOpaqueAccessTokens."
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "bis zum exp des Zugriffstokens; eine abgelaufene Zeile wird beim Lesen und durch caches.eject-expired gelöscht."
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "ein Handle wurde über seinen Digest gefunden"
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "Eingelöste Autorisierungscodes"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "Jeder Autorisierungscode, der am Token-Endpunkt bereits eingetauscht wurde, sodass ein zweiter Tausch als Replay erkannt wird (RFC 9700 Abschnitt 4.5, RFC 6749 Abschnitt 4.1.2)."
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "Erzwungen: oauth2.redeemedCodeCacheSize pro Vertrauensbereich; die älteste Einlösung wird vergessen. Der Code selbst ist bei der Einlösung entfallen, sodass eine Wiederholung eines vergessenen weiterhin abgelehnt wird, als unbekannter Code."
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "Eine Code-Lebensdauer, nachdem der Code abgelaufen wäre."
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "ein bereits eingelöster Code, erneut vorgelegt"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "Datensätze der Refresh-Token-Rotation"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "Ein Datensatz je Refresh-Token und je Familie, sodass ein erneut vorgelegtes Refresh-Token seine Familie widerruft (RFC 9700), und was jeder Grant ausgestellt hat, sodass der Widerruf eines Refresh-Tokens das danebenstehende Zugriffstoken widerruft (RFC 7009)."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "Erzwungen: oauth2.maxRefreshTokenFamilies Refresh-Token-Datensätze pro Vertrauensbereich, das Doppelte davon für das, was ein Grant ausgestellt hat; darüber hinaus gehen zuerst die ausgemusterten, dann die ältesten, mit einer Warnung."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "Bis das Familienfenster nach der Ausstellung des Tokens verstrichen ist; der Job caches.eject-expired verwirft den Datensatz dann."
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "Abgerufene Request Objects"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "Der Inhalt einer registrierten request_uri nach RFC 9101, behalten, sodass ein Client, der dieselbe URI erneut sendet, nicht erneut abgerufen wird (OpenID Connect Core Abschnitt 6.2). Aus, sofern oauth2.requestUriCacheS nicht gesetzt ist."
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "Erzwungen: 256 abgerufene Request Objects pro Vertrauensbereich, das älteste wird verworfen und bei der nächsten Verwendung erneut abgerufen."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "oauth2.requestUriCacheS ({{seconds}} s) nach dem Abruf, pro Vertrauensbereich; das Älteste geht zuerst, wenn voll."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "Aus: oauth2.requestUriCacheS ist 0, daher wird nichts behalten."
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "Signierte Metadaten des Autorisierungsservers"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "signed_metadata-JWTs nach RFC 8414, wiederverwendet, solange die Metadaten und die Signiereinstellungen, aus denen sie aufgebaut wurden, unverändert sind, sodass ein stark beanspruchter Discovery-Endpunkt nicht bei jedem Abruf signiert."
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "Erzwungen: oauth2.maxSignedMetadataEntries pro Vertrauensbereich, der älteste wird verworfen und beim nächsten Anfordern erneut signiert."
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "Verwendete Assertions"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "Jede akzeptierte JWT nach RFC 7523 und jede akzeptierte SAML-Assertion nach RFC 7522, für einen Grant oder für die Client-Authentifizierung, sodass jede nur ein einziges Mal akzeptiert wird."
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "Erzwungen: oauth2.assertionReplayCacheSize pro Vertrauensbereich. Eine volle Historie VERWEIGERT die nächste Assertion, anstatt eine gültige zu vergessen, wodurch deren Replay wieder geöffnet würde."
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "Bis die Assertion selbst abläuft. Verweigert neue Assertions, wenn voll, anstatt eine zu vergessen. Bei einem Datenbankspeicher liegen die Zeilen in der Datenbank, und keine wird hier aufgeführt."
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "eine bereits verwendete Assertion, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "OID4VCI-Nonces"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "Die an Wallets ausgehändigten c_nonce-Werte, sodass der Beweis einer Credential-Anfrage eine nennt, die dieser Aussteller ausgestellt hat, und sie einmal verwendet."
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "Erzwungen: oid4vci.cNonceCacheSize pro Vertrauensbereich; die älteste Nonce wird verworfen, und ein Beweis, der sie anführt, wird mit invalid_nonce beantwortet."
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "oid4vci.cNonceTtlS nach der Ausstellung oder bei der Verwendung."
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "eine Nonce, die dieser Aussteller ausgegeben hat, sodass der Beweis geprüft wurde"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "Statuseinträge von Credentials"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "Der Index jedes ausgestellten Credentials in den Statuslisten dieses Vertrauensbereichs und der Status, den ein Administrator oder eine Abmeldung dafür gesetzt hat."
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "Erzwungen: die Statusliste hält 131072 Indizes pro Vertrauensbereich; eine Liste ohne freien Index VERWEIGERT das Ausstellen des Credentials (STS-VC-0075), anstatt ein gültiges wiederzuverwenden."
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "solange das Credential, das er beschreibt; sein Index ist danach wieder frei."
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "der Status eines Credentials wurde hier gefunden"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "Signierte Statuslisten"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "Das letzte Status List Token und das Bitstring Status List Credential, das dieser Prozess für jeden Vertrauensbereich signiert hat, wiederverwendet, solange sich die Liste nicht geändert hat."
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "Erzwungen: 1024 signierte Dokumente für den Prozess, das älteste wird verworfen und beim nächsten Anfordern erneut signiert."
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "bis sich die Liste ändert, oder die Hälfte von oid4vci.statusListTtlS."
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "eine Liste wurde ausgeliefert, ohne sie erneut zu signieren"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "Register der Wallet-Anmeldung"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "91808833ee8c6a0c",
+    "text": "Die Credentials, die dieser Vertrauensbereich einer Person auf einem von ihm geprüften Zugriffstoken ausgestellt hat und mit denen sich eine Wallet als Einzige anmelden darf — Schlüssel ist ein Digest des vom Aussteller signierten JWT, oder bei ldp_vc der Schlüssel des Inhabers und die Person."
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "Erzwungen: oid4vp.signInRegisterMaxEntries pro Vertrauensbereich; die zuerst ausgestellte Zeile wird verworfen. Das scheitert GESCHLOSSEN — ein Credential ohne Zeile meldet niemanden an."
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "bis das letzte Credential der Zeile abläuft; eine aberkannte Zeile wird bis dahin ebenfalls behalten, damit sie weiterhin ablehnt."
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "ein vorgelegtes Credential, das dieser Vertrauensbereich als eines gespeichert hat, mit dem sich seine Person anmelden darf"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "Abgerufene Statuslisten"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "Status List Tokens und Bitstring Status List Credentials, die ein vertrauenswürdiger fremder Aussteller veröffentlicht hat, abgerufen, als eines seiner Credentials dem Verifier vorgelegt wurde."
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "Erzwungen: 256 abgerufene Listen für den Prozess, die älteste wird verworfen und bei der nächsten Notwendigkeit erneut abgerufen."
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "die eigene ttl der Liste (und nie über ihr exp hinaus), höchstens oid4vp.statusListMaxCacheS; ein fehlgeschlagener Abruf 30 Sekunden."
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "der Status eines vorgelegten Credentials wurde ohne Abruf beantwortet"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "OpenID4VP-Transaktionen"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "Jede Präsentationsanfrage, auf die dieser Verifier wartet — die der Bartür und die einer Wallet-Anmeldung, wobei letztere die Anfrage der Digital Credentials API, ihren Antwortmodus und den Schlüssel trägt, auf den ihre Antwort verschlüsselt wird."
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "Erzwungen: oid4vp.maxTransactions pro Vertrauensbereich; die älteste wartende Anfrage wird verworfen (die Regel von federation.maxContexts), weil ein Verweigern jedem erlauben würde, den Anfrage-Endpunkt für alle stillzulegen."
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS, oder oid4vp.signInTtlS für eine Anmeldung; bereinigt, wenn die nächste Anfrage aufgebaut wird."
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "die Antwort einer Wallet hat die Anfrage gefunden, für die sie erstellt wurde"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "Sammlungen von OpenID Federation, im Prozess erstellt"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "Die Entity Collection, wie dieser Prozess sie ohne jeden Abruf erzeugt — die eigenen Vertrauensbereiche dieses Dienstes und bereits aufgelöste Untergeordnete —, verwendet, wo kein Crawl behalten wurde, sodass anonyme Anfragen nicht jedes Mal Aussagen für jeden Vertrauensbereich signieren (#136)."
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "Erzwungen: 8 pro Vertrauensbereich (eine je Host, über den der Vertrauensbereich erreicht wird), die älteste wird zuerst verdrängt."
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS."
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "Auflösungen von OpenID Federation"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "Trust Chains, die dieser Vertrauensbereich aufgelöst hat — durch eine Handlung eines Administrators oder im Prozess für seine eigenen Vertrauensbereiche — mit den aufgelösten Metadaten und den geprüften Trust Marks, sodass der Resolve-Endpunkt antworten kann, ohne für einen nicht authentifizierten Aufrufer die Föderation zu durchlaufen (18.1)."
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "Erzwungen: oidfed.resolveCacheMax pro Vertrauensbereich, die älteste wird zuerst verdrängt."
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "Bis die Kette abläuft (ihr kleinstes exp, 10.4), und höchstens oidfed.resolveCacheS."
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "Bereiche kompromittierter Passwörter"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "Bereichsantworten von Pwned Passwords, nach dem erfragten fünfstelligen SHA-1-Präfix (#62 P6): welche Passwort-Digests darunter als kompromittiert bekannt sind und wie oft."
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "Erzwungen: risk.breachCacheSize Präfixe; wenn voll, wird das älteste verworfen und bei der nächsten Notwendigkeit erneut erfragt."
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "risk.breachCacheMinutes nach dem Abruf."
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "ein bereits erfragtes Präfix, sodass keine Anfrage gestellt wurde"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "Urteile über kompromittierte Passwörter"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "Ob ein Passwort, das eine Tür eben geprüft hat, kompromittiert ist, damit die synchronen Passwortregeln es in derselben Anfrage lesen (#62 P6). Schlüssel ist ein Digest des Passworts, niemals das Passwort."
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "Erzwungen: 1000 Urteile; wenn voll, wird das älteste verworfen."
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "fünf Minuten nach der Prüfung des Passworts."
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "ein Urteil zu einem Passwort, das gerade gesetzt wird"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "Deklarationen von Beobachtungsspeichern"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "Ob jeder persistierte Speicher als Beobachtung deklariert wurde (eine Zählung, auf die die Lesebarriere nicht wartet), einmal je Speicher-Handle gelesen, weil die Prüfung auf dem Pfad jeder Schreiboperation des Speichers liegt."
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "Strukturell: ein Flag je persistiertem Speicher, den dieser Build deklariert."
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "Für die Lebensdauer des Prozesses: eine Deklaration kann sich nicht ändern, während er läuft."
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "Schatten unveränderter Schreibvorgänge"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "Die letzte Kopie jedes Verzeichniseintrags und jedes Datensatzes des Vertrauensbereichs, die dieser Prozess in den Persistenzspeicher geschrieben hat, sodass ein Flush nur das Geänderte schreibt."
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "Strukturell: eine Zeile je geschriebenem Verzeichniseintrag und eine für den Datensatz des Vertrauensbereichs, also höchstens ldap.maxEntries + 1 in einem Vertrauensbereich."
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "Kein Ablauf: bei jedem Flush aufgefrischt, ein Eintrag je geschriebenem Verzeichniseintrag und Vertrauensbereich. Leer im Modus memory."
+  },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "Widerruf gepinnter Zertifikate"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "Was zuletzt über ein gepinntes Zertifikat abgerufen wurde, für die Türen, die im paranoiden PKI-Modus in einem Tick antworten. Schlüssel ist der Fingerabdruck des Zertifikats."
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "Erzwungen: 1024 Einträge, der älteste Schreibvorgang wird verworfen und bei der nächsten Notwendigkeit erneut abgerufen."
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 Minuten"
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "Abgerufene Ausstellerzertifikate"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "Zertifikate, abgerufen von einer caIssuers-URL in Authority Information Access oder von einem LDAP-Attribut cACertificate, um einen Pfad für eine Widerrufsprüfung aufzubauen. Niemals vertrauenswürdig allein deshalb, weil sie abgerufen wurden."
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Erzwungen: pki.revocationCrlCacheEntries, der älteste Schreibvorgang wird verworfen und bei der nächsten Notwendigkeit erneut abgerufen."
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "Zertifikatswiderrufslisten"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "CRLs, abgerufen, um ein vorgelegtes Zertifikat zu prüfen, geparst und verifiziert, mit der URL des Verteilungspunkts und den Fingerabdrücken der Signierer als Schlüssel, gegen die sie verifiziert wurden."
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Erzwungen: pki.revocationCrlCacheEntries, der älteste Schreibvorgang wird verworfen und bei der nächsten Notwendigkeit erneut abgerufen."
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "Fehlgeschlagene Widerrufsabrufe"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "Ein negativer Cache: ein fehlgeschlagener Abruf einer CRL, von OCSP oder eines Zertifikats wird erst wieder versucht, wenn sein Wiederholungsfenster verstrichen ist, und der gemerkte Fehlschlag ist bis dahin die Antwort. Ein Treffer ist ein wiederverwendeter Fehlschlag."
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "Erzwungen: pki.revocationCrlCacheEntries, der älteste wird verworfen; ein verworfener Fehlschlag bedeutet nur, dass die Adresse früher wieder gefragt werden darf."
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "OCSP-Antworten"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "OCSP-Antworten zu je einem Zertifikat, Schlüssel sind die URL des Responders, der Fingerabdruck des Ausstellers und die Seriennummer."
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "Erzwungen: pki.revocationCrlCacheEntries, der älteste Schreibvorgang wird verworfen und bei der nächsten Notwendigkeit erneut erfragt."
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "Geparste Vertrauensanker-Zertifikate"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "Die eigenen CA-Zertifikate dieses Dienstes, einmal je PEM für den Durchlauf des Widerrufsregisters geparst. Schlüssel ist das PEM selbst; eine ersetzte CA hat ein anderes PEM und einen frischen Eintrag."
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "Erzwungen: 8192 Parse-Ergebnisse; wenn voll, wird das gesamte Memo geleert und beim Gebrauch neu aufgebaut."
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "Kein Ablauf: Schlüssel ist der Inhalt. Wenn voll, wird das gesamte Memo auf einmal geleert."
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "Vertrauensdateien, vom Datenträger gelesen"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "Die von Widerrufseinstellungen genannten PEM-Dateien, einmal gelesen und behalten, bis sich die Änderungszeit der Datei ändert."
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "Strukturell: ein Eintrag je Einstellung, die eine Datei nennt (pki.revocationCrlIssuersFile, pki.revocationLdapCaFile)."
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "Bis sich die genannte Datei auf dem Datenträger ändert oder die Einstellung eine andere Datei nennt. Ein Eintrag je Einstellung."
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "Client-Zertifikatsketten, für wiederaufgenommene Sitzungen"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "Der Pfad, den ein geprüftes Client-Zertifikat bei einem vollständigen TLS-Handshake aufgebaut hat, mit dem Leaf als Schlüssel, zurückgegeben, wenn diese Sitzung WIEDERAUFGENOMMEN wird — node übergibt einer wiederaufgenommenen Sitzung nur das Leaf, und ohne dies lehnt der Widerrufsdurchlauf ein Zertifikat ab, das die Prüfung bestanden hat."
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "Erzwungen: 1024 Blätter; das älteste wird zuerst vergessen."
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "Von jedem Knoten geteilt und repliziert (#406): eine Stunde, oder, wenn länger, die Sitzungslebensdauer des Hauptports plus eine Minute, erneuert durch den nächsten vollständigen Handshake des Leafs; das Älteste wird verworfen, wenn voll."
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "Suchen in Risiko-Datasets"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "Was die aktiven Datensätze für Geolokation, ASN und IP-Listen zu einer Adresse ausgesagt haben, je Bereich. Geleert, sobald auf irgendeinem Knoten eine Datensatzversion aktiviert wird."
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "Erzwungen: 10000 Nachschlagevorgänge, der älteste zuerst verworfen."
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "Bis eine Datensatzversion aktiviert wird oder die Grenze ihn verwirft."
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Risikobewertung: Benutzerzahl jedes Bereichs"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Wie viele Personen sich bei jedem Bereich angemeldet haben, der Nenner des Glättungsterms des Risikomodells, behalten, damit eine Anmeldung nicht jede Person zählt, die sich jemals angemeldet hat."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Strukturell: eine Zahl je Bereich mit mindestens 1000 Personen (versiegelt oder nicht), und neben dem Standardbereich gibt es höchstens realms.maxCount Bereiche."
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "Risikostände"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "Das zuletzt bewertete Risiko jeder Person (Stufe, Punktzahl, Signale), für eine Ausstellung ohne Sitzung, aus der es gelesen werden könnte — ein Kerberos-Ticket, ein WS-Trust-Token (#62 P3)."
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "Erzwungen: risk.standingCacheSize Personen je Prozess; ist er voll, wird die älteste verworfen, wodurch die nächste Ausstellung dieser Person ohne Sitzung allein nach den Rollen entschieden wird."
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "risk.standingValidMinutes nach der festgehaltenen Bewertung."
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "ein gehaltener und noch gültiger Stand, sodass die Ausstellung mit ihm entschieden wurde"
+  },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "SAML-1.1-Artefakte"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "Die Assertions, für die SAML-1.1-Artefakte stehen, bis jedes einmal beim SAML-Responder aufgelöst ist. Indiziert über den SHA-256 des Artefakts, niemals über das Artefakt."
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "Erzwungen: saml11.maxArtifacts je Bereich. Abgelaufene Artefakte werden an der Grenze entfernt; ein weiterhin voller Speicher LEHNT das nächste Artefakt ab, statt ein unaufgelöstes zu vergessen."
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "Bis einmal aufgelöst oder bis saml11.artifactTtlS verstrichen ist."
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "ein aufgelöstes Artefakt"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "SAML-1.1-Assertions"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "Ausgestellte SAML-1.1-Assertions, behalten, damit eine Anfrage einer Attributautorität, die eine per AssertionIDReference nennt, beantwortet werden kann."
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "Erzwungen: saml11.assertionCacheMax je Bereich, die älteste verworfen; ein Artefakt, das eine verworfene Assertion nennt, wird als unbekannt beantwortet."
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "b163f4a46cb87b30",
+    "text": "Bis zum NotOnOrAfter der Assertion oder saml11.assertionCacheTtlS, wenn sie keines trägt; die älteste wird jenseits von saml11.assertionCacheMax verworfen."
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "eine beantwortete AssertionIDReference"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "SAML-2.0-Artefakte"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "Die Nachrichten, für die SAML-2.0-Artefakte stehen, bis jede einmal beim Artifact Resolution Service aufgelöst ist. Indiziert über den SHA-256 des Artefakts, niemals über das Artefakt."
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "Erzwungen: saml2.maxArtifacts je Bereich. Abgelaufene Artefakte werden an der Grenze entfernt; ein weiterhin voller Speicher LEHNT das nächste Artefakt ab, statt ein unaufgelöstes zu vergessen."
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "Bis einmal aufgelöst oder bis saml2.artifactTtlS verstrichen ist."
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "ein aufgelöstes Artefakt"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "SCIM-Digest-Nonce-Zähler"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "Die bereits unter jeder Digest-Nonce akzeptierten nonce-count-Werte (nc), damit eine Antwort nicht zweimal gesendet werden kann."
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "Erzwungen: scim.maxDigestNonces Nonces je Bereich, die älteste verworfen (die Nonce ist dann veraltet, und dem Client wird eine neue gereicht); und 1024 Zähler je Nonce, wonach die Nonce auf dieselbe Weise außer Dienst genommen wird."
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "Vergessen mit ihrer Nonce. Persistiert, sodass ein neu gestarteter Prozess einen Zähler, den er akzeptiert hat, weiterhin ablehnt; der Claim, den eine Verwendung absetzt, entscheidet eine Wiederholung zwischen laufenden Knoten."
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "ein bereits verwendeter Nonce-Zähler, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "SCIM-Digest-Nonces"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "Die HTTP-Digest-Challenges, die /scim/v2 ausgegeben hat (RFC 7616), damit eine Antwort eine nennt, die dieser Dienst ausgestellt hat."
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "Erzwungen: scim.maxDigestNonces je Bereich, die älteste verworfen; einem Client, der sie verwendet, wird stale=true mit einer neuen geantwortet."
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "eine von diesem Dienst ausgestellte Nonce, sodass die Antwort geprüft wurde"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "SCIM-HOBA-Challenges"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "Die HOBA-Challenges, die /scim/v2 ausgegeben hat (RFC 7486), damit eine Signatur eine nennt, die dieser Dienst ausgestellt hat."
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "Erzwungen: scim.maxHobaChallenges je Bereich, die älteste verworfen; einem Client, der sie verwendet, wird eine neue Challenge gesendet."
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "eine von diesem Dienst ausgestellte Challenge, sodass die Signatur geprüft wurde"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "SCIM-HOBA-Signaturen"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "Jedes (kid, challenge, nonce), mit dem eine HOBA-Signatur eingetroffen ist, damit kopierte Anmeldedaten abgelehnt werden."
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "Erzwungen: scim.maxHobaSeen je Bereich, die älteste verworfen zusammen mit der Challenge, für die sie erzeugt wurde, sodass sie nicht gegen eine noch gültige wiederholt werden kann."
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "Bis ihre Challenge abläuft; jenseits der Grenze gehen die ältesten mit ihrer Challenge."
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "eine bereits gesehene Signatur, sodass die Anfrage abgelehnt wurde"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "Entpackte SPIFFE-X.509-Autoritäten"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "Die gespeicherten X.509-Autoritäten jedes Bereichs, einmal aus ihrer gespeicherten Form in Zertifikate gewandelt, für jedes signierte SVID und jedes ausgelieferte Bundle."
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "Strukturell: eine entpackte Autoritätenliste je Bereich, ersetzt, wenn sich die gespeicherte Liste ändert."
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "Bis die Autoritäten des Bereichs rotiert oder wiederhergestellt werden, wodurch die gespeicherte Liste ersetzt wird, aus der der Eintrag entpackt wurde."
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "Dead-Letter-Zähler von Shared Signals"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "Eine Schätzung der Dead Letters jedes Streams, behalten, damit eine neue gegen die Obergrenze je Stream geprüft werden kann, ohne die Warteschlange zu zählen. Briefe, die ein anderer Prozess geschrieben hat, stehen erst beim nächsten Durchlauf darin."
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "Strukturell: eine Zahl je Stream, und ein Bereich hält höchstens ssf.maxStreams Streams."
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "Kein Ablauf: bei jedem Dead-Letter-Durchlauf neu gezählt, ein Eintrag je Stream."
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "Identitäten von Clientzertifikaten"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "Worauf ein geprüftes TLS-Clientzertifikat abgebildet wurde — eine Person oder eine Anwendung in einem Bereich oder eine Ablehnung —, indiziert über den Digest des Blattes und die Autoritäten, die beim Durchlauf gehalten wurden."
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "Erzwungen: 256 Antworten; ist er voll, wird das gesamte Memo geleert und bei der Nutzung neu aufgebaut."
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "Kein Ablauf: Eine ersetzte ausstellende CA ändert den Schlüssel. Ist er voll, wird das gesamte Memo auf einmal geleert."
+  },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "TLS-1.2-Ticketnamen für fortgesetzte Sitzungen"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "Der Servername, unter dem ein vollständiger TLS-1.2-Handshake erfolgte, indiziert über einen Digest des Master-Secrets der Sitzung, verglichen, wenn diese Sitzung per Ticket FORTGESETZT wird (#507, RFC 6066 Abschnitt 3): node setzt ein Ticket in OpenSSL ohne Ereignis fort, und OpenSSL vergleicht den Namen nicht. Eine Fortsetzung unter einem anderen Namen, oder eine, für die kein Eintrag bürgt, wird nach dem Handshake geschlossen. Jeder Listener behält zusätzlich eine eigene Kopie, auf dieselbe Weise begrenzt."
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "Erzwungen: 4096 Sitzungen; abgelaufene Zeilen zuerst, dann die älteste."
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "Von jedem Knoten geteilt und repliziert: die Sitzungslebensdauer des Listeners (tls.sessionTimeoutS), so lang, wie ein Ticket lebt."
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "VC-API-Credentials mit einem Status"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "6276c639d08ac2a7",
+    "text": "Jedes Credential, das die W3C VC API mit einem Statuseintrag ausgestellt hat, und der Statuslistenindex, den es erhalten hat, damit eine Statusänderung es finden kann."
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "Erzwungen: 4096 Credentials je Bereich, das älteste zuerst vergessen (sein Status kann hier danach nicht mehr geändert werden; der Listeneintrag selbst gehört vc_status.ts und bleibt)."
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "das validUntil des Credentials oder ein Jahr."
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "eine Statusänderung hat das Credential gefunden"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "Versionsstempel"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "Der Build-Datensatz (M.N.O, der Commit, der Build-Zeitpunkt), einmal aus version.json gelesen, den jede Oberfläche liest, die eine Version zeichnet."
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "Strukturell: ein Datensatz."
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "Für die Lebensdauer des Prozesses: Der Build kann sich nicht ändern, solange er läuft."
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "common/version.js läuft auch im entfernten PEP-Container und darf die Registry nicht einbinden"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "Affinität der Anfrage-Worker"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "Woran eine Browser-Sitzung, Anmeldedaten oder ein Ablauf geheftet ist, eine Zuordnung je Pool (Protokoll und Oberflächen), damit ein mehrstufiger Ablauf auf dem Worker bleibt, der ihn hält."
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "Erzwungen: 5000 je Pool, die älteste verworfen; eine verworfene Heftung wird einfach neu geleitet."
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "Kein Ablauf: vergessen, wenn sein Worker endet; die älteste geht zuerst, wenn ein Pool {{max}} hält. Nur der Frontprozess."
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "Geparste XACML-Richtlinien"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "Richtlinien und Richtliniensätze aus ou=policies, je Dokumenttext einmal geparst und statisch geprüft, indiziert über den SHA-256 dieses Textes, sodass eine Änderung durch jede Tür ein neuer Eintrag ist."
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "Erzwungen: 1024 Analysen, die am längsten ungenutzte verworfen; eine verworfene Richtlinie wird beim nächsten Abruf erneut geparst."
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "Kein Ablauf: nach Inhalt indiziert, sodass eine bearbeitete Richtlinie ein neuer Eintrag ist und ihre alte Analyse verschwindet, wenn sie die am längsten ungenutzte ist."
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "Basic-Tickets entfernter PEPs"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "Die Tickets, die ein gültiges POST /xacml/pep/basic einem entfernten PEP ausgehändigt hat, indiziert über den SHA-256 jedes einzelnen; das Ticket selbst wird nicht gespeichert."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "Erzwungen: 10000 je Bereich, das älteste verworfen; der PEP prüft die Basic-Anmeldedaten erneut."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "ein Ticket wurde über seinen Digest gefunden"
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "Ein begrenzter Cache in der Reihenfolge der längsten Nichtverwendung."
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "Erzwungen: ein Einfügen über die Grenze hinaus verdrängt die am längsten ungenutzten, nicht gehefteten Einträge."
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "eine aus dem Cache beantwortete Lesung, ohne den Datenspeicher aufzusuchen"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "Bis die Grenze ihn verdrängt oder sein Eigentümer ihn verwirft."
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "Metadaten eines SAML-Service-Providers"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "auf dem Anwendungseintrag gespeichert, wie empfangen, nicht im Arbeitsspeicher gehalten; aktualisiert von der Seite der Anwendung"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "Die Richtlinie eines entfernten PEP"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "gehalten vom Container des entfernten PEP, nicht von diesem Prozess"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "Eine Anmeldung am Geheimnisspeicher"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "eine lokale Größe eines einzelnen Berichts unter /admin/secrets, sodass je Bericht nur einmal eine Anmeldung bei einem Speicher erfolgt; sie ist fort, wenn der Bericht gezeichnet ist, und nichts hält sie zwischen den Anfragen"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "vor {{span}} abgelaufen"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "kein Ablauf (nach Inhalt indiziert)"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "veraltet"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "bis sich {{basis}} ändert"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "veraltet: {{basis}} hat sich geändert"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "bis die Grenze ihn als am längsten ungenutzt verwirft"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "bis die Grenze ihn verwirft"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "bis eine Datensatzversion aktiviert wird"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "bis er für die Dauer des Leerlauf-Timeouts ungenutzt bleibt"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "veraltet: seine Nonce ist abgelaufen"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "veraltet: seine Challenge ist abgelaufen"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "veraltet: die Anmeldedaten wurden aberkannt"
+  }
+}

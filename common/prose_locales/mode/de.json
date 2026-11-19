@@ -1,0 +1,1422 @@
+{
+  "mode.requirements.cell-key.what": {
+    "en": "4f8bb53495422cda",
+    "text": "Jede Zelle eines als Zellen bereitgestellten Dienstes versiegelt das von ihr Gespeicherte unter einem eigenen Schlüssel"
+  },
+  "mode.requirements.cell-key.development": {
+    "en": "4d08283419abad5c",
+    "text": "Eine Zelle ohne keys.cellKekProvider versiegelt ihre Zeilen unter dem Schlüsselverschlüsselungsschlüssel des Dienstes, sodass sich ihre Zeilen in jeder Zelle öffnen ließen — akzeptabel für Zellen, die auf einem Rechner getestet werden."
+  },
+  "mode.requirements.cell-key.product": {
+    "en": "369ac4727226b20a",
+    "text": "Eine Zelle ohne Zellenschlüssel startet nicht (STS-CELL-0003). Die in einer Zelle beheimateten Personen und das, was sie ausstellt, sind unter einem Schlüssel versiegelt, der nur in ihrer Region liegt und sich in keiner anderen Zelle öffnet (#98). Der Einzelzellenmodus bleibt unberührt."
+  },
+  "mode.requirements.credentials.what": {
+    "en": "d15cf61729a21c92",
+    "text": "Ein vorgelegtes Passwort wird geprüft"
+  },
+  "mode.requirements.credentials.development": {
+    "en": "e739d8f39e9b046f",
+    "text": "In keinem Protokoll wird ein Passwort geprüft. Der Anmeldebildschirm akzeptiert alles, ein LDAP-Bind akzeptiert jeden DN mit jedem Passwort, ein WS-Security-UsernameToken wird auf seinen Namen und nicht auf sein Geheimnis gelesen, SCIM Basic lässt jedes Paar durch, und WS-Trust stellt einem Aufrufer aus, der nichts oder eine unsignierte SAML-Assertion vorgelegt hat."
+  },
+  "mode.requirements.credentials.product": {
+    "en": "b0da5c4d2cc617e2",
+    "text": "Geprüft gegen das gehashte `userPassword` im Verzeichniseintrag der Person, an jeder dieser Türen. Eine Person ohne gesetztes `userPassword` kann sich überhaupt nicht anmelden. Der Passwort-Grant von OAuth 2.0 existiert im Produktmodus nicht, der den Modus nach RFC 9700 impliziert (Abschnitt 2.4). WS-Trust verlangt Anmeldedaten und akzeptiert eine Assertion nur, wenn dieser Bereich sie signiert hat und sie innerhalb ihrer Conditions liegt."
+  },
+  "mode.requirements.credential-issuer-tokens.what": {
+    "en": "44c70d0922c9471b",
+    "text": "Ein OpenID4VCI-Endpunkt akzeptiert nur ein Zugriffstoken, das dieser Bereich prüfen kann"
+  },
+  "mode.requirements.credential-issuer-tokens.development": {
+    "en": "b5994bd9f06c2622",
+    "text": "Die Endpunkte für das Credential, das verzögerte Credential und die Benachrichtigung akzeptieren jedes Zugriffstoken und lesen seine Claims ungeprüft — OpenID4VCI erlaubt, dass der Autorisierungsserver ein anderer ist — sodass eine Wallet mit einem Token von überall auf diesen Aussteller gerichtet werden kann."
+  },
+  "mode.requirements.credential-issuer-tokens.product": {
+    "en": "557e937f9ef07afe",
+    "text": "Ein Token, das sich nicht mit dem Signierschlüssel dieses Bereichs prüfen lässt oder das dieser Bereich widerrufen hat, wird mit invalid_token abgelehnt (HTTP 401), bevor etwas ausgestellt wird."
+  },
+  "mode.requirements.unverified-signals.what": {
+    "en": "8bba1b51797ebea8",
+    "text": "Ein empfangenes Security Event Token, dessen Signatur sich nicht prüfen lässt, wird abgelehnt"
+  },
+  "mode.requirements.unverified-signals.development": {
+    "en": "d0b1b34847fe54b1",
+    "text": "Die eigenen Empfänger der Konsole und des Portals akzeptieren es, zeichnen es auf und nennen den Grund, warum es sich nicht prüfen ließ — die Haltung des Debuggers — sofern ssf.receiveRequireSignature nicht eingeschaltet ist. Nichts handelt danach. Die Shared Signals eines Föderationspartners, per Push an /federation/signals/{id} oder abgefragt, werden ebenso behandelt: ein ungeprüftes SET wird im Posteingang der Beziehung als ungeprüft aufgezeichnet und in keiner Weise befolgt, sofern ssf.receiveRequireSignature nicht eingeschaltet ist."
+  },
+  "mode.requirements.unverified-signals.product": {
+    "en": "369551d9ee637c3c",
+    "text": "Die Empfänger der Konsole und des Portals antworten mit 400 invalid_key, was auch immer ssf.receiveRequireSignature sagt (#117), und behalten es im Posteingang als abgelehnt markiert. Ein ungeprüftes SET eines Föderationspartners wird ebenfalls mit invalid_key abgelehnt — HTTP 400 auf einen Push an /federation/signals/{id} und in setErrs bei der nächsten Abfrage für ein abgefragtes — im Posteingang der Beziehung als abgelehnt behalten und niemals befolgt."
+  },
+  "mode.requirements.signal-reactions.what": {
+    "en": "25aa56c5f929fe05",
+    "text": "Was die eigene Konsole und das eigene Portal dieses Dienstes mit einem empfangenen CAEP- oder RISC-Ereignis tun, wird ausgeführt"
+  },
+  "mode.requirements.signal-reactions.development": {
+    "en": "7be9247afb6c5c44",
+    "text": "Ein geprüftes Ereignis wird im Signalposteingang der Oberfläche mit dem aufgezeichnet, was die Signalantwort-Richtlinie erlaubt hat, und nichts wird beendet, sofern ssf.actOnSignalsInDevelopment nicht eingeschaltet ist."
+  },
+  "mode.requirements.signal-reactions.product": {
+    "en": "4d69a170d09c1d35",
+    "text": "Ein geprüftes Ereignis, das die Signalantwort-Richtlinie erlaubt — session-revoked, credential-change, ein RISC-Ereignis zu Konto oder Anmeldedaten, ein risk-level-change auf HIGH, standardmäßig — beendet die eigenen Sitzungen der empfangenden Oberfläche für die genannte Person. Ein ungeprüftes Ereignis wird in keinem der beiden Modi befolgt."
+  },
+  "mode.requirements.risk-decisions.what": {
+    "en": "c187e2cdafec165a",
+    "text": "Die Entscheidungen der Ausstellungsrichtlinie zum RISIKO einer Authentifizierung werden durchgesetzt"
+  },
+  "mode.requirements.risk-decisions.development": {
+    "en": "f19592d34351da44",
+    "text": "Jede Anmeldung wird bewertet, und die Ausstellungsrichtlinie wird mit den Risikofakten befragt; was sie entscheidet, wird an der Bewertung aufgezeichnet — ein Risiko-Deny wird jedoch beiseitegelegt, und allein die Rollen entscheiden, sofern risk.enforceInDevelopment nicht eingeschaltet ist."
+  },
+  "mode.requirements.risk-decisions.product": {
+    "en": "27940e1a18ad7fb0",
+    "text": "Ein Risiko-Deny bleibt bestehen: eine Authentifizierung, die die Richtlinie wegen des Risikos ablehnt (HIGH, standardmäßig), wird abgelehnt, und eine, von der sie ein Step-up verlangt (MEDIUM), wird nach einem zweiten Faktor oder einem Sicherheitsschlüssel gefragt, wo die Tür fragen kann, und abgelehnt, wo sie es nicht kann. Ändert sich das Risiko einer Person, werden die Reaktionen ausgeführt, die die Risikoantwort-Richtlinie erlaubt — bei HIGH wird alles beendet, RISC credential-compromise; die Entwicklung meldet die Änderung und zeichnet das Übrige als beobachtet auf."
+  },
+  "mode.requirements.token-exchange-tokens.what": {
+    "en": "ae3a72a9b5d7b234",
+    "text": "Ein Token-Austausch nach RFC 8693 akzeptiert nur ein subject_token und ein actor_token, die dieser Bereich prüfen kann"
+  },
+  "mode.requirements.token-exchange-tokens.development": {
+    "en": "7eb1db0e063f53dc",
+    "text": "Ein subject_token, das dieser Bereich nicht prüfen kann, wird auf seinen Namen gelesen und dennoch ausgetauscht, und ein actor_token wird gelesen und niemals geprüft, sodass ein Client den Grant mit einem Token eines beliebigen Ausstellers steuern kann."
+  },
+  "mode.requirements.token-exchange-tokens.product": {
+    "en": "b66324c8935f8390",
+    "text": "Beide müssen sich mit dem Signierschlüssel dieses Bereichs prüfen lassen, nicht abgelaufen und nicht widerrufen sein, sonst wird der Austausch mit invalid_request abgelehnt (HTTP 400, RFC 8693 Abschnitt 2.2.2)."
+  },
+  "mode.requirements.delegation-policy.what": {
+    "en": "415893f644c81a40",
+    "text": "Wer für wen handeln darf, wird bei WS-Trust OnBehalfOf / ActAs und beim Token-Austausch nach RFC 8693 entschieden"
+  },
+  "mode.requirements.delegation-policy.development": {
+    "en": "89d3215a1960b7f3",
+    "text": "Jede Delegierung wird ausgestellt. Die Richtlinie wird dennoch befragt, und ihre Antwort wird am Vorgang auf /admin/delegation als \"would have been refused: ...\" aufgezeichnet; ein Austausch darf einen Scope verlangen, der weiter reicht als der seines subject_token."
+  },
+  "mode.requirements.delegation-policy.product": {
+    "en": "fe19fc117becfe0b",
+    "text": "Die Ausstellungsrichtlinie entscheidet (#186) anhand der Delegierungsattribute (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, appDelegationSubjectGroup, appDelegationSemantics, appNotDelegated an Einträgen von Anwendungen; stsNotDelegated, stsDelegationSemantics, delegation.protectedGroups und die Liste der Konsole für Personen). Eine Ablehnung ist invalid_request oder invalid_target (RFC 8693 Abschnitt 2.2.2) oder ein SOAP-Fault wst:RequestFailed (WS-Trust 1.4 Abschnitt 11). Eine Person handelt nur, wenn sie delegation.actorRole innehat, und ein Austausch darf den Scope seines subject_token nicht erweitern (invalid_scope)."
+  },
+  "mode.requirements.declared-scopes.what": {
+    "en": "24912ad15f5cdcc7",
+    "text": "Einem Client werden nur die Scopes ausgestellt, die er erklärt hat"
+  },
+  "mode.requirements.declared-scopes.development": {
+    "en": "1c76373a91206e5a",
+    "text": "Jeder Scope, den ein Client verlangt, wird ausgestellt, unabhängig davon, was sein `oauthAllowedScope` aufführt. In BEIDEN Modi werden admin:read, admin:write, die Scopes für SCIM und Shared Signals sowie die Berechtigung des Debuggers nur einem Client ausgestellt, dessen `oauthAllowedScope` sie aufführt."
+  },
+  "mode.requirements.declared-scopes.product": {
+    "en": "33fcb48e8c17655e",
+    "text": "Ein Scope außerhalb des `oauthAllowedScope` des Clients wird an den Endpunkten für Autorisierung, Pushed Authorization und Token mit invalid_scope abgelehnt (STS-OAUTH-0578) und von einem Refresh oder einem Austausch entfernt. Ein Client, der nichts aufführt, erhält die dokumentierte Vorgabe: openid, profile, email, address, phone, offline_access und die OpenID4VCI-Scopes dieses Bereichs. Ein Scope, der eine Anwendung oder eine delegierte Berechtigung benennt, behält seine eigenen Regeln."
+  },
+  "mode.requirements.declared-protocols.what": {
+    "en": "89e8ef1624565f1b",
+    "text": "Einer Anwendung wird über ein Protokoll, für das sie nicht erklärt ist, nichts ausgestellt"
+  },
+  "mode.requirements.declared-protocols.development": {
+    "en": "b8f60692e2fa6b31",
+    "text": "appAllowedProtocol ist eine Beschreibung: ein Token, eine Assertion oder ein Ticket wird ausgestellt, welches Protokoll auch anfragte."
+  },
+  "mode.requirements.declared-protocols.product": {
+    "en": "01bf0ea288cde1c4",
+    "text": "Die Regel protocol-not-declared der Ausstellungsrichtlinie lehnt eine Ausstellung über eine Protokollfamilie ab, für die die Anwendung nicht erklärt ist (STS-XACML-0084): ein ID-Token an eine nur für OAuth 2.0 erklärte Anwendung, eine SAML-Assertion an eine für OpenID Connect erklärte. Eine für nichts erklärte Anwendung wird nicht abgelehnt."
+  },
+  "mode.requirements.uncatalogued-access.what": {
+    "en": "cae99ea77ebca46f",
+    "text": "Ein GNAP-Zugriffsrecht wird nur für einen Typ gewährt, den der Katalog der Zugriffstypen erklärt"
+  },
+  "mode.requirements.uncatalogued-access.development": {
+    "en": "de56636f7e123b4d",
+    "text": "Ein Recht eines Typs, den keine Ressourcenanwendung erklärt (oauthAuthorizationDetailsType), wird so gewährt, wie der Client es verlangt hat."
+  },
+  "mode.requirements.uncatalogued-access.product": {
+    "en": "89edeaa0cee05b30",
+    "text": "Die Regel gnap-type-not-catalogued der Ausstellungsrichtlinie lehnt es am Grant-Endpunkt ab (request_denied, STS-GNAP-0810). authorization_details nach RFC 9396 lehnen einen nicht erklärten Typ in beiden Modi ab, wie Abschnitt 5 verlangt."
+  },
+  "mode.requirements.delegated-permissions.what": {
+    "en": "81f1a910d89c9265",
+    "text": "Eine delegierte Berechtigung wird nur einem Client ausgestellt, dem sie gewährt wurde"
+  },
+  "mode.requirements.delegated-permissions.development": {
+    "en": "2748c5103ef68673",
+    "text": "Eine nicht gewährte Berechtigung wird erfüllt und als nicht gewährt aufgezeichnet, sofern oauth2.delegatedPermissionsEnforced nicht eingeschaltet ist."
+  },
+  "mode.requirements.delegated-permissions.product": {
+    "en": "e3783b780299b3c1",
+    "text": "Abgelehnt mit invalid_scope (STS-OAUTH-0155), was auch immer oauth2.delegatedPermissionsEnforced sagt: die Erteilung ist `oauthDelegatedPermission` am Eintrag des Clients."
+  },
+  "mode.requirements.federated-name-match.what": {
+    "en": "aa45efa130eb1fdf",
+    "text": "Ein Föderationspartner meldet nur die Person an, mit der sein Subject verknüpft ist"
+  },
+  "mode.requirements.federated-name-match.development": {
+    "en": "935cd045cd8649e7",
+    "text": "Eine Beziehung darf fedSubjectPolicy auf any-existing setzen; das ordnet den Namen, den der Partner behauptet hat, direkt einer lokalen Person zu — jeder Person, ein Administrator eingeschlossen, sofern fedMayAssertAdministrators nicht aus ist (der Standard). Jede andere Richtlinie verhält sich wie im Produktmodus."
+  },
+  "mode.requirements.federated-name-match.product": {
+    "en": "21b1d1c16447c0c6",
+    "text": "any-existing wird abgelehnt, an der Beziehung (STS-FED-0095) und bei der Anmeldung (STS-FED-0094). Ein Partner meldet den Eintrag an, mit dem sein (issuer, subject) verknüpft ist; ein nicht verknüpftes Subject, das eine bestehende Person benennt, muss sich hier zuerst als diese Person anmelden (link-at-first-sign-in, der Standard) oder wird abgelehnt (pre-linked). Entwicklung und Produkt behalten beide die Regeln und die Ablehnung für Konsolenadministratoren."
+  },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "Eine neue Föderationsbeziehung legt einen Verzeichniseintrag für ein Partner-Subject an, das niemand verknüpft hat"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "fedAutocreateUsers wird beim Anlegen der Beziehung als TRUE geschrieben, und eine Beziehung, die das Attribut nicht speichert, legt an. Ein gespeichertes FALSE legt weiterhin niemanden an."
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "fedAutocreateUsers wird beim Anlegen der Beziehung als FALSE geschrieben, und ein fehlendes Attribut legt niemanden an (STS-FED-0090). Eine Beziehung, die bereits TRUE speichert, legt weiter an, bis sie bearbeitet wird. link-at-first-sign-in verknüpft in beiden Modi weiterhin eine bestehende zugeordnete Person."
+  },
+  "mode.requirements.federated-logout-signature.what": {
+    "en": "ab3acff66ae80262",
+    "text": "Die SAML-Abmeldung eines Föderationspartners ist von diesem Partner signiert"
+  },
+  "mode.requirements.federated-logout-signature.development": {
+    "en": "0e22c30af1770452",
+    "text": "Eine Beziehung, deren fedRequireSignedLogout auf off steht, akzeptiert eine UNSIGNIERTE LogoutRequest oder LogoutResponse ihres Partners. Eine vorhandene Signatur wird gegen fedSigningCertificate genau wie im Produktmodus geprüft, und die Einstellung ist für jede Beziehung eingeschaltet, sofern sie niemand ausschaltet."
+  },
+  "mode.requirements.federated-logout-signature.product": {
+    "en": "103de5212c6c07d6",
+    "text": "Jede SAML-Abmeldenachricht eines Partners muss signiert sein und sich gegen das Zertifikat der Beziehung prüfen lassen (saml-profiles-2.0-os Abschnitt 4.4.4.1): eine unsignierte wird abgelehnt (STS-FED-0115), was auch immer fedRequireSignedLogout sagt, und das Ausschalten der Einstellung wird abgelehnt (STS-FED-0132)."
+  },
+  "mode.requirements.federated-assertion-encryption.what": {
+    "en": "0fdc50d76534c95c",
+    "text": "Eine Assertion oder ein Front-Channel-ID-Token eines Föderationspartners ist an den eigenen Schlüssel der Beziehung verschlüsselt"
+  },
+  "mode.requirements.federated-assertion-encryption.development": {
+    "en": "980ef0a024b77d35",
+    "text": "Eine Assertion von SAML 2.0 oder WS-Federation oder ein id_token von OpenID Connect per form_post wird im Klartext akzeptiert. Eine, die verschlüsselt IST, wird entschlüsselt und an dieselbe Algorithmenliste gehalten wie im Produktmodus."
+  },
+  "mode.requirements.federated-assertion-encryption.product": {
+    "en": "8e50a67f08bab738",
+    "text": "Eine Klartext-Assertion oder ein Front-Channel-ID-Token wird abgelehnt (STS-FED-0140), sofern die Beziehung nicht fedAllowUnencrypted setzt, was mit einer Warnung dokumentiert ist. AES-CBC, rsa-1_5 und RSA1_5 werden in beiden Modi abgelehnt (STS-FED-0139)."
+  },
+  "mode.requirements.passkey-first-use.what": {
+    "en": "c8556d37e16453f0",
+    "text": "Der Anmeldebildschirm registriert keinen Passkey für jemanden, der nicht nachgewiesen hat, wer er ist"
+  },
+  "mode.requirements.passkey-first-use.development": {
+    "en": "8bea6b2667160433",
+    "text": "Eine Anmeldung ohne Passwort, die jemanden ohne Passkey benennt, registriert auf der Stelle einen, ohne ein Passwort zu lesen — wer einen Namen zuerst beansprucht, erhält ihn."
+  },
+  "mode.requirements.passkey-first-use.product": {
+    "en": "b2a73f5e48d6f2c4",
+    "text": "Es wird abgelehnt. Ein Passkey wird auf /portal/keys hinter einer Sitzung hinzugefügt, über einen Aktivierungslink oder durch einen Betreiber."
+  },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "Ein selbst ausgestelltes did:web-Subject meldet sich nur mit einem Schlüssel an, der bei der Registrierung festgehalten wurde"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "Ein vor dem Festhalten von Schlüsseln registriertes did:web ohne festgehaltenen Schlüssel meldet sich bei der nächsten Anmeldung mit dem Schlüssel an, den sein Dokument nennt, und dieser Schlüssel wird dann festgehalten (Vertrauen bei der ersten Verwendung), mit einer Protokollzeile und einer Audit-Zeile."
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "Diese Anmeldung wird abgelehnt (STS-VC-0127) und auditiert, und die Person registriert die DID erneut, indem sie sie auf /portal/self-issued nachweist. In beiden Modi wird ein Schlüssel abgelehnt, den die Festlegung nicht nennt (STS-VC-0126)."
+  },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "Die Adresse eines Profilfotos wird auf der festgehaltenen öffentlichen Basis-URL aufgebaut"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "Ohne festgehaltene öffentliche Basis-URL wird ein auf /portal gesetztes oder von einem Föderationspartner kopiertes Foto an den Host adressiert, an dem die Anfrage eintraf, und Token tragen diese Adresse."
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "Das Setzen wird abgelehnt (STS-PORTAL-0635), und das Foto eines Partners wird nicht kopiert (STS-FED-0220), bis global.publicBaseUrl die Basis festhält: ein Host-Header wird niemals Teil einer Adresse, die ein Token trägt."
+  },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "Das veröffentlichte did:web einer Person wird auf der festgehaltenen öffentlichen Basis-URL ausgegeben"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "Ohne festgehaltene öffentliche Basis-URL wird eine von /portal/self-issued veröffentlichte DID auf der Adresse aufgebaut, an der die Anfrage eintraf, und diese Adresse bleibt dauerhaft Teil der DID."
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "Das Veröffentlichen wird abgelehnt (STS-VC-0168), bis global.publicBaseUrl oder der bekannt gemachte Listener der Anwendung für Verifiable Credentials die Basis festhält: ein Host-Header wird niemals Teil eines gespeicherten Bezeichners."
+  },
+  "mode.requirements.webauthn-attestation.what": {
+    "en": "8c22563b2f23268b",
+    "text": "Die Attestierungsaussage eines Sicherheitsschlüssels wird geprüft, bevor der Schlüssel registriert wird"
+  },
+  "mode.requirements.webauthn-attestation.development": {
+    "en": "6e29fa143ed40161",
+    "text": "webauthn.attestationPolicy ist by-mode, was hier off ist: das Format der Aussage wird aufgezeichnet, und nichts darin wird geprüft. verify-if-present und require-trusted stehen zum Setzen bereit."
+  },
+  "mode.requirements.webauthn-attestation.product": {
+    "en": "1114fdf1aee58a97",
+    "text": "by-mode ist verify-if-present: jede Aussage wird nach dem Verfahren aus WebAuthn Level 3 Abschnitt 8 geprüft (alle acht Formate), ihre Kette wird gegen die Vertrauensanker des Bereichs und die Wurzeln des FIDO Metadata Service geprüft, ihr Widerruf wird nachgeschlagen, und ein Modell, das der MDS als kompromittiert meldet, wird abgelehnt. Attestierung none und self wird akzeptiert und als nicht vertrauenswürdig aufgezeichnet. off wird beim Schreiben abgelehnt und als by-mode gelesen."
+  },
+  "mode.requirements.second-factor-doors.what": {
+    "en": "c4647caa0a5e5f86",
+    "text": "Einer Person, die einen zweiten Faktor besitzt oder besitzen muss, wird an den Türen nur mit Passwort ihr Passwort allein verweigert"
+  },
+  "mode.requirements.second-factor-doors.development": {
+    "en": "f1ede458c1549c0c",
+    "text": "Ein LDAP Simple Bind, ein WS-Security-UsernameToken, HTTP Basic für SCIM und SSF sowie EST Basic akzeptieren das Passwort so, wie sie jedes Passwort akzeptieren; der Anmeldebildschirm fragt weiterhin nach dem zweiten Faktor."
+  },
+  "mode.requirements.second-factor-doors.product": {
+    "en": "a4d4c20c45b2d573",
+    "text": "An diesen fünf Türen wird das eigene Passwort der Person abgelehnt — beantwortet genau wie ein falsches Passwort und als ein Versuch gegen die Ratenbegrenzung gezählt (STS-AUTHN-0213 nur in der Audit-Zeile und im Protokoll) — wann immer sie eine Authenticator-App besitzt oder irgendeinen Passkey, wo der Bereich (oder die Authentifizierungsrichtlinie, die die Anwendung nennt) einen Passkey als zweiten Faktor akzeptiert, oder ein zweiter Faktor von ihr verlangt wird (stsMfaRequired, die Authentifizierungsrichtlinie). Ein APP-PASSWORT, das sie auf /portal/app-passwords angelegt und auf die Tür beschränkt hat, wird stattdessen akzeptiert. authn.passwordAloneDoors benennt Türen, die das Passwort dennoch akzeptieren, wodurch jede solche Person dort auf einen Faktor herabgestuft wird."
+  },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Einer Kerberos-Vertrauensstellung wird nur Folge geleistet, solange sie SIDs filtert"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "Ein Vertrauensdatensatz mit quarantined off wird wie jeder andere verwendet: Tickets werden über ihn vermittelt und von ihm angenommen, und ein darüber eintreffendes PAC wird so gefiltert, wie seine Vertrauensgrenze es sagt, ohne die Quarantäneregel, dass nur die SIDs der vertrauenswürdigen Domäne durchgelassen werden."
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "Ein Vertrauensdatensatz mit quarantined off vermittelt niemanden und nimmt nichts an (STS-KRB-0229 nennt den Grund), solange krb5.requireSidFilteringInProduct eingeschaltet ist, was der Standard ist. Das Ausschalten dieser Einstellung am Bereich bedeutet, dass der Betreiber die SIDs des Partners akzeptiert."
+  },
+  "mode.requirements.kerberos-second-factor.what": {
+    "en": "6bb019d0381a77a4",
+    "text": "Eine Person, die einen zweiten Faktor besitzt oder besitzen muss, erhält kein Kerberos-Ticket allein über ein Passwort"
+  },
+  "mode.requirements.kerberos-second-factor.development": {
+    "en": "48c67bd985cdac31",
+    "text": "Das KDC stellt einer AS-REQ, die allein mit dem Passwort vorausauthentifiziert wurde, ein TGT aus (PA-ENC-TIMESTAMP oder das PA-ENCRYPTED-CHALLENGE von FAST), so wie es jedes Passwort annimmt."
+  },
+  "mode.requirements.kerberos-second-factor.product": {
+    "en": "ab8a6af4d276b0bc",
+    "text": "Diese AS-REQ wird mit KDC_ERR_POLICY (12), STS-KRB-0135, abgelehnt, nachdem das Passwort geprüft wurde (ein falsches bleibt KDC_ERR_PREAUTH_FAILED), wann immer die Person eine Authenticator-App besitzt oder irgendeinen Passkey, wo der Bereich (oder die Authentifizierungsrichtlinie, die die Anwendung nennt) einen Passkey als zweiten Faktor akzeptiert, oder ein zweiter Faktor von ihr verlangt wird. Eine Person mit einer Authenticator-App erhält ein Ticket über FAST-Armor nach RFC 6113 mit OTP-Vorauthentifizierung nach RFC 6560 — Passwort und Code in einem Austausch — und es trägt den Indikator `otp` nach RFC 8129. Ein App-Passwort ist niemals ein Kerberos-Schlüssel."
+  },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "Eine Wiederherstellung des Kontos ist standardmäßig nicht schwächer als der Passkey, den sie ersetzt"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "recoveryAssurance der Passkey-Richtlinie steht standardmäßig auf any: ein Link zum Zurücksetzen des Passworts, ein Aktivierungslink, ein Wiederherstellungscode oder ein per E-Mail gesendeter Code oder Link stellt den Zugang sofort wieder her, welchen Passkey die Person auch besitzt."
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "Der Standard ist not-weaker: für eine Person mit einem Passkey erreicht die erste Anmeldung nach einer Wiederherstellung, die keine Passkey-Anmeldung ist, keine Anwendung (STS-AUTHN-0381). Der Anmeldebildschirm fordert sie auf, einen Passkey zu registrieren, der die Passkey-Richtlinie erfüllt, und sich anschließend damit anzumelden. Die eigene Zeile eines Bereichs sagt in jedem der beiden Modi etwas anderes."
+  },
+  "mode.requirements.resource-metadata-import.what": {
+    "en": "fb298f641de33009",
+    "text": "Ein Import geschützter Ressourcenmetadaten nach RFC 9728 wird an die Regeln gehalten, denen ein Client des Dokuments folgt"
+  },
+  "mode.requirements.resource-metadata-import.development": {
+    "en": "f89c0a8aa3cffb2b",
+    "text": "Ein von einer URL geholtes Dokument wird mit einer Warnung importiert, wenn sein `resource` nicht zur Well-Known-URL passt, von der es stammt (Abschnitt 3.3), oder nicht https ist, und die URL darf sich zu Loopback oder einer privaten Adresse auflösen."
+  },
+  "mode.requirements.resource-metadata-import.product": {
+    "en": "3364c42939a2cbce",
+    "text": "Beides wird abgelehnt, und eine URL, die sich zu einer Loopback-, privaten, Link-Local- oder reservierten Adresse auflöst, wird nicht angewählt — der Name wird einmal aufgelöst und die Verbindung an die geprüfte Adresse gebunden. Ein fehlerhaftes Dokument wird in beiden Modi abgelehnt."
+  },
+  "mode.requirements.mail.what": {
+    "en": "8b83e20e2d14d9a9",
+    "text": "E-Mail wird gesendet, nicht aufbewahrt; ein versendeter Link nennt die festgehaltene öffentliche Adresse"
+  },
+  "mode.requirements.mail.development": {
+    "en": "c6e53c9e30d286e6",
+    "text": "mail.transport `default` ist der Transport CAPTURE: jede Nachricht wird mit ihrem Inhalt aufbewahrt und unter Überwachung → E-Mail angezeigt, statt gesendet zu werden, sofern kein echter Transport konfiguriert ist. Ein versendeter Link wird auf global.publicBaseUrl aufgebaut oder, wenn diese leer ist, auf dem konfigurierten Host und Port des Listeners — niemals auf der Anfrage."
+  },
+  "mode.requirements.mail.product": {
+    "en": "497ff2ab5fad4b85",
+    "text": "`default` ist `off`, und `capture` wird beim Schreiben und beim Start abgelehnt (STS-MAIL-0003), weil ein aufgefangener Link zum Zurücksetzen des Passworts Anmeldedaten auf der Konsole sind. Ein konfigurierter Transport, der sich nicht aufbauen lässt, verhindert den Start des Dienstes (STS-MAIL-0002). Ein Link wird nur versendet, wenn global.publicBaseUrl gesetzt ist (STS-MAIL-0015)."
+  },
+  "mode.requirements.secret-destinations.what": {
+    "en": "745eb3890b07294e",
+    "text": "Das rotierte Passwort eines Dienstkontos wird an eine Geheimnisverwaltung übermittelt, niemals auf die Platte dieses Containers"
+  },
+  "mode.requirements.secret-destinations.development": {
+    "en": "0633c12f9bf4ca80",
+    "text": "Ein Ziel für die Übermittlung von Geheimnissen darf eine FILE sein: eine Übermittlung schreibt das Passwort in eine bestehende Datei unter dem Verzeichnis des Ziels; so übt die Testsuite eine Rotation ohne Geheimnisverwaltung."
+  },
+  "mode.requirements.secret-destinations.product": {
+    "en": "5ab672b908ba6b88",
+    "text": "Ein Ziel, das `file` nennt, wird als unbrauchbar gemeldet, und eine Übermittlung dorthin wird abgelehnt (STS-SECDEST-0006). Es bleiben AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault und eine Engine KV Version 2 von Vault oder OpenBao, jeweils über geprüftes TLS mit den eigenen Schreib-Anmeldedaten des Ziels (#221)."
+  },
+  "mode.requirements.outbound-tls.what": {
+    "en": "b211ebe14931a1d7",
+    "text": "Eine ausgehende Anfrage prüft das Zertifikat dessen, der antwortet, und geht nicht über Klartext-http hinaus"
+  },
+  "mode.requirements.outbound-tls.development": {
+    "en": "d23b51307ba13e8a",
+    "text": "Abschlüsse eines GNAP-Push, Push-Zustellungen von SSF, die Back-Channels der Föderation und Anstöße des XACML-PEP beachten ihre Einstellungen …SkipTlsVerification (Prüfung aus, bei jeder Anfrage gewarnt) und ihre Einstellungen …AllowHttp (Klartext-http an jeden Host). Auch spiffe.k8sSkipKubeletVerification von SPIRE wird beachtet."
+  },
+  "mode.requirements.outbound-tls.product": {
+    "en": "247dae79affdfe65",
+    "text": "Jede Einstellung …SkipTlsVerification und spiffe.k8sSkipKubeletVerification wird IGNORIERT — einmal mit ihrem Code protokolliert — und beim Schreiben über /admin und /admin-api abgelehnt (STS-CORE-0103); eine private CA wird über die …CaFile der Familie mit eingeschalteter Prüfung erreicht. Klartext-http wird für SSF, die Föderation und XACML abgelehnt, was auch immer …AllowHttp sagt, und für einen Abschluss eines GNAP-Push nur an eine Loopback-Adresse erlaubt (RFC 9635 Abschnitt 2.5.2.1)."
+  },
+  "mode.requirements.deliberate-defects.what": {
+    "en": "055db67685f19f36",
+    "text": "Ein absichtlicher Defekt macht eine Antwort nicht falsch"
+  },
+  "mode.requirements.deliberate-defects.development": {
+    "en": "0b1230d1659875d3",
+    "text": "oauth2.breakIdTokenNonce setzt eine falsche Nonce in jedes ID-Token, das eine tragen sollte, ssf.breakSetSignature ändert ein Zeichen der Signatur jedes SET, ssf.legacySubClaim fügt den Claim `sub` hinzu, von dem RFC 8417 neben `sub_id` abrät, risc.googleSubjectType schreibt das Member `subject_type`, das neue Dienste nach RISC 1.0 Abschnitt 3.1 MUST NOT verwenden dürfen, und krb5.clockOffset verschiebt die Uhr des KDC — jeweils solange es gesetzt ist, damit sich üben lässt, wie ein Client eine falsche Antwort behandelt."
+  },
+  "mode.requirements.deliberate-defects.product": {
+    "en": "472a5c81b1274879",
+    "text": "Alle fünf werden dort IGNORIERT, wo sie gelesen werden — ein auf den Produktmodus umgestellter Bereich, in dem noch eines gespeichert ist, antwortet richtig, nach der Uhr des Rechners — einmal je Prozess protokolliert (STS-CORE-0106) und beim Schreiben über /admin, /admin-api und die Einstellungen eines Bereichs abgelehnt (STS-CORE-0103)."
+  },
+  "mode.requirements.broken-algorithms.what": {
+    "en": "51bdc0bbaafe7762",
+    "text": "Es wird kein gebrochener Algorithmus verwendet: SHA-1 in einer Signatur oder Schlüsseltransport mit RSA PKCS#1 v1.5"
+  },
+  "mode.requirements.broken-algorithms.development": {
+    "en": "448d4e1f57c8cc23",
+    "text": "saml.signatureAlgorithm rsa-sha1 signiert jede XML-Signatur mit SHA-1, saml2.keyTransportAlgorithm rsa-1_5 (oder das saml2KeyTransportAlgorithm einer Anwendung) hüllt den Schlüssel einer verschlüsselten Assertion mit RSAES-PKCS1-v1_5 ein, saml.allowSha1Signatures on akzeptiert SHA-1 in einer Signatur, die dieser Dienst prüft, pki.signatureAlgorithm sha1-rsa oder sha1-ecdsa (oder ein Build-Formular, das eines von beiden nennt) lässt eine Zertifizierungsstelle mit SHA-1 signieren, ein an diesen Dienst mit rsa-1_5 verschlüsseltes XML-Element wird entpackt, und scim.digestMd5 on bietet MD5 im HTTP Digest von SCIM an und akzeptiert es. Jedes ist off, sofern es nicht gesetzt ist."
+  },
+  "mode.requirements.broken-algorithms.product": {
+    "en": "173ed3ea10d31cc3",
+    "text": "Jeder schwache Wert wird dort IGNORIERT, wo er gelesen wird (einmal protokolliert, STS-CORE-0106), und beim Schreiben abgelehnt (STS-CORE-0103 und STS-REG-0193 an einer Anwendung): XML wird mit der Vorgabe rsa-sha256 signiert, Schlüssel werden mit rsa-oaep eingehüllt (und rsa-oaep-mgf1p nur bei crypto.allowLegacyHashes on), eine SHA-1-Signatur wird abgelehnt, ein CA-Build oder ein Schlüsselpaar, das SHA-1 nennt, wird abgelehnt (STS-PKI-0191), und eines, das von einem in der Entwicklung gebauten Zweig geerbt wurde, wird durch die Vorgabe des Schlüssels ersetzt, und ein rsa-1_5 EncryptedKey wird abgelehnt, bevor er entpackt wird (STS-KEYS-0070) — XML Encryption 1.1 Abschnitt 6.1.2. scim.digestMd5 ist gegenstandslos, da der Produktmodus überhaupt kein Digest anbietet (STS-SCIM-0056). Die stärkeren Werte jeder Einstellung bleiben verfügbar. JOSE RSA1_5 wird in beiden Modi abgelehnt."
+  },
+  "mode.requirements.jose-key-sizes.what": {
+    "en": "73495c403f54e4f5",
+    "text": "Ein JWS wird nur mit einem Schlüssel der Größe geprüft, die RFC 7518 verlangt"
+  },
+  "mode.requirements.jose-key-sizes.development": {
+    "en": "ef2804b46316aeed",
+    "text": "Ein RSA-Schlüssel unter 2048 Bit (RFC 7518 Abschnitt 3.3, RFC 8230 Abschnitt 5 für COSE) und ein HMAC-Schlüssel, der kürzer ist als seine Hash-Ausgabe (RFC 7518 Abschnitt 3.2) — ein kurzes client_secret unter client_secret_jwt — prüfen weiterhin, sodass ein Client, der einen besitzt, geübt werden kann. SCHWÄCHER ALS DIE SPEZIFIKATION: beide sind MUSTs."
+  },
+  "mode.requirements.jose-key-sizes.product": {
+    "en": "d1fb3763f55efbde",
+    "text": "Beide werden bei der Signaturprüfung abgelehnt, im gemeinsamen Prüfer, in verifyJws() und (RSA) bei einem WebAuthn-Schlüssel. Ein ausgegebenes client_secret umfasst standardmäßig 48 Zufallsbytes (oauth2.registeredSecretBytes), lang genug für HS512. In BEIDEN Modi werden ein leerer HMAC-Schlüssel, ein RSA-Exponent unter 3 oder gerade (eine Fälschung, kein schwacher Schlüssel), ein RSA-Modulus mit dem ROCA-Fingerabdruck (CVE-2017-15361), ein JWK, dessen use nicht \"sig\" ist oder dessen key_ops \"verify\" nicht enthält, und ein Segment, das kein kanonisches base64url ist, abgelehnt."
+  },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "secp256k1 wird nur verwendet, wo eine Liste es nennt"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "Mit ES256K wird signiert, und es wird wie jeder andere Algorithmus angeboten und akzeptiert."
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "Mit ES256K wird nicht signiert und es wird nicht angeboten, sofern keys.signingAlgorithms es nicht aufführt, und eine Signatur damit wird abgelehnt, sofern keys.acceptedSigningAlgorithms oder keys.signingAlgorithms es nicht aufführt (cose.acceptedAlgorithms für COSE). Die veröffentlichten Algorithmenlisten, darunter die von DPoP, lassen es aus."
+  },
+  "mode.requirements.xml-ecdsa-curves.what": {
+    "en": "858a80a68d7c0582",
+    "text": "Eine XML-ECDSA-Signatur wird nur auf einer Kurve von mindestens 256 Bit geprüft"
+  },
+  "mode.requirements.xml-ecdsa-curves.development": {
+    "en": "6d585203e0d0c40f",
+    "text": "Ein Schlüssel auf jeder Kurve, die node liest, wird geprüft — secp160, secp192, secp224 darunter — sodass ein Partner auf einer solchen geübt werden kann. SCHWÄCHER ALS die 112-Bit-Untergrenze von NIST SP 800-57 für die kleinste von ihnen."
+  },
+  "mode.requirements.xml-ecdsa-curves.product": {
+    "en": "83ca2ed6f0591c63",
+    "text": "Nur P-256, P-384, P-521 sowie brainpoolP256r1 und größere werden geprüft, und secp256k1 dort, wo keys.acceptedSigningAlgorithms oder keys.signingAlgorithms ES256K nennt; jede andere Kurve wird abgelehnt (STS-KEYS-0077), und ein Zertifikat auf einer solchen wird nicht registriert."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.what": {
+    "en": "d0088e020fb9a13e",
+    "text": "Kein Kerberos-Schlüssel, kein Ticket und kein Austausch verwendet einen enctype, den RFC 8429 für veraltet erklärt (rc4-hmac)"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.development": {
+    "en": "05d8e71722ffc76a",
+    "text": "krb5.enctypes ist standardmäßig 18,17,20,19,23: jedes Konto hat neben seinen AES-Schlüsseln einen Schlüssel rc4-hmac, die Fixture rc4only hat nichts anderes, und ein Client, der nur 23 anbietet, erhält ein Ticket — sodass ein RC4-Client geübt werden kann."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.product": {
+    "en": "7bb2840e2f96210a",
+    "text": "Die Liste wird OHNE 23 gelesen (einmal protokolliert, STS-CORE-0106), und ein Schreiben, das 23 nennt, wird abgelehnt (STS-CORE-0103). Kein RC4-Schlüssel wird für krbtgt, einen Dienst oder eine Person abgeleitet, gespeichert oder in eine keytab gelegt; ein Schlüssel oder ein Ticket dieses enctype wird nie verwendet; eine AS-REQ oder TGS-REQ, die nichts anderes anbietet, wird mit KDC_ERR_ETYPE_NOSUPP abgelehnt (STS-KRB-0156); ein RC4-Sitzungsschlüssel oder subkey in einer TGS-REQ, einer AP-REQ oder FAST-Armor wird abgelehnt (STS-KRB-0157, 0158, 0159). Übrig bleibt AES."
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "Der Hauptport ist HTTPS"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "STS_HTTPS=false betreibt den Hauptport im Klartext."
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "Ein Prozess mit global.https off startet nicht (STS-CORE-0167). Der Widerrufs- und SCEP-Listener über Klartext-HTTP bleibt, wie RFC 5280, RFC 5019 und RFC 8894 es erwarten."
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "Das Zertifikat des Listeners ist öffentlich vertrauenswürdig"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "Die eigene Zertifizierungsstelle dieses Dienstes stellt es aus."
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "Setzen Sie tls.certificateFile auf eine öffentlich vertrauenswürdige Kette. Ein von diesem Dienst ausgestelltes Zertifikat verhindert den Start nicht und wird in dieser Zeile angezeigt."
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "SCEP, die XML-Verschlüsselung und Kerberos meiden veraltete Chiffren"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "SCEP antwortet, die XML-Verschlüsselung darf AES-CBC verwenden, und Kerberos bietet die enctypes 17 und 18 an."
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "SCEP antwortet nur, wenn scep.allowInProduct on ist (STS-SCEP-0067). Die XML-Verschlüsselung wählt ausschließlich AES-GCM und akzeptiert nur dieses (STS-KEYS-0195). Kerberos verwendet 19 und 20, sofern krb5.allowSha1Enctypes nicht on ist."
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "Ein Client verwendet nur die Grants, die er benötigt"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "Ein Client, der keine Grant-Typen erklärt, darf jeden Grant verwenden."
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "Ein Client, der keine Grant-Typen erklärt, darf allein authorization_code und refresh_token verwenden, sofern oauth2.allowUndeclaredGrants nicht on ist (STS-OAUTH-0598)."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Kein Konto trägt einen vorgegebenen Administratornamen"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "Der Bootstrap-Administrator ist admin, und als solcher meldet sich jeder Test und jede Einführung an."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "Ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator oder ohne Namen erhält einen unvorhersagbar erzeugten Namen, der beim ersten Start zusammen mit seinem Passwort ausgegeben wird, sofern admin.allowDefaultUsername nicht on ist."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Unzulässige Hashes werden nicht verwendet"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "OAEP über SHA-1, die PKINIT-Schlüsselableitung mit SHA-1 und die HMAC-MD5-Prüfsumme von S4U2Self sind verfügbar."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "Diese sind off, sofern crypto.allowLegacyHashes nicht on ist. TOTP bleibt standardmäßig HMAC-SHA-1, der Kompatibilität mit Authenticator-Apps wegen, und PKINIT behält die SHA-1-paChecksum, die RFC 4556 definiert."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "Eine benannte Datei muss in einem erlaubten Verzeichnis liegen"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "Eine Datei, die ein Administrator nennt, wird von dort gelesen, wohin sie weist."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "Eine Datei wird nur gelesen, wenn ihr realer Pfad in einem Verzeichnis liegt, das security.fileRoots aufführt, und die Antwort sagt nicht, warum ein Pfad gescheitert ist."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "Von jedem wird ein zweiter Faktor verlangt"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "Die Authentifizierungsrichtlinie entscheidet, und standardmäßig werden nur diejenigen danach gefragt, die einen zweiten Faktor besitzen."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Jeder benötigt einen zweiten Faktor, was auch immer die Richtlinie sagt, sofern authn.allowOptionalSecondFactor nicht on ist."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Das Entfernen eines zweiten Faktors erfordert einen angegebenen Identitätsnachweis"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "Ein Administrator darf einen Faktor entfernen, indem er die Person benennt."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "Ein Administrator muss angeben, wie die Identität der Person geprüft wurde. Die Angabe steht in der Audit-Zeile."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Die Protokolleingabe wird an die strenge Lesart gehalten"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "Ein wiederholter Parameter token nimmt seinen letzten Wert, ein Logout Token eines Partners braucht keinen ausdrücklichen Typ, weitergeleitete Adressen werden von jedem geglaubt, wenn global.trustProxy ohne Liste on ist, und der Text eines internen Fehlers erreicht den Aufrufer."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "Ein wiederholter Parameter token wird abgelehnt, ein Logout Token eines Partners muss den Typ logout+jwt tragen, sofern federation.allowUntypedLogoutToken nicht on ist, weitergeleitete Adressen benötigen global.trustedProxies, und der Text eines internen Fehlers bleibt im Protokoll."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Protokolle und die Datenbank enthalten keine allgemein bekannten Geheimnisse"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "Auf der Ebene debug trägt das Protokoll ganze Anfragen und Antworten, und die Datenbank darf ein Demonstrationspasswort verwenden."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "Anfrageprotokolle lassen auf jeder Ebene Anmeldedaten und Inhalte weg, ein signiertes Token oder eine signierte Assertion wird nur mit Größe und Digest protokolliert, und ein vorgegebenes Datenbankpasswort verhindert den Start des Dienstes, sofern persistence.allowDefaultDatabasePassword nicht on ist."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "Single Sign-on fragt, bevor es eine Person bei einer Anwendung anmeldet"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0, SAML 1.1 und WS-Federation melden eine Person aus ihrer Sitzung an, ohne zu fragen."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "Eine Person wird einmal je Anwendung gefragt, bevor SAML 2.0, SAML 1.1 oder WS-Federation sie dort anmeldet, und die Antwort wird behalten. saml2.ssoConsent, saml11.ssoConsent und wsfed.ssoConsent schalten es je Protokoll aus, und der eigene Wert einer Anwendung setzt sie außer Kraft."
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Geheimnisse des Backends kommen aus einem Geheimnisspeicher"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "Der Schlüsselverschlüsselungsschlüssel darf eine Datei sein, und das Datenbankpasswort darf in einer Datei oder in der Verbindungszeichenfolge stehen."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Die Schlüsselverschlüsselungsschlüssel kommen aus einem Geheimnisspeicher oder einem Schlüsselverwaltungsdienst, ein Datenbankpasswort aus einem Geheimnisspeicher. Eine Datei oder ein Passwort in der Verbindungszeichenfolge verhindert den Start des Dienstes, sofern secrets.allowLocalSecrets nicht on ist. Ein früherer Schlüsselverschlüsselungsschlüssel darf weiterhin eine Datei sein, damit eine Bereitstellung sich von einer solchen lösen kann."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "Das Audit-Protokoll sollte diesen Dienst verlassen"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "Zum Audit-Export wird nichts gesagt."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "Fügen Sie ein Ziel für den Audit-Export hinzu, damit eine Kopie des Protokolls außer Reichweite einer hiesigen Kompromittierung liegt. Solange keines existiert, protokolliert der Dienst eine Warnung für diesen Bereich."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Dateien erreichen den Malware-Scanner verschlüsselt"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "Eine Adresse icap:// oder icaps:// darf verwendet werden."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "Es wird nur eine Adresse icaps:// verwendet, sofern malwareScan.allowCleartext nicht on ist."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Sitzungen und RSA-Schlüssel haben strengere Vorgaben"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "Eine Sitzung hat kein Leerlaufzeitlimit, und neue RSA-Schlüssel haben 2048 Bit."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "Eine Sitzung endet nach 30 Minuten Leerlauf, und neue RSA-Schlüssel haben 3072 Bit, sofern keine Einstellung etwas anderes sagt."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Das Bootstrap-Passwort bleibt außerhalb des Protokolls"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Das erzeugte Passwort wird in das Dienstprotokoll geschrieben."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Es wird in eine Datei geschrieben, die nur dieser Dienst lesen kann, und das Protokoll nennt den Ort, sofern admin.logBootstrapPassword nicht on ist."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Jeder Client muss PKCE verwenden"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "Ein vertraulicher Client, der kein code_challenge sendet, wird nur protokolliert."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Es wird abgelehnt, sofern oauth2.allowConfidentialWithoutPkce nicht on ist."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "Die Inhaltsverschlüsselung von JWE ist ausschließlich AES-GCM"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "A128CBC-HS256, A192CBC-HS384 und A256CBC-HS512 werden angeboten und akzeptiert, und A128CBC-HS256 ist die Vorgabe."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "Nur AES-GCM wird angeboten oder akzeptiert, und es wird verwendet, wo ein Client kein enc nennt, sofern crypto.allowCbcJwe nicht on ist."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "Eine Person braucht bei SCIM und Shared Signals eine Rolle"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Jede authentifizierte Person darf lesen und schreiben, unabhängig vom verwendeten Schema."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Ein Schema ohne Scope braucht Admin Read zum Lesen und Admin Write zum Schreiben, sofern security.allowUnscopedPeople nicht on ist. OAuth-Scopes und ein Anwendungszertifikat funktionieren wie zuvor."
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "Jedes Cookie trägt ein Präfix __Host- oder __Secure-"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "Cookies behalten ihre schlichten Namen (sts_session und die übrigen), die eine Person in den Werkzeugen des Browsers liest."
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "Über TLS erhält jedes Cookie das Präfix __Host-, oder __Secure-, wo es ein Domain trägt, und eines ohne Präfix wird ignoriert. Das Präfix wird einmal angewendet, durch den Prozess, der den Socket hält."
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "Eine Zugriffsentscheidung, die nicht getroffen werden kann, ist eine Ablehnung"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "Ein Entscheider, der eine Ausnahme wirft, eine leere Antwort oder eine Prüfung, die keine Ressource oder Aktion nennt, lässt die Anfrage zu und wird protokolliert, damit ein halb geladener Entwicklungsprozess weiterhin antwortet."
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "Jedes davon ist eine Ablehnung (STS-XACML-0051, 0181, 0182). xacml.enforceAccess und roles.enforceIssuance bleiben der Rückweg von einer Richtlinie, die ihre eigene Reparatur verweigert, und eine ausgeschaltete wird in dieser Zeile gezeigt."
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "Jede Antwort über TLS weist einen Browser an, nur HTTPS zu verwenden (Strict-Transport-Security)"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "Der Header wird nicht gesendet: HSTS bindet jeden Port eines Hostnamens und nimmt das Durchklicken bei einem nicht vertrauenswürdigen Zertifikat weg, und auf localhost würde das den Container überdauern."
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "Jede über TLS eingetroffene Antwort trägt Strict-Transport-Security: max-age=31536000 (RFC 6797). Eine Antwort auf dem Widerrufs- und SCEP-Listener über Klartext-HTTP tut das nie."
+  },
+  "mode.requirements.signed-assertions.what": {
+    "en": "61c90b75f7b0a5e3",
+    "text": "Jede SAML-Assertion ist signiert, und jede SAML 1.1 Response"
+  },
+  "mode.requirements.signed-assertions.development": {
+    "en": "38123244c09ef3c2",
+    "text": "saml2.signAssertion, saml11.signAssertion und saml11.signResponse off — dienstweit oder an einer Anwendung — senden eine unsignierte Assertion oder eine unsignierte SAML 1.1 Response; so findet man eine Relying Party, die eine solche akzeptiert."
+  },
+  "mode.requirements.signed-assertions.product": {
+    "en": "aa7a88c57793c53d",
+    "text": "Alle drei werden dort IGNORIERT, wo sie gelesen werden (STS-CORE-0106), und beim Schreiben abgelehnt (STS-CORE-0103; STS-REG-0193 an einer Anwendung). Eine Assertion von SAML 2.0 wird unabhängig vom Binding signiert (saml-profiles-2.0-os 4.1.3.5 und 4.1.4.5 verlangen es über POST), und eine SAML 1.1 Response wird signiert (oasis-sstc-saml-bindings-1.1 4.1.2.4 verlangt es in Browser/POST), mitsamt ihrer Assertion. saml2.signResponse off bleibt erlaubt: ist die Assertion signiert, verlangt das Profil nichts weiter."
+  },
+  "mode.requirements.workload-security-header.what": {
+    "en": "776290c79cdd3f4a",
+    "text": "Ein Aufruf der Workload API ohne den Header workload.spiffe.io wird abgelehnt"
+  },
+  "mode.requirements.workload-security-header.development": {
+    "en": "27e04db12d62c69b",
+    "text": "spiffe.requireSecurityHeader ist standardmäßig on, wie im Produktmodus; off bedient einen Aufruf ohne den Header."
+  },
+  "mode.requirements.workload-security-header.product": {
+    "en": "3251248ccb01d6b6",
+    "text": "Immer abgelehnt (SPIFFE Workload Endpoint specification Abschnitt 3, eine Härtungsmaßnahme gegen SSRF): off wird dort IGNORIERT, wo es gelesen wird (STS-CORE-0106), und beim Schreiben abgelehnt (STS-CORE-0103)."
+  },
+  "mode.requirements.credential-status-reference.what": {
+    "en": "d2f22919aea82d16",
+    "text": "Ein vorgelegtes Credential muss einen Statusverweis tragen"
+  },
+  "mode.requirements.credential-status-reference.development": {
+    "en": "a291b8402b9977d5",
+    "text": "oid4vp.requireStatusReference ist standardmäßig all, wie im Produktmodus: jedes dem OpenID4VP Verifier vorgelegte Credential muss einen Status nennen, der sich zu VALID auflöst, sofern sein vertrauenswürdiger Aussteller nicht in oid4vp.statusOptionalIssuers steht. own-only nimmt fremde Credentials aus, und off — nur in der Entwicklung — akzeptiert eines aus diesem Bereich ohne Verweis sowie ein ldp_vc, dessen Presentation sein credentialStatus vorenthalten hat."
+  },
+  "mode.requirements.credential-status-reference.product": {
+    "en": "091040d9ab1a08e5",
+    "text": "off wird dort IGNORIERT, wo es gelesen wird (einmal protokolliert, STS-CORE-0106), und beim Schreiben abgelehnt (STS-CORE-0103): ein Credential dieses Bereichs ohne Statusverweis oder ein ldp_vc, das sein credentialStatus nicht offengelegt hat, wird immer abgelehnt. own-only und die Ausnahme je Aussteller sind erlaubt."
+  },
+  "mode.requirements.weaker-responses.what": {
+    "en": "57d0e17e4a068c39",
+    "text": "Eine Antwort darf schwächer hinausgehen, als verlangt wurde"
+  },
+  "mode.requirements.weaker-responses.development": {
+    "en": "552b8f1ae7baed48",
+    "text": "Eine Assertion oder ein Token, das hätte verschlüsselt sein sollen und nicht verschlüsselt werden konnte, wird im Klartext gesendet, mit einer Warnung."
+  },
+  "mode.requirements.weaker-responses.product": {
+    "en": "231c8252c053a97b",
+    "text": "Abgelehnt."
+  },
+  "mode.requirements.objects.what": {
+    "en": "9acaa32a6ee23f77",
+    "text": "Ein referenziertes Objekt muss bereits existieren"
+  },
+  "mode.requirements.objects.development": {
+    "en": "b998406cf3b99cec",
+    "text": "Ein Benutzer, eine Anwendung, ein Dienstprinzipal oder ein Autorisierungsserver wird beim ersten Nennen angelegt; das erlaubt einem Client, mit einem beliebigen Bezeichner auf diesen Dienst zu zeigen und einen funktionierenden Austausch zu erhalten."
+  },
+  "mode.requirements.objects.product": {
+    "en": "a33d2b29f75e06ee",
+    "text": "Ein unbekannter Name wird ABGELEHNT. Alles muss im Voraus angelegt werden, über die Konsole, /admin-api, SCIM oder ein LDAP-Add."
+  },
+  "mode.requirements.key-material.what": {
+    "en": "07ec07df478bb563",
+    "text": "Signierschlüssel überstehen einen Neustart"
+  },
+  "mode.requirements.key-material.development": {
+    "en": "c2e1929930228d7a",
+    "text": "Bei jedem Start wird ein neuer Signierschlüssel erzeugt und im Speicher gehalten. Ein Token übersteht einen Neustart nicht — das macht diesen Dienst wegwerfbar, und das `kid` wird aus dem Schlüsselmaterial abgeleitet, sodass zwei Instanzen niemals einen Namen über zwei Schlüssel veröffentlichen."
+  },
+  "mode.requirements.key-material.product": {
+    "en": "f4d83aab08e747e0",
+    "text": "EINMAL erzeugt und aus dem Persistenzspeicher zurückgelesen — den der Produktmodus deshalb verlangt — verschlüsselt mit AES-256-GCM unter einem Schlüssel, den dieser Dienst nie erzeugt und nie speichert, gelesen aus einer eingehängten Datei, aus AWS Secrets Manager, GCP Secret Manager, Azure Key Vault oder HashiCorp Vault."
+  },
+  "mode.requirements.client-secret.what": {
+    "en": "f43a81528281dea5",
+    "text": "Eine Anwendung für OAuth 2.0 / OIDC authentifiziert sich als das, als das sie registriert wurde"
+  },
+  "mode.requirements.client-secret.development": {
+    "en": "ce6389143b3d36c0",
+    "text": "Von niemandem wird etwas verlangt: ein Client darf nichts außer einer client_id senden, was auch immer seine Registrierung erklärt."
+  },
+  "mode.requirements.client-secret.product": {
+    "en": "9d1bf687c36cb03c",
+    "text": "Ein VERTRAULICHER Client — einer, dessen Registrierung irgendeine token_endpoint_auth_method außer \"none\" erklärt, was eine Registrierung einschließt, die gar keine erklärt hat (RFC 7591 Abschnitt 2 setzt sie standardmäßig auf client_secret_basic) — muss diese Anmeldedaten vorlegen, und sie müssen sich prüfen lassen. Ein ÖFFENTLICHER Client (ein ausdrückliches token_endpoint_auth_method=none) ist ERLAUBT und legt nichts vor, was richtig ist; woran er stattdessen gehalten wird, ist die Zeile darunter. Bis zum 2026-09-17 galt \"there are no public clients\"."
+  },
+  "mode.requirements.oauth-security-bcp.what": {
+    "en": "87c3aae84dd60fee",
+    "text": "Die OAuth 2.0 Security BCP (RFC 9700) wird durchgesetzt"
+  },
+  "mode.requirements.oauth-security-bcp.development": {
+    "en": "03a913ace3bef932",
+    "text": "Nur dort, wo oauth2.rfc9700 oder oauth2.oauth21 gesetzt ist, je Prozess oder je Bereich. Ausgeschaltet beantwortet dieser Dienst eine Anfrage, welche die BCP ablehnen würde — so wird ein Client gegen beide Antworten geübt."
+  },
+  "mode.requirements.oauth-security-bcp.product": {
+    "en": "a92e513a7178c6bf",
+    "text": "IMMER, ungeachtet dieser Einstellungen, und ein Bereich kann es nicht ausschalten. Von einem öffentlichen Client wird PKCE mit S256 verlangt, die Redirect-URI muss exakt übereinstimmen, kein Open Redirect, keine Redirect-URI mit http außerhalb von Loopback, eine Challenge oder Nonce, die sich nicht wiederholen lässt, eine Nonce bei jedem id_token, kein Response-Typ, der vom Autorisierungsendpunkt ein Zugriffstoken ausstellt, und Refresh-Token, die rotieren und eine Wiederverwendung erkennen. Daran wird ein öffentlicher Client STATT an Anmeldedaten gehalten, und deshalb kann einer überhaupt erlaubt sein (2026-09-17)."
+  },
+  "mode.requirements.public-client-grants.what": {
+    "en": "2b836cf35c373f3d",
+    "text": "Welche Grants ein öffentlicher Client verwenden darf"
+  },
+  "mode.requirements.public-client-grants.development": {
+    "en": "9a103bc53ec958ff",
+    "text": "Jeder Grant, den dieser Dienst anbietet, und zwar jedem."
+  },
+  "mode.requirements.public-client-grants.product": {
+    "en": "82bf0ab77ef49e17",
+    "text": "Der Authorization-Code-Grant und der Refresh-Grant, nicht aber der Client-Credentials-Grant (RFC 6749 Abschnitt 4.4 definiert ihn für vertrauliche Clients; OAuth 2.1 Abschnitt 4.2 sagt es ausdrücklich) und nicht der Resource-Owner-Password-Grant (RFC 9700 Abschnitt 2.4: er ist MUST NOT zu verwenden). Ein vertraulicher Client bleibt unberührt."
+  },
+  "mode.requirements.introspection.what": {
+    "en": "9f11bb5247c41fb8",
+    "text": "Ein Aufrufer von /oauth2/introspect authentifiziert sich"
+  },
+  "mode.requirements.introspection.development": {
+    "en": "8a4fb8f785e4d1f4",
+    "text": "Eine JSON-Introspektion nach RFC 7662 antwortet jedem, der die Tokenzeichenfolge besitzt, ohne Anmeldedaten des Clients. Eine JWT-Antwort nach RFC 9701 (Accept: application/token-introspection+jwt) ist in beiden Modi die Ausnahme: ihr aud nennt den Ressourcenserver, der angefragt hat, daher muss sich dieser Aufrufer als Client mit hinterlegten Anmeldedaten authentifizieren und wird andernfalls mit 400 invalid_client abgelehnt."
+  },
+  "mode.requirements.introspection.product": {
+    "en": "b53ed135725fbe0c",
+    "text": "Jede Introspektionsanfrage muss sich als Client mit Anmeldedaten authentifizieren, die sich prüfen lassen — client_secret_basic oder post, eine Client-Assertion oder ein Zertifikat nach RFC 8705 — und wird andernfalls mit 401 invalid_client abgelehnt (400 bei einer JWT-Anfrage, RFC 9701 Abschnitt 5)."
+  },
+  "mode.requirements.revocation.what": {
+    "en": "5677b3fbce656c33",
+    "text": "Ein Aufrufer von /oauth2/revoke authentifiziert sich und widerruft nur sein eigenes Token"
+  },
+  "mode.requirements.revocation.development": {
+    "en": "99c5947846bf5a05",
+    "text": "Ein Widerruf nach RFC 7009 ohne Anmeldedaten des Clients widerruft jedes Zugriffs- oder Refresh-Token, das dieser Bereich ausgestellt hat, für jeden, der die Tokenzeichenfolge besitzt. Ein Aufrufer, der DOCH Anmeldedaten vorlegt, wird daran gehalten, woran der Produktmodus ihn hält: Anmeldedaten, die sich nicht prüfen lassen, werden mit 401 invalid_client abgelehnt, und ein Token, das einem anderen Client ausgestellt wurde, wird mit invalid_grant abgelehnt."
+  },
+  "mode.requirements.revocation.product": {
+    "en": "753907c223c4fde4",
+    "text": "Jede Widerrufsanfrage muss von einem Client kommen: ein vertraulicher legt Anmeldedaten vor, die sich prüfen lassen (die Methoden des Token-Endpunkts), ein öffentlicher nennt seine registrierte client_id, und alles andere wird mit 401 invalid_client abgelehnt (RFC 7009 Abschnitt 2.1). Ein Token, das einem anderen Client ausgestellt wurde, wird mit 400 invalid_grant abgelehnt, und nichts wird widerrufen."
+  },
+  "mode.requirements.oid4vp-x509-host.what": {
+    "en": "b6950c831f947bf4",
+    "text": "Der Name x509_san_dns des OpenID4VP Verifier ist konfiguriert und wird nie einer Anfrage entnommen"
+  },
+  "mode.requirements.oid4vp-x509-host.development": {
+    "en": "c5a807820eba98b7",
+    "text": "Sind oid4vp.x509DnsName leer und global.publicBaseUrl nicht festgehalten, zertifiziert der Verifier den Host, an dem eine Anfrage eintraf (ein Zertifikat je Name, höchstens sechzehn je Bereich), und nennt ihn als seinen x509_san_dns Client Identifier."
+  },
+  "mode.requirements.oid4vp-x509-host.product": {
+    "en": "1bc891545748f93d",
+    "text": "Der Name ist oid4vp.x509DnsName oder der Host von global.publicBaseUrl; fehlt beides, wird eine Anfrage x509_san_dns abgelehnt (STS-VC-0110) — die Response URI wird aus demselben Host aufgebaut, sodass ein Host-Header bestimmen würde, wohin eine signierte, vertrauenswürdige Anfrage Presentations sendet. x509_hash braucht keinen Namen und bleibt unberührt."
+  },
+  "mode.requirements.request-objects.what": {
+    "en": "6376797d2aae208e",
+    "text": "Eine JWT-gesicherte Autorisierungsanfrage ist signiert, und eine request_uri ist HTTPS"
+  },
+  "mode.requirements.request-objects.development": {
+    "en": "00801b6681025497",
+    "text": "Ein mit `none` signiertes Request Object (OpenID Connect Core 6.1) wird akzeptiert, sofern kein signiertes verlangt wird — durch oauth2.requireSignedRequestObject, den Eintrag des Clients oder das Profil des Autorisierungsservers. Eine registrierte request_uri darf Klartext-http sein und mit einem beliebigen Medientyp antworten; beides wird protokolliert."
+  },
+  "mode.requirements.request-objects.product": {
+    "en": "247799ea9e0595ef",
+    "text": "Ein Request Object muss signiert sein (RFC 9101 Abschnitt 4) und wird andernfalls mit invalid_request_object abgelehnt. Eine registrierte request_uri muss https sein und mit application/oauth-authz-req+jwt oder application/jwt antworten, sonst wird die Anfrage mit invalid_request_uri abgelehnt, ebenso wenn ihr Host sich zu einer Loopback-, privaten, Link-Local- oder reservierten Adresse auflöst. In beiden Modi wird eine request_uri nur geholt, wenn der Client sie registriert hat."
+  },
+  "mode.requirements.management-api.what": {
+    "en": "7e9bb52b567f5c3c",
+    "text": "/admin-api verlangt ein Zugriffstoken und eine Rolle"
+  },
+  "mode.requirements.management-api.development": {
+    "en": "a91239e28663677c",
+    "text": "Ein OAuth 2.0-Zugriffstoken, das admin:read oder admin:write trägt, solange adminApi.authRequired eingeschaltet ist (der Standard). Ist es aus: offen. Damit steuern die Tests den Dienst, und so kommt man wieder hinein, wenn niemand eine Rolle innehat — was zugleich heißt, dass jeder, der diesen Port erreichen kann, sich darüber beide Rollen selbst geben kann."
+  },
+  "mode.requirements.management-api.product": {
+    "en": "2b5a59d171c39596",
+    "text": "Dasselbe Zugriffstoken, immer. adminApi.authRequired=false wird beim Schreiben abgelehnt und dort ignoriert, wo es gespeichert wird: Das Tor dieser API ist das einzige Tor der Konsole, daher darf nichts es öffnen. Der Weg zurück ist adminApi.clientSecret, vor dem Start festgelegt."
+  },
+  "mode.requirements.console.what": {
+    "en": "44bcae0f35012ef6",
+    "text": "/admin erfordert eine Anmeldung und eine Rolle"
+  },
+  "mode.requirements.console.development": {
+    "en": "6c836b756fab2991",
+    "text": "Erforderlich — und das war es immer; die Einstellung, die es abschalten konnte, ist weg. Die Anmeldung dahinter prüft kein Passwort, sodass das Tor nur belegt, dass jemand einen Namen eingegeben hat, der eine Rolle innehat."
+  },
+  "mode.requirements.console.product": {
+    "en": "d8fc7997d383c0b0",
+    "text": "Erforderlich, und die Anmeldung dahinter prüft die Anmeldedaten."
+  },
+  "mode.requirements.console-bootstrap-window.what": {
+    "en": "9aae56ff92524098",
+    "text": "Die Konsole wird nicht für jeden geöffnet, bevor ihr Bootstrap-Administrator eintrifft"
+  },
+  "mode.requirements.console-bootstrap-window.development": {
+    "en": "3e57442382188f6c",
+    "text": "Bis sich der Bootstrap-Administrator eines Vertrauensbereichs zum ersten Mal bei /admin anmeldet — oder, wo keiner angelegt wurde, solange der Bestand leer ist — hat jede angemeldete Person beide Konsolenrollen in diesem Vertrauensbereich, solange admin.openWhenEmpty eingeschaltet ist. Jede Anmeldung dieses Kontos schließt das Fenster."
+  },
+  "mode.requirements.console-bootstrap-window.product": {
+    "en": "80feb38828e08d3d",
+    "text": "Niemand hat eine Rolle wegen des Fensters, was auch immer admin.openWhenEmpty sagt: Nur der Bestand entscheidet. Bis der Bootstrap-Administrator die Konsole beansprucht hat, werden ihre Rollen nur bei einer PASSWORT-Anmeldung über den eigenen Vertrauensbereich anerkannt (amr pwd, hier geprüft, nicht über einen Föderationspartner, ein Zertifikat, eine Wallet oder ein Kerberos-Ticket), und nur diese Anmeldung beansprucht sie (STS-ADMIN-0796); der Debugger und die Zertifikatseinschreibungsbefugnis einer Sitzung warten auf die Beanspruchung. Ein Vertrauensbereich ohne Bootstrap-Administrator und mit leerem Bestand ist geschlossen und wird beim Start protokolliert (STS-ADMIN-0798); POST /admin-api/rbac/grant ist der Weg hinein."
+  },
+  "mode.requirements.certificate-enrollment.what": {
+    "en": "e1e5d0112481b526",
+    "text": "ACME und EST verlangen TLS; Anmeldedaten einer Einschreibung werden geprüft"
+  },
+  "mode.requirements.certificate-enrollment.development": {
+    "en": "cbe243baf730a04d",
+    "text": "ACME (/enroll/acme) und EST (/.well-known/est) antworten auch über unverschlüsseltes HTTP und protokollieren das. Ein EST-Passwort wird nicht geprüft (die Zeile zu den Anmeldedaten), und das Client-Geheimnis einer Anwendung ist nicht erforderlich. Ein MAC für ACME External Account Binding und ein SCEP-Challenge-Passwort WERDEN geprüft, und für wen ein Zertifikat ausgestellt werden darf, wird genau wie im Produktmodus durchgesetzt: für Sie selbst oder für jede Person im Vertrauensbereich, wenn Sie Admin Write innehaben."
+  },
+  "mode.requirements.certificate-enrollment.product": {
+    "en": "f27791f1f0f45794",
+    "text": "Eine Anfrage, die nicht über TLS gekommen ist, wird abgelehnt (STS-ENROLL-0060). EST prüft das Passwort im Verzeichnis und verlangt das Client-Geheimnis. Alles andere ist wie im Entwicklungsmodus."
+  },
+  "mode.requirements.scim.what": {
+    "en": "9a890adef7950278",
+    "text": "/scim/v2 verlangt Anmeldedaten"
+  },
+  "mode.requirements.scim.development": {
+    "en": "7f09cdc729d11a04",
+    "text": "Erforderlich in einem der sechs Schemata aus RFC 7644 Abschnitt 2 — und das war es immer —, wobei keines über seine Form hinaus geprüft wird."
+  },
+  "mode.requirements.scim.product": {
+    "en": "6a52ccdf24efb34f",
+    "text": "Erforderlich und geprüft. HTTP Digest wird nicht angeboten, weil RFC 7616 das Passwort oder seinen Hash braucht und ein scrypt-Hash keines von beiden prüfen kann; ein HOBA-Schlüssel darf nur vom angemeldeten Inhaber eines bestehenden Kontos registriert werden, und das Registrieren erzeugt nie ein Konto."
+  },
+  "mode.requirements.shared-signals.what": {
+    "en": "b32bd06900029893",
+    "text": "/ssf verlangt Anmeldedaten"
+  },
+  "mode.requirements.shared-signals.development": {
+    "en": "5056af1ab55c8c24",
+    "text": "Erforderlich in einem der Schemata, die die Endpunkte annehmen — und das war es immer —, keines über seine Form hinaus geprüft."
+  },
+  "mode.requirements.shared-signals.product": {
+    "en": "815c7d1e43aaf41d",
+    "text": "Erforderlich und geprüft: Basic-Anmeldedaten werden gegen das userPassword der Person geprüft, und ssf.authBasic entfernt das Schema."
+  },
+  "mode.requirements.demo-data.what": {
+    "en": "bc4f8fb3268c8841",
+    "text": "Ein neuer Dienst enthält Demonstrationsdaten"
+  },
+  "mode.requirements.demo-data.development": {
+    "en": "25a09144798ca6c5",
+    "text": "Das Verzeichnis wird mit drei Personen, zwei Gruppen, einem Bind-Konto und den Identitäten remote-pep-1 und xacml-user-1 in den beiden XACML-Rollengruppen befüllt; das KDC mit Fixture-Konten, Delegationsregeln und einem vertrauenswürdigen Bereich, dessen Passwörter im Quelltext stehen; die SPIFFE-Registrierung mit Beispieleinträgen; und jede Person erhält erzeugte Anmeldedatenattribute."
+  },
+  "mode.requirements.demo-data.product": {
+    "en": "2d0556abc166bc57",
+    "text": "Nichts davon. Verzeichnis, Prinzipaldatenbank und Registrierung enthalten, was konfiguriert oder bereitgestellt wurde, und sonst nichts — die beiden XACML-Rollengruppen gibt es, und sie sind leer, und das KDC weigert sich, krbtgt oder sein Dienstkonto auf den in diesem Repository veröffentlichten Passwörtern aufzubauen."
+  },
+  "mode.requirements.test-double.what": {
+    "en": "f037d7b70aacf864",
+    "text": "Der Dienst beschreibt sich als Test-Double"
+  },
+  "mode.requirements.test-double.development": {
+    "en": "ffe468af90a49423",
+    "text": "`testDouble` ist in GET /admin-api/sts-metadata wahr: Dieser Dienst prüft kein Passwort und validiert kein Zugriffstoken, und eine Endpunktliste darf nicht so gelesen werden, als behauptete sie, er tue es. Der Index der Konsole stellt „Was er bewusst nicht tut“ dar."
+  },
+  "mode.requirements.test-double.product": {
+    "en": "2fef3ea99ceb768a",
+    "text": "`testDouble` ist falsch: Passwörter werden geprüft und Zugriffstoken validiert, und das Dokument sagt das. Der Index der Konsole stellt diese Liste nicht dar."
+  },
+  "mode.requirements.claim-values.what": {
+    "en": "3e4acbf9a020d8f8",
+    "text": "Ein Claim-Wert darf erfunden werden"
+  },
+  "mode.requirements.claim-values.development": {
+    "en": "656bcc392c40db7a",
+    "text": "Ein Token nennt eine Persona — Familienname `Mock`, eine Adresse unter sts.example mit email_verified true — Anmeldedaten füllen ein fehlendes Attribut mit einem erzeugten Wert, ein Sicherheitsereignis nennt ein Subjekt unter @example.com, und einer Person ohne aufgezeichnete Identitätsprüfung wird eine unter dem Vertrauensrahmen `urn:sts:demo` geantwortet (OpenID Connect for Identity Assurance 1.0, #127)."
+  },
+  "mode.requirements.claim-values.product": {
+    "en": "3a1905ca05d2e355",
+    "text": "Ein Wert stammt aus dem Verzeichniseintrag der Person oder entfällt; `verified_claims` werden nur aus einer am Eintrag aufgezeichneten Prüfung herausgegeben, und email_verified ist nur für eine geprüfte Adresse true: eine, die die Person über einen per E-Mail gesendeten Link nachgewiesen hat (#63), oder eine, die eine vertrauenswürdige Quelle geschrieben hat — ein Administrator (die Konsole, /admin-api oder ein LDAP-Schreibvorgang mit Admin Write), SCIM oder ein Föderationspartner, der nicht email_verified false angegeben hat (#64)."
+  },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "Eine Person trägt die Attribute, die die Attributrichtlinie des Vertrauensbereichs verlangt"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "Die Richtlinie wird gespeichert und unter Verzeichnis > Richtlinien dargestellt, aber nicht durchgesetzt: Eine Person darf mit nicht mehr als einem Benutzernamen angelegt werden, und eine Bearbeitung darf jedes Attribut außer cn und sn leeren."
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "Ein Anlegen, das ein erforderliches Attribut ohne Wert lässt, wird an jeder Tür abgelehnt (STS-LDAP-0162) — die Konsole, /admin-api, SCIM, ein LDAP-Add (objectClassViolation, 65), eine HOBA-Registrierung und der Massenimport (STS-LDAP-0163) — und eine föderierte erste Anmeldung, deren Partner keines geliefert hat, legt niemanden an (STS-FED-0158). Eine Bearbeitung, die einen erforderlichen Wert entfernen würde, wird abgelehnt (STS-LDAP-0164). uid, cn und sn sind immer erforderlich; givenName und mail standardmäßig. Einer Person, der bereits eines gefehlt hat, wird eine Anmeldung nicht verweigert und auch nicht die Bearbeitung von etwas anderem."
+  },
+  "mode.requirements.saml-request-signatures.what": {
+    "en": "85e7bc435ce1b0c0",
+    "text": "Die Anfrage eines SAML 2.0-Dienstanbieters ist signiert"
+  },
+  "mode.requirements.saml-request-signatures.development": {
+    "en": "6958e9df9b9440fb",
+    "text": "Eine unsignierte AuthnRequest oder LogoutRequest wird akzeptiert (saml2.requireSignedAuthnRequests=auto), es sei denn, die übernommenen Metadaten des Dienstanbieters sagen AuthnRequestsSigned. Eine Signatur, die VORLIEGT, wird gegen das registrierte Zertifikat des Dienstanbieters geprüft und abgelehnt, wenn sie die Prüfung nicht besteht; ohne registriertes Zertifikat wird sie als nicht geprüft aufgezeichnet. Das Zertifikat, das eine Anfrage in ihrem KeyInfo mitführt, wird als BEOBACHTET aufgezeichnet — nie als Vertrauensanker — und eine Assertion darf weiterhin darauf verschlüsselt werden, wenn der Eintrag kein anderes Zertifikat enthält."
+  },
+  "mode.requirements.saml-request-signatures.product": {
+    "en": "c05ec261d945ccda",
+    "text": "Eine unsignierte AuthnRequest oder LogoutRequest wird abgelehnt (STS-SAML-0063). Eine Signatur wird genau wie im Entwicklungsmodus geprüft, und eine, für die kein registriertes Zertifikat zur Prüfung da ist, wird als unsigniert abgelehnt. Auf ein BEOBACHTETES Zertifikat wird nicht verschlüsselt, bis eine Bedienperson es auf der Seite SAML 2.0 oder mit POST /admin-api/saml2/confirm-signing-certificate bestätigt."
+  },
+  "mode.requirements.saml-metadata-query.what": {
+    "en": "0ac0996817bde223",
+    "text": "Eine Metadata-Query-Suche registriert nur einen Dienstanbieter, für den eine Bedienperson oder ein Vertrauensanker bürgt"
+  },
+  "mode.requirements.saml-metadata-query.development": {
+    "en": "161781e2465d3676",
+    "text": "Eine Anfrage von einer unbekannten entityID startet eine MDQ-Suche (saml2.mdqBaseUrl), und eine Antwort, die diese Entität beschreibt, legt den Anwendungseintrag an, gebunden an saml2.metadataTrustAnchors nur, wenn welche gesetzt sind. Die Aktion „Import aus MDQ“ tut dasselbe mit oder ohne Anker."
+  },
+  "mode.requirements.saml-metadata-query.product": {
+    "en": "e7990881d9e5016a",
+    "text": "Eine durch eine Anfrage gestartete Suche wird für eine unbekannte entityID nicht ausgeführt, wenn der Vertrauensbereich keine saml2.metadataTrustAnchors hat (STS-SAML-0080); mit Ankern legt die Antwort den Eintrag nur an, wenn ihre Signatur sich gegen einen von ihnen prüfen lässt (STS-SAML-0081). Ein „Import aus MDQ“ einer Bedienperson ohne Anker wird abgelehnt (STS-SAML-0084), es sei denn, saml2.mdqImportWithoutAnchors ist eingeschaltet. Die abgelehnten entityIDs stehen auf der Seite SAML 2.0 und unter GET /admin-api/saml2 (mdqRefused)."
+  },
+  "mode.requirements.saml-unregistered-providers.what": {
+    "en": "68a665e10d606a70",
+    "text": "SAML-Metadaten und Endpunkte je Anbieter antworten nur für einen registrierten Anbieter"
+  },
+  "mode.requirements.saml-unregistered-providers.development": {
+    "en": "98a80675acb99981",
+    "text": "GET /saml2/metadata/{sp} und /saml11/metadata/{rp} stellen für jeden Namen ein signiertes Dokument aus, und die Endpunkte für SSO, SLO, Artifact und Responder unter {sp} oder {rp} antworten dafür."
+  },
+  "mode.requirements.saml-unregistered-providers.product": {
+    "en": "5a56aaa1243f844e",
+    "text": "Jeder dieser Pfade antwortet mit 404 für einen Namen, der kein registrierter SAML 2.0-Dienstanbieter (STS-SAML-0082) und keine SAML 1.1-vertrauende Partei (STS-SAML-0083) ist. Die nicht auf einen Anbieter eingeschränkten Dokumente bleiben unverändert."
+  },
+  "mode.requirements.unregistered-applications.what": {
+    "en": "f59ad1efb04f3196",
+    "text": "Ein Token wird nur für eine registrierte Anwendung ausgestellt (#496)"
+  },
+  "mode.requirements.unregistered-applications.development": {
+    "en": "d4a6c5bb3e64bdeb",
+    "text": "Ein WS-Trust-RST wird für jedes AppliesTo beantwortet und auch für keines (ein Token ohne Audience-Beschränkung); ein WS-Federation-wsignin1.0 für jedes wtrealm. Jedes wird unter der gemeinsamen entityID ausgestellt, und die Anwendung wird bei ihrer ersten Sichtung ins Register eingetragen."
+  },
+  "mode.requirements.unregistered-applications.product": {
+    "en": "ad9954edbb251dbb",
+    "text": "Ein RST, dessen AppliesTo sich auf keine registrierte Anwendung auflöst (appRegisteredBy nicht gesetzt — eine Sichtung ist keine Registrierung), wird mit wst:InvalidScope abgelehnt (STS-WSTRUST-0030), und eines ohne AppliesTo mit wst:InvalidRequest (STS-WSTRUST-0031), für jeden Tokentyp und OnBehalfOf / ActAs, bevor der Anfragende authentifiziert oder irgendetwas aufgezeichnet wird. Ein wsignin1.0, dessen wtrealm keine registrierte vertrauende Partei nennt, wird mit einer 404-Seite abgelehnt (STS-WSFED-0021), noch vor dem Anmeldebildschirm."
+  },
+  "mode.requirements.unregistered-oauth-clients.what": {
+    "en": "264387e4eb558328",
+    "text": "Ein OAuth 2.0-Client wird nur bedient, wenn er registriert ist (#496)"
+  },
+  "mode.requirements.unregistered-oauth-clients.development": {
+    "en": "5a23e83731e4dd69",
+    "text": "Der Autorisierungsendpunkt prüft an der client_id nichts außer ihren Redirect-URIs, und der Token-Endpunkt trägt einen Client ein, den er gesehen hat, bevor er ihn ablehnt. Eine Audience nach RFC 8693, die eine Sichtung eingetragen hat, ist ein Ziel, und die Audience einer Assertion, die eine solche nennt, ist eine vertrauende Partei."
+  },
+  "mode.requirements.unregistered-oauth-clients.product": {
+    "en": "6b65fe6221534e38",
+    "text": "Eine Autorisierungsanfrage oder PAR, die eine von niemandem registrierte client_id nennt (appRegisteredBy nicht gesetzt — eine Sichtung ist keine Registrierung), ist auf diesem Server ein 400, nie eine Umleitung (STS-OAUTH-0947; keine genannt: STS-OAUTH-0948); eine Token-Anfrage, die eine solche nennt, ist 401 invalid_client (STS-OAUTH-0949), bevor sie gezählt oder aufgezeichnet wird. Eine Audience oder Resource nach RFC 8693, die eine nicht registrierte Anwendung nennt, ist das unregistered-target der Richtlinie (invalid_target, STS-OAUTH-0793), und die Audience einer zum Austausch vorgelegten Assertion muss unter any-declared-relying-party eine registrierte Anwendung sein."
+  },
+  "mode.requirements.unregistered-saml-providers.what": {
+    "en": "15c793bc36671f22",
+    "text": "Ein SAML-Dienstanbieter oder eine vertrauende Partei wird nur beantwortet, wenn registriert (#496)"
+  },
+  "mode.requirements.unregistered-saml-providers.development": {
+    "en": "a0d68da6bdce5cb8",
+    "text": "Eine AuthnRequest, eine LogoutRequest und ein SAML 1.1-Browserablauf werden für jeden Issuer beantwortet; die Signaturprüfung zeichnet ihn auf, und ein Eintrag, den eine Sichtung angelegt hat, zählt auf den Pfaden je SP als Dienstanbieter."
+  },
+  "mode.requirements.unregistered-saml-providers.product": {
+    "en": "121d2314a39e79b5",
+    "text": "Eine AuthnRequest, deren Issuer kein registrierter SAML 2.0-Dienstanbieter ist (appRegisteredBy nicht gesetzt — eine Sichtung ist keine Registrierung), ist eine 403-Seite, bevor ihre Signatur geprüft wird (STS-SAML-0103; nur eine Metadata-Query-Suche für eine unbekannte entityID wird noch eingereiht, nach der Vertrauensanker-Regel); eine LogoutRequest von einem solchen beendet nichts (STS-SAML-0104); ein SAML 1.1-Ablauf für eine nicht registrierte vertrauende Partei ist eine 403-Seite (STS-SAML-0105). Die Pfade je SP, die Attributautorität und der SAML 1.1-Responder zählen nur einen registrierten Eintrag, und eine MDQ-Suche behandelt einen nicht registrierten Eintrag als unbekannt."
+  },
+  "mode.requirements.unregistered-gnap-clients.what": {
+    "en": "60ada07c629c3794",
+    "text": "Ein GNAP-Client oder Ressourcenserver wird nur bedient, wenn er registriert ist (#496)"
+  },
+  "mode.requirements.unregistered-gnap-clients.development": {
+    "en": "431c5d7a551b30c7",
+    "text": "Ein unbekannter nachgewiesener Schlüssel wird bei der ersten Sichtung zu einem Anwendungseintrag, und Schlüssel sowie Instanzkennung dieses Eintrags werden von da an akzeptiert."
+  },
+  "mode.requirements.unregistered-gnap-clients.product": {
+    "en": "43ea90ee5ea17888",
+    "text": "Ein unbekannter Schlüssel wird abgelehnt (STS-GNAP-0082), und ebenso ein Schlüssel oder eine Instanzkennung, die zu einem Eintrag gehören, den niemand registriert hat (appRegisteredBy nicht gesetzt — einer, der bei der ersten Sichtung angelegt wurde, ist keine Registrierung): 401 invalid_client oder invalid_resource_server (STS-GNAP-0902), bevor der Eintrag erneut gesichtet oder etwas ausgestellt wird."
+  },
+  "mode.requirements.return-addresses.what": {
+    "en": "49ff721244e24e9d",
+    "text": "Eine Antwort geht dorthin, wohin die Anfrage sagt"
+  },
+  "mode.requirements.return-addresses.development": {
+    "en": "6c6eccc7e6bfce66",
+    "text": "Jede absolute URL, die eine SAML-AuthnRequest, ein SAML 1.1-shire, ein WS-Federation-wreply oder ein Wallet-Link nennt, wird verwendet, ob registriert oder nicht — und eine Adresse, die eine Sichtung auf einen Anwendungseintrag schreibt (oder ein Callback, den Konsole oder Portal aus einem Host-Header lernen), wird auf appReturnAddressObserved als beobachtet MARKIERT."
+  },
+  "mode.requirements.return-addresses.product": {
+    "en": "c9aeb6e9c45812da",
+    "text": "Nur eine Adresse, die auf dem eigenen Eintrag der Anwendung registriert ist — und eine Sichtung fügt nie eine hinzu. Eine noch als beobachtet markierte Adresse ist NICHT registriert: Der Entwicklungsmodus hat sie dorthin geschrieben, und sie wird abgelehnt, bis eine Bedienperson sie auf der Seite der Anwendung oder mit POST /admin-api/applications/confirm-address bestätigt (STS-REG-0049). Adressen, die aufgezeichnet wurden, bevor Sichtungen markiert wurden, tragen keine Markierung und müssen trotzdem geprüft werden, bevor ein Vertrauensbereich umgeschaltet wird. Die eigenen Callbacks von Konsole und Portal werden nicht aus dem Host-Header einer Anfrage gelernt (setzen Sie global.publicBaseUrl), und eine WebAuthn RP ID, die nicht zum Host passt, lehnt die Zeremonie ab, statt auf ihn zurückzufallen."
+  },
+  "mode.requirements.test-controls.what": {
+    "en": "0a76dd48b1006dbe",
+    "text": "Teststeuerungen sind offen"
+  },
+  "mode.requirements.test-controls.development": {
+    "en": "fd65d2d3c735e23e",
+    "text": "Das Abmelden einer anderen Person mit ?username=, die offene dynamische Client-Registrierung, die SAML 1.1-Attributautorität und die HOBA-Schlüsselregistrierung antworten jedem, eine abgelehnte SCIM-Digest-Challenge gibt das gemeinsame Passwort aus, und restore-kerberos der Konsole löscht einen Kerberos-Abmeldezeitpunkt."
+  },
+  "mode.requirements.test-controls.product": {
+    "en": "eac9684b6453a72e",
+    "text": "Jedes davon wird abgelehnt oder verlangt die Anmeldedaten, die sein administratives Gegenstück bereits verlangt. Eine Abmeldung, die jemand anderen nennt als den angemeldeten Aufrufer, wird abgelehnt, was auch immer logout.anyUser sagt. restore-kerberos wird auf der Konsole wie unter /admin-api abgelehnt, sodass eine Kerberos-Abmeldung besteht bis zu dem spätesten Zeitpunkt, zu dem ein Ticket von vor ihr gültig gewesen sein könnte. Die dynamische Client-Registrierung wird abgelehnt, es sei denn, oauth2.openRegistration ist eingeschaltet — oder die Registrierung trägt ein Software Statement, dem dieser Vertrauensbereich vertraut (er hat es ausgestellt, oder eine Anwendung nennt dessen Aussteller), und oauth2.softwareStatementOpensRegistration ist eingeschaltet; damit entscheidet die Bedienperson, wer sich registrieren darf, indem sie entscheidet, wessen Statements vertraut wird."
+  },
+  "mode.requirements.directory-writes.what": {
+    "en": "3ad0ca0be1789212",
+    "text": "Ein Schreibvorgang ins Verzeichnis über LDAP ist autorisiert"
+  },
+  "mode.requirements.directory-writes.development": {
+    "en": "086b01f4240590eb",
+    "text": "Jede Verbindung darf in jedem Vertrauensbereich jeden Eintrag hinzufügen, ändern, umbenennen oder löschen, anonyme eingeschlossen — genau das lässt einen Test den rohen Socket ohne Vorbereitung ansteuern."
+  },
+  "mode.requirements.directory-writes.product": {
+    "en": "18434dc600cc297c",
+    "text": "Eine anonyme Verbindung schreibt nichts. Eine Verbindung, die als jemand mit Admin Write gebunden ist — im Verzeichnis des Standard-Vertrauensbereichs und nicht bloß, weil noch keine Rolle ein Mitglied hat —, schreibt alles. Alle anderen dürfen nur ihren EIGENEN Eintrag ändern und nur die Attribute, die ldap.selfWritableAttributes nennt; ein userPassword darunter muss weiterhin die Passwortrichtlinie erfüllen. Die Ablehnung ist der LDAP-Ergebniscode 50, insufficientAccessRights. Was das nicht umfasst, ist das LESEN: siehe directory-reads und directory-read-authorization."
+  },
+  "mode.requirements.directory-reads.what": {
+    "en": "5e95694a2b5ed0cc",
+    "text": "Ein Lesen des Verzeichnisses über LDAP erfordert einen Bind und gibt nie Anmeldedaten zurück"
+  },
+  "mode.requirements.directory-reads.development": {
+    "en": "9f319ab9234595bb",
+    "text": "Jede Verbindung, ob anonym oder nie gebunden, darf jeden Eintrag suchen und vergleichen und jedes Attribut außer einem Kerberos-Schlüssel lesen und darf createTimestamp, modifyTimestamp und entryDN wie jedes andere Attribut schreiben."
+  },
+  "mode.requirements.directory-reads.product": {
+    "en": "c5c88b050f8273ed",
+    "text": "Eine Suche oder ein Compare auf einer Verbindung, die sich nicht als jemand gebunden hat, wird mit Ergebniscode 50, insufficientAccessRights, abgelehnt — ausgenommen das Root-DSE, das ein Client liest, um zu erfahren, wohin er den Bind richtet. Anmeldedatenattribute (userPassword, pwdHistory, Client-Geheimnisse, Registrierungszugriffstoken, private Schlüssel, TOTP-Geheimnisse, Wiederherstellungscodes, Aktivierungstoken und Kerberos-Schlüssel) werden von einer Suche nie zurückgegeben, sind für einen Such-FILTER unsichtbar, damit er nicht als Orakel dienen kann, und lassen sich nicht vergleichen; ein Administrator ist nicht ausgenommen. createTimestamp, modifyTimestamp und entryDN können von niemandem geschrieben werden, mit Ergebniscode 19, constraintViolation."
+  },
+  "mode.requirements.directory-read-authorization.what": {
+    "en": "1cdf8bb4054623dc",
+    "text": "Ein Lesen des Verzeichnisses über LDAP ist gegen die Identität autorisiert, die sich gebunden hat"
+  },
+  "mode.requirements.directory-read-authorization.development": {
+    "en": "18724e51d13abb83",
+    "text": "Jede Verbindung sieht jeden Eintrag und jedes Attribut außer einem Kerberos-Schlüssel, und jeder DN bindet sich — der einer Anwendung eingeschlossen —, genau das lässt einen Test den rohen Socket ohne Vorbereitung ansteuern."
+  },
+  "mode.requirements.directory-read-authorization.product": {
+    "en": "4e4200c1388999dd",
+    "text": "Jemand mit Admin Read oder Admin Write — auf dem Bestand des Standard-Vertrauensbereichs, der jeden Vertrauensbereich erreicht, oder auf dem eigenen Bestand eines Vertrauensbereichs, der nur diesen erreicht — liest jeden Eintrag im Geltungsbereich. Alle anderen lesen ihren EIGENEN Eintrag vollständig; von einer anderen Person nur die Attribute, die ldap.directoryReadableAttributes nennt (standardmäßig keine, sodass eine andere Person überhaupt nicht vorhanden ist); eine Gruppe nur, wenn sie Mitglied von ihr sind, und dann deren cn, description und objectClass (deren Mitglieder zusätzlich mit ldap.groupMembersReadable); und die Container, dem Namen nach. Anwendungen, Föderationen, Richtlinien, Rollen, Vertrauensanker und SPIFFE-Registrierungen sind für sie unsichtbar. Ein Eintrag, den die lesende Person nicht sehen darf, antwortet mit noSuchObject (32), genau wie ein fehlender, ein Attribut, das sie nicht lesen darf, fehlt im Ergebnis UND für einen Suchfilter, und ein Compare dagegen wird mit 50 abgelehnt. Ein Bind-DN, der keine Person nennt — der einer Anwendung, der einer Föderation —, wird mit 49 abgelehnt, bevor sein Passwort gelesen wird. Das Root-DSE und ein Lesen mit Scope base eines CRL-Eintrags bleiben offen, und Anmeldedaten bleiben allen vorenthalten."
+  },
+  "mode.requirements.directory-binds.what": {
+    "en": "3f010c21151814fb",
+    "text": "Ein LDAP-Bind ist vertraulich, authentifiziert und ratenbegrenzt"
+  },
+  "mode.requirements.directory-binds.development": {
+    "en": "750bac629938a394",
+    "text": "Jeder Bind gelingt, außer einem mit dem Passwort „invalid“, auf 389 wie auf 636, anonyme und unauthentifizierte eingeschlossen, ohne Begrenzung, wie viele fehlschlagen."
+  },
+  "mode.requirements.directory-binds.product": {
+    "en": "5b510b001e85e8d0",
+    "text": "Ein anonymer Bind wird mit Ergebniscode 48, inappropriateAuthentication, abgelehnt und ein DN mit leerem Passwort mit 53, unwillingToPerform (RFC 4513 Abschnitte 5.1.1 und 5.1.2). Ein Bind, der auf dem unverschlüsselten Listener ein Passwort trägt, wird mit 13, confidentialityRequired, abgelehnt, bevor das Passwort gelesen wird — verwenden Sie LDAPS oder schalten Sie ldap.plainListener aus. FEHLGESCHLAGENE Binds werden je Bind-DN und je Adresse gegen security.rateLimitPerIdentity und security.rateLimitPerAddress innerhalb von security.rateLimitWindowS gezählt, und ein Aufrufer über einer der beiden Grenzen wird mit 53 abgelehnt, bevor sein Passwort geprüft wird; ein erfolgreicher Bind setzt den Zähler seines eigenen DN zurück, nie den seiner Adresse, und wird selbst nie gezählt."
+  },
+  "mode.requirements.spire.what": {
+    "en": "8391a467ac94040a",
+    "text": "Die SPIRE Server API verlangt eine X509-SVID"
+  },
+  "mode.requirements.spire.development": {
+    "en": "99df3afbc3a75e95",
+    "text": "Erforderlich über gegenseitiges TLS und gegen die eigene Tabelle von SPIRE je Methode autorisiert; jeder darf den lokalen Socket bitten, die SVID auszustellen, die ihn hineinbringt."
+  },
+  "mode.requirements.spire.product": {
+    "en": "6a6aa70f3583b8bb",
+    "text": "Dasselbe, über eine Registrierung, die nicht mehr für jeden, der fragt, einen Eintrag ausstellt."
+  },
+  "mode.requirements.spire-local-socket.what": {
+    "en": "cda7c1405aa2843d",
+    "text": "Ein Aufrufer am Unix-Socket der SPIRE Server API ist nur dort die vertrauenswürdige Entität `local`, wo die Grenze des Sockets hält"
+  },
+  "mode.requirements.spire-local-socket.development": {
+    "en": "3203d7aa8d181aea",
+    "text": "Jeder Aufrufer am Socket ist `local`, solange spiffe.trustLocalSocket eingeschaltet ist (der Standard): Die Dateisystemrechte des Sockets gelten als die Grenze, wie es ein echter spire-server annimmt."
+  },
+  "mode.requirements.spire-local-socket.product": {
+    "en": "c6acb9b502748c92",
+    "text": "Die Grenze wird je Verbindung GEPRÜFT: Der Socket muss als 0600 angelegt worden sein und in einem Verzeichnis ohne Bits für group oder other liegen (STS-SPIFFE-0117), und die Kernel-uid des Peers, gelesen mit SO_PEERCRED über das native Modul, muss die uid dieses Dienstes selbst sein (STS-SPIFFE-0118; nicht lesbar, STS-SPIFFE-0119). Ein Aufrufer, der eine der beiden Bedingungen nicht erfüllt, ist nicht `local` und braucht auf dem TCP-Port eine X509-SVID eines Administrators."
+  },
+  "mode.requirements.spiffe-node-attestation.what": {
+    "en": "67505ccecccef296",
+    "text": "SPIFFE-Knotenattestierung (AttestAgent)"
+  },
+  "mode.requirements.spiffe-node-attestation.development": {
+    "en": "bfa8ef829776ad45",
+    "text": "Jeder Typ wird von seinem Attestor GEPRÜFT oder abgelehnt — join_token, x509pop, sshpop, tpm_devid, k8s_psat, http_challenge, aws_iid, gcp_iit, azure_imds —, so wie der Vertrauensbereich sie in spiffe.nodeAttestors aufführt."
+  },
+  "mode.requirements.spiffe-node-attestation.product": {
+    "en": "ae822c00223caa10",
+    "text": "Dasselbe; an der Knotenattestierung unterscheidet der Modus nichts."
+  },
+  "mode.requirements.spiffe-workload-attestation.what": {
+    "en": "1544cf58376f56fe",
+    "text": "SPIFFE-Workload-Attestierung (der Unix-Socket der Workload API)"
+  },
+  "mode.requirements.spiffe-workload-attestation.development": {
+    "en": "4668876fe1c832e2",
+    "text": "Die Kernel-Anmeldedaten und der Prozess eines Aufrufers werden beim Verbinden gelesen (spiffe.workloadAttestors: unix, docker, k8s), wo das native Modul gebaut ist; ohne es wird der Socket nur anhand von Transport-Selektoren bedient und sagt das. Behauptete Selektoren werden geglaubt, wenn spiffe.acceptAssertedSelectors eingeschaltet ist, und ist spiffe.attestWorkloads aus, antwortet er jedem Aufrufer mit jedem Eintrag."
+  },
+  "mode.requirements.spiffe-workload-attestation.product": {
+    "en": "5d5eaf65e73e2248",
+    "text": "Ohne das native Modul wird der Socket der Workload API NICHT bedient. Behauptete Selektoren werden niemals geglaubt, und ein Aufrufer erhält nur die Einträge, auf die seine Selektoren passen, was auch immer spiffe.attestWorkloads sagt; beide Einstellungen werden dort ignoriert, wo sie gelesen werden (einmal protokolliert, STS-CORE-0106), und beim Schreiben abgelehnt (STS-CORE-0103)."
+  },
+  "mode.requirements.spiffe-workload-tcp.what": {
+    "en": "235ce79c4d00ce33",
+    "text": "Die SPIFFE Workload API über TCP (spiffe.workloadPort)"
+  },
+  "mode.requirements.spiffe-workload-tcp.development": {
+    "en": "61ffdd49f4ac0582",
+    "text": "Bedient auf spiffe.grpcHost, den Wildcard eingeschlossen. Ein TCP-Aufrufer wird nicht attestiert — es gibt keinen Peer-Prozess, den man fragen könnte — und wird durch seinen Transport, den erreichten Endpunkt und seine Quelladresse identifiziert."
+  },
+  "mode.requirements.spiffe-workload-tcp.product": {
+    "en": "8f0bd456684ee03c",
+    "text": "NICHT BEDIENT (STS-SPIFFE-0120), es sei denn, spiffe.workloadTcpSourceAuthenticated erklärt, dass das Netz Quelladressen authentifiziert (Workload Endpoint Abschnitt 3), und dann nur auf einer benannten Adresse: Ein Wildcard-spiffe.grpcHost wird abgelehnt (STS-SPIFFE-0121). Ein Vertrauensbereich, der auf den Produktmodus umgeschaltet wird, während der Port schon gebunden ist, lehnt jeden Aufruf darauf mit denselben Codes ab."
+  },
+  "mode.requirements.spiffe-entry-selectors.what": {
+    "en": "56b2a805f8092775",
+    "text": "Ein SPIFFE-Registrierungseintrag wählt etwas aus, das einen Workload identifiziert"
+  },
+  "mode.requirements.spiffe-entry-selectors.development": {
+    "en": "6c7626e3f66110d1",
+    "text": "Beliebige Selektoren, keine eingeschlossen: Ein Eintrag nur mit transport:tcp wird jedem TCP-Aufrufer ausgestellt, und ein erfundener Eintrag trägt genau das."
+  },
+  "mode.requirements.spiffe-entry-selectors.product": {
+    "en": "4aa137b3e071f46c",
+    "text": "Ein Eintrag ohne Selektor oder nur mit solchen auf transport: und endpoint: wird an der Konsole, unter /admin-api und an der SPIRE Server API abgelehnt (STS-SPIFFE-0122; INVALID_ARGUMENT je Element dort), und einer, der schon in der Registrierung liegt, antwortet keinem Aufrufer (STS-SPIFFE-0123). Ein Selektor peer: passt genau auf die Quelladresse — keine Präfixe, wie bei SPIRE."
+  },
+  "mode.requirements.revocation-check.what": {
+    "en": "c47e754d9209d8a8",
+    "text": "Ein vorgelegtes Zertifikat wird auf Widerruf geprüft"
+  },
+  "mode.requirements.revocation-check.development": {
+    "en": "3a55260648f17cd6",
+    "text": "SOFT-FAIL (pki.revocationCheck=auto). Ein von diesem Dienst ausgestelltes Zertifikat wird im eigenen Register nachgeschlagen, die ganze Kette, und ein widerrufenes wird abgelehnt; eines einer anderen Stelle wird mit dem OCSP-Responder und der CRL geprüft, die es nennt, und ein Status, der nicht geholt oder geprüft werden kann, wird akzeptiert und gemeldet."
+  },
+  "mode.requirements.revocation-check.product": {
+    "en": "27fcb65a331cb504",
+    "text": "HARD-FAIL (pki.revocationCheck=auto). Dieselben Nachschlagevorgänge, und ein fremdes Zertifikat, dessen Status nicht geholt, geprüft oder als frisch vertraut werden kann — oder das der Responder seines Ausstellers nicht kennt —, wird ebenfalls ABGELEHNT: Ein Angreifer, der einen Abruf blockieren kann, kann „revoked“ nicht in „accepted“ verwandeln. Ebenso eines, dessen einzige Liste oder dessen einziger Responder an einer Adresse liegt, die dieser Dienst nicht anwählen darf (unverschlüsseltes ldap: bei pki.revocationLdap=ldaps, jedes ldap, wenn es aus ist, ein relativer Name ohne pki.revocationLdapDirectory; STS-PKI-0188): Der Aussteller hat eine Liste veröffentlicht, und die eigene Richtlinie dieses Dienstes hat verhindert, dass sie gelesen wird."
+  },
+  "mode.requirements.revocation-unrevocable.what": {
+    "en": "06bc21b848bd7218",
+    "text": "Ein fremdes Zertifikat, dessen Aussteller keine CRL und keinen OCSP-Responder nennt"
+  },
+  "mode.requirements.revocation-unrevocable.development": {
+    "en": "1995d7e07f8cc2a1",
+    "text": "AKZEPTIERT (pki.revocationRequireDistributionPoint=auto), und das Urteil sagt, dass es nicht geprüft werden konnte: Es gibt keinen Abruf, den ein Angreifer blockieren könnte, und die Test-CA ohne Liste ist gewöhnlich das Erste, was der Autor eines Clients baut."
+  },
+  "mode.requirements.revocation-unrevocable.product": {
+    "en": "68f6ce868376fbc6",
+    "text": "ABGELEHNT unter Hard-Fail (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): Ein von einer CA ausgestelltes Zertifikat — nicht selbstsigniert —, das keinen Verteilungspunkt und keinen Responder nennt, kann nie widerrufen werden, sodass ein gestohlener Schlüssel darunter bis zum Ablauf gilt. Eines, das noRevAvail nach RFC 9608 trägt, wird akzeptiert, weil sein Aussteller erklärt hat, dass keine Widerrufsinformation existiert (Abschnitt 4 überspringt die Prüfung). Die Einstellung auf aus zu setzen akzeptiert den Rest, mit einer Warnung."
+  },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "Jedes X.509-Zertifikat, auf das vertraut wird, wird durch eine Tür den vollen Prüfungen unterzogen (Pfad, Gültigkeit, Widerruf, Verwendungsfelder)"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "AUS (pki.paranoid=auto): Jeder Anwendungsfall verhält sich wie vor #1360 — ein gepinntes Zertifikat wird nicht auf Gültigkeit geprüft, der Widerruf wird für einen ausgehenden Peer, einen Attestor oder den Signierer eines Partners nicht herangezogen, und extendedKeyUsage wird nur dort verlangt, wo eine Aufrufstelle es von Hand verlangt. Setzen Sie pki.paranoid=on, um die Prüfungen hier durchzuspielen."
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "AN (pki.paranoid=auto): common/certificate_trust.ts unterzieht jedes Zertifikat — bei einem TLS-Handshake in beiden Richtungen, unter einer Signatur, als Empfänger einer Verschlüsselung, in einer Attestierung — einem Pfad zu einem Anker, den dieser Dienst genannt bekommen hat (der Client- oder der Signierer-Truststore, die CA des Vertrauensbereichs, die eigene Einstellung einer Familie), der Gültigkeit zum jetzigen Zeitpunkt, dem Widerruf sowie basicConstraints, keyUsage und extendedKeyUsage, wie sein Anwendungsfall sie verlangt; eine Prüfung, die der Anwendungsfall nie ausgeführt hat, ist eine Ablehnung. Eine Zeile pki.paranoid<UseCase> je Anwendungsfall stellt, wenn sie aus ist, das frühere Verhalten dieses Anwendungsfalls wieder her und wird unter /admin/pki/trust rot dargestellt (STS-PKI-0239)."
+  },
+  "mode.requirements.gnap-mtls-trust.what": {
+    "en": "9797405bffe8917b",
+    "text": "Ein durch gegenseitiges TLS nachgewiesener GNAP-Schlüssel ist ein Zertifikat, das eine vertrauenswürdige Stelle dem Client ausgestellt hat"
+  },
+  "mode.requirements.gnap-mtls-trust.development": {
+    "en": "a5a38e4582010d81",
+    "text": "PINNED (gnap.mtlsTrust=auto): Das TLS-Clientzertifikat muss das sein, das der Schlüssel nennt — über den Fingerabdruck oder denselben öffentlichen Schlüssel —, und ein selbstsigniertes wird akzeptiert (RFC 9635 Abschnitt 7.3.2). Es wird keine Kette aufgebaut. Ein Zertifikat, das dieser Dienst oder eine andere Stelle WIDERRUFEN hat, wird trotzdem abgelehnt (pki.revocationCheck)."
+  },
+  "mode.requirements.gnap-mtls-trust.product": {
+    "en": "3635435377d7498b",
+    "text": "PKI (gnap.mtlsTrust=auto, RFC 9635 Abschnitt 11.4): Das Zertifikat muss eine Kette zum Client-Truststore bilden, die Widerrufsprüfung bestehen und an den Anwendungseintrag des Clients GEBUNDEN sein — ihm von der TLS-Client-Autorität dieses Vertrauensbereichs ausgestellt oder genau das eine Subject-Parameter nach RFC 8705 tragend, das der Eintrag registriert (oauthTlsClientAuth*). Ein neues Zertifikat der Autorität wird ohne erneute Registrierung akzeptiert, und sein Fingerabdruck wird am Eintrag aufgezeichnet. gnap.mtlsTrust=pinned schaltet dies für einen Vertrauensbereich aus; ein Eintrag darf pki verlangen, wo der Vertrauensbereich es nicht tut, nie umgekehrt."
+  },
+  "mode.requirements.protocol-debugger.what": {
+    "en": "b74abbe6b21c5dbc",
+    "text": "Der Debugger für Identitätsprotokolle ist eingebettet, und was seine api anwählen darf"
+  },
+  "mode.requirements.protocol-debugger.development": {
+    "en": "a784d5509a322d03",
+    "text": "AN (debugger.enabled=auto): Sein eigener Listener (debugger.port) liefert die Debugger-Oberfläche und leitet /api an einen Kindprozess weiter. Die api wählt an, worum ein angemeldeter Administrator sie bittet, private Netze eingeschlossen."
+  },
+  "mode.requirements.protocol-debugger.product": {
+    "en": "28c0296a7d41ddec",
+    "text": "AUS, es sei denn, debugger.enabled=on. Wenn eingeschaltet, erhält der Kindprozess der api eine ERLAUBNISLISTE — die eigenen Adressen dieses Dienstes und debugger.allowedDestinations — und lehnt jedes andere Ziel ab, rohe Sockets eingeschlossen."
+  },
+  "mode.requirements.client-secret-expiry.what": {
+    "en": "995744aa9058b211",
+    "text": "Ein abgelaufenes Client-Geheimnis"
+  },
+  "mode.requirements.client-secret-expiry.development": {
+    "en": "9f39d413e509fdba",
+    "text": "AKZEPTIERT, wo ein Geheimnis geprüft wird, mit einer Audit-Zeile, die sagt, dass es abgelaufen war."
+  },
+  "mode.requirements.client-secret-expiry.product": {
+    "en": "870f4fcd8826cc66",
+    "text": "ABGELEHNT am Token-Endpunkt (invalid_client, STS-OAUTH-0558) und als Schlüssel für client_secret_jwt, sobald der Ablauf auf dem Datensatz dieses Geheimnisses unter oauthClientSecret überschritten ist. Eine Anwendung darf mehrere Geheimnisse halten, jedes mit eigenem Ablauf; eine Rotation setzt die noch gültigen so, dass sie nach oauth2.clientSecretOverlapS ablaufen."
+  },
+  "mode.requirements.signing-key-rotation.what": {
+    "en": "0643fa994213871f",
+    "text": "Signierschlüssel werden rotiert, mit einer Überlappung"
+  },
+  "mode.requirements.signing-key-rotation.development": {
+    "en": "ed30176d075c7eef",
+    "text": "NICHT ROTIERT: Die Schlüssel werden bei jedem Start neu erzeugt. Jede Einheit trägt weiter ihre Generationen, sodass ein von Hand erzeugter nächster oder zurückgezogener Schlüssel veröffentlicht wird und wie im Produktmodus prüft."
+  },
+  "mode.requirements.signing-key-rotation.product": {
+    "en": "9cd85e5afa22e865",
+    "text": "Jede Einheit (Vertrauensbereich, Anwendungsfall, Algorithmus) hält einen NÄCHSTEN Schlüssel, veröffentlicht im JWKS, in den Metadaten von SAML und WS-Federation und unter /crypto/metadata, bevor er irgendetwas signiert, befördert alle signing.rotationIntervalDays durch den Job signing.rotate; der Schlüssel, den er ersetzt, prüft weiter für signing.retiredKeyGraceDays oder die längste Token-Lebensdauer, je nachdem, was länger ist."
+  },
+  "mode.requirements.krbtgt-key.what": {
+    "en": "d62d09cce263a9ae",
+    "text": "Der krbtgt-Schlüssel jedes Vertrauensbereichs: woher er kommt, und seine Rotation"
+  },
+  "mode.requirements.krbtgt-key.development": {
+    "en": "df9896e4af770351",
+    "text": "ABGELEITET aus krb5.krbtgtPassword (der veröffentlichte Standard), sodass ein Leser jedes TGT entschlüsseln kann, und NICHT nach einem Zeitplan rotiert. Eine Rotation von Hand unter /admin/kerberos/principals funktioniert hier ebenfalls: Sie ersetzt den abgeleiteten Schlüssel so lange durch einen gespeicherten zufälligen, wie das Verzeichnis ihn hält."
+  },
+  "mode.requirements.krbtgt-key.product": {
+    "en": "943c5e80b61d7656",
+    "text": "ZUFÄLLIG — RFC 3961 random-to-key für jeden enctype in krb5.enctypes — einmal je Vertrauensbereich erzeugt, auf dem Verzeichniseintrag krbtgt/<REALM>@<REALM> versiegelt und nie angezeigt; krb5.krbtgtPassword wird ignoriert. Der Job krb5.krbtgt-rotate ersetzt ihn alle krb5.krbtgtRotationIntervalDays und behält die ersetzte Version so lange, wie ein TGT darunter höchstens leben kann (Verlängerungen eingeschlossen), und rotiert nie, solange dieses Fenster noch offen ist. „Rotate and invalidate“ ist das doppelte Zurücksetzen von Active Directory in einem Akt: Nichts wird behalten, und jedes TGT im Vertrauensbereich wird mit KRB_AP_ERR_BADKEYVER abgelehnt."
+  },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "Der Schlüssel, mit dem der Kerberos-Akzeptor Tickets entschlüsselt, wenn krb5.servicePassword leer oder der veröffentlichte Standard ist"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "ABGELEITET aus dem veröffentlichten krb5.servicePassword, sodass ein Leser ihn ableiten kann; ein leeres Passwort erzeugt kein Konto, und der Akzeptor nimmt kein Ticket an."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "ZUFÄLLIG — ein Schlüssel je enctype in krb5.enctypes für den SPN, den krb5.servicePrincipal nennt, einmal je Vertrauensbereich beim Start erzeugt (oder wenn der Akzeptor erstmals danach fragt), auf dem Anwendungseintrag <spn>@<REALM> versiegelt und nie angezeigt. Rotieren Sie ihn unter /admin/kerberos/principals für eine Keytab. Ein eigenes krb5.servicePassword der Bedienperson hat Vorrang."
+  },
+  "mode.requirements.unattested-device-keys.what": {
+    "en": "6fe7c4a02a6ed641",
+    "text": "Ein Geräteschlüssel ohne prüfbare Attestierung wird abgelehnt"
+  },
+  "mode.requirements.unattested-device-keys.development": {
+    "en": "bf711f627a32037a",
+    "text": "Ein auf /portal/devices nachgewiesener Schlüssel (ein JWK-Nachweis, ein verknüpftes WebAuthn-Credential) oder einer, der über EST oder SCEP für ein Gerät zertifiziert wurde, wird ohne Attestierung registriert oder mit einer, die keine Kette zu devices.*TrustAnchors bildet, und als self-asserted aufgezeichnet."
+  },
+  "mode.requirements.unattested-device-keys.product": {
+    "en": "f81bd7d492b66baa",
+    "text": "Ein solcher Schlüssel wird abgelehnt (STS-DEVICE-0024): Nur eine Android Key Attestation, eine Aussage von Apple App Attest, eine TPM-Schlüsselattestierung oder eine WebAuthn-Attestierung, die geprüft wurde und eine Kette zu einem Anker bildet, registriert einen Schlüssel. Dass ein Administrator einen Schlüssel als Wert eingibt, ist ein Handeln des Administrators und wird in beiden Modi akzeptiert, aufgezeichnet als proof admin, self-asserted."
+  },
+  "mode.requirements.android-attestation-revocation.what": {
+    "en": "72012b06e78ecc69",
+    "text": "Eine Android-Attestierung, deren Widerruf nicht geprüft werden konnte, wird nicht vertraut, wo der Vertrauensbereich es sagt"
+  },
+  "mode.requirements.android-attestation-revocation.development": {
+    "en": "31364892d7d7a96d",
+    "text": "Ohne aktuelle Statusliste für die Android-Attestierung (nie heruntergeladen, der Download schlägt fehl oder sie ist veraltet) wird eine Android-Kette als attested aufgezeichnet, ihr Widerruf UNGEPRÜFT, was auch immer devices.androidRevocationRequired sagt. Eine Kette, die die Liste widerruft oder aussetzt, ist in beiden Modi self-asserted."
+  },
+  "mode.requirements.android-attestation-revocation.product": {
+    "en": "f55874a104fe39a1",
+    "text": "Dasselbe standardmäßig. Ist devices.androidRevocationRequired eingeschaltet, wird eine ungeprüfte Kette als self-asserted aufgezeichnet: Ein Geräteschlüssel wird dann abgelehnt (STS-DEVICE-0024), und einer WebAuthn-Aussage android-key wird nicht vertraut."
+  },
+  "mode.requirements.fresh-key-attestation.what": {
+    "en": "703b4411bf1f7787",
+    "text": "Eine TPM-Schlüsselattestierung in einer Gerätezertifikatsanfrage muss frisch sein"
+  },
+  "mode.requirements.fresh-key-attestation.development": {
+    "en": "f1d730667e165896",
+    "text": "Eine TPM2_Certify-Aussage, deren extraData keine lebende Nonce ist, die unter EST /nonce an denselben Client und dasselbe Cookie ausgegeben wurde (keine geholt, abgelaufen, schon verbraucht, die eines anderen Clients oder eine Anfrage über SCEP, das keine Nonce-Operation hat), behält ihre Stufe und wird mit der Frische UNBEWIESEN und dem Grund aufgezeichnet. Eine Nonce, die passt, wird verbraucht."
+  },
+  "mode.requirements.fresh-key-attestation.product": {
+    "en": "335681287a816601",
+    "text": "Eine solche Aussage wird abgelehnt (STS-DEVICE-0050): Eine mitgeschnittene Attestierung, die in einer neuen Anfrage für denselben Schlüssel wieder eingespielt wird, belegt keinen Schlüssel, der jetzt in einem TPM erzeugt und gehalten wird. Ein Gerätezertifikat mit TPM-Attestierung wird daher nur über EST ausgestellt, nach /nonce (draft-ietf-lamps-attestation-freshness Abschnitt 5.1)."
+  },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "Der Reverse-Proxy eines entfernten PEP ist für einen Browser über https erreichbar"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "Eine Proxy-Konfiguration darf eine publicBaseUrl im unverschlüsselten HTTP nennen, sodass ein Stapel auf einem Rechner für den Proxy kein Listener-Zertifikat braucht."
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "Eine publicBaseUrl, die nicht https ist, wird abgelehnt (STS-XACML-0188): Die Anmeldung des Sitzungsmechanismus gibt dort einen Autorisierungscode zurück, und das Sitzungs-Cookie ist Secure."
+  },
+  "mode.notYet.certificate-revocation.what": {
+    "en": "90de04e6940f9577",
+    "text": "Der Widerruf wird für ein vorgelegtes Zertifikat HERANGEZOGEN (siehe die Anforderung oben) und für ein REGISTRIERTES, wenn es etwas prüft — das Register, der OCSP-Responder (der eigene Status eines delegierten Responders eingeschlossen) und die CRL, die ein fremdes Zertifikat nennt, über http, https und ldaps, Delta-CRLs zusammengeführt, indirekte CRLs je Aussteller gelesen, ihr Signierer von der Adresse caIssuers der Liste geholt, wo hier nichts ihn hält. Was bleibt, sind Grenzen, keine Arbeit: Ein NACKTER Schlüssel, ohne Zertifikat registriert (ein JWK ohne x5c), nennt keinen Aussteller und keine Liste, sodass nur das Entfernen vom Eintrag ihn am Prüfen hindert; unverschlüsseltes ldap: wird nur angewählt, wenn pki.revocationLdap es erlaubt; ein relativ zu seinem CRL-Aussteller genannter Verteilungspunkt wird nur verwendet, wenn pki.revocationLdapDirectory gesetzt ist und jedes RDN einwertig ist; und LDAPS 636 verlangt kein Client-Zertifikat, sodass dort nichts herangezogen wird."
+  },
+  "mode.notYet.post-quantum-keys.what": {
+    "en": "c03a9a7d18f82d4c",
+    "text": "Das TLS-Serverzertifikat und die SPIFFE-JWT-Autorität werden in beiden Modi NICHT persistiert: Sie gehören ihren eigenen Modulen und werden bei jedem Start neu erzeugt (es sei denn, tls.certificateFile liefert das Zertifikat). Die elf Post-Quantum-Schlüssel eines Vertrauensbereichs sind am 2026-09-12 von dieser Zeile genommen worden — im Produktmodus werden sie mit dem Schlüsselsatz des Vertrauensbereichs geschrieben und mit ihm wiederhergestellt — und die SPIFFE-X.509-Autorität am 2026-09-11: Sie ist die SPIFFE Issuing CA dieses Vertrauensbereichs unter dem Root des Dienstes, sodass sie im Produktmodus genau so persistiert wie der Rest der Zertifizierungsstelle."
+  },
+  "mode.notYet.key-never-in-memory.what": {
+    "en": "59055bc9d218975f",
+    "text": "Ein privater Schlüssel wird beim Signieren IN DIESEM PROZESS ENTSCHLÜSSELT. Seit dem 2026-09-06 ist zwischen den Signaturen der Geheimtext resident, und `keys.plaintextRetention` entscheidet, wie lange der Klartext lebt — doch der Schlüsselverschlüsselungsschlüssel ist ebenfalls resident, sodass dies den Wert eines SNAPSHOTS nur einschränkt (ein Core-Dump, eine ausgelagerte Seite, ein kurzzeitig angehängter Debugger) und vor nichts schützt, das diesen Speicher zu einem selbst gewählten Zeitpunkt lesen und auf die nächste Signatur warten kann. Ein Schlüssel, den dieser Prozess wirklich nicht lesen kann, ist ein HSM oder ein KMS, das in Ihrem Namen signiert, und das ist ein anderes Design, keine Einstellung. Eine JavaScript-Zeichenkette lässt sich ebenfalls nicht tilgen: Der Entschlüsselungspuffer wird mit Nullen überschrieben, und alles, was daraus erzeugt wird, wird freigegeben statt getilgt."
+  },
+  "mode.notYet.kerberos-keys.what": {
+    "en": "0529f94b9d0cd311",
+    "text": "Der Produktmodus erzeugt keine Fixture-Prinzipale, keinen vertrauenswürdigen Bereich und nichts auf Abruf und lehnt das veröffentlichte Dienstpasswort ab. Personen im Verzeichnis authentifizieren sich am Produkt-KDC mit Schlüsseln, die aus ihrem eigenen Passwort abgeleitet werden, sobald es gesetzt oder geprüft ist, versiegelt auf ihrem Eintrag (`stsKrb5Keys`); Dienstprinzipale erhalten zufällige Schlüssel und eine Keytab, die einmal unter /admin/kerberos/principals gezeigt wird. Die Keytab einer Person (#59) wird aus einem vorliegenden Passwort abgeleitet — dem eigenen unter /portal/kerberos oder einem, das ein Administrator mit „Passwort zurücksetzen und Keytab herunterladen“ setzt — und nie aus dem Speicher ausgelesen. Eine Passwortänderung oder eine Rotation behält die Version, die sie ersetzt hat — höchstens krb5.retainedKeyVersions, jede für krb5.retainedKeyTtlS —, sodass ein unter ihr ausgestelltes Ticket noch akzeptiert wird, bis es hätte ablaufen können, während Vorauthentifizierung und Ausstellung nur den aktuellen Schlüssel verwenden; „Vorherige Versionen verwerfen“ beendet dieses Fenster. Der krbtgt-Schlüssel ist seit dem 2026-09-23 zufällig, gespeichert und wird rotiert (die Anforderung krbtgt-key oben). Seit dem 2026-09-15 hat jeder Vertrauensbereich, dessen krb5.enabled eingeschaltet ist, ein eigenes KDC, einen eigenen Kerberos-Bereich und eigene Schlüssel, auf dem gemeinsamen Port."
+  },
+  "mode.why.skipsOutboundTlsVerification": {
+    "en": "ed44b27a848b9e29",
+    "text": "das Prüfen des Zertifikats dessen, der eine ausgehende Anfrage beantwortet, ist dort nicht optional. Nennen Sie stattdessen eine private CA in der passenden Einstellung für die CA-Datei."
+  },
+  "mode.why.spoilsOnPurpose": {
+    "en": "f2438188e89315dd",
+    "text": "ein absichtlicher Defekt darf eine Antwort dort nicht falsch machen. Erproben Sie einen Client dagegen in einem Vertrauensbereich im Entwicklungsmodus."
+  },
+  "mode.why.believesAssertedSelectors": {
+    "en": "0c7a45212f5facd9",
+    "text": "ein Selektor, den ein Workload über sich selbst behauptet, ist eine Behauptung, die nichts geprüft hat, und der Produktmodus glaubt nie eine solche."
+  },
+  "mode.why.servesUnattestedEntries": {
+    "en": "2585acdb95860080",
+    "text": "die Workload API antwortet einem Aufrufer dort nur mit den Registrierungseinträgen, auf die seine attestierten Selektoren passen, nie mit jedem Eintrag."
+  },
+  "mode.why.acceptsCredentialsWithoutStatus": {
+    "en": "30f821c6bf407329",
+    "text": "Anmeldedaten, die dieser Vertrauensbereich ausgestellt hat und die keinen Statusverweis zeigen, könnten widerrufen worden sein, daher verlangt der Verifier dort einen. own-only ist erlaubt, und oid4vp.statusOptionalIssuers nimmt einen vertrauenswürdigen Aussteller aus, der keinen Status veröffentlicht."
+  },
+  "mode.why.usesBrokenAlgorithms": {
+    "en": "6a758f6a4b95efd8",
+    "text": "SHA-1-Signaturen, der Schlüsseltransport RSA PKCS#1 v1.5, MD5 in HTTP Digest und die Kerberos-enctypes, die RFC 8429 für veraltet erklärt (rc4-hmac), sind gebrochen, und der Produktmodus verwendet keinen davon. Die stärkeren Werte sind erlaubt."
+  },
+  "mode.why.issuesUnsignedAssertions": {
+    "en": "ee4b4a8ecd3ef9b3",
+    "text": "jede SAML-Assertion und jede SAML 1.1-Response wird dort signiert (saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). Erproben Sie eine vertrauende Partei gegen eine unsignierte in einem Vertrauensbereich im Entwicklungsmodus."
+  },
+  "mode.why.acceptsUnverifiedAttestation": {
+    "en": "3f571035da5396d2",
+    "text": "jede ankommende WebAuthn-Attestierungsaussage wird dort geprüft, und eine gefälschte wird abgelehnt statt aufgezeichnet. verify-if-present und require-trusted sind erlaubt."
+  },
+  "mode.why.servesWithoutSecurityHeader": {
+    "en": "fb66d1b60cae1193",
+    "text": "die Spezifikation SPIFFE Workload Endpoint (Abschnitt 3) sagt, dass ein Aufruf ohne den Header workload.spiffe.io abgelehnt werden MUSS."
+  },
+  "mode.why.derivesKrbtgtFromPassword": {
+    "en": "25b530ec6472a47f",
+    "text": "der krbtgt-Schlüssel ist dort zufällig, wird einmal je Vertrauensbereich erzeugt und versiegelt im Verzeichnis gehalten, sodass dafür kein Passwort gelesen wird."
+  },
+  "mode.why.opensManagementApi": {
+    "en": "307e3194ee040685",
+    "text": "die Management-API verlangt dort immer ein Zugriffstoken, weil ihr Tor das einzige Tor der Admin-Konsole ist; legen Sie adminApi.clientSecret vor dem Start fest, um eines ausstellen zu können."
+  },
+  "mode.why.default": {
+    "en": "108a941d7ea44a81",
+    "text": "die Einstellung gilt nur für den Entwicklungsmodus."
+  }
+}

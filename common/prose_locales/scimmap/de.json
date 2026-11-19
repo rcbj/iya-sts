@@ -1,0 +1,42 @@
+{
+  "scimmap.user.userName.note": {
+    "en": "e802eafbefe0f779",
+    "text": "Die SCIM-Eindeutigkeitsbedingung. Sie ist der RDN eines automatisch angelegten Eintrags, daher ist sie für jeden, den dieser Dienst authentifiziert hat, auch der Anmeldename — aber sie ist NICHT die SCIM-id, und die ist die entryUUID des Eintrags."
+  },
+  "scimmap.user.externalId.note": {
+    "en": "0cc0684760f06756",
+    "text": "Der eigene Bezeichner des Bereitstellungsclients für diese Person. Wortgetreu gespeichert und hier von nichts gelesen."
+  },
+  "scimmap.user.active.note": {
+    "en": "eef190d9fd08aa38",
+    "text": "DEAKTIVIERT DAS KONTO. false schreibt die administrative Sperre 000001010000Z und beendet alles, was die Person hält; jede Tür lehnt sie danach ab. true hebt sie auf. Nicht gesendet: unverändert."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": {
+    "en": "c77936e2f9b505c6",
+    "text": "Ein DN im Verzeichnis und eine id in SCIM, in beide Richtungen von den SCIM-Handlern übersetzt, seit die id die entryUUID wurde (2026-09-14). Ein Wert, der keinen Eintrag nennt, wird so behalten, wie er gesendet wurde."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": {
+    "en": "8de71db77907d2e4",
+    "text": "Welche Subjekte welcher Föderationspartner diese Person anmelden, jeweils { relationship, issuer, subject } — issuer auf dem Hinweg optional, das fedPeer der Beziehung. NICHT GESENDET: unverändert, sodass ein Bereitstellungsclient, der von dieser Erweiterung nichts weiß, niemanden entkoppeln kann, indem er sie weglässt. Gesendet, auch leer: ersetzt, und jeder entfernte Link beendet die Sitzungen, in die dieser Partner die Person angemeldet hat. Ein Link, den eine andere Person trägt, wird mit 409 abgelehnt."
+  },
+  "scimmap.user.groups.note": {
+    "en": "6cd6a13675bf364b",
+    "text": "NUR LESEN, wie RFC 7643 Abschnitt 4.1.2 es verlangt. Die Mitgliedschaft ist eine Tatsache über den Eintrag der GRUPPE, daher wird sie über eine Group-Ressource geändert und nie über eine User-Ressource. Aufgelöst durch groupsOfUser() von ldap_server.js, und das ist dieselbe Funktion, die der Claim groups liest — sodass ein Token und eine SCIM-Ressource nicht uneins sein können, wer worin ist."
+  },
+  "scimmap.group.members.note": {
+    "en": "e791c95075db5178",
+    "text": "LESEN löst member, uniqueMember und memberUid gleichermaßen auf; SCHREIBEN setzt einen neuen Wert in `member`, da eine SCIM-Member-id ein DN ist. Ein hängendes Mitglied — ein DN, an dem nichts gespeichert ist — wird als Mitglied zurückgegeben, weil die Aussage der Gruppe die Tatsache ist und dieses Verzeichnis absichtlich keine referenzielle Integrität pflegt."
+  },
+  "scimmap.schema.plain": {
+    "en": "9eb4e31a2b06f959",
+    "text": "von diesem Dienst selbst (kein Standardtyp)"
+  },
+  "scimmap.schema.claims": {
+    "en": "1af3e6d95ddf4877",
+    "text": "von diesem Dienst selbst (#128; kein Standardtyp)"
+  },
+  "scimmap.schema.federation": {
+    "en": "e45ae284f8f1439e",
+    "text": "von diesem Dienst selbst (#109; kein Standardtyp)"
+  }
+}

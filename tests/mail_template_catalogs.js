@@ -26,7 +26,7 @@
 //   D. The language walk `templateFor()` makes, asked through
 //      `languageOrder()` and `builtInFor()` without the mail store: `fr-CA`
 //      reads its overlay over French, `zh-TW` reads Traditional, `zh-HK`
-//      never Simplified, `de` falls through to English, and the layout's
+//      never Simplified, `ja` falls through to English, and the layout's
 //      reason follows the same chain.
 //   E. A VALUE FOLLOWS THE RECIPIENT'S LANGUAGE: every `mailValues.<key>` a
 //      caller of the channel names exists in the English catalog (the
@@ -238,17 +238,17 @@ async function run(t) {
           'D. zh-hk, lower case, reads the Hong Kong overlay');
   t.check(walk('password-reset', 'zh-CN', 'en') === 'zh-Hans',
           'D. zh-CN reads Simplified Chinese');
-  t.check(walk('password-reset', 'de', 'en') === 'en',
-          'D. de, with no catalog, falls through to English');
-  t.check(walk('password-reset', 'de, sv;q=0.5', 'en') === 'sv',
+  t.check(walk('password-reset', 'ja', 'en') === 'en',
+          'D. ja, with no catalog, falls through to English');
+  t.check(walk('password-reset', 'ja, sv;q=0.5', 'en') === 'sv',
           'D. and a later preference a catalog answers is read');
   // A bare `es` is maximised to es-Latn-ES (CLDR's likely subtags,
   // `common/i18n.ts`), so the Spain overlay answers first where it has the
   // message and the base where it does not; either is the realm's default
   // before English. address-verification is one es-ES leaves to the base.
-  t.check(walk('address-verification', 'de', 'es') === 'es',
+  t.check(walk('address-verification', 'ja', 'es') === 'es',
           'D. the realm\'s default language before English');
-  t.check(walk('password-reset', 'de', 'es') === 'es-ES',
+  t.check(walk('password-reset', 'ja', 'es') === 'es-ES',
           'D. and a bare es reads the Spain overlay where it has the ' +
           'message, as a bare fr reads France');
   t.check(walk('password-reset', 'tl', 'en') === 'fil',
@@ -265,12 +265,13 @@ async function run(t) {
   t.check(MailTemplates.reasonFor('security', 'es-ES') ===
             files.es.categories.security.reason,
           'D. and its base where the overlay has none');
-  t.check(MailTemplates.reasonFor('security', 'de') ===
+  t.check(MailTemplates.reasonFor('security', 'ja') ===
             MailTemplates.category('security').reason,
           'D. and English for a language no catalog answers');
   const listed = MailTemplates.builtInLanguages('address-changed');
-  t.check(listed.indexOf('fr-CA') >= 0 && listed.indexOf('zh-Hans') >= 0 &&
-          listed.indexOf('en') < 0,
+  const translated = Object.keys(files).sort();
+  t.check(listed.join(',') === translated.join(',') &&
+          listed.indexOf(index.source) < 0,
           'D. builtInLanguages lists every catalog with a translation',
           listed.join(','));
   valuesFollowTheLanguage(t);

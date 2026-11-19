@@ -1,0 +1,182 @@
+{
+  "roles.schema.objectClasses.stsRole.what": {
+    "en": "e80eac42b07fd952",
+    "text": "Eine ROLLE. Der Eintrag ist durch den Rollennamen benannt (`cn=staff`), und alles an ihm ist MITGLIEDSCHAFT — wer die Rolle innehat. Wofür eine Rolle ERFORDERLICH ist, steht auf dem Anwendungseintrag, der sie verlangt, in `appRequiredRole`, denn das ist eine Tatsache über die Anwendung und nicht über die Rolle."
+  },
+  "roles.schema.attributes.roleName.what": {
+    "en": "5b8fbb4273c31dfa",
+    "text": "Der Rollenname, der zugleich der `cn` ist. Zusätzlich ausdrücklich geführt, damit ein Leser, der nur die Attribute hat, den Namen hat."
+  },
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "Ein Benutzername, der diese Rolle innehat. Mehrwertig. Die Person muss noch nicht vorhanden sein — dieser Dienst legt bei der ersten Sichtung für jeden Namen einen Verzeichniseintrag an, sodass eine Rolle vergeben werden kann, bevor sich ihr Inhaber jemals angemeldet hat."
+  },
+  "roles.schema.attributes.roleMemberGroup.what": {
+    "en": "ed79e4eb54a86c36",
+    "text": "Eine Gruppe, deren sämtliche Mitglieder diese Rolle innehaben. Mehrwertig. Zum ENTSCHEIDUNGSZEITPUNKT aufgelöst, nicht beim Schreiben expandiert, sodass ein `ldapmodify`, das jemanden zur Gruppe hinzufügt, bereits das unmittelbar nächste Token ändert."
+  },
+  "roles.schema.attributes.roleMemberApplication.what": {
+    "en": "cecc4552c88342d4",
+    "text": "Eine Anwendung, die diese Rolle ALS SICH SELBST innehat — das, wonach ein client_credentials-Grant entschieden wird, wo es keine Person gibt. Mehrwertig. NICHT dieselbe Beziehung wie `appRequiredRole` auf dem Anwendungseintrag, also das, was diese Anwendung von anderen VERLANGT."
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "Eine Berechtigung, die einem Inhaber dieser Rolle AUSGESTELLT werden darf (#303). Mehrwertig. Benannt so, wie ein Client sie anfordert: eine allgemeine Anwendungsberechtigung über ihren vollständigen Scope-Wert — die `oauthPermissionBaseUri` der Ressourcenanwendung, gefolgt vom Namen — und eine native Berechtigung dieses Dienstes unter ihrem eigenen Namen (`admin:read`, `admin:write`). Sie ist nur von Bedeutung für eine Berechtigung, deren Ressourcenanwendung sie mit einem Gate versieht (`oauthRoleGatedPermission`); eine mit Gate versehene Berechtigung wird nur einem Subjekt ausgestellt, das eine Rolle innehat, die sie nennt, und eine ohne Gate so wie bisher."
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "Ein Client, durch den diese Rolle VERLIEHEN wird (#454): Jede Person, die sich über diesen Client anmeldet, hat die Rolle auf dem Zugriffstoken, das dem Client ausgestellt wird, und auf keinem anderen Token. Mehrwertig, client_ids von Anwendungen in diesem Bereich. Eine so gehaltene Rolle ist eine Tatsache über das TOKEN und nicht über die Person, sie wird daher bei jedem Aufruf mit den Rollen vermischt, die die Person selbst innehat, und einen Client davon zu nehmen nimmt die Rolle den Tokens dieses Clients sofort. Niemals auf das eigene client_credentials-Token eines Clients angewendet, dessen Rollen seine Mitgliedschaft sind. ADMIN_CONSOLE ist vorbelegt als durch `sts-admin-console` verliehen."
+  },
+  "roles.schema.attributes.roleApplication.what": {
+    "en": "364af2be7fcecb90",
+    "text": "Die EINE Anwendung, zu der diese Rolle gehört (#310), über ihre Kennung in ou=applications; fehlt die Angabe, ist die Rolle bereichsweit. Die Rolle einer Anwendung heißt im Register `<role>@<application>`, sodass zwei Anwendungen jeweils einen `reader` haben dürfen; ein Token oder eine Assertion für diese Anwendung führt sie als `<role>`, und das Token keiner anderen Anwendung führt sie überhaupt. Das `appRequiredRole` der Anwendung darf sie über `<role>` nennen."
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "WER diese Rolle INNEHABEN DARF (#93): `user` (Personen, unmittelbar oder über eine Gruppe) und `application` (eine Anwendung als sie selbst). Mehrwertig; fehlt der Wert, dürfen beide — jede zuvor geschriebene Rolle. Ein Mitglied einer Art, die die Rolle nicht zulässt, wird abgelehnt, wenn die Rolle geschrieben wird. Die beiden Konsolenrollen lassen sich nicht einschränken: Die Liste gewährt ihre Personen und die Vorbelegung ihre Anwendung."
+  },
+  "roles.schema.attributes.displayName.what": {
+    "en": "96a85a48288e9845",
+    "text": "Ein optionaler Name, den Personen lesen (#93). Der NAME der Rolle ist weiterhin das, was ein Token trägt, was eine Anforderung nennt und worüber das Register indiziert ist; dies ist nur ihre Beschriftung in der Konsole und in der API. Ihre stabile Kennung ist die `entryUUID` des Eintrags, erhalten über jede Bearbeitung hinweg."
+  },
+  "roles.schema.attributes.description.what": {
+    "en": "d3cd66c299e05098",
+    "text": "Wozu die Rolle dient, für die nächste Person."
+  },
+  "roles.schema.attributes.owner.what": {
+    "en": "3acf4a1763f7388c",
+    "text": "Eine Person oder eine Gruppe dieses Bereichs, die für die Rolle verantwortlich ist (#604), per DN — das Attribut aus RFC 4519 Abschnitt 2.23, so wie die Eigentümer einer Gruppe geführt werden (#603). Mehrwertig, höchstens 25. Seit #607 darf ein Eigentümer die Rolle über /admin-api mit owner:read und owner:write (OWNER_READ, OWNER_WRITE) VERWALTEN, innerhalb dessen, was die Eigentümerregel der Zugriffssteuerungsrichtlinie erlaubt; die Rolle selbst hat ein Eigentümer nur inne, wenn er Mitglied ist. Das Benutzerportal listet auf, was eine Person besitzt."
+  },
+  "roles.schema.attributes.stsOwnerProtected.what": {
+    "en": "dcc4499eac844938",
+    "text": "TRUE: Die Eigentümer der Rolle dürfen sie über /admin-api nicht verwalten (#607), unabhängig davon, was sie besitzen — eine Markierung eines Administrators, gelesen von der Eigentümerregel der Zugriffssteuerungsrichtlinie als urn:sts:xacml:object-protected. Fehlt der Wert, gilt FALSE."
+  },
+  "roles.builtIn.EVERYBODY.what": {
+    "en": "40f390becf1977a2",
+    "text": "Jedermann, authentifiziert oder nicht, Person oder Anwendung. DIES IST DIE STANDARDANFORDERUNG: Eine Anwendung, die keine erforderliche Rolle nennt, verlangt diese, jeder hat sie inne, und nichts wird abgelehnt — genau so verhielt sich dieser Dienst, bevor es Rollen gab."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_USERS.what": {
+    "en": "2defec4a92314419",
+    "text": "Eine Person mit einer laufenden authentifizierten Sitzung in dem Sicherheitskontext, in dem diese Entscheidung getroffen wird."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_USERS.what": {
+    "en": "dcc2d43ade379f11",
+    "text": "Eine Person, die sich NICHT authentifiziert hat. Für eine Richtlinie ist sie nicht die Negation der Rolle darüber — sie ist ein Name, den ein Target treffen kann, und XACML-Targets können nicht „nicht“ sagen."
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "Jeder Client, wie auch immer er aufgetreten ist."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "Ein Client, der BEWIESEN hat, wer er ist — ein Secret, eine private_key_jwt-Assertion oder ein geprüftes Clientzertifikat. Ein öffentlicher Client, der lediglich eine client_id gesendet hat, ist dies nicht."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "Ein öffentlicher Client, der nichts bewiesen hat."
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "091be0a92ce428e3",
+    "text": "Ein entfernter XACML Policy Enforcement Point: wer Mitglied der Gruppe ist, die `roles.remotePepGroup` nennt (Standard „remote-peps“). Das verlangen `/xacml/pep/register`, `/xacml/pep/policies` und `/xacml/pep/heartbeat`, und die Partei, die sie innehat, ist normalerweise der DN eines Clientzertifikats und keine Person — das Zertifikat sagt, WER, und diese Gruppe sagt, ob sie dürfen. Sie autorisiert die Berechtigung xacml:pep-audit: das Übermitteln der Aufzeichnungen der Entscheidungen, die der PEP getroffen hat, an das Auditprotokoll dieses Dienstes über POST /admin-api/pep-audit, und sonst nichts auf /admin-api; sowie die Berechtigung xacml:pep: das Erreichen von /xacml/pep/* und POST /xacml/pip über ein DPoP-gebundenes Zugriffstoken statt über ein Clientzertifikat."
+  },
+  "roles.builtIn.XACML_USER.what": {
+    "en": "1b417a98ec7e824b",
+    "text": "Ein Aufrufer der eigentlichen XACML-Oberfläche: wer Mitglied der Gruppe ist, die `roles.xacmlUserGroup` nennt (Standard „xacml-users“). Das verlangen `GET /xacml`, `POST /xacml/pdp` und `GET /xacml/policies`, und die Partei, die sie innehat, ist normalerweise der DN eines Clientzertifikats — das Zertifikat sagt, WER, und diese Gruppe sagt, ob sie dürfen. Sie ist bewusst NICHT REMOTE_PEPS: Jene Rolle erreicht die drei Endpunkte /xacml/pep, die die Dokumente aushändigen, mit denen dieser Dienst seinen eigenen Zugriff durchsetzt, und eine Gruppe, die beides gewährt, würde einen Aufrufer, der zur eigentlichen XACML-Oberfläche zugelassen wird, stillschweigend auch zu jenen zulassen."
+  },
+  "roles.builtIn.AUTHZEN_PEPS.what": {
+    "en": "45abfea4c617fd17",
+    "text": "Ein AuthZEN Policy Enforcement Point: wer Mitglied der Gruppe ist, die `roles.authzenPepGroup` nennt (Standard „authzen-peps“) — eine Person, ein Dienstkonto oder eine Anwendung, die mit dem eigenen Zugriffstoken aufruft. Das verlangt die AuthZEN Authorization API unter `/access/v1`, und sonst nichts: Sie liest keine Richtlinie und keine Attribute einer Person, weshalb sie weder XACML_USER noch REMOTE_PEPS ist."
+  },
+  "roles.builtIn.OWNER_READ.what": {
+    "en": "ff8296bdbd88d5ad",
+    "text": "Ein EIGENTÜMER (#607): wen eine Rolle, eine Gruppe, ein Dienstkonto oder eine Anwendung in diesem Bereich als Eigentümer nennt, unmittelbar oder über eine Gruppe, der die Person angehört. Autorisiert die Berechtigung owner:read: über /admin-api die Objekte zu lesen, die die Person besitzt, und sonst nichts. Berechnet, wenn eine Entscheidung getroffen wird."
+  },
+  "roles.builtIn.OWNER_WRITE.what": {
+    "en": "689161841fbe1a7d",
+    "text": "Ein EIGENTÜMER (#607), wie OWNER_READ. Autorisiert die Berechtigung owner:write: über /admin-api die Objekte zu ändern, die die Person besitzt, im Rahmen der Aktionen, die die Eigentümerregel der Zugriffssteuerungsrichtlinie jeder Art erlaubt — niemals eines anzulegen, zu löschen oder umzubenennen, und niemals ein Objekt, das vor seinen Eigentümern geschützt ist."
+  },
+  "roles.native.ADMIN_READ.what": {
+    "en": "a2f5894dfa0c0db6",
+    "text": "Admin-Lesen: jedes LESEN auf /admin-api. Innegehabt von den Gruppen Admin-Lesen, Admin-Schreiben und Sicherheitsadministrator der Konsole (die beiden anderen schließen Admin-Lesen ein) und von den hier aufgeführten Anwendungen. Autorisiert die Berechtigung admin:read."
+  },
+  "roles.native.ADMIN_WRITE.what": {
+    "en": "ecff5f0bc1a5a16a",
+    "text": "Admin-Schreiben: jede Operation auf /admin-api, die etwas ÄNDERT. Innegehabt von der Gruppe Admin-Schreiben der Konsole und von den hier aufgeführten Anwendungen. Autorisiert die Berechtigung admin:write. Sie schließt Admin-Lesen auf einem Token nicht ein: Ein Token darf jeden der beiden Scopes führen, und die Richtlinie verlangt den, den die Operation braucht."
+  },
+  "roles.native.SECURITY_ADMIN.what": {
+    "en": "78a47eddc95e9db3",
+    "text": "Sicherheitsadministrator: die Operationen auf /admin-api, die die Sicherheit ändern — eine Richtlinie unter Verzeichnis → Richtlinien, eine Richtlinie, die auf einer Anwendung, einer Gruppe oder einer Person genannt ist, eine Vergabe dieser Rolle und das Konto einer Person, die sie innehat. Admin-Schreiben erreicht sie nicht. Innegehabt von der Gruppe Sicherheitsadministrator der Konsole und von den hier aufgeführten Anwendungen. Autorisiert die Berechtigung admin:security."
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "Die Admin-Konsole: die Operationen unter /admin-api/console, die nur dazu da sind, die Konsole zu zeichnen — ihren Rahmen, ihre Zeichnungen und ihre Formularhilfen. Autorisiert die Berechtigung admin:console. Verliehen vom eigenen Client der Konsole, sts-admin-console, an jede Person, die sich an der Konsole anmeldet, und von niemandem als Mitglied innegehabt. Sie gewährt nichts weiter: Eine Seite, die Daten des Bereichs zeigt, verlangt zusätzlich ADMIN_READ."
+  },
+  "roles.native.DEVICE_COMPLIANCE.what": {
+    "en": "54220e44643bd84c",
+    "text": "Der Feed für die Gerätekonformität: ein MDM- oder Posture-Feed, der die Konformität eines Geräts über POST /admin-api/device-compliance meldet, und sonst nichts auf /admin-api. Autorisiert die Berechtigung device:compliance. Ohne Mitglied vorbelegt: Fügen Sie die Anwendung des Feeds hinzu."
+  },
+  "roles.native.SSF_READ.what": {
+    "en": "0a43e12ff3313079",
+    "text": "Shared Signals lesen. Autorisiert die Berechtigung ssf.read. Einer Person wird sie nur ausgestellt, solange sie der Gruppe dieser Rolle angehört, vorbelegt als ssf-read, und die Anwendung, bei der sie sich anmeldet, Mitglied dieser Rolle ist. Einer Anwendung wird sie auf ihrem eigenen Token nur ausgestellt, solange sie Mitglied ist. SSF_MANAGE autorisiert sie nicht."
+  },
+  "roles.native.SSF_MANAGE.what": {
+    "en": "599cadcd7892cdd2",
+    "text": "Shared Signals schreiben. Autorisiert die Berechtigung ssf.manage. Einer Person wird sie nur ausgestellt, solange sie der Gruppe dieser Rolle angehört, vorbelegt als ssf-manage, und die Anwendung, bei der sie sich anmeldet, Mitglied dieser Rolle ist. Einer Anwendung wird sie auf ihrem eigenen Token nur ausgestellt, solange sie Mitglied ist. Sie autorisiert ssf.read nicht."
+  },
+  "roles.native.REPORT_USE.what": {
+    "en": "7457776f7906d309",
+    "text": "Berichte, als Benutzer. Autorisiert die Berechtigung report:use: die Berichtsanwendung und /report-api für die Definitionen und Aufträge, die der Inhaber besitzt oder die mit ihm geteilt sind, wie es die Zugriffssteuerungsrichtlinie entscheidet. Eine Person hat sie inne über die Gruppe dieser Rolle, vorbelegt als report-users, als direktes Mitglied oder über die Konsolenliste (Admin-Lesen oder Admin-Schreiben); eine Anwendung hat sie als Mitglied inne und bekommt sie auf ihrem eigenen Token ausgestellt und erreicht nur die Definitionen und Aufträge, die sie selbst definiert hat. Der Bootstrap-Client sts-api-client ist als Mitglied vorbelegt."
+  },
+  "roles.native.REPORT_ADMIN.what": {
+    "en": "d17c8f34f20ced92",
+    "text": "Berichte, als Administrator. Autorisiert die Berechtigung report:admin: jede Definition und jeden Auftrag im Bereich, wie es die Zugriffssteuerungsrichtlinie entscheidet. Eine Person hat sie inne über die Gruppe dieser Rolle, vorbelegt als report-admins, als direktes Mitglied oder als Admin-Schreiben auf der Konsolenliste; eine Anwendung, die sie innehat, erreicht weiterhin nur das, was sie definiert hat. Sie autorisiert report:use nicht: Ein Token fordert die Scopes an, die es braucht."
+  },
+  "roles.memberKinds.user.label": {
+    "en": "df381eb4bb572daf",
+    "text": "eine Person"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "Ein Benutzername. Die Person muss noch nicht vorhanden sein: Dieser Dienst legt bei der ersten Sichtung für jeden Namen einen Verzeichniseintrag an, sodass eine Rolle vergeben werden kann, bevor sich ihr Inhaber jemals angemeldet hat."
+  },
+  "roles.memberKinds.group.label": {
+    "en": "7058b14ed9a6b2fc",
+    "text": "eine Gruppe"
+  },
+  "roles.memberKinds.group.what": {
+    "en": "807d0833e4b29343",
+    "text": "Eine Gruppe in ou=groups. Jedes ihrer Mitglieder hat die Rolle inne, aufgelöst zum ENTSCHEIDUNGSZEITPUNKT und nicht beim Schreiben expandiert — sodass ein ldapmodify, das jemanden zur Gruppe hinzufügt, bereits das nächste Token ändert."
+  },
+  "roles.memberKinds.application.label": {
+    "en": "7b0b893d972a8266",
+    "text": "eine Anwendung"
+  },
+  "roles.memberKinds.application.what": {
+    "en": "67e543bef5013764",
+    "text": "Eine Anwendung, die die Rolle ALS SICH SELBST innehat. Danach wird ein client_credentials-Grant entschieden, wo es überhaupt keine Person gibt, und das ist der Grund, warum eine Anwendung hier ein eigenständiges Mitglied einer Rolle ist."
+  },
+  "roles.console.read.label": {
+    "en": "528d2a45607ec613",
+    "text": "Admin-Lesen"
+  },
+  "roles.console.read.what": {
+    "en": "d824947bfa7bb0cd",
+    "text": "Sehen Sie sich jede Seite dieser Konsole an und jede Ansicht einer Seite mit ?format=json. Es ändert nichts: Ein Leser kann sehen, welche Tokens widerrufen sind, und kann keines widerrufen."
+  },
+  "roles.console.write.label": {
+    "en": "41407227fe92a8f6",
+    "text": "Admin-Schreiben"
+  },
+  "roles.console.write.what": {
+    "en": "933448e4b37b9349",
+    "text": "Übermitteln Sie jedes Formular dieser Konsole — ein Token widerrufen, einen benutzerdefinierten Claim hinzufügen, eine Einstellung ändern, eine Person anlegen, eine Rolle vergeben — außer denen, die die Sicherheit ändern; die gehören dem Sicherheitsadministrator. ES SCHLIESST LESEN EIN, sodass ein Mitglied allein dieser Rolle den Rest der Konsole nutzen kann."
+  },
+  "roles.console.security.label": {
+    "en": "eb026fe212244f20",
+    "text": "Sicherheitsadministrator"
+  },
+  "roles.console.security.what": {
+    "en": "238007ebd246b860",
+    "text": "Ändern Sie die Sicherheit: Speichern oder setzen Sie eine Richtlinie unter Verzeichnis → Richtlinien zurück, nennen Sie eine Richtlinie auf einer Anwendung, einer Gruppe oder einer Person, vergeben oder entziehen Sie diese Rolle, und handeln Sie am Konto einer Person, die sie innehat. Admin-Schreiben kann nichts davon. ES SCHLIESST LESEN EIN UND NICHT SCHREIBEN, sodass sie jemand innehaben kann, der sonst kein Administrator ist."
+  }
+}

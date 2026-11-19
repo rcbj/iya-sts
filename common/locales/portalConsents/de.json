@@ -1,0 +1,19 @@
+{
+  "sub": "Wozu Sie jeder Anwendung zugestimmt haben, diesen Identitätsanbieter in Ihrem Namen zu fragen. <strong>Das Widerrufen wirkt sofort</strong>: jedes Token, das die Anwendung für Sie zu dem hält, was Sie widerrufen, funktioniert nicht mehr — einschließlich eines Tokens, mit dem sie handeln kann, während Sie abwesend sind (<code>offline_access</code>) — und sie kann diese Tokens nicht erneuern, selbst wenn Sie später erneut zustimmen; sie muss Sie neu fragen. Das Widerrufen einer Sache beendet alles, was der Anwendung zusammen damit gegeben wurde.",
+  "adminNote": "Für einige Anwendungen hat zugestimmt, wer diesen Dienst betreibt, und zwar für alle; Sie wurden dazu nie gefragt. Sie stehen unten unter <strong>Administrative Einwilligungen</strong>, und Sie können sie nicht widerrufen.",
+  "agreed": "Sie haben zugestimmt, dass sie fragen darf nach",
+  "when": "Wann",
+  "withdraw": "Widerrufen",
+  "withdrawAll": "Alles für diese Anwendung widerrufen",
+  "none": "Es ist nichts festgehalten, dem Sie zugestimmt haben. Eine Anwendung fragt Sie das erste Mal, wenn sie etwas in Ihrem Namen möchte, und Ihre Antwort erscheint hier.",
+  "previous": "Vorherige",
+  "next": "Nächste",
+  "pageOf": "Seite {page} von {pages}",
+  "adminHeading": "Administrative Einwilligungen",
+  "adminSub": "Wer diesen Dienst betreibt, hat dem im Namen aller zugestimmt, die die Anwendung nutzen, daher wurden Sie nicht gefragt. Sie wurden angewendet, als Sie sich bei der Anwendung angemeldet haben. Nur ein Administrator kann sie widerrufen; fragen Sie Ihren Administrator, wenn eine davon entfernt werden soll.",
+  "forEverybody": "Für alle zugestimmt",
+  "firstApplied": "Zuerst bei Ihnen angewendet",
+  "adminNone": "Keine Anwendung hat eine für alle erteilte Einwilligung verwendet, als Sie sich bei ihr angemeldet haben.",
+  "doneScope": "Widerrufen: {name} darf nicht mehr nach {scope} fragen. Sie fragt Sie beim nächsten Mal erneut.",
+  "doneApplication": "Widerrufen: {name} darf nach nichts mehr fragen. Sie fragt Sie beim nächsten Mal erneut."
+}

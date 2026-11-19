@@ -197,7 +197,7 @@ rcbj, 2026-10-26, after seeing #986's page. Four things:
 * **A tooltip on every field** (rcbj, the same day), the console's shape:
   `tip(t, key)` puts a `title` on the field's label from a `report.tip*`
   sentence (`admin-ui/web_kit.ts`'s `tip()` is the model). A new field
-  owes a `tipX` key in the seven base catalogs.
+  owes a `tipX` key in every base catalog.
 * **The schedule's status** (rcbj: a schedule set, no job seen):
   `jobs.scheduleTimes()` puts `nextRunAt` (croner's `cronNext`) and
   `lastSlotAt` on the definition view, and `scheduleStatusHtml()` draws
@@ -714,7 +714,7 @@ names, as `addFilterRow()` names a clone) and, when the removed row
 carried the `+`, appends one to the new last row
 (`addFilterButtonHtml()`); the only row left is emptied instead, its
 value control a text box again, so `queryDocument()` always finds row
-zero. One prose key, `report.removeFilter`, in the seven catalogs.
+zero. One prose key, `report.removeFilter`, in every base catalog.
 `tests/report_query.js` drives the three cases on a DOM double.
 
 ## The Sort row and the Group by box (#1008, #1013)

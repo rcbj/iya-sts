@@ -1,0 +1,314 @@
+{
+  "stats.operations.create.what": {
+    "en": "a9f3a873aa328908",
+    "text": "Eine Ressource wurde erstellt (RFC 7644 Abschnitt 3.3)."
+  },
+  "stats.operations.list.what": {
+    "en": "b0284ee2afa292c9",
+    "text": "Eine Sammlung wurde abgefragt (Abschnitt 3.4.2), mit oder ohne Filter."
+  },
+  "stats.operations.read.what": {
+    "en": "822f587658cd4d92",
+    "text": "Eine Ressource wurde per id gelesen (Abschnitt 3.4.1)."
+  },
+  "stats.operations.search.what": {
+    "en": "a40bc982b7011279",
+    "text": "Eine als POST an .search gesendete Abfrage (Abschnitt 3.4.3); das nutzt ein Client, wenn sein Filter für eine URL zu lang ist."
+  },
+  "stats.operations.replace.what": {
+    "en": "0102fc5d08470507",
+    "text": "Eine ganze Ressource wurde ersetzt (Abschnitt 3.5.1)."
+  },
+  "stats.operations.modify.what": {
+    "en": "933e8a0eaeb3eee3",
+    "text": "Ein PATCH wurde angewendet (Abschnitt 3.5.2). Die Operation, die ein Bereitstellungsclient am häufigsten nutzt, und diejenige, deren Pfadgrammatik am schwersten richtig zu treffen ist — weshalb dieser Dienst sie nicht selbst implementiert."
+  },
+  "stats.operations.delete.what": {
+    "en": "45b55ac9659cbf0f",
+    "text": "Eine Ressource wurde gelöscht (Abschnitt 3.6)."
+  },
+  "stats.operations.bulk.what": {
+    "en": "c14ea1925044b133",
+    "text": "Ein BulkRequest wurde angewendet (Abschnitt 3.7). Die Operationen DARIN werden zusätzlich einzeln gezählt, sodass ein Bulk aus fünf Creates eine Bulk-Zeile und fünf Create-Zeilen ist — das ist die ehrliche Lesart und steht auf der Seite, weil ein Leser, der die Spalte aufsummiert, sonst feststellt, dass sie nicht aufgeht."
+  },
+  "stats.operations.discovery.what": {
+    "en": "9879abecdf50a7ea",
+    "text": "ServiceProviderConfig, ResourceTypes oder Schemas (Abschnitt 4). Was ein Client liest, bevor er irgendetwas anderes tut, und das Einzige hier, das keinen Verzeichniseintrag berührt."
+  },
+  "stats.operations.unknown.what": {
+    "en": "cfc21d1c585bec9c",
+    "text": "Eine Anfrage an einen Pfad unter /scim/v2, der keinen Endpunkt nennt, beantwortet mit 404 im SCIM-Error-Schema (RFC 7644 Abschnitt 3.12) statt durch express als HTML-Seite (#206)."
+  },
+  "stats.unlistedOperation": {
+    "en": "a58d0324c93bcb2e",
+    "text": "Gezählt unter einem Namen, den SCIM_OPERATIONS in admin_stats.js nicht aufführt. Er wird gezeigt statt verworfen, weil eine Tabelle, die ihn still verwürfe, die Spalte nicht mehr aufgehen ließe, ohne dass sich herausfinden ließe, warum."
+  },
+  "scim.doesNotDo.permissive": {
+    "en": "34742646d0317611",
+    "text": "ES AUTHENTIFIZIERT, UND ES PRÜFT FAST NICHTS. Anmeldedaten sind erforderlich, und jedes Verfahren hinter dieser Anforderung ist nachsichtig: Jeder Aufrufer kann vom eigenen Token-Endpunkt dieses Dienstes mit jedem Grant ein Zugriffstoken mit jedem der beiden Scopes erhalten, jeder Benutzername mit jedem Passwort außer \"invalid\" besteht Basic, jeder Benutzername besteht Digest mit dem einen gemeinsamen Passwort, und jeder kann einen HOBA-Schlüssel für jeden Namen registrieren. Es ist ein Drehkreuz, kein Schloss. Was es einbringt, ist, dass sich 401, 403, Challenge-Response und die Scope-Behandlung eines Clients überhaupt üben lassen — nichts davon kann ein offener Endpunkt hervorbringen. Setzen Sie diesen Port nicht im Vertrauen darauf an eine öffentliche Adresse."
+  },
+  "scim.doesNotDo.permissiveOff": {
+    "en": "d13d4ee5c43db5b9",
+    "text": "ES AUTHENTIFIZIERT, UND ES PRÜFT FAST NICHTS. Anmeldedaten sind erforderlich — außer dass das hier derzeit ausgeschaltet ist, sodass sie es nicht sind, und jedes Verfahren hinter dieser Anforderung ist nachsichtig: Jeder Aufrufer kann vom eigenen Token-Endpunkt dieses Dienstes mit jedem Grant ein Zugriffstoken mit jedem der beiden Scopes erhalten, jeder Benutzername mit jedem Passwort außer \"invalid\" besteht Basic, jeder Benutzername besteht Digest mit dem einen gemeinsamen Passwort, und jeder kann einen HOBA-Schlüssel für jeden Namen registrieren. Es ist ein Drehkreuz, kein Schloss. Was es einbringt, ist, dass sich 401, 403, Challenge-Response und die Scope-Behandlung eines Clients überhaupt üben lassen — nichts davon kann ein offener Endpunkt hervorbringen. Setzen Sie diesen Port nicht im Vertrauen darauf an eine öffentliche Adresse."
+  },
+  "scim.doesNotDo.product": {
+    "en": "63b3779ff81c6f12",
+    "text": "ES AUTHENTIFIZIERT, UND IM PRODUKTMODUS PRÜFT ES. Anmeldedaten sind erforderlich, und jedes Verfahren hinter dieser Anforderung wird geprüft: Ein Zugriffstoken muss vom eigenen Token-Endpunkt dieses Dienstes mit dem Scope stammen, ein Basic-Passwort wird gegen das gehashte userPassword im Eintrag der Person geprüft, ein HOBA-Schlüssel muss von seinem angemeldeten Inhaber registriert worden sein, und Digest wird nicht angeboten."
+  },
+  "scim.doesNotDo.productOff": {
+    "en": "2d0e7626a5d8a9b8",
+    "text": "ES AUTHENTIFIZIERT, UND IM PRODUKTMODUS PRÜFT ES. Anmeldedaten sind erforderlich — außer dass das hier derzeit ausgeschaltet ist, sodass sie es nicht sind, und jedes Verfahren hinter dieser Anforderung wird geprüft: Ein Zugriffstoken muss vom eigenen Token-Endpunkt dieses Dienstes mit dem Scope stammen, ein Basic-Passwort wird gegen das gehashte userPassword im Eintrag der Person geprüft, ein HOBA-Schlüssel muss von seinem angemeldeten Inhaber registriert worden sein, und Digest wird nicht angeboten."
+  },
+  "scim.doesNotDo.scope": {
+    "en": "bbf9a990cb80b46c",
+    "text": "EIN SCOPE GEWÄHRT, UND NICHTS ANDERES LIEST EINEN. scim:read und scim:write sind die erste Scope-Anforderung irgendwo in diesem Dienst, und sie gelten nur an diesen Endpunkten — keine andere Oberfläche hier liest einen Scope, und einen zu haben verleiht nichts über /scim/v2 hinaus. Beachten Sie außerdem, dass nur die OAuth-Verfahren überhaupt Scopes tragen: Basic, Digest, HOBA, ein Cookie und ein Clientzertifikat authentifizieren einen Aufrufer, der danach beides tun darf, sodass ein Aufrufer, der keinen Scope bekommen kann, einfach ein anderes Verfahren nutzen kann. Jedes Verfahren hat aus genau diesem Grund einen eigenen Schalter."
+  },
+  "scim.doesNotDo.active": {
+    "en": "063502f94b8717f2",
+    "text": "active: false DEAKTIVIERT DAS KONTO (seit 2026-09-17). Es ist die Sperre der Passwortrichtlinie pwdAccountLockedTime am Eintrag, und jede Tür weist die Person ab, solange sie gesetzt ist — ein Passwort, eine Sitzung, eine Token-Gewährung, ein Kerberos-AS-REQ —, und alles, was sie innehatte, endet, wenn sie geschrieben wird. active: true aktiviert sie wieder; eine Ressource, die active weglässt, belässt das Konto, wie es war."
+  },
+  "scim.doesNotDo.etag": {
+    "en": "d9e78344446d3ef5",
+    "text": "KEIN ETag UND KEIN changePassword, beides als nicht unterstützt ausgewiesen statt halb implementiert. Eine Version auf einem Zeitstempel mit einer Auflösung von einer Sekunde wäre eine Nebenläufigkeitskontrolle, der ein Client vertraut und die falsch ist; und kein Passwort in diesem Dienst wird geprüft, also gibt es keines zu ändern."
+  },
+  "scim.doesNotDo.member": {
+    "en": "fc37b8e96ac4cde8",
+    "text": "EIN MEMBER, DER NICHTS BENENNT, WIRD ABGELEHNT (400 invalidValue). Eine Gruppe führt nur Personen, Gruppen und Anwendungen, die vorhanden sind, und das Löschen einer davon nimmt sie aus jeder Gruppe, die sie geführt hat."
+  },
+  "scim.endpoints.serviceProviderConfig": {
+    "en": "ec5c59eeb4453e91",
+    "text": "Was dieser Server unterstützt. Lesen Sie es zuerst."
+  },
+  "scim.endpoints.resourceTypes": {
+    "en": "20ac2318fc32a81a",
+    "text": "User und Group."
+  },
+  "scim.endpoints.schemas": {
+    "en": "ed2cc578ba4c5003",
+    "text": "Die Kernschemas User und Group sowie die Enterprise-User-Erweiterung."
+  },
+  "scim.endpoints.usersList": {
+    "en": "d772456010cee030",
+    "text": "Die Liste, mit ?filter, ?sortBy, ?startIndex, ?count, ?attributes."
+  },
+  "scim.endpoints.usersCreate": {
+    "en": "ed6ef4d572de7082",
+    "text": "Erstellen."
+  },
+  "scim.endpoints.usersSearch": {
+    "en": "301d2bdfd3b6fcad",
+    "text": "Dieselbe Abfrage als POST-Body, für einen Filter, der für eine URL zu lang ist."
+  },
+  "scim.endpoints.userRead": {
+    "en": "e451ccebd6ae2d95",
+    "text": "Ein Benutzer."
+  },
+  "scim.endpoints.userReplace": {
+    "en": "10c2d84cbed90cef",
+    "text": "Ersetzen."
+  },
+  "scim.endpoints.userModify": {
+    "en": "26410632ba4e7d61",
+    "text": "Ändern (Abschnitt 3.5.2), samt der ganzen Pfadgrammatik."
+  },
+  "scim.endpoints.userDelete": {
+    "en": "0042ecdb060ae12e",
+    "text": "Löschen."
+  },
+  "scim.endpoints.groups": {
+    "en": "228c8cdc3717f718",
+    "text": "Gruppen, deren Mitglieder gleichermaßen aus member, uniqueMember und memberUid aufgelöst werden."
+  },
+  "scim.endpoints.search": {
+    "en": "a366df1d37258f63",
+    "text": "Eine Abfrage über BEIDE Ressourcentypen zugleich."
+  },
+  "scim.endpoints.bulk": {
+    "en": "6f419a02fa746e5c",
+    "text": "Bis zu {{n}} Operationen in einer Anfrage."
+  },
+  "scim.endpoints.me": {
+    "en": "ca94fbd8dcbe2b39",
+    "text": "Das Subjekt, als das sich diese Anfrage authentifiziert hat (Abschnitt 3.11), an dieselben User-Handler delegiert. 501, wenn sich nichts authentifiziert hat, und bei POST; 404, wenn die Anmeldedaten jemanden ohne Eintrag hier benennen."
+  },
+  "scim.endpoints.hoba": {
+    "en": "78e83905543539dc",
+    "text": "Einen öffentlichen HOBA-Schlüssel registrieren (RFC 7486 Abschnitt 7). Absichtlich ohne Authentifizierung — so erhält ein Aufrufer Anmeldedaten. GET beschreibt es."
+  },
+  "scim.negatives.noCredential.what": {
+    "en": "19d7f0fcd3764116",
+    "text": "Eine Anfrage ohne Anmeldedaten"
+  },
+  "scim.negatives.noCredential.answer": {
+    "en": "677b3bb94689bc2b",
+    "text": "401, mit einem WWW-Authenticate-Header je angebotenem Verfahren — RFC 7644 Abschnitt 2 macht diesen Header zu einem SHALL. Die Discovery-Endpunkte sind ausgenommen, sofern nicht scim.authDiscovery eingeschaltet ist."
+  },
+  "scim.negatives.wrongScope.what": {
+    "en": "b1b1e1f4ef979ce5",
+    "text": "Ein Zugriffstoken mit dem falschen Scope für die Operation"
+  },
+  "scim.negatives.wrongScope.answer": {
+    "en": "3699a24bfa551621",
+    "text": "403 mit WWW-Authenticate: Bearer error=\"insufficient_scope\", scope=\"{{write}}\". Lesen braucht \"{{read}}\" und Schreiben braucht \"{{write}}\"; keines impliziert das andere."
+  },
+  "scim.negatives.foreignToken.what": {
+    "en": "224693a8e83465fa",
+    "text": "Ein Zugriffstoken, das dieser Dienst nicht ausgestellt hat, oder eines, das widerrufen wurde"
+  },
+  "scim.negatives.foreignToken.answer": {
+    "en": "e71231b2cb1a9d38",
+    "text": "401. Diese Endpunkte prüfen die Signatur, anders als die OID4VCI-Credential-Endpunkte, die ein fremdes Token annehmen: Ein Scope auf einem Token, das niemand geprüft hat, ist eine Berechtigung, die sich sein Inhaber selbst ausgestellt hat."
+  },
+  "scim.negatives.refusedPassword.what": {
+    "en": "b6240d896a183cfe",
+    "text": "Basic mit dem Passwort \"{{password}}\""
+  },
+  "scim.negatives.refusedPassword.answer": {
+    "en": "0b050a874643f074",
+    "text": "401 — derselbe reservierte Wert, den hier jede andere Familie ablehnt."
+  },
+  "scim.negatives.digest.what": {
+    "en": "a1ae2bb3b98538a8",
+    "text": "Digest mit einem falschen Passwort, einer veralteten Nonce oder einem wiederholten nc"
+  },
+  "scim.negatives.digest.answer": {
+    "en": "2d00c539d384292f",
+    "text": "401 auf dreierlei Art: Das Passwort wird hier wirklich geprüft, eine veraltete Nonce trägt stale=true (ein konformer Client versucht das still erneut), und ein wiederholter Nonce-Zähler NICHT — es waren gültige Anmeldedaten und sie sind schon gesehen worden, das ist ein anderer Satz."
+  },
+  "scim.negatives.hoba.what": {
+    "en": "fc304cec6c17e496",
+    "text": "Eine HOBA-Signatur, die sich nicht prüfen lässt, oder ein wiederverwendetes (kid, challenge, nonce)"
+  },
+  "scim.negatives.hoba.answer": {
+    "en": "45994ffeadec09fe",
+    "text": "401. Die Signatur wird wirklich geprüft — RSA-SHA256 über den längenpräfixierten Blob aus RFC 7486 Abschnitt 5 —, und die Challenge darf bis zu ihrem max-age WIEDERVERWENDET werden, sodass als Replay das Tripel abgelehnt wird und nicht die Challenge."
+  },
+  "scim.negatives.otherScheme.what": {
+    "en": "fd15d107e64d7600",
+    "text": "Anmeldedaten in einem Verfahren, das dieser Dienst nicht anbietet"
+  },
+  "scim.negatives.otherScheme.answer": {
+    "en": "4753d6cedaf51d13",
+    "text": "401, das diejenigen nennt, die er anbietet. Ein Zugriffstoken in der Abfragezeichenfolge wird gesondert abgelehnt, durch dieselbe Prüfung, die /oauth2/userinfo verwendet."
+  },
+  "scim.negatives.meAlias.what": {
+    "en": "1270ece98779d4ea",
+    "text": "GET /Me ohne Anmeldedaten, oder POST /Me"
+  },
+  "scim.negatives.meAlias.answer": {
+    "en": "fd67bff19b9d787d",
+    "text": "501 — der Alias ist nicht verfügbar, statt dass die Ressource fehlt. Anmeldedaten, die jemanden ohne Eintrag benennen, erhalten 404."
+  },
+  "scim.negatives.refusedUsername.what": {
+    "en": "06afe95f3e7de42b",
+    "text": "Ein userName von \"{{username}}\""
+  },
+  "scim.negatives.refusedUsername.answer": {
+    "en": "7d46037af58bb17d",
+    "text": "400 invalidValue — derselbe reservierte Wert, den der Password-Grant, WS-Trust, der Anmeldebildschirm von WS-Federation und jede LDAP-Bindung hier ablehnen."
+  },
+  "scim.negatives.duplicate.what": {
+    "en": "8d8c6d9ab4da0abf",
+    "text": "Ein zweiter Benutzer mit einem userName, den schon jemand hat"
+  },
+  "scim.negatives.duplicate.answer": {
+    "en": "ed8b8754aaa714bf",
+    "text": "409 uniqueness."
+  },
+  "scim.negatives.specialCharacter.what": {
+    "en": "d2136ee121b84487",
+    "text": "Ein userName oder displayName mit einem Sonderzeichen nach RFC 4514 (ein Komma, ein Anführungszeichen, ein Plus, ein Hash, ein Semikolon, ein Gleichheitszeichen, eine spitze Klammer oder ein umgekehrter Schrägstrich)"
+  },
+  "scim.negatives.specialCharacter.answer": {
+    "en": "ab4a092219e4a7c1",
+    "text": "400 invalidValue — der DN des Eintrags wird aus dem Namen gebildet, sodass ein Name, der eines trägt, einen Eintrag ergäbe, den die anderen Türen nicht benennen können. Es ist DIESELBE Ablehnung, die die Konsole und die Verwaltungs-API geben, aus derselben Regel; ein ldapadd kann einen solchen Eintrag weiterhin anlegen, wenn die Maskierung ausgeschrieben ist."
+  },
+  "scim.negatives.dnShaped.what": {
+    "en": "b6fdfae975fca22b",
+    "text": "Ein userName in DN-Form oder DID-Form"
+  },
+  "scim.negatives.dnShaped.answer": {
+    "en": "173e1cab8b6124e5",
+    "text": "400 invalidValue — ein durch einen Distinguished Name benannter Eintrag gelangt hierher, indem ein Clientzertifikat vorgelegt wird, und einer, der durch einen dezentralen Bezeichner benannt ist, indem dieser vorgelegt wird; es gibt also nichts, woraus sich einer von Hand anlegen ließe. Auch die Antwort der Konsole und der Verwaltungs-API, aus derselben Funktion."
+  },
+  "scim.negatives.unknownId.what": {
+    "en": "710c51b43eeb899d",
+    "text": "Eine id, die nichts benennt"
+  },
+  "scim.negatives.badFilter.what": {
+    "en": "ffcbe90773101dd8",
+    "text": "Ein Filter, den dieser Server nicht auswerten kann"
+  },
+  "scim.negatives.badFilter.answer": {
+    "en": "121c060a88700126",
+    "text": "400 invalidFilter — abgelehnt statt mit einer leeren Liste beantwortet, weil \"keine Ergebnisse\" und \"Ich konnte Ihren Filter nicht lesen\" verschiedene Antworten sind."
+  },
+  "scim.negatives.meMethod.what": {
+    "en": "3497e1e6b3a81197",
+    "text": "Jede Methode auf /Me"
+  },
+  "scim.description.store": {
+    "en": "94a5c148728c1a50",
+    "text": "Das eingebettete LDAP-Verzeichnis in diesem Prozess. Es gibt keinen zweiten Speicher und keinen Cache: Ein SCIM-POST und ein ldapadd schreiben denselben Eintrag, und eine hier bereitgestellte Person erscheint unter /admin/users, in einem ldapsearch und in den Attributen, die ihr Zugriffstoken trägt."
+  },
+  "scim.description.identifiersWhy": {
+    "en": "3e9886c5109432b9",
+    "text": "RFC 7643 Abschnitt 3.1 verlangt einen opaken, vom Server vergebenen, eindeutigen Bezeichner, der nie neu vergeben wird. Bis 2026-09-14 war es der DN des Eintrags, und eine Umbenennung vergab ihn neu. Die entryUUID wird vergeben, wenn der Eintrag entsteht, übersteht eine Umbenennung und ist derselbe Wert, den das Token einer Person in `sub` als urn:uuid:<value> trägt. Ein als id vorgelegter DN wird weiterhin aufgelöst, für einen Client, der einen vor der Änderung gespeichert hat. Member- und manager-Werte sind ebenfalls ids und werden als die DNs gespeichert, die LDAP hält."
+  },
+  "scim.description.mapping": {
+    "en": "808ad5bee1c6ce18",
+    "text": "Welches LDAP-Attribut jedes SCIM-Member ist. Die ganze Tabelle, mit dem Schemadokument, das jedes Attribut definiert, steht unter /admin/scim."
+  },
+  "auth.schemes.bearer": {
+    "en": "690a025e3d401473",
+    "text": "Ein Zugriffstoken, das der eigene Autorisierungsserver dieses Dienstes ausgestellt hat, vorgelegt als \"Authorization: Bearer <token>\". Jeder Grant genügt — Autorisierungscode, Client Credentials, Passwort, Refresh, Device, Token Exchange —, aber die SCIM-Scopes werden in jedem Modus nur an einen Client ausgegeben, dessen oauthAllowedScope sie deklariert. Das Token muss zum Lesen den Lese-Scope und zum Schreiben den Schreib-Scope tragen, sein Client muss diesen Scope weiterhin deklarieren, es muss eines sein, das DIESER Dienst signiert hat, es darf nicht widerrufen sein, und es darf durch RFC 8707 nicht auf eine andere Ressource verengt worden sein."
+  },
+  "auth.schemes.dpop": {
+    "en": "4a6cf765e9ede961",
+    "text": "Das Proof-of-Possession-Token, das RFC 7644 Abschnitt 2 nennt, in der Form, die dieser Dienst schon ausstellt: ein an einen Schlüssel gebundenes Zugriffstoken (cnf.jkt), vorgelegt als \"Authorization: DPoP <token>\" mit einem frischen DPoP-Proof über Methode und URL. Ein nach RFC 8705 zertifikatsgebundenes Token ist die andere Proof-of-Possession-Form und wird auf demselben Pfad anerkannt. Behandelt von derselben Prüfung wie die Bearer-Zeile — es sind dieselben Anmeldedaten mit zwei Arten, sie zu halten —, und gesondert aufgeführt, weil ein Client, der dieses Dokument liest, wissen darf, dass die gebundene Form verstanden wird."
+  },
+  "auth.schemes.basic": {
+    "en": "7292c47a83a49365",
+    "text": "Im Produktmodus wird das Passwort gegen das gehashte userPassword der Person geprüft, und einer Person, die einen zweiten Faktor hat oder haben muss, wird das eigene Passwort verweigert; sie verwendet ein App-Passwort. Im Entwicklungsmodus gehen jeder Benutzername und jedes Passwort durch, genau wie dort jede LDAP-Bindung gelingt — mit der einzigen Ausnahme des Passworts \"invalid\", das abgelehnt wird, damit ein 401 erreichbar bleibt —, sodass das, was dies dort authentifiziert, ein NAME ist, und dieser Name ist es, den das Auditprotokoll festhält. RFC 7644 Abschnitt 2 DISCOURAGES dieses Verfahren, in diesen Worten, weil es auf einem verhältnismäßig statischen symmetrischen Geheimnis beruht; es ist trotzdem implementiert, weil ein Bereitstellungsclient ihm am häufigsten begegnet und weil sich seine 401-Behandlung ausführen lassen soll."
+  },
+  "auth.schemes.digest": {
+    "en": "ab6220dc6edc03b2",
+    "text": "Im Produktmodus wird dieses Verfahren NICHT angeboten und abgelehnt: Ein Passwort liegt als gesalzener scrypt-Hash vor, der einen Austausch nach RFC 7616 nicht beantworten kann. Im Entwicklungsmodus ist es das einzige Verfahren, bei dem das Passwort wirklich geprüft wird, und es kann nicht anders sein: Die Antwort ist ein Hash über das Passwort, sodass ein Server, der irgendetwas annähme, den Austausch überhaupt nicht ausführte. Es tut also aus demselben Grund, was Kerberos tut — JEDER Benutzername authentifiziert sich, und alle teilen ein Passwort (scim.digestPassword). Angeboten werden SHA-256 und SHA-512-256, in dieser Reihenfolge, mit den -sess-Varianten, und MD5 zuletzt nur dort, wo scim.digestMd5 es einschaltet; qop ist auth. Ein falsches Passwort ist ein 401, eine veraltete Nonce ist ein 401 mit stale=true, und ein wiederholter Nonce-Zähler ist ein 401 — drei Negativfälle, die sich sonst schwer hervorrufen lassen."
+  },
+  "auth.schemes.hoba": {
+    "en": "c1ed97fe4e57dbcb",
+    "text": "Das signaturbasierte Verfahren, das RFC 7644 Abschnitt 2 nennt, und das einzige der sechs, in dem nirgends ein Passwort vorkommt. Ein Client registriert einen öffentlichen Schlüssel unter /.well-known/hoba/register — im Entwicklungsmodus darf das jeder, für jeden Namen; im Produktmodus nur der angemeldete Inhaber eines bestehenden Kontos, und eine Registrierung legt nie ein Konto an — und signiert dann die Challenge des Servers zusammen mit origin, realm, der eigenen key id und nonce. DIE SIGNATUR WIRD WIRKLICH GEPRÜFT, in beiden Modi: Eine Signaturprüfung, die alles durchlässt, ist nicht das Verfahren. Nur RSA mit SHA-256 (Algorithmus 0)."
+  },
+  "auth.schemes.cookie": {
+    "en": "b558e5c68d9956f1",
+    "text": "Die Browser-Anmeldesitzung, die dieser Dienst schon hat — diejenige, die /authn/login einrichtet und die WS-Federation teilt —, hier angeboten, weil Abschnitt 2 sie nennt: \"Clients dürfen über TLS HTTP-Cookies geltend machen, die einen Authentifizierungszustand enthalten, den der SCIM-Dienstanbieter versteht\". Sie macht einen SCIM-Aufruf von einer Seite dieses Dienstes ohne zweite Anmeldedaten möglich. Es gibt keine Challenge dafür: Ein Server kann in WWW-Authenticate nicht nach einem Cookie verlangen, also wird es verwendet, wenn es da ist, und nie gefordert."
+  },
+  "auth.schemes.clientcert": {
+    "en": "61bd6775c16d8b0a",
+    "text": "Mutual TLS, das erste Verfahren, das RFC 7644 Abschnitt 2 nennt. Verfügbar nur dort, wo diese Anfrage über TLS mit einem Zertifikat eintraf, das gegen einen Anker im Client-Truststore VERIFIZIERT wurde (/admin/tls/trust) — auf dem Hauptport also nur, wenn er als HTTPS gebunden ist (global.https, was oauth2.rfc9700 einschaltet). Ein Zertifikat einer fremden Zertifizierungsstelle (ein Anker, den jemand hinzugefügt hat) ist die Person oder Anwendung, deren Eintrag es Byte für Byte in userCertificate speichert, und sonst nichts: Liegt es auf keinem Eintrag oder auf mehreren, sind es nicht diese Anmeldedaten. Das Zertifikat einer Person, das dieser Vertrauensbereich ausgestellt hat, wird unter seinem Subject in der Form nach RFC 4514 geführt. Es wird hier nicht noch einmal aufgezeichnet: tls_server.js zeichnet ein Zertifikat absichtlich einmal je VERBINDUNG auf, und es je Anfrage zu zählen würde das vom anderen Ende wieder aufheben. Ein Zertifikat, das dieser Vertrauensbereich an eine ANWENDUNG ausgestellt hat, ist diese Anwendung und darf nur, was ihr oauthAllowedScope deklariert: den Lese-Scope zum Lesen und den Schreib-Scope zum Schreiben, bei jeder Anfrage gefragt, sodass eines, das keines von beiden deklariert, abgelehnt wird. Das Zertifikat einer Person, hier ausgestellt oder in ihrem Eintrag gespeichert, darf beides."
+  },
+  "auth.policy.oauth": {
+    "en": "25657a7b65df5ecd",
+    "text": "OAuth-Anmeldedaten — ein Bearer- oder DPoP-Zugriffstoken — dürfen tun, was ihre Scopes sagen: \"{{read}}\" zum Lesen und \"{{write}}\" zum Schreiben. Keines impliziert das andere, damit die Behandlung rein lesender Anmeldedaten durch einen Client etwas ist, das dieser Dienst tatsächlich erzeugen kann."
+  },
+  "auth.policy.others": {
+    "en": "d754835a0e2987d3",
+    "text": "JEDES ANDERE VERFAHREN DARF BEIDES. Basic, Digest, HOBA, ein Sitzungs-Cookie und das Clientzertifikat einer Person tragen keine Scopes, also ist die Richtlinie für sie die ganze Oberfläche. Das sollten Sie zweimal lesen: Ein Aufrufer, der keinen Scope bekommen kann, kann stattdessen Basic verwenden, weshalb jedes Verfahren einen eigenen Schalter hat — eine Bereitstellung, die die Scope-Behandlung übt, schaltet die anderen fünf aus."
+  },
+  "auth.policy.certificate": {
+    "en": "b58d444ed6dfd985",
+    "text": "DAS ZERTIFIKAT EINER ANWENDUNG IST AN SEINE DEKLARIERTEN SCOPES GEBUNDEN (#1048). Ein TLS-Clientzertifikat, das dieser Vertrauensbereich an eine Anwendung ausgestellt hat, trägt keine Scopes; es darf also von den beiden oben das tun, was das oauthAllowedScope dieser Anwendung deklariert, bei jeder Anfrage gefragt: Eines, das keines deklariert, wird abgelehnt, eines, das nur den Lese-Scope deklariert, darf nur lesen, und das Entfernen einer Deklaration schneidet das Zertifikat sofort ab."
+  },
+  "auth.policy.rfc": {
+    "en": "01badc7fa9089572",
+    "text": "RFC 7644 Abschnitt 2 verlangt, dass ein Anbieter einen authentifizierten Client auf eine Zugriffssteuerungsrichtlinie abbilden KANN. Das ist diese Richtlinie. Es sind zwei Zeilen, weil dieser Dienst im Entwicklungsmodus niemanden in dem Sinne authentifiziert, auf den es ankommt — es ist ein Drehkreuz, kein Schloss —, und im Produktmodus, wo alle Anmeldedaten geprüft werden, das, was ein geprüfter Aufrufer tun darf, immer noch diese zwei Zeilen sind."
+  },
+  "auth.policy.tied": {
+    "en": "f84b2b4dc96d5708",
+    "text": "EIN SCOPE IST AN EINEN CLIENT GEBUNDEN (#110). Die SCIM-Scopes werden in beiden Modi nur an einen Client ausgegeben, dessen oauthAllowedScope sie deklariert, und ein Token wird nur anerkannt, solange sein Client den Scope, den es verwendet, noch deklariert — das Entfernen der Deklaration schneidet also bereits ausgegebene Token ab."
+  },
+  "auth.refusedByMode": {
+    "en": "024ae1b294c68b2d",
+    "text": "HTTP Digest verlangt, dass der Server jedes Passwort oder dessen Hash nach RFC 7616 hält, und der Produktmodus hält nur einen scrypt-Hash; das gemeinsame scim.digestPassword sind keine Anmeldedaten, die eine Bereitstellung anbieten kann."
+  }
+}

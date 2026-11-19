@@ -1,0 +1,15 @@
+{
+  "title": "Diese Anmeldung konnte nicht gestartet werden",
+  "refusal.STS-LAUNCH-0001": "Es gibt keine Anwendung <code>{app}</code> in diesem Bereich, daher gibt es nichts, bei dem Sie angemeldet werden können.",
+  "refusal.STS-LAUNCH-0002": "<code>{protocol}</code> ist kein Protokoll, in dem eine Anmeldung gestartet werden kann. Ein Link hier startet saml2, saml11, wsfed oder oidc.",
+  "refusal.STS-LAUNCH-0003": "Diese Anwendung meldet nicht mit <code>{protocol}</code> an.",
+  "refusal.STS-LAUNCH-0004": "Diese Anwendung kann in mehr als einem Protokoll gestartet werden, und der Link sagt nicht, in welchem.",
+  "refusal.STS-LAUNCH-0005": "Diese Anwendung kann von hier nicht gestartet werden. Starten Sie die Anmeldung bei der Anwendung selbst.",
+  "refusal.STS-LAUNCH-0006": "Für diese Anwendung ist keine Adresse registriert, an die Sie gesendet werden, daher hat eine hier gestartete Anmeldung kein Ziel.",
+  "refusal.STS-LAUNCH-0007": "Der Link nennt eine Adresse, an die Sie gesendet werden sollen, die für diese Anwendung nicht registriert ist, daher wurde er abgelehnt.",
+  "refusal.general": "Diese Anmeldung konnte nicht gestartet werden.",
+  "background": "Dieser Link startet eine Anmeldung bei diesem Identitätsanbieter für eine Anwendung (vom Identitätsanbieter ausgelöste Anmeldung). An keine Anwendung wurde bisher etwas gesendet, daher wird das Problem stattdessen hier gemeldet.",
+  "application": "Anwendung",
+  "protocol": "Protokoll",
+  "target": "Ziel"
+}

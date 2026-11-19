@@ -239,7 +239,7 @@ template a notification, in every catalog.
   one sign-in (`authn.beginAuthentication()`, as `/launch` does) and back;
   the only text it answers is the refusal told to the person, as text, so a
   return address nobody registered is never followed. A static surface for
-  one sentence would be a bundle, a shell and seven catalogs for nothing.
+  one sentence would be a bundle, a shell and a catalog in every language for nothing.
 * **The ticket carries the person** (`requestingParty`, `acr`) through the
   rotation, so the grant reads them from the ticket the client was handed,
   and a ticket another client presented first is `not_authorized`.

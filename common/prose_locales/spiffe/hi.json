@@ -1,0 +1,334 @@
+{
+  "spiffe.auth.entities.local.label": {
+    "en": "8c31e6e7223097e2",
+    "text": "स्थानीय"
+  },
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "कॉल Unix domain socket पर पहुँची। एक वास्तविक SPIRE सर्वर अपने निजी सॉकेट पर सीधे भरोसा करता है — spire-server CLI इसी तरह काम करता है — और पहुँच नियंत्रण सॉकेट की फ़ाइल-सिस्टम अनुमतियाँ हैं। विकास मोड उस सीमा को मान लेता है; उत्पाद मोड इसे प्रत्येक कनेक्शन पर सत्यापित करता है: सॉकेट को 0600 बनाया गया हो, ऐसी निर्देशिका में जहाँ अन्य उपयोगकर्ता न पहुँच सकें, और कॉल करने वाले का कर्नेल uid इस सेवा का अपना हो। `spiffe.trustLocalSocket` इसे बंद कर देता है, जिससे सॉकेट TCP पोर्ट की तरह एक SVID माँगता है, और यही किसी क्लाइंट के \"सॉकेट पर मुझे अस्वीकार किया गया\" पथ को चलाने का एकमात्र तरीका है।"
+  },
+  "spiffe.auth.entities.agent.label": {
+    "en": "11b39c93777e8f1f",
+    "text": "एजेंट"
+  },
+  "spiffe.auth.entities.agent.what": {
+    "en": "f5f4dddd8dea737f",
+    "text": "कॉल करने वाले ने एक X509-SVID प्रस्तुत किया जिसका SPIFFE ID एक एजेंट id है (/spire/agent/...) और जो ऐसे एजेंट का नाम लेता है जिसे इस सर्वर ने अनुप्रमाणित किया है तथा प्रतिबंधित नहीं किया। प्रतिबंधित एजेंट को केवल AttestAgent पर नहीं, बल्कि यहीं अस्वीकार किया जाता है, जिससे /admin/spiffe/agents पर लगा प्रतिबंध उस कॉल करने वाले के लिए भी अर्थ रखता है जिसके पास पहले से एक SVID है।"
+  },
+  "spiffe.auth.entities.admin.label": {
+    "en": "c1c224b03cd9bc7b",
+    "text": "व्यवस्थापक"
+  },
+  "spiffe.auth.entities.admin.what": {
+    "en": "2f07edbd784cf1ef",
+    "text": "कॉल करने वाले का SPIFFE ID `spiffe.adminIds` में नामित है, या उस पहचान की किसी पंजीकरण प्रविष्टि पर `admin` अंकित है। दोनों, क्योंकि SPIRE में दोनों हैं: admin_ids के लिए कोई प्रविष्टि आवश्यक नहीं, और प्रविष्टि पर लगा ध्वज वह है जिसे प्रचालक कंसोल से सेट करता है। यही किसी दूरस्थ कॉल करने वाले को पंजीकरण प्रविष्टियाँ प्रबंधित करने देता है।"
+  },
+  "spiffe.auth.entities.downstream.label": {
+    "en": "8144a0c98691bdde",
+    "text": "डाउनस्ट्रीम"
+  },
+  "spiffe.auth.entities.downstream.what": {
+    "en": "b756368b7b316586",
+    "text": "कॉल करने वाले की पहचान की किसी पंजीकरण प्रविष्टि पर `downstream` अंकित है — एक नेस्टेड SPIRE सर्वर, जो एक मध्यवर्ती CA माँग सकता है और एक प्राधिकारी प्रकाशित कर सकता है, तथा इसके अलावा कुछ नहीं कर सकता।"
+  },
+  "spiffe.auth.entities.anonymous.label": {
+    "en": "e7a8aa2df7e5d0b2",
+    "text": "अनाम"
+  },
+  "spiffe.auth.entities.anonymous.what": {
+    "en": "ac3d07cf4191b708",
+    "text": "कोई क्रेडेंशियल प्रस्तुत नहीं किया गया, या एक प्रस्तुत किया गया और वह सत्यापित नहीं हुआ। दो विधियाँ फिर भी इसके लिए खुली हैं, और दोनों का खुला रहना आवश्यक है: AttestAgent, क्योंकि किसी एजेंट के पास तब तक कोई SVID नहीं होता जब तक वह कॉल उसे एक न दे, और GetBundle, क्योंकि विश्वास बंडल डिज़ाइन से सार्वजनिक है।"
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "केवल SPIRE Server API। इसका TCP पोर्ट पारस्परिक TLS है: कॉल करने वाला इस विश्वास डोमेन का एक X509-SVID प्रस्तुत करता है, यह सेवा उसे विश्वास बंडल के विरुद्ध तथा प्रमाणपत्र की अपनी वैधता अवधि के विरुद्ध सत्यापित करती है, SPIFFE ID URI subjectAltName से लेती है (subject से कभी नहीं), उसे स्थानीय, एजेंट, व्यवस्थापक या डाउनस्ट्रीम के रूप में वर्गीकृत करती है, और विधि को SPIRE की अपनी policy_data.json के विरुद्ध, पंक्ति दर पंक्ति, अधिकृत करती है। इसका Unix सॉकेट `local` इकाई है और उसे किसी क्रेडेंशियल की आवश्यकता नहीं, spire-server CLI किसी वास्तविक सर्वर तक इसी तरह पहुँचता है। Workload API को जान-बूझकर इस सबसे अलग रखा गया है: उसका विनिर्देश कहता है कि किसी क्लाइंट से प्रमाणीकरण अपेक्षित नहीं होना चाहिए।"
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "TCP पोर्ट क्लाइंट प्रमाणपत्र माँगता है और उसे आवश्यक नहीं ठहराता, क्योंकि AttestAgent ऐसे कॉल करने वाले के लिए खुला है जिसके पास कोई SVID नहीं — किसी एजेंट के पास तब तक कोई नहीं होता जब तक वह कॉल उसे एक न दे। बंडल एंडपॉइंट से बंडल प्राप्त करें, इस सर्वर को उसके विरुद्ध सत्यापित करें, और अनुप्रमाणित करें।"
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "स्वीकृत क्रेडेंशियल यहाँ किसी अन्य की तरह एक पहचान है: यह उसी कीप तक पहुँचता है जिसका उपयोग सोलह प्रोटोकॉल परिवारों में से हर एक करता है, इसलिए इसका धारक /admin/users पर दिखाई देता है और ou=users के अंतर्गत एक निर्देशिका प्रविष्टि पाता है — एक डाइजेस्ट से नामित, उस पर पहचान `spiffeSubject` के रूप में, और उसी का पुन: उपयोग होता है जब वही पहचान किसी अन्य मार्ग से फिर आती है। तीन स्वीकृतियाँ ऐसा करती हैं: पारस्परिक TLS पर एक X509-SVID (प्रति कनेक्शन एक बार), किसी एजेंट का अनुप्रमाणन, और ValidateJWTSVID पर सत्यापित एक JWT-SVID। जारी करना अंदर आने का चौथा मार्ग है और उन तीन में से एक नहीं: हर पहचान जिसके लिए यह विश्वास डोमेन एक X509-SVID बनाता है, वही प्रविष्टि पाती है, जिसमें प्रमाणपत्र उन्हीं छह `x509*` विशेषताओं के रूप में होता है जिन्हें एक सत्यापित TLS क्लाइंट प्रमाणपत्र लिखता है — जोड़े जाने के बजाय नियत, क्योंकि एक SVID हर आधे जीवनकाल पर नए सिरे से बनाया जाता है, और उनके साथ `x509svidsIssued` तथा दो टाइमस्टैम्प होते हैं। इसे प्रमाणीकरण नहीं गिना जाता, क्योंकि क्रेडेंशियल जारी होना उसे प्रस्तुत करना नहीं है।"
+  },
+  "spiffe.auth.state.credentialStatusNote": {
+    "en": "855b97377adf3b8a",
+    "text": "प्रविष्टि यह भी दर्ज करती है कि पहचान को यहाँ अभी भी क्रेडेंशियल जारी किया जा सकता है या नहीं — `spiffeCredentialStatus`, और उसके साथ एक कारण। यह कोई प्रमाणपत्र स्थिति नहीं है और कुछ भी इसे वापस नहीं पढ़ता: SPIFFE में निरसन नहीं है, और पहले से जारी SVID निर्देशिका कुछ भी कहे, समाप्ति तक बंडल के विरुद्ध सत्यापित होता है। जो यह दर्ज करता है वे तीन बातें हैं जो किसी पहचान की नया क्रेडेंशियल पाने की क्षमता समाप्त करती हैं — उसकी अंतिम पंजीकरण प्रविष्टि का हटाया जाना, उसके एजेंट पर प्रतिबंध, उसके एजेंट का हटाया जाना — जिनमें से प्रत्येक प्रतिवर्ती है और प्रतिवर्तित होने पर उसी तरह दर्ज होता है। प्रविष्टि कभी नहीं हटाई जाती।"
+  },
+  "spiffe.auth.tcpState.off": {
+    "en": "5f0ff49e8f1e1b08",
+    "text": "बंद (spiffe.workloadPort 0 है)"
+  },
+  "spiffe.auth.tcpState.development": {
+    "en": "12b927026c850320",
+    "text": "सेवित (विकास, अनुप्रमाणित नहीं)"
+  },
+  "spiffe.auth.tcpState.notDeclared": {
+    "en": "1e5c1015bdfa2ef2",
+    "text": "सेवित नहीं (उत्पाद, स्रोत प्रमाणित घोषित नहीं)"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "सेवित नहीं (उत्पाद, वाइल्डकार्ड बाइंड पता)"
+  },
+  "spiffe.auth.tcpState.declared": {
+    "en": "35c428d100879111",
+    "text": "सेवित (उत्पाद, स्रोत प्रमाणित घोषित)"
+  },
+  "spiffe.ca.keyTypes.ec-p256.what": {
+    "en": "ff74fafa4f874a30",
+    "text": "जो SPIRE डिफ़ॉल्ट रूप से जारी करता है और जिसकी X509-SVID विनिर्देश अनुशंसा करता है। उसी कारण यहाँ भी डिफ़ॉल्ट।"
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "एक बड़ा वक्र, ऐसे क्लाइंट के लिए जो किसी एक को पिन करता है।"
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "और भी बड़ा। यह जानना उपयोगी है कि 256 में से लगभग एक P-521 हस्ताक्षर शेष 255 से एक बाइट छोटा होता है, जो अंतर-संचालनीयता का एक वास्तविक किनारा है और इसी कारण x509.js में इसके लिए एक फ़ंक्शन है।"
+  },
+  "spiffe.ca.keyTypes.rsa-2048.what": {
+    "en": "12b3f28c3feec919",
+    "text": "RSA के लिए वह न्यूनतम सीमा जिसकी X509-SVID विनिर्देश अनुमति देता है। उत्पन्न करने में धीमा — आरंभ पर ध्यान देने योग्य — और बहुत बड़े SVID बनाता है।"
+  },
+  "spiffe.ca.keyTypes.rsa-4096.what": {
+    "en": "2bc20b52a500d180",
+    "text": "आरंभ पर उत्पन्न करने में कई सेकंड लगते हैं, जिसे यह सोचने से पहले जानना उपयोगी है कि बंडल एंडपॉइंट अभी उत्तर क्यों नहीं दे रहा।"
+  },
+  "spiffe.ca.keyTypes.ed25519.what": {
+    "en": "c3a80a4d09d90afd",
+    "text": "विनिर्देश द्वारा X.509 के लिए अनुमत। JWT प्राधिकारी के लिए उपलब्ध नहीं: jsonwebtoken, इस सेवा का JWS कार्यान्वयन, EdDSA पर हस्ताक्षर नहीं करता।"
+  },
+  "spiffe.registry.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "वह अमूर्त वर्ग जो हर प्रविष्टि रखती है।"
+  },
+  "spiffe.registry.schema.objectClasses.applicationProcess.what": {
+    "en": "ede3b6433c8bf9fc",
+    "text": "वह एकमात्र पंजीकृत वर्ग जो उपयुक्त बैठता है: यह cn और description लाता है, इसलिए किसी पंजीकरण प्रविष्टि का नाम एक मानक विशेषता है, यद्यपि उसके बारे में और कुछ मानक नहीं हो सकता। वही वर्ग जिसका उपयोग ou=applications करता है, उसी कारण।"
+  },
+  "spiffe.registry.schema.objectClasses.spiffeRegistrationEntry.what": {
+    "en": "e29ba68ce50f7bcf",
+    "text": "गढ़ा गया। किसी पंजीकृत LDAP स्कीमा में SPIFFE ID, पैरेंट ID या चयनकर्ता नहीं है — SPIRE अपनी प्रविष्टियाँ SQL में रखता है और कोई अन्य उन्हें कहीं नहीं रखता — इसलिए उधार लेने को कुछ नहीं था।"
+  },
+  "spiffe.registry.schema.objectClasses.spiffeAgent.what": {
+    "en": "c88b779329476cec",
+    "text": "उसी कारण गढ़ा गया, ou=agents के अंतर्गत प्रविष्टियों पर।"
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryId.what": {
+    "en": "a7adc45dd92c5cad",
+    "text": "कुंजी: प्रविष्टि id, जिसे SPIRE Server API `id` कहता है और जिसे BatchUpdateEntry तथा BatchDeleteEntry नाम देते हैं। यहाँ 32 हेक्स वर्णों के रूप में उत्पन्न, और कभी पुन: उपयोग नहीं। प्रविष्टि का अपना cn उसका संक्षिप्त रूप है, इसलिए खोज इसी विशेषता पर हो — वही व्यवस्था जो appIdentifier को एक कंटेनर ऊपर पहले से प्राप्त है।"
+  },
+  "spiffe.registry.schema.attributes.cn.what": {
+    "en": "fe58d352f611b9c3",
+    "text": "RDN मान: प्रविष्टि id।"
+  },
+  "spiffe.registry.schema.attributes.spiffeId.what": {
+    "en": "ff53d9e13c8c570a",
+    "text": "वह पहचान जो यह प्रविष्टि प्रदान करती है — वह SPIFFE ID जो मेल खाते कार्यभार को जारी होता है। अस्वीकार, यदि यह वैध SPIFFE ID नहीं, यदि यह किसी अन्य विश्वास डोमेन का है, या यदि यह आरक्षित /spire पथ के अंतर्गत है।"
+  },
+  "spiffe.registry.schema.attributes.spiffeParentId.what": {
+    "en": "ddbb1b173769e22d",
+    "text": "कौन इसे जारी कर सकता है: उस एजेंट (या इस सर्वर) का SPIFFE ID जिसके नीचे यह प्रविष्टि टँगी है। यही तय करता है कि GetAuthorizedEntries और SyncAuthorizedEntries किसी एजेंट को किन प्रविष्टियों के बारे में बताते हैं: वे जो उसके अपने SPIFFE ID के नीचे हों, या कोई नोड उपनाम जिसके चयनकर्ता मेल खाते हों; और BatchNewX509SVID तथा NewJWTSVID किसी एजेंट को कोई अन्य प्रविष्टि देने से इनकार करते हैं।"
+  },
+  "spiffe.registry.schema.attributes.spiffeSelector.what": {
+    "en": "230a91f1fbed3a13",
+    "text": "प्रति चयनकर्ता एक मान, `type:value` लिखकर — `unix:uid:1000`, `k8s:ns:default`, `docker:label:app:web`। प्रकार पहले कोलन से पहले का सब कुछ है और मान शेष पूरा, कोलन सहित, इसीलिए इन्हें जोड़े के बजाय एक स्ट्रिंग रखा जाता है: हर कोलन पर बाँटने से `docker:label:app:web` ऐसा चयनकर्ता बन जाता है जिसे किसी ने नहीं लिखा।"
+  },
+  "spiffe.registry.schema.attributes.spiffeX509SvidTtl.what": {
+    "en": "37276f0fda549069",
+    "text": "इस प्रविष्टि से बनने वाले X509-SVID का जीवनकाल, सेकंड में। अनुपस्थित या 0 का अर्थ spiffe.svidTtl।"
+  },
+  "spiffe.registry.schema.attributes.spiffeJwtSvidTtl.what": {
+    "en": "e2aed23ffc20b746",
+    "text": "JWT-SVID के लिए वही। अनुपस्थित या 0 का अर्थ spiffe.jwtSvidTtl।"
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "SPIFFE ID के साथ SVID में जोड़े गए DNS subjectAltName। यही किसी SVID को ऐसे TLS सॉफ़्टवेयर के लिए उपयोगी बनाता है जो होस्टनाम जाँचता है और SPIFFE ID नहीं पढ़ सकता।"
+  },
+  "spiffe.registry.schema.attributes.spiffeFederatesWith.what": {
+    "en": "bccf448fc73ca351",
+    "text": "उन विश्वास डोमेन के नाम जिनके बंडल इस पहचान वाले कार्यभार को सौंपे जाते हैं — X509SVIDResponse.federated_bundles। जिस नाम का यहाँ बंडल नहीं, वह दर्ज हो जाता है और कुछ योगदान नहीं करता, क्योंकि बंडल आने से पहले कॉन्फ़िगर किया फ़ेडरेशन संबंध घटनाओं का सामान्य क्रम है।"
+  },
+  "spiffe.registry.schema.attributes.spiffeHint.what": {
+    "en": "8798c1b61a4ef8c9",
+    "text": "जब किसी कार्यभार को एक से अधिक SVID मिलें, प्रचालक का मार्गदर्शन — `internal`, `external`। Workload API तक ज्यों का त्यों जाता है; यहाँ कुछ भी इसे नहीं पढ़ता।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAdmin.what": {
+    "en": "fefc555630e7c657",
+    "text": "TRUE जहाँ धारक SPIRE Server API की प्रशासनिक विधियाँ कॉल कर सकता है — प्रविष्टियाँ, एजेंट, बंडल, फ़ेडरेशन संबंध, SVID बनाना — पारस्परिक TLS पर। दोनों मोड में प्रवर्तित: सर्वर API किसी कॉल करने वाले को `admin` बनाता है जब उसकी पहचान की कोई असमाप्त प्रविष्टि यह ध्वज रखे या spiffe.adminIds उसे नामित करे, और उन विधियों को ऐसे दूरस्थ कॉल करने वाले को अस्वीकार करता है जो इनमें से कोई नहीं (निजी Unix सॉकेट का `local` कॉल करने वाला अंदर आने का दूसरा मार्ग है)। हर कॉल पर पढ़ा जाता है, इसलिए परिवर्तन अगली कॉल पर लागू होता है।"
+  },
+  "spiffe.registry.schema.attributes.spiffeDownstream.what": {
+    "en": "16aab8ec2a97d549",
+    "text": "TRUE जहाँ धारक एक डाउनस्ट्रीम SPIRE सर्वर है जो मध्यवर्ती CA माँग सकता है (NewDownstreamX509CA) और एक JWT या WIT प्राधिकारी प्रकाशित कर सकता है। दोनों मोड में प्रवर्तित: वे विधियाँ ऐसे कॉल करने वाले को अस्वीकार हैं जिसे कोई असमाप्त प्रविष्टि downstream अंकित न करे, और यह ध्वज और कुछ नहीं देता।"
+  },
+  "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
+    "en": "ed0325e0f3750709",
+    "text": "TRUE जहाँ SVID कार्यभार को सौंपने के बजाय किसी SVID स्टोर प्लगइन में लिखा जाना है। दर्ज होता है, उस पर कार्रवाई नहीं — इस सेवा के पास कोई स्टोर प्लगइन नहीं।"
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryExpiresAt.what": {
+    "en": "0db77e4fbce00b1b",
+    "text": "जब प्रविष्टि स्वयं लागू होना बंद करे, epoch से सेकंड के रूप में। SVID जीवनकाल से भिन्न: यह पंजीकरण को समाप्त करता है। समाप्त प्रविष्टि रखी जाती है और हटाए जाने के बजाय समाप्त बताई जाती है, क्योंकि जो प्रविष्टि गायब हो वह उस प्रविष्टि से अलग नहीं पहचानी जा सकती जिसे किसी ने बनाया ही नहीं।"
+  },
+  "spiffe.registry.schema.attributes.spiffeRevisionNumber.what": {
+    "en": "c6e398cd0674adf9",
+    "text": "हर परिवर्तन पर बढ़ता है। SPIRE Server API इसे प्रकाशित करता है और कोई एजेंट इससे \"मेरे पास जो प्रविष्टि है वह वर्तमान है\" को \"मेरे पास एक प्रविष्टि है\" से अलग पहचानता है।"
+  },
+  "spiffe.registry.schema.attributes.spiffeOrigin.what": {
+    "en": "00f49586f429c433",
+    "text": "यह प्रविष्टि यहाँ कैसे आई: `seed`, `console`, `api`, `grpc`, `auto` (ऐसे कार्यभार के लिए गढ़ी गई जो किसी से मेल नहीं खाता) या `ldap`। जो गढ़ी गई प्रविष्टि को उस प्रविष्टि से अलग बताता है जिसे किसी ने चाहा था।"
+  },
+  "spiffe.registry.schema.attributes.spiffeSvidsIssued.what": {
+    "en": "5c7d76f70131d771",
+    "text": "इस प्रविष्टि के विरुद्ध कितने SVID जारी हुए। हर परिवर्तन पर नियत — जो काउंटर मान जमा करे वह निरर्थक होगा — और निर्देशिका प्रविष्टि में एक जीवित संख्या, जिसे कोई वास्तविक निर्देशिका नहीं रखती।"
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSvidAt.what": {
+    "en": "439b824bf18526c6",
+    "text": "GeneralizedTime, इसके विरुद्ध सबसे हाल का जारीकरण।"
+  },
+  "spiffe.registry.schema.attributes.spiffeCreatedAt.what": {
+    "en": "db6f43baf4cb0cf6",
+    "text": "GeneralizedTime। प्रविष्टि के अपने createTimestamp के पास, क्योंकि SPIRE Server API `created_at` को संख्या के रूप में प्रकाशित करता है और पाठक को दोनों को वही क्षण देख पाना चाहिए।"
+  },
+  "spiffe.registry.schema.attributes.description.what": {
+    "en": "acd2638ccd119c56",
+    "text": "एक पंक्ति, कि यह प्रविष्टि कहाँ से आई।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentId.what": {
+    "en": "1eb0478ad1d93963",
+    "text": "किसी एजेंट प्रविष्टि की कुंजी: एजेंट का अपना SPIFFE ID, हमेशा आरक्षित /spire/agent पथ के अंतर्गत।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestationType.what": {
+    "en": "a106e8d20ed4b9d0",
+    "text": "वह नोड अटेस्टर जिसने एजेंट को सत्यापित किया — `join_token`, तथा अन्य प्रकार जिन्हें कोई क्षेत्र spiffe.nodeAttestors में नामित करता है। जिस प्रकार को यहाँ कोई अटेस्टर सत्यापित नहीं करता, वह AttestAgent पर अस्वीकार होता है, कभी दर्ज नहीं।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSelector.what": {
+    "en": "f1f7a49b8ce0625d",
+    "text": "वे चयनकर्ता जो अनुप्रमाणन ने बनाए। एजेंट ने जो भेजा उसी से गढ़े गए, उसी कारण।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentBanned.what": {
+    "en": "ef97460f95df0202",
+    "text": "TRUE जहाँ BanAgent कॉल हुआ। प्रतिबंधित एजेंट AttestAgent और RenewAgent पर अस्वीकार होता है — इस सेवा के कुछ अस्वीकारों में से एक — क्योंकि जिस एजेंट पर प्रतिबंध न लग सके, वह प्रतिबंध बटन को झूठ बना देता है।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentCanReattest.what": {
+    "en": "c422054beef1b8d8",
+    "text": "क्या अटेस्टर प्रचालक के बिना फिर चल सकता है। एजेंट को बताया जाता है, और वही तय करता है कि इसके बारे में क्या करे।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSvidHash.what": {
+    "en": "fe13de3e1f4b825f",
+    "text": "एजेंट के वर्तमान SVID के DER पर SHA-256, जिसे spire.api.types.Agent रखता है और जिससे प्रचालक एक ही पहचान वाले दो एजेंटों को अलग पहचानता है।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentExpiresAt.what": {
+    "en": "137d83a05ee5c7c1",
+    "text": "वह SVID कब समाप्त होता है, epoch से सेकंड के रूप में।"
+  },
+  "spiffe.registry.schema.attributes.spiffeFirstSeen.what": {
+    "en": "41c766626dfff95d",
+    "text": "GeneralizedTime, जब इस एजेंट ने पहली बार अनुप्रमाणन किया।"
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime, सबसे हाल का समय।"
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestations.what": {
+    "en": "80dcd7993e4bf81c",
+    "text": "इसने कितनी बार अनुप्रमाणन या नवीकरण किया। नियत, संचित नहीं।"
+  },
+  "spiffe.registry.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "यह सेवा"
+  },
+  "spiffe.registry.schema.from.thisRegistry": {
+    "en": "8838be25576d9b6a",
+    "text": "यह रजिस्ट्री"
+  },
+  "spiffe.registry.schema.from.theCaller": {
+    "en": "58d987420aa2d78f",
+    "text": "कॉल करने वाला"
+  },
+  "spiffe.registry.schema.from.theAgent": {
+    "en": "c770ef7d03b69656",
+    "text": "एजेंट"
+  },
+  "spiffe.server.sentences.localTrusted": {
+    "en": "7ce165cd08ddff12",
+    "text": "कोई क्रेडेंशियल नहीं। यह सॉकेट `local` इकाई है और उस पर सीधे भरोसा है, spire-server CLI इसी तरह काम करता है।"
+  },
+  "spiffe.server.sentences.localVerified": {
+    "en": "7dd4a1d222fb239f",
+    "text": "कोई क्रेडेंशियल नहीं, इस सेवा के अपने uid से चल रही प्रक्रिया से: उत्पाद मोड प्रत्येक कनेक्शन पर सत्यापित करता है कि सॉकेट निजी है, और `local` इकाई बनने से पहले कॉल करने वाले का uid कर्नेल से पढ़ता है।"
+  },
+  "spiffe.server.sentences.nobodyLocal": {
+    "en": "26a2be079a082c09",
+    "text": "यहाँ कोई `local` इकाई नहीं: उत्पाद मोड सॉकेट की सीमा सत्यापित करता है और नहीं कर पाता ({{reason}})। TCP पोर्ट पर किसी व्यवस्थापक का X509-SVID प्रस्तुत करें।"
+  },
+  "spiffe.server.sentences.uidUnreadable": {
+    "en": "f321bf28dac402e7",
+    "text": "पीयर का uid पढ़ा नहीं जा सकता — {{problem}}"
+  },
+  "spiffe.server.sentences.svidRequired": {
+    "en": "b1022e273acb8a23",
+    "text": "यहाँ भी एक X509-SVID आवश्यक है (spiffe.trustLocalSocket बंद है)।"
+  },
+  "spiffe.server.sentences.workloadNone": {
+    "en": "be5434a7e7f33920",
+    "text": "कोई नहीं, और कोई होना भी नहीं चाहिए: Workload Endpoint विनिर्देश एक की माँग करना मना करता है।"
+  },
+  "spiffe.server.sentences.mutualTls": {
+    "en": "df42b23d461840a9",
+    "text": "पारस्परिक TLS। इस सर्वर को विश्वास बंडल के विरुद्ध सत्यापित करें, अपना X509-SVID प्रस्तुत करें, और प्रति विधि अधिकृत होने की अपेक्षा करें।"
+  },
+  "spiffe.server.sentences.serverOpen": {
+    "en": "a63de7d174172dcf",
+    "text": "कोई नहीं — प्रमाणीकरण बंद है, इसलिए यह पोर्ट सादा gRPC है और हर विधि सभी के लिए खुली है।"
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "कोई नहीं, और कोई होना भी नहीं चाहिए: Workload Endpoint विनिर्देश एक की माँग करना मना करता है। नेटवर्क स्रोत पतों को प्रमाणित करने के लिए घोषित है (spiffe.workloadTcpSourceAuthenticated), इसलिए कॉल करने वाले को उन प्रविष्टियों का उत्तर मिलता है जिन्हें उसका peer: पता चुनता है।"
+  },
+  "spiffe.server.sentences.workloadTcpUnattested": {
+    "en": "e731874c85a7fe7b",
+    "text": "कोई नहीं, और कोई होना भी नहीं चाहिए: Workload Endpoint विनिर्देश एक की माँग करना मना करता है। यहाँ किसी कॉल करने वाले का अनुप्रमाणन नहीं होता (विकास): परिनियोजन इस पोर्ट को अन्य साधनों से सुरक्षित करता है, या उसे उजागर नहीं करता।"
+  },
+  "spiffe.server.sentences.nothingListening": {
+    "en": "147d726457ddd091",
+    "text": "यहाँ कुछ भी सुन नहीं रहा।"
+  },
+  "spiffe.server.sentences.brokerMutualTls": {
+    "en": "e22213bd5a6bd3b4",
+    "text": "पारस्परिक TLS। इस सर्वर को विश्वास बंडल के विरुद्ध spiffe://<trust domain>/spire/server के रूप में सत्यापित करें, spiffe.brokers में नामित किसी ब्रोकर का X509-SVID प्रस्तुत करें, और हर कॉल पर broker.spiffe.io: true भेजें।"
+  },
+  "spiffe.server.sentences.attestationUnavailable": {
+    "en": "b953ffffd6a26296",
+    "text": "यहाँ कार्यभार अनुप्रमाणन उपलब्ध नहीं: {{problem}}"
+  },
+  "spiffe.server.param.notPrivate": {
+    "en": "0355a60c0364fe04",
+    "text": "सॉकेट निजी नहीं है"
+  },
+  "spiffe.workloadAttestors.unix.verifies": {
+    "en": "b33addc9d234b9f3",
+    "text": "कॉल करने वाली प्रक्रिया के लिए कर्नेल द्वारा बताए गए uid, gid और पूरक समूह, तथा उसकी निष्पादन-योग्य फ़ाइल का पथ और SHA-256।"
+  },
+  "spiffe.workloadAttestors.docker.verifies": {
+    "en": "dbc4e6b46bf5f4a8",
+    "text": "वह Docker कंटेनर जिसमें कॉल करने वाली प्रक्रिया चलती है, जैसा Docker Engine उसके लेबल, परिवेश और इमेज बताता है।"
+  },
+  "spiffe.workloadAttestors.k8s.verifies": {
+    "en": "cbb91a49fc6c5525",
+    "text": "वह Kubernetes पॉड और कंटेनर जिसमें कॉल करने वाली प्रक्रिया चलती है, जैसा नोड का kubelet उन्हें बताता है।"
+  },
+  "spiffe.workloadAttestors.systemd.verifies": {
+    "en": "4489245ba637b456",
+    "text": "वह systemd यूनिट जो कॉल करने वाली प्रक्रिया को रखती है, जैसा systemd D-Bus पर बताता है: उसका id और उसकी यूनिट फ़ाइल।"
+  },
+  "spiffe.peer.notes.unreadable": {
+    "en": "6e59386d4e956f8f",
+    "text": "पीयर की प्रक्रिया पढ़ी नहीं जा सकी, इसलिए केवल उसके uid और gid अनुप्रमाणित हैं"
+  },
+  "spiffe.peer.notes.otherNamespace": {
+    "en": "c35f6f344a47db55",
+    "text": "पीयर किसी अन्य pid नामस्थान में है (pid 0), इसलिए केवल उसके uid और gid अनुप्रमाणित हैं — शेष के लिए pid नामस्थान साझा करें"
+  }
+}

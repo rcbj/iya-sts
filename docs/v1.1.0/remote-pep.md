@@ -1871,8 +1871,8 @@ as it always has; both naming different PEPs is refused. Its tabs:
 table and the issue form. Hover over a field's name. Each tooltip says what
 the field does, which values it takes and its default, when a change takes
 effect and, for a setting, the precedence: a value set here, then the PEP's
-environment variable, then the default. The tooltips are in all seven console
-languages. This page and the management API's field descriptions say the
+environment variable, then the default. The tooltips are in every console
+language. This page and the management API's field descriptions say the
 same things.
 
 ### Its listeners

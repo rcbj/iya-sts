@@ -82,9 +82,17 @@ function run(t) {
           on.indexOf('An arrival session is not listed here.') >
             on.indexOf('data-tab="unauthenticated"'),
           '1. the note is on the tab when the setting is on');
-  ['fr', 'es', 'zh-Hans', 'zh-Hant', 'fil', 'sv'].forEach(function (tag) {
+  // Every base catalog but English, checked above by its English sentence.
+  // The list is catalogs.json, so a language added there is drawn here.
+  // A missing file falls back to English and fails the comparison.
+  i18n.catalogs().filter(function (c) {
+    return !c.base && c.tag !== 'en';
+  }).forEach(function (c) {
+    const tag = c.tag;
     const html = drawn(tag, view(0));
     const phrase = i18n.translator([tag]).html(
+      'consoleSessions.arrivalExcluded');
+    const english = i18n.translator(['en']).html(
       'consoleSessions.arrivalExcluded');
     const at = html.indexOf('data-tab="unauthenticated"');
     const meta = html.indexOf('data-metadata');
@@ -94,7 +102,8 @@ function run(t) {
     const title = headline ? headline[1] : '';
     const rest = headline
       ? phrase.slice(headline[0].length).replace(/^\s+/, '') : phrase;
-    t.check(phrase.indexOf('arrivalExcluded') < 0 && title.length > 0 &&
+    t.check(phrase.indexOf('arrivalExcluded') < 0 &&
+            phrase !== english && title.length > 0 &&
             at >= 0 && meta > at &&
             html.indexOf(title) > at && html.indexOf(title) < meta &&
             html.indexOf(rest) > at && html.indexOf(rest) < meta,

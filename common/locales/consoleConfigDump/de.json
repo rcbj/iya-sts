@@ -1,0 +1,7 @@
+{
+  "about": "Jeder Konfigurationsparameter dieser laufenden Instanz, die globalen Werte und das, was jeder Vertrauensbereich setzt. Passwörter, Tokens, Schlüssel und jeder andere sensible Wert werden vom Server maskiert, bevor sie diese Seite erreichen. Verzeichnisobjekte gehören nicht dazu.",
+  "summary": "{total} Parameter, {masked} Wert(e) maskiert, {realms} weitere Bereich(e).",
+  "download": "JSON herunterladen",
+  "thRealm": "Bereich",
+  "thOwn": "Parameter, die er setzt"
+}

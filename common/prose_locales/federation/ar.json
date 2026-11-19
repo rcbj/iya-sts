@@ -1,0 +1,554 @@
+{
+  "fed.roles.service-provider.label": {
+    "en": "1fd2d940fd75671b",
+    "text": "هذه الخدمة هي مزود الخدمة"
+  },
+  "fed.roles.service-provider.short": {
+    "en": "6deb8eb0a31924f8",
+    "text": "مزود الخدمة"
+  },
+  "fed.roles.service-provider.what": {
+    "en": "9ca71fc74f7baaeb",
+    "text": "يصادق مزود هوية أجنبي على الشخص وتستهلك هذه الخدمة ما يصدره. هذا هو الاتجاه الذي ينشئ إدخالات الدليل لأشخاص لم ترهم هذه الخدمة من قبل، والاتجاه الذي لا يمكن أن يكون متساهلاً: يُرفض التأكيد ما لم يُتحقق منه مقابل المفتاح على هذه العلاقة."
+  },
+  "fed.roles.identity-provider.label": {
+    "en": "f565ea32582c51fe",
+    "text": "هذه الخدمة هي مزود الهوية"
+  },
+  "fed.roles.identity-provider.short": {
+    "en": "d8a43dbfd9a920e9",
+    "text": "مزود الهوية"
+  },
+  "fed.roles.identity-provider.what": {
+    "en": "6456326e0ffdbb1e",
+    "text": "تصادق هذه الخدمة على الشخص ويستهلك مزود خدمة أجنبي ما تصدره. كل نقطة نهاية بروتوكول هنا تفعل ذلك بالفعل لأي متصل — ما تضيفه العلاقة هو وسم الشريك كشريك اتحاد لا كعميل اختبار، وقائمة بالسمات التي تُطلَق إليه."
+  },
+  "fed.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "fed.protocols.saml2.what": {
+    "en": "355d6177d0a6e06b",
+    "text": "ملف تعريف Web Browser SSO. ترسل هذه الخدمة <AuthnRequest> إلى الشريك وتستهلك <Response> عند خدمة مستهلك التأكيد الخاصة بها، أو تصدر واحداً إلى الشريك من /saml2."
+  },
+  "fed.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "fed.protocols.saml11.what": {
+    "en": "3c12221e7c47c8a0",
+    "text": "ملف تعريف Browser/POST. لا توجد رسالة طلب — تدفق SAML 1.1 يبدأه مزود الهوية، فما ترسل هذه الخدمة المتصفح إليه هو URL لنقل بين المواقع يحمل TARGET، وما يعود هو <Response> بلا InResponseTo لمطابقته. انظر الملاحظة عن الإعادة على fedNonce أدناه."
+  },
+  "fed.protocols.wsfed.label": {
+    "en": "8dedbb37150543a1",
+    "text": "WS-Federation 1.2"
+  },
+  "fed.protocols.wsfed.what": {
+    "en": "7c638a5872ef9fcd",
+    "text": "ملف تعريف الطالب السلبي. ترسل هذه الخدمة wa=wsignin1.0 مع wtrealm الخاص بها وتستهلك wresult، الذي يحمل تأكيد SAML 1.1 أو SAML 2.0 داخل RSTR."
+  },
+  "fed.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "fed.protocols.oidc.what": {
+    "en": "37c9ef2268d1e1b9",
+    "text": "تدفق رمز التفويض افتراضياً، وresponse_type=id_token مع response_mode=form_post حيث لا تكون هناك قناة خلفية على الإطلاق. تأتي السمات من ID Token، ومن UserInfo حيث يكون أحدهما مُعداً."
+  },
+  "fed.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "fed.protocols.oauth2.what": {
+    "en": "b8c06dd7e4c8e69d",
+    "text": "تدفق رمز التفويض بلا ID Token — تأتي السمات من رمز الوصول حيث يكون JWT، ومن نقطة نهاية على هيئة userinfo مُعدّة بخلاف ذلك. إنه بروتوكول متميز هنا وليس OIDC مع علامة، لأن ما يحدّد الشخص أثر مختلف، والخطأ في ذلك هو جوهر ما يختل حين يستخدم الناس OAuth 2.0 للمصادقة."
+  },
+  "fed.protocols.ssf.label": {
+    "en": "3c589f06261f6ba6",
+    "text": "Shared Signals فقط"
+  },
+  "fed.protocols.ssf.what": {
+    "en": "01c3df2380a01fdd",
+    "text": "مُرسِل لا يسجّل دخول أحد هنا — مدير أجهزة، أو وكيل نقطة نهاية، أو نظام موارد بشرية — يرسل أحداث CAEP وRISC عن أشخاص وأجهزة يعرفها نطاق الثقة هذا. ما تؤدي إليه أحداثه هو قرار سياسة الاستجابة للإشارات، وافتراضياً يُسجَّل ذلك ولا شيء أكثر، باستثناء امتثال جهاز."
+  },
+  "fed.mechanisms.password.label": {
+    "en": "e3db92128adfe5d4",
+    "text": "اسم المستخدم وكلمة المرور"
+  },
+  "fed.mechanisms.password.what": {
+    "en": "3c7b942fed61a172",
+    "text": "شاشة تسجيل الدخول الخاصة بهذه الخدمة: اسم مستخدم وكلمة مرور، وتُتحقق كلمة المرور في وضع المنتج ولا تُتحقق في وضع التطوير. الحالة العادية، وما تسقط إليه آلية غير مضبوطة ما إن لا يبقى لشيء آخر رأي."
+  },
+  "fed.mechanisms.password-mfa.label": {
+    "en": "4e8e68a717825941",
+    "text": "اسم المستخدم وكلمة المرور، مع MFA"
+  },
+  "fed.mechanisms.password-mfa.what": {
+    "en": "16512b9a181edfcd",
+    "text": "الشاشة نفسها مع مربع العامل الثاني محدداً ومقفلاً، فيجري إجراء WebAuthn بعد خطوة كلمة المرور وتسجّل الجلسة amr [\"pwd\",\"hwk\"] وacr \"mfa\". هو المطلب نفسه الذي يمكن أن يفرضه RequestedAuthnContext؛ بروتوكول يطلبه وعلاقة تضبطه ينتجان شاشة واحدة لا اثنتين."
+  },
+  "fed.mechanisms.webauthn.label": {
+    "en": "d1b42f0bce49d6e9",
+    "text": "WebAuthn، بلا كلمة مرور"
+  },
+  "fed.mechanisms.webauthn.what": {
+    "en": "0c8a75ea99e01b48",
+    "text": "مفتاح أمان وحده — لا تُقدَّم كلمة مرور، فتُسجّل الجلسة amr [\"hwk\"] وعاملاً واحداً. لهذا لا يستطيع إرضاء متصل طلب عاملاً ثانياً: انظر forceMfa في authn.js، فهو يتغلب على هذا ويقول ذلك في السجل."
+  },
+  "fed.mechanisms.federation.label": {
+    "en": "abfd4fd4bfb3a76c",
+    "text": "علاقة اتحاد أخرى"
+  },
+  "fed.mechanisms.federation.what": {
+    "en": "86f6c0e269a249de",
+    "text": "حالة الوسيط. يسمّي `fedAuthnRelationship` علاقة من جهة مزود الخدمة في نطاق الثقة نفسه ويُرسَل الشخص إليها، فتستهلك هذه الخدمة تأكيد شخص آخر ثم تصدر تأكيدها إلى الشريك الذي طلب. لا يلزم أن يتطابق البروتوكولان وعادة لا يتطابقان — ذلك هو جوهر ما يكون عليه جسر الهوية."
+  },
+  "fed.mechanisms.spnego.label": {
+    "en": "e12bc145a6d518f3",
+    "text": "تذكرة Kerberos (SPNEGO)"
+  },
+  "fed.mechanisms.spnego.what": {
+    "en": "0f52a102d4c01229",
+    "text": "المصادقة المتكاملة. يُرسَل الشخص إلى /authn/spnego، الذي يجيب 401 مع WWW-Authenticate: Negotiate ويسجّل دخوله على تذكرة الخدمة التي يعيدها عميله (RFC 4559 فوق RFC 4178 فوق RFC 4121). لا يُكتب شيء ولا تُرسم شاشة. ومثل مفتاح أمان أو محفظة، يستند إلى بيانات اعتماد تتحقق منها هذه الخدمة في كل وضع — كلمة مرور شاشة تسجيل الدخول لا تُتحقق إلا في وضع المنتج — وما تدّعيه الجلسة بعد ذلك يُقرأ من أعلام التذكرة نفسها: amr [\"pwd\"] لـ pre-authent، و[\"hwk\"] لـ hw-authent، وكلاهما عند وجودهما معاً، ولا شيء البتة لتذكرة لا تدّعي أياً منهما. عميل لا يستطيع الحصول على تذكرة يلقى صفحة تُربَط منها شاشة تسجيل الدخول، لأن 401 Negotiate المجرّد طريق مسدود في كل متصفح غير مُعدّ لهذا المضيف."
+  },
+  "fed.mechanisms.wallet.label": {
+    "en": "a6a3e498bac9d4f6",
+    "text": "محفظة (OpenID4VP)"
+  },
+  "fed.mechanisms.wallet.what": {
+    "en": "d476b4b21a6959d0",
+    "text": "يُرسَل الشخص إلى /authn/wallet، الذي يطلب من محفظته — عبر Digital Credentials API، أو على هذا الجهاز برابط — بيانات اعتماد أصدرها له نطاق الثقة هذا، ويسجّل دخوله بوصفه إدخال الدليل الذي أُصدرت له ما إن يتحقق إثبات حامل جديد. amr [\"pop\"] وacr \"1\" لعامل واحد؛ ومتصل طلب اثنين يُطلب منه عامل ثانٍ بعد ذلك (أو يكون لديه واحد بالفعل، حيث يقول إقرار مفتاح بيانات الاعتماد ذلك)، فلا تخسر هذه الآلية أمام forceMfa كما يخسر spnego."
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.label": {
+    "en": "3fb482b3b1d215c6",
+    "text": "الربط عند أول تسجيل دخول (الافتراضي)"
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.what": {
+    "en": "bf6249bea0d69f73",
+    "text": "يسجّل الموضوع المربوط دخوله. أما غير المربوط الذي يسمّي شخصاً موجوداً فيسجّل الدخول هنا أولاً بوصفه ذلك الشخص، ثم يُربَط."
+  },
+  "fed.subjectPolicies.pre-linked.label": {
+    "en": "f892df83895cdf56",
+    "text": "مربوط مسبقاً فقط"
+  },
+  "fed.subjectPolicies.pre-linked.what": {
+    "en": "9335561304f4cdab",
+    "text": "رابط صُنع مسبقاً فقط — في وحدة التحكم، أو عبر /admin-api أو SCIM — هو ما يسجّل دخول أي شخص."
+  },
+  "fed.subjectPolicies.jit-namespaced.label": {
+    "en": "02c2c9bfd4a4b3cf",
+    "text": "عند الحاجة، ضمن مساحة اسم"
+  },
+  "fed.subjectPolicies.jit-namespaced.what": {
+    "en": "b78784c7524b07bf",
+    "text": "يحصل موضوع غير مربوط على إدخال جديد باسم <relationship>~<name>، يُربَط عند الإنشاء، وليس شخصاً موجوداً أبداً."
+  },
+  "fed.subjectPolicies.any-existing.label": {
+    "en": "3c34ce5af080ff96",
+    "text": "أي شخص موجود، بالاسم (التطوير فقط)"
+  },
+  "fed.subjectPolicies.any-existing.what": {
+    "en": "0738db6ce4ae6df5",
+    "text": "يُطابَق الاسم الذي يرسله الشريك على شخص محلي. يُرفض في وضع المنتج."
+  },
+  "fed.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "الصنف المجرد الذي يحمله كل إدخال."
+  },
+  "fed.schema.objectClasses.applicationProcess.what": {
+    "en": "1c2b8d8382210aed",
+    "text": "الصنف المسجّل نفسه الذي يستخدمه ou=applications، وللسبب نفسه: هو الذي يلائم طرفاً في بروتوكول أصلاً، ويأتي معه cn وdescription وseeAlso وou وl."
+  },
+  "fed.schema.objectClasses.stsFederation.what": {
+    "en": "c0a952c96d821bd5",
+    "text": "مُختَرَع. لا يملك أي مخطط LDAP مسجّل شريك اتحاد، لأن كل منتج يخزّن واحداً (AD FS وShibboleth وKeycloak وPing) يبقيه في قاعدة بياناته الخاصة. هذه أسماء هذه الخدمة نفسها على النحو الذي هي عليه أسماء stsApplication بالفعل."
+  },
+  "fed.schema.attributes.fedId.what": {
+    "en": "259929e99a94f66f",
+    "text": "المفتاح: اسم قصير اختاره مشغّل، فريد عبر الدورين. وهو RDN أيضاً، بخلاف ما للتطبيق، لأن هذا السجل مُعدّ لا مُلاحَظ — فلا أحد مضطر لقبول ما قدّمه بروتوكول، ويمكن ببساطة اشتراط أن يكون المعرّف آمناً لـ RDN وقصيراً."
+  },
+  "fed.schema.attributes.cn.what": {
+    "en": "a0eb71f29906fcfc",
+    "text": "قيمة RDN، مساوية لـ fedId. بخلاف إدخال التطبيق لا توجد هنا حالة بصمة: معرّف لا يتسع يُرفض عند الإنشاء بدلاً من أن يُهشَّر."
+  },
+  "fed.schema.attributes.fedName.what": {
+    "en": "3680b45397f1fed4",
+    "text": "ما يُنادى به الشريك في صفحة. المعرّف هو الاسم حين لا يُعطى اسم، لأن اختراع اسم ودّي اختراع لحقيقة."
+  },
+  "fed.schema.attributes.fedRole.what": {
+    "en": "05d0154783f31965",
+    "text": "أي طرف تكون هذه الخدمة: service-provider (تستهلك) أو identity-provider (تُصدِر التأكيد). العلاقة الواحدة اتجاه واحد — انظر الترويسة."
+  },
+  "fed.schema.attributes.fedProtocol.what": {
+    "en": "06ec8c6d5bce784c",
+    "text": "أحد saml2 أو saml11 أو wsfed أو oidc أو oauth2 — بروتوكولات تسجيل الدخول الخمسة — أو ssf، شريك يرسل Shared Signals فقط ولا يسجّل دخول أحد."
+  },
+  "fed.schema.attributes.fedProvider.what": {
+    "en": "b2f68432f2b706d4",
+    "text": "مزود المستهلك أو المزود الاجتماعي الذي تكونه هذه العلاقة (google أو discord أو github أو generic-oidc أو generic-oauth2)، أو فارغ لشريك مؤسسة. يُضبط عند إنشاء العلاقة ولا يتغير أبداً: كتب ملف المزود نقاط نهايته على هذا الإدخال حينئذ، ويبيّن عند كل تسجيل دخول من أين يأتي الموضوع والعنوان والتحقق منه. علاقة تسمّي مزوداً هي في فئة المستهلك، التي يشغّلها نطاق ثقة بـ federation.consumerProviders."
+  },
+  "fed.schema.attributes.fedPeer.what": {
+    "en": "267dac8cafddfb60",
+    "text": "معرّف الشريك نفسه، بأي اسم يسميه بروتوكوله: entityID في SAML، أو issuer في OpenID Connect، أو wtrealm في WS-Federation. في علاقة من جهة مزود الخدمة يُفحَص — يُرفض تأكيد ليس Issuer فيه هذه السلسلة — ولهذا ليس مجرد توثيق، ومنذ 2026-09-12 هو مطلوب هناك: علاقة من دونه ليست مُعدّة بالكامل."
+  },
+  "fed.schema.attributes.fedLocalEntityId.what": {
+    "en": "000e6680c6459ba5",
+    "text": "ما تُنادى به هذه الخدمة لدى هذا الشريك، حين لا يكون ذلك الاسم الذي تشتقه هذه الخدمة. فارغ — الافتراضي — يشتقه من URL الأساس الذي بلغ به المتصفح هذه الخدمة (<base>/federation/acs/<id>، الذي يثبّته global.publicBaseUrl). اضبطه على entityID الذي أُعدّ الشريك به: يصبح Issuer لـ AuthnRequest الصادر، وwtrealm في WS-Federation، وproviderId في SAML 1.1، وentityID لبيانات SP الوصفية لهذه العلاقة، والجمهور الذي يجب أن يسميه تأكيد وارد — وهو رفض منذ 2026-09-12، فشريك يعرف هذه الخدمة باسم آخر يحتاج إلى ضبط هذا. يبقى URL مستهلك التأكيد مشتقاً، لأنه عنوان يجب أن يستطيع المتصفح بلوغه."
+  },
+  "fed.schema.attributes.fedEnabled.what": {
+    "en": "b6615a9f3a870188",
+    "text": "TRUE/FALSE. تُنشأ العلاقة معطّلة ولا يفعل أي شيء فيها شيئاً حتى تُشغَّل: شريك مُعدّ جزئياً يقبل التأكيدات بصمت هو الإخفاق الذي وُجد هذا السجل كله لمنعه."
+  },
+  "fed.schema.attributes.description.what": {
+    "en": "a82b6893dc62502e",
+    "text": "سطر واحد لكل شيء حدث لهذه العلاقة."
+  },
+  "fed.schema.attributes.fedSsoUrl.what": {
+    "en": "46c3751779813588",
+    "text": "إلى أين يُرسَل المتصفح. خدمة Single Sign-On في SAML لدى الشريك، أو خدمة النقل بين المواقع في SAML 1.1، أو نقطة النهاية السلبية في WS-Federation، أو نقطة نهاية التفويض في OAuth 2.0. مطلوب في كل بروتوكول، لأن علاقة بلا مكان لإرسال أي شخص لا يمكن أن تبدأ."
+  },
+  "fed.schema.attributes.fedTokenUrl.what": {
+    "en": "3bd95189243b5794",
+    "text": "نقطة نهاية الرمز لدى الشريك، لتدفق رمز التفويض. هذا أحد عنواني URL اللذين ستتصل بهما هذه الخدمة فعلاً — انظر federation_http.js، وهو الطلب الصادر الوحيد في هذا المستودع ويبيّن لماذا يختلف URL مُعدّ عن URL مسجّل."
+  },
+  "fed.schema.attributes.fedUserinfoUrl.what": {
+    "en": "c20335797afc1b41",
+    "text": "نقطة نهاية UserInfo لدى الشريك، أو أي نقطة نهاية تجيب بـ JSON عن حامل رمز الوصول. اختيارية لـ OIDC، حيث يحمل ID Token عادة ما يكفي، والمصدر الوحيد للسمات لشريك OAuth 2.0 عادي رمز وصوله معتم. عنوان URL الثاني الذي ستتصل به هذه الخدمة."
+  },
+  "fed.schema.attributes.fedJwksUri.what": {
+    "en": "8abc51b744775c8b",
+    "text": "JWKS الخاص بالشريك. يُجلَب — وهو عكس ما يفعله oauthJwksUri على إدخال التطبيق تماماً، والفرق هو جوهر الحجة في federation_http.js: ذاك URL سجّله متصل غير مصادق، وهذا URL عدّله المسؤول. اتركه فارغاً وألصق المفاتيح في fedJwks بدلاً من ذلك إن لم تكن هذه الخدمة ستجري الاتصال."
+  },
+  "fed.schema.attributes.fedEmailsUrl.what": {
+    "en": "8e6bd0b6ac698403",
+    "text": "نقطة نهاية ملف ثانية، لمزود ينشر العنوان المتحقق لشخص بمعزل عن الباقي (/user/emails لدى GitHub). يُتصل بها برمز الوصول نفسه وتحت السياسة نفسها مثل fedUserinfoUrl، ولعلاقة يقرأها ملف المزود فقط. إخفاقها يكلف العنوان، ولا يكلف تسجيل الدخول أبداً."
+  },
+  "fed.schema.attributes.fedJwks.what": {
+    "en": "e5d612d3437f7654",
+    "text": "مفاتيح الشريك العامة بوصفها وثيقة JWKS، حرفياً. تُقرأ قبل fedJwksUri ولا تُحدَّث أبداً، فالعلاقة التي تحمل هذا لا تجري أي طلب صادر للمفاتيح على الإطلاق."
+  },
+  "fed.schema.attributes.fedTrustAnchor.what": {
+    "en": "c2b143ccd681914e",
+    "text": "OpenID Connect فقط. Entity Identifier لأحد Trust Anchors في نطاق الثقة هذا (/admin/oidfed). عند ضبطه، يُحَل OP الذي يسميه fedPeer عبر Trust Chain إلى ذلك المرساة، ونقاط نهايته ومفاتيحه هي بيانات openid_provider الوصفية التي تضمنها السلسلة، وتسجّل هذه الخدمة لديه تلقائياً تحت Entity Identifier الخاص بها، موقّعة طلباتها ومصادقة نقطة نهاية الرمز بمفتاح ES256 — فلا تُقرأ fedSsoUrl وfedTokenUrl وfedJwks وfedJwksUri وfedClientId وfedClientSecret. فارغ، تُعدّ العلاقة يدوياً كالعادة."
+  },
+  "fed.schema.attributes.fedSigningCertificate.what": {
+    "en": "964cd498196aff60",
+    "text": "شهادة توقيع الشريك، base64 DER — الإملاء نفسه الذي يحمله ds:X509Certificate والإملاء نفسه الذي يستخدمه samlSigningCertificate على إدخال التطبيق، فتكون للشهادة الواحدة إملاء واحد عبر هذه الخدمة. هي ما يُتحقق مقابله كل تأكيد SAML وWS-Federation، وهي السمة الوحيدة الواقفة بين هذه الخدمة ونقطة نهاية يمكن لأي أحد أن يؤكّد أي شيء عندها."
+  },
+  "fed.schema.attributes.fedClientId.what": {
+    "en": "d1b0b114250b58b6",
+    "text": "client_id الخاص بهذه الخدمة لدى الشريك. لنا، أصدره هم — لا يُخلط مع oauthClientId على إدخال التطبيق، وهو معرّف عميل هنا."
+  },
+  "fed.schema.attributes.fedClientSecret.what": {
+    "en": "627419de92206a62",
+    "text": "سر هذه الخدمة لدى الشريك، بالنص الواضح، في دليل ينجح فيه كل ربط. إنه بيانات اعتماد حقيقية عند خدمة أجنبية حقيقية، وهو قول أقوى من أي شيء آخر في هذا الدليل — انظر الترويسة. لا يُكتب أبداً في سجل التدقيق ولا يُطبع أبداً في صفحة."
+  },
+  "fed.schema.attributes.fedResponseMode.what": {
+    "en": "fdcac3938c7dc0ec",
+    "text": "كيف تعود استجابة التفويض. فارغ، الافتراضي: query للرمز، وform_post (OAuth 2.0 Form Post Response Mode) لنوع استجابة OpenID Connect يحمل ID Token أو رمز وصول. form_post، الذي يشترطه Sign in with Apple كلما طُلب اسم أو عنوان، يصل كـ POST عابر للمواقع، فلا يرسل المتصفح معه ملف ارتباط SameSite=Lax. fragment، لـ OpenID Connect فقط، هو افتراضي أنواع الاستجابة تلك في المواصفة: الجواب في جزء URL، وصفحة بنص برمجي واحد هنا ترسله. يضع ID Token في سجل المتصفح، وهو ما لا يفعله form_post: استخدمه فقط لشريك لا يستطيع الإرسال بـ POST. لا يمكن لـ query أن يحمل ID Token أو رمز وصول."
+  },
+  "fed.schema.attributes.fedAllowedTenants.what": {
+    "en": "1436122fe8c92048",
+    "text": "Microsoft، أي مستأجر فقط: معرّفات المستأجرين الذين يجوز لأشخاصهم تسجيل الدخول، واحد لكل قيمة. يحمل fedPeer حينئذ {tenantid}، يُملأ من tid كل رمز، ويُرفض رمز من مستأجر غير مدرج. الفارغ يرفض كل مستأجر."
+  },
+  "fed.schema.attributes.fedTeamId.what": {
+    "en": "959f29403a917b46",
+    "text": "Apple فقط: معرّف فريق Apple Developer، وهو iss لسر العميل الذي توقّعه هذه الخدمة لكل طلب رمز."
+  },
+  "fed.schema.attributes.fedKeyId.what": {
+    "en": "557cedae99afdf0f",
+    "text": "Apple فقط: معرّف مفتاح Sign in with Apple، وهو kid لسر العميل الذي توقّعه هذه الخدمة."
+  },
+  "fed.schema.attributes.fedClientSigningKey.what": {
+    "en": "411c7d1d5df63859",
+    "text": "Apple فقط: المفتاح الخاص الذي توقّع به هذه الخدمة سر عميلها (ملف .p8 الذي أصدرته Apple، مفتاح P-256 في PKCS #8 PEM). إنه بيانات اعتماد لدى Apple. يُختَم تحت مفتاح تشفير المفاتيح حيثما تستمر المفاتيح، ولا يُعرض أبداً ولا يُكتب أبداً في سجل التدقيق. سر عميل مُوقَّع به يعيش خمس دقائق ويُسكّ لكل طلب رمز."
+  },
+  "fed.schema.attributes.fedAuthorizeParams.what": {
+    "en": "4cf26c17034bb859",
+    "text": "معاملات إضافية لطلب التفويض، واحد لكل قيمة، مكتوبة `<name>=<value>`، لمزود يحتاج واحداً (`claims` لدى Twitch، ليُرسَل عنوان). OpenID Connect وOAuth 2.0 فقط. المعاملات التي تضبطها هذه الخدمة بنفسها — response_type وclient_id وredirect_uri وstate وscope وnonce وcode_challenge وcode_challenge_method وresponse_mode وrequest وrequest_uri — تُرفض هنا، لأن تغيير أحدها هنا يلغي فحصاً تجريه هذه الخدمة."
+  },
+  "fed.schema.attributes.fedTokenAuth.what": {
+    "en": "df266a3a67c1b2b5",
+    "text": "كيف تصادق هذه الخدمة عند نقطة نهاية الرمز لدى الشريك: client_secret_basic (الافتراضي، الذي يقول RFC 6749 section 2.3.1 إن على الخادم أن يدعمه) أو client_secret_post، لشريك يقرأ السر من الجسم فقط. بلا fedClientSecret تكون هذه الخدمة عميلاً عاماً ولا ينطبق أي منهما. tls_client_auth (RFC 8705 section 2.1) يصادق بشهادة عميل TLS للعلاقة (fedClientCertificate) ولا يرسل تأكيداً ولا سراً؛ وهو لـ fedFapi 1-advanced وحده، وعلاقة تسميه بلا ذلك الملف ليست جاهزة."
+  },
+  "fed.schema.attributes.fedScope.what": {
+    "en": "7f9479e6e589a23f",
+    "text": "النطاق المطلوب من الشريك. `openid profile email` هو الافتراضي لعلاقة OIDC ولا يوجد افتراضي لعلاقة OAuth 2.0، لأن ما سيعطيك إياه خادم تفويض OAuth 2.0 محلي له تماماً."
+  },
+  "fed.schema.attributes.fedResponseType.what": {
+    "en": "885dc55158b43f26",
+    "text": "code (الافتراضي)، أو id_token، أو أحد الأربعة الأخرى في OpenID Connect: id_token token (الضمني)، وcode id_token، وcode token، وcode id_token token (الهجين). `id_token` مع form_post هو الشكل الذي لا يحتاج قناة خلفية وبالتالي لا نقطة نهاية رمز ولا سر عميل ولا طلب صادر — وهو السبيل الوحيد للاتحاد مع شريك OIDC من نشر بلا خروج على الإطلاق. يجب أن يحمل ID Token من نقطة نهاية التفويض nonce، وc_hash وat_hash حيثما جاء معه رمز أو رمز وصول."
+  },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "OpenID Connect فقط. الخوارزمية الوحيدة التي يوقّع بها الشريك ID Token وLogout Token لهذه العلاقة — ما سُجّل لدى الشريك بوصفه id_token_signed_response_alg (OpenID Connect Core 1.0 section 3.1.3.7 step 7، وBack-Channel Logout 1.0 section 2.6). يُرفض رمز مُوقَّع بأي خوارزمية أخرى، حتى إن تحقق منه مفتاح الشريك. فارغ، الافتراضي: أي خوارزمية من عائلة مفتاح التحقق يسمح بها federation.jwtAlgorithms. اضبطه: الفارغ يقبل رمزاً وقّعه مفتاح آخر من مفاتيح الشريك تحت خوارزمية أخرى."
+  },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "OpenID Connect فقط. الخوارزمية التي يجب أن تُوقَّع بها إجابة UserInfo موقعة — ما سُجّل لدى الشريك بوصفه userinfo_signed_response_alg (OpenID Connect Core 1.0 section 5.3.2). تُتحقق الإجابة الموقعة مقابل مفاتيح الشريك سواء ضُبط هذا أم لا؛ وعند الضبط لا تُستخدم واحدة تحت خوارزمية أخرى. فارغ، الافتراضي: إجابة JSON، أو موقعة تحت أي خوارزمية من عائلة مفتاحها."
+  },
+  "fed.schema.attributes.fedUserinfo.what": {
+    "en": "937c36d63a3876a6",
+    "text": "OpenID Connect فقط. TRUE، الافتراضي (وما تعنيه القيمة الفارغة): تُسأل نقطة نهاية UserInfo لدى الشريك برمز الوصول عند تسجيل الدخول وعند كل تحديث، وما تجيب به للـ sub نفسه يُضاف إلى مطالبات ID Token (OpenID Connect Core 1.0 section 5.3). FALSE: لا يُسأل UserInfo أبداً، مهما سمّى fedUserinfoUrl أو وثيقة الاكتشاف، ومطالبات الشخص هي مطالبات ID Token وحدها — لشريك لا يجوز لهذه العلاقة استدعاء UserInfo لديه، مثل خادم تفويض FAPI 1.0 Advanced يقدّم مورده في مكان آخر."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "OpenID Connect فقط. TRUE يُبقي رمز التحديث الذي يصدره الشريك عند تسجيل الدخول، مختوماً، مع الجلسة التي بدأها، ويستخدمه لإبقاء هوية تلك الجلسة جارية (OpenID Connect Core 1.0 section 12): كل fedRefreshEverySeconds تُحدَّث رموز الجلسة، ويجب أن يسمّي ID Token جديد iss وsub نفسيهما، ويجب أن يجيب UserInfo لذلك sub. تحديث يرفضه الشريك، أو إجابة تخفق في تلك الفحوص، يُنهي الجلسة. يموت الرمز مع الجلسة. FALSE، الافتراضي: تُستخدم رموز الشريك مرة واحدة، عند تسجيل الدخول، وتُطرح — لا شيء هنا يمسك بيانات اعتماد عند خدمة أخرى، وتسجيل خروج الشريك نفسه وShared Signals هما ما يُنهي الجلسة مبكراً."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "مع تشغيل fedRefreshTokens: كم مرة، بالثواني، تُحدَّث رموز الجلسة. فارغ: حين تنتهي صلاحية رمز الوصول (expires_in الخاص به)، أو كل ساعة حيث لا يسمّي الشريك انتهاءً. تنظر مهمة المجدول federation.partner-refresh كل خمس عشرة ثانية."
+  },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "OpenID Connect فقط، مع fedDiscovery. TRUE يجعل هذه الخدمة تسجّل نفسها لدى الشريك (OpenID Connect Dynamic Client Registration 1.0، RFC 7591) عند registration_endpoint الذي تسميه وثيقة اكتشافه، كلما لم تحمل العلاقة fedClientId أو حملت واحداً مسجلاً لدى issuer آخر — عند بداية تسجيل الدخول، أو عبر register-partner من مسؤول. يُكتب client_id والسر اللذان يصدرهما الشريك في fedClientId وfedClientSecret (مختومين). ما يُسجَّل هو هذه العلاقة: خدمة مستهلك التأكيد، ونوع الاستجابة، ومصادقة العميل، والخوارزميات المضبوطة هنا، ولأجسام الطلب المفتاح العام الذي يوقعها. FALSE، الافتراضي: يُسجَّل العميل لدى الشريك يدوياً."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "الـ issuer الذي سُجّل fedClientId لديه بواسطة fedRegister. يكتبه التسجيل؛ امسحه، مع fedClientId، لتسجيل جديد عند تسجيل الدخول التالي."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "OpenID Connect فقط. أرسل طلب التفويض بوصفه Request Object (OpenID Connect Core 1.0 section 6، RFC 9101): request (بالقيمة) أو request_uri (بالمرجع — يجلبه الشريك، مرة واحدة، من /federation/request/{id}/{handle}). مُوقَّع تحت fedRequestObjectSigningAlg بمفتاح نطاق الثقة هذا. فارغ، الافتراضي: طلب تفويض عادي."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "الخوارزمية التي يُوقَّع بها Request Object: RS256 (الافتراضي)، أو PS256 أو ES256 تحت مفتاح نطاق الثقة هذا، أو none — واحد غير موقَّع، لا يسمح به Core 6.2 إلا بالمرجع فوق https؛ تحذير: لا يملك الشريك حينئذ إلا TLS عملية الجلب ليقول إن هذه الخدمة كتبته."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "OpenID Connect فقط، مع fedDiscovery. TRUE يجيب /federation/webfinger/{id}، حيث يكتب شخص معرّفاً (acct:user@host أو URL) وتسأل هذه الخدمة ذلك المضيف من هو OpenID Provider للشخص (OpenID Connect Discovery 1.0 section 2، RFC 7033). تحذير: المضيف الذي يُتصل به اختاره متصل — الاستثناء الوحيد المحاجَج من هذا النوع بين طلبات الاتحاد، تحت سياسة الصادر (لا عنوان داخلي في وضع المنتج، ولا إعادة توجيه، والسقف). يجب أن يبدأ issuer المعثور عليه بـ fedPeer، ما يحدّه بالشريك الذي عدّله مسؤول؛ يُعرض issuer على الشخص ولا يتابع إلا بضغط زر. FALSE، الافتراضي، يرفض."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "OpenID Connect فقط. TRUE يقرأ نقاط نهاية الشريك وjwks_uri من وثيقة اكتشافه، {fedPeer}/.well-known/openid-configuration، عند بداية كل تسجيل دخول (OpenID Connect Discovery 1.0 section 4)، ويجب أن يكون issuer فيها fedPeer تماماً؛ فلا تُقرأ حينئذ fedSsoUrl وfedTokenUrl وfedUserinfoUrl وfedJwksUri. يُشتق العنوان من fedPeer، الذي عدّله مسؤول، وليس أبداً من طلب. FALSE، الافتراضي: تُعدّ نقاط النهاية يدوياً."
+  },
+  "fed.schema.attributes.fedFapi.what": {
+    "en": "f2b7f8d0b97ba58f",
+    "text": "OpenID Connect فقط. ملف عميل FAPI المستخدم حين تسجّل هذه الخدمة دخول شخص لدى الشريك (#931). فارغ، الافتراضي، هو طرف OpenID Connect المعتمد اليوم. 1-advanced (FAPI 1.0 Advanced) يفرض نوع الاستجابة code id_token، وPKCE S256، وجسم طلب PS256 بالقيمة، ويقدّم شهادة عميل TLS للعلاقة (fedClientCertificate) إلى نقطتي نهاية الرمز وUserInfo حتى يستطيع الشريك ربط رموز الوصول بها (RFC 8705)، ويصادق بـ private_key_jwt أو، حيث يكون fedTokenAuth هو tls_client_auth، بتلك الشهادة، ولا يستخدم DPoP. 2-security (FAPI 2.0 Security Profile) يفرض الاكتشاف، وطلب التفويض المدفوع، ونوع الاستجابة code، وPKCE S256، وprivate_key_jwt وDPoP. 2-message-signing يضيف جسم طلب PS256 داخل ذلك الدفع واستجابة تفويض موقعة (JARM). ملف 2.x يفرض private_key_jwt مهما قال fedTokenAuth. لا تعمل هذه الخدمة كعميل CIBA، و1-advanced وحده يقدّم شهادة عميل."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "OpenID Connect فقط. TRUE يجيب نقطة نهاية بدء تسجيل الدخول لهذه العلاقة، /federation/initiate-login/{id}، التي يسجّلها الشريك بوصفها initiate_login_uri (OpenID Connect Core 1.0 section 4): تسجيل دخول يبدأه الشريك، مسمياً نفسه في iss، الذي يجب أن يكون fedPeer. يُمرَّر login_hint، ولا يُتبع target_link_uri إلا إلى مسار على هذه الخدمة. FALSE، الافتراضي، يرفضه: وإلا أمكن لصفحة في أي مكان أن تبدأ تسجيل دخول في متصفح شخص."
+  },
+  "fed.schema.attributes.fedBinding.what": {
+    "en": "a10d4406a67b3b1f",
+    "text": "أي ربط يذهب عليه AuthnRequest الصادر في SAML: HTTP-Redirect (الافتراضي، وما يدعمه كل مزود هوية) أو HTTP-POST. لا يقول شيئاً عن الاستجابة، التي تصل على الربط الذي يرسلها الشريك عليه وتُقبل على كل الربوط."
+  },
+  "fed.schema.attributes.fedSignRequest.what": {
+    "en": "df6a6c1b53d5529c",
+    "text": "وقّع AuthnRequest الصادر بمفتاح هذه الخدمة. مطفأ افتراضياً: معظم مزودي الهوية لا يشترطونه، وشريك يشترطه سيرفض الطلب بطريقة تسمّي المشكلة. حين يكون مشغلاً، الشهادة التي تُعدّ لدى الشريك هي التي على بيانات SAML الوصفية الخاصة بهذه الخدمة."
+  },
+  "fed.schema.attributes.fedUsernameSource.what": {
+    "en": "e0e96af3e55ca105",
+    "text": "أي قيمة واردة تُبحث عند الربط عند أول تسجيل دخول، وتُطابَق تحت any-existing — اسم مطالبة لـ OIDC/OAuth 2.0، واسم سمة SAML للبقية. فارغ يعني الموضوع نفسه: NameID، أو `sub`. لا يسمّي إدخالاً ينشئه تسجيل الدخول هذا: ذلك الاسم هو العلاقة والموضوع المستقر لدى الشريك (#358)."
+  },
+  "fed.schema.attributes.fedSubjectClaim.what": {
+    "en": "c52efd86a4983b41",
+    "text": "OAuth 2.0 العادي فقط: عضو إجابة نقطة نهاية الملف الذي هو المعرّف المستقر للشخص لدى الشريك، بوصفه مساراً منقطاً (id، data.id). فارغ يُبقي ما فعلته هذه الخدمة دائماً — sub، ثم id، ثم user_id. إنه الموضوع، نصف رابط الاتحاد الذي يجب ألا يتغير أبداً، وهو ليس اسم المستخدم (fedUsernameSource). موضوع شريك OpenID Connect هو sub في ID Token، الذي يجعله OpenID Connect Core section 5.7 الوحيد المستقر، وموضوع مزود المستهلك هو ما في ملفه."
+  },
+  "fed.schema.attributes.fedAttributeMap.what": {
+    "en": "4c966530efb4269f",
+    "text": "قيمة واحدة لكل تعيين، مكتوبة `<incoming name>=<LDAP attribute>`. ما ليس مدرجاً هنا يصل مع ذلك — لدى federation_map.js جدول افتراضي يغطي مطالبات OIDC العادية، وأسماء urn:oid: في SAML، وURI مطالبات WS-Federation — فهذا لاختراعات الشريك نفسه لا للأسماء التي يستخدمها الجميع."
+  },
+  "fed.schema.attributes.fedAutocreateUsers.what": {
+    "en": "bfd1076470982a0d",
+    "text": "التزويد الديناميكي: أنشئ إدخال دليل في أول مرة يسجّل فيها هذا الشريك دخول شخص. يُكتب TRUE حين تُنشأ علاقة في التطوير وFALSE في المنتج (mode.defaultsFederatedAutocreate())؛ وعلاقة لا تخزن أياً منهما تُقرأ بالطريقة نفسها. المطفأ يعني أن الشخص يجب أن يملك إدخالاً هنا مسبقاً — مُزوَّداً سلفاً، بـ SCIM أو يدوياً — ويُرفض تسجيل دخول لمن لا يملك، لأن الجلسة تحتاج إدخالاً لتكون موضوعاً له. (حتى 2026-09-14 كان المطفأ يعطي جلسة بلا إدخال؛ وموضوع مستقر جعل تلك الحالة مستحيلة.)"
+  },
+  "fed.schema.attributes.fedUpdateUserAttributes.what": {
+    "en": "4d516236bce43ce4",
+    "text": "حدّث سمات الدليل للشخص عند كل تسجيل دخول من أحدث تأكيد أو رمز. مشغّل افتراضياً، وهو ما فعلته هذه الخدمة دائماً. المطفأ يكتب سمات الشريك فقط حين أنشأ تسجيل الدخول هذا الإدخال، فيُبقي شخصاً مُزوَّداً مسبقاً — أو شخصاً حرّره أحد منذئذ — ما يقوله الدليل. أي علاقة وأي issuer أتى الشخص عبرهما يُسجَّلان في الحالين."
+  },
+  "fed.schema.attributes.fedProvisionGroups.what": {
+    "en": "7a8153e8814f97c9",
+    "text": "ابنِ عضويات المجموعة من رمز الشريك (#358). مطفأ افتراضياً، والقيمة المفقودة مطفأة. عند التشغيل يصبح كل اسم مجموعة يحمله التأكيد عضوية للشخص الذي زوّده تسجيل الدخول هذا، عند كل تسجيل دخول ناجح. مجموعة تُنشأ بهذه الطريقة تُوسَم بهذه العلاقة. اسم موجود بالفعل وغير موسوم بأنه لهذه العلاقة يُتجاهل، ويُدقَّق (STS-FED-0161) ويستمر تسجيل الدخول. مجموعة تمنح شيئاً بمجرد حملها — مجموعة وحدة تحكم، أو مجموعة أعضاء دور، أو مجموعة مالك، أو مجموعة تسمّيها سياسة — لا تُنشأ ولا يُنضم إليها أبداً (STS-FED-0164). لا يلبّي fedSubjectGroup: تعمل تلك القاعدة قبل أن يُضاف أي شخص."
+  },
+  "fed.schema.attributes.fedProvisionCap.what": {
+    "en": "6807b5eb2cff8e4f",
+    "text": "كم شخصاً يجوز لهذه العلاقة أن تنشئ. 0 غير محدود. الفارغ غير محدود لشريك مؤسسة؛ وعلاقة مزود مستهلك أو اجتماعي ليست غير محدودة افتراضياً أبداً: تُنشأ ومعها federation.consumerProvisionCap (10000 ما لم يقل نطاق الثقة غير ذلك) مكتوباً هنا، والقيمة الفارغة تعني ذلك الإعداد. عند السقف يُرفض موضوع جديد بـ STS-FED-0090؛ وشخص مربوط بالفعل ما زال يسجّل الدخول. يبقى ldap.maxEntries سقف نطاق الثقة. ليس عدّاً لتسجيلات الدخول — fedUsers هو ذلك."
+  },
+  "fed.schema.attributes.fedProvisionIdleMinutes.what": {
+    "en": "29c243b9d96fac47",
+    "text": "عطّل شخصاً تكون هذه العلاقة مسار تسجيل الدخول الوحيد له، ما إن يصبح federationLastSeen أقدم من هذا العدد من الدقائق. فارغ أو 0 يعني الإيقاف: لا يُعطَّل أحد لكونه خاملاً. يُبقى الإدخال والرابط. شخص لديه userPassword محلي، أو رابط عبر علاقة أخرى، يُترك وشأنه. إشارة تعطيل الحساب من الشريك منفصلة (STS-FED-0156) ولا تحجب إلا تسجيلات دخول ذلك الشريك."
+  },
+  "fed.schema.attributes.fedSubjectPolicy.what": {
+    "en": "afab8ba90a854d71",
+    "text": "كيف يصبح موضوع الشريك شخصاً محلياً. الموضوع هو المعرّف المستقر الخاص بالشريك — iss + sub، وNameID دائم ومعرّف كيان الشريك — ويحمله الشخص بوصفه federationLink. link-at-first-sign-in (الافتراضي؛ والفارغ يعنيه): يسجّل الموضوع المربوط دخوله؛ وغير المربوط الذي يسمّي شخصاً موجوداً يجب أن يسجّل الدخول هنا أولاً بوصفه ذلك الشخص — كلمة المرور، وعامل ثانٍ حيث يُحمل واحد أو يُشترط — وعندئذ فقط يُسجَّل الرابط وتُكتب سمات الشريك؛ ومن لا يسمّي أحداً يحصل على إدخال جديد ضمن مساحة اسم هذه العلاقة حيث يكون التزويد مشغلاً. pre-linked: الرابط وحده يسجّل دخول أي شخص. jit-namespaced: يحصل موضوع غير مربوط دائماً على إدخال جديد، <relationship>~<subject>، وليس شخصاً موجوداً أبداً. الموضوع هو المعرّف المستقر للشريك، مع طي urn:uuid: إلى sub-<uuid>؛ وهو ليس اسم المستخدم المعيَّن. any-existing: يُطابَق الاسم الذي أرسله الشريك مباشرة على شخص محلي، كما فعلت هذه الخدمة قبل #109 — التطوير فقط، ويُرفض في المنتج، ويتيح لهذا الشريك تسجيل الدخول إلى أي حساب يستطيع تسميته."
+  },
+  "fed.schema.attributes.fedSubjectGroup.what": {
+    "en": "a93a51b8d9b56949",
+    "text": "قاعدة فوق السياسة: يجب أن يكون الشخص عضواً في إحدى هذه المجموعات، كل منها cn أو DN. إدخال كان تسجيل الدخول هذا سينشئه ليس في أي مجموعة، فمع ضبط هذا لا يُنشأ أحد. فارغ: لا قاعدة مجموعة."
+  },
+  "fed.schema.attributes.fedSubjectDomain.what": {
+    "en": "ea40949bc8260521",
+    "text": "قاعدة فوق السياسة: يجب أن يكون نطاق البريد الذي أرسله الشريك (البريد المعيَّن، أو اسم المستخدم المعيَّن حيث يكون عنواناً) أحد هذه، وكذلك بريد الإدخال المحلي حيث يملك واحداً. تُقارَن دون حساسية لحالة الأحرف وبالضبط: example.com لا يقبل sub.example.com. فارغ: لا قاعدة نطاق."
+  },
+  "fed.schema.attributes.fedHomeRealmDomain.what": {
+    "en": "e6d68b5bbe3dac9e",
+    "text": "اكتشاف نطاق الأصل (#148): طلب تفويض يكون `domain_hint` فيه ضمن OpenID Connect Enterprise Extensions أحد هذه يذهب مباشرة إلى تسجيل دخول هذا الشريك، ما لم يسمِّ التطبيق شريكاً خاصاً به. تُقارَن دون حساسية لحالة الأحرف وبالضبط. تلميح توجيه فقط — من يُقبَل هو شأن fedSubjectDomain."
+  },
+  "fed.schema.attributes.fedSubjectPattern.what": {
+    "en": "d9fa507e5053ce09",
+    "text": "قاعدة فوق السياسة: تعبير نمطي يجب أن يطابق DN الإدخال المحلي بالكامل (يُثبَّت لك)، مثل uid=[^,]+,ou=users,.* — وللإدخال الذي كان تسجيل الدخول هذا سينشئه، DN الذي سيُنشأ عنده. 256 محرفاً على الأكثر، بلا إحالة خلفية وبلا مُكمِّم يُطبَّق على مجموعة هي نفسها مُكمَّمة، ويُختبَر مقابل 1024 محرفاً على الأكثر، فلا يمكن جعل نمط يتراجع لدقائق. فارغ: لا نمط."
+  },
+  "fed.schema.attributes.fedMayAssertAdministrators.what": {
+    "en": "74c845779242205c",
+    "text": "اسمح لهذا الشريك بتسجيل دخول مسؤول وحدة التحكم. مطفأ افتراضياً، والمطفأ يعني أن شخصاً في كشف Admin Read أو Admin Write — أو يحمل REMOTE_PEPS — يُرفض مهما صحّ غير ذلك، بما في ذلك رابط صالح (STS-FED-0093). تشغيله يجعل مفتاح توقيع هذا الشريك مفتاحاً إلى وحدة التحكم لكل مسؤول مربوط به."
+  },
+  "fed.schema.attributes.fedSignalEmailMatch.what": {
+    "en": "9a124c8b72f692ec",
+    "text": "اسمح لـ Shared Signals الخاصة بهذا الشريك بتسمية شخص بالبريد. مطفأ افتراضياً: Security Event Token من مُرسِل يحمل issuer هذا الشريك يسمّي شخصاً بـ `iss_sub`، عبر federationLink للشخص. عند التشغيل يطابق موضوع `email` الشخص الوحيد بذلك العنوان البريدي أيضاً — العنوان ليس معرّفاً (OpenID Connect Core section 5.7)، فلهذا فقط لشريك يثق نطاق الثقة هذا بعناوينه."
+  },
+  "fed.schema.attributes.fedSignalsEnabled.what": {
+    "en": "93b7dae2ca58a41e",
+    "text": "استقبل Shared Signals الخاصة بهذا الشريك. مطفأ افتراضياً على علاقة تسجيل دخول، وهو كل الغرض من علاقة `ssf`، حيث يُكتب مشغلاً عند الإنشاء. عند الإطفاء لا يُقبل أي دفع لهذه العلاقة وتتخطاها مهمة الاستطلاع؛ ويجب أن يكون fedEnabled مشغلاً أيضاً."
+  },
+  "fed.schema.attributes.fedSignalsIssuer.what": {
+    "en": "6ba19adcf4dbf152",
+    "text": "issuer الخاص بـ SSF لدى الشريك، حين لا يكون fedPeer. فارغ — الافتراضي — يستخدم fedPeer، وهو الصحيح لشريك OpenID Connect يشارك مُرسِله issuer الخاص به. entityID لشريك SAML 2.0 أو WS-Federation ليس عادة URL لـ issuer الخاص بـ SSF، فاضبطه هناك. تُجلب وثيقة التهيئة من /.well-known/ssf-configuration تحته (SSF 1.0 section 7) ويجب أن تسميه، ويجب أن يكون iss في كل SET هو."
+  },
+  "fed.schema.attributes.fedSignalsDelivery.what": {
+    "en": "2a805e4031228032",
+    "text": "كيف تصل أحداث الشريك: poll (RFC 8936، مهمة ssf.foreign-poll، الافتراضي) أو push (RFC 8935، إلى /federation/signals/{id} بترويسة تفويض لا يعرفها إلا نطاق الثقة هذا والشريك). يُقرأ عند إنشاء الدفق؛ احذفه وأنشئه من جديد لتغييره."
+  },
+  "fed.schema.attributes.fedSignalsEvents.what": {
+    "en": "d593cfe04f6b50a6",
+    "text": "URI أنواع الأحداث التي يطلبها الدفق (events_requested). عدم إدراج أي منها يطلب كل ما يدعمه الشريك."
+  },
+  "fed.schema.attributes.fedSignalsTokenUrl.what": {
+    "en": "f22895fc3eb97e28",
+    "text": "من أين يحصل نطاق الثقة هذا على رمز وصول لإدارة دفق الشريك، ببيانات اعتماد العميل. الفارغ يستخدم fedTokenUrl — خادم التفويض نفسه الذي تتصل به علاقة تسجيل الدخول بالفعل."
+  },
+  "fed.schema.attributes.fedSignalsClientId.what": {
+    "en": "93661f7f666dca94",
+    "text": "client_id الخاص بهذه الخدمة لإدارة دفق الشريك. الفارغ يستخدم fedClientId."
+  },
+  "fed.schema.attributes.fedSignalsClientSecret.what": {
+    "en": "5c7f0300ca7c4869",
+    "text": "السر الخاص بـ fedSignalsClientId، مختوم تحت مفتاح تشفير المفاتيح حيثما تستمر المفاتيح ولا يُعرض أبداً. الفارغ يستخدم fedClientSecret، مختوماً بالطريقة نفسها."
+  },
+  "fed.schema.attributes.fedSignalsScope.what": {
+    "en": "9a4b1c668a3d1dd5",
+    "text": "النطاق المطلوب مع بيانات اعتماد العميل. الفارغ يطلب `ssf.read ssf.manage`، وهما الاثنان في CAEP Interoperability Profile (section 2.7.3)."
+  },
+  "fed.schema.attributes.fedSignalsBearer.what": {
+    "en": "75ae4009add7e2d2",
+    "text": "رمز حامل أصدره الشريك، بدلاً من بيانات اعتماد العميل. مختوم مثل fedSignalsClientSecret، ويُستخدم كلما ضُبط."
+  },
+  "fed.schema.attributes.fedSloUrl.what": {
+    "en": "1fbc6ebefdaa8b2d",
+    "text": "SingleLogoutService في SAML 2.0 لدى الشريك — حيث ترسل هذه الخدمة <LogoutRequest> موقعاً حين يسجّل شخص خروجه هنا (/logout)، وحيث يذهب <LogoutResponse> إلى LogoutRequest الخاص بالشريك. من بيانات الشريك الوصفية. فارغ: لا يُخبَر الشريك أبداً بتسجيل خروج هنا، وLogoutRequest منه ما زال يُحترَم لكن يُجاب بلا شيء، لأنه لا يوجد مكان لإرسال الجواب. SAML 2.0 فقط: SAML 1.1 لا يعرّف تسجيل خروج على الإطلاق."
+  },
+  "fed.schema.attributes.fedSloBinding.what": {
+    "en": "f18757e5314706e9",
+    "text": "أي ربط يذهب عليه LogoutRequest أو LogoutResponse ترسله هذه الخدمة إلى الشريك: HTTP-Redirect (الافتراضي؛ والتوقيع فوق سلسلة الاستعلام) أو HTTP-POST (توقيع مغلّف، على نموذج حقيقي بزر حقيقي — بلا نص برمجي). رسالة من الشريك تُقبل على أي منهما."
+  },
+  "fed.schema.attributes.fedEndSessionUrl.what": {
+    "en": "1936bb8b51d16899",
+    "text": "end_session_endpoint في OpenID Connect لدى الشريك (RP-Initiated Logout 1.0)، من وثيقة اكتشافه. حين يسجّل شخص خروجه هنا، تعرض صفحة تسجيل الخروج إرساله إلى هناك مع ID Token الخاص بالشريك بوصفه id_token_hint، وclient_id لهذه العلاقة، ونقطة نهاية تسجيل الخروج الأحادي لهذه العلاقة بوصفها post_logout_redirect_uri — التي يجب أن يكون الشريك قد سجّلها. يُبقى ID Token على الجلسة فقط بينما هذا مضبوط. فارغ: لا يُخبَر الشريك."
+  },
+  "fed.schema.attributes.fedAcceptSignout.what": {
+    "en": "a80798b41222ab19",
+    "text": "احترم تسجيل خروج الشريك: LogoutRequest في SAML، أو تسجيل خروج Back-Channel أو Front-Channel في OpenID Connect، أو تنظيف WS-Federation. مشغّل افتراضياً — الشريك هو السلطة على تسجيل دخول الشخص، وحين ينهي جلسة أو يعطّل حساباً هناك فهذه الإشارة الوحيدة التي تصل إلى هنا. عند الإطفاء يُرفض كل واحد منها (STS-FED-0123) وتعيش الجلسة هنا عمرها كله."
+  },
+  "fed.schema.attributes.fedRequireSignedLogout.what": {
+    "en": "7b5c415a7a173deb",
+    "text": "اشترط توقيع LogoutRequest وLogoutResponse في SAML لدى الشريك، كما يقول saml-profiles-2.0-os section 4.4.4.1 إنهما يجب أن يكونا موقّعين. مشغّل افتراضياً ومشغّل دائماً في وضع المنتج، حيث يُرفض إطفاؤه (STS-FED-0132). المطفأ — التطوير فقط — يقبل رسالة تسجيل خروج غير موقعة، فيتيح لمن يستطيع تسمية جلسة الشريك لشخص أن ينهيها: شريك قيد الاختبار لا يستطيع التوقيع بعد هو السبب الوحيد. توقيع موجود يُتحقق منه في الحالين."
+  },
+  "fed.schema.attributes.fedEncryptionKeyType.what": {
+    "en": "5499ff6ee41a989b",
+    "text": "نوع المفتاح الذي يشفّر الشريك إليه: rsa-3072 (الافتراضي لـ SAML 2.0 وWS-Federation) أو ec-p256 (الافتراضي لـ OpenID Connect) — أو، لـ OpenID Connect فقط، مفتاح ما بعد الكم (#82): x-wing (HPKE-10-KE، ML-KEM-768 + X25519) أو ml-kem-768 (ML-KEM-768)، مفتاح AKP يُنشر في JWKS العلاقة بلا شهادة، من Internet-Drafts لا ينفّذها إلا قليل من الشركاء بعد. تغييره يصدر مفتاحاً جديداً من ذلك النوع فوراً ويبقي القديم لمدة federation.encryptionKeyGraceS، كما يفعل التدوير."
+  },
+  "fed.schema.attributes.fedKeyManagementAlgorithm.what": {
+    "en": "d806c41bb2e8697a",
+    "text": "كيف يغلّف الشريك مفتاح المحتوى أو يتفق عليه، والوحيد المقبول. XML (SAML 2.0، WS-Federation): rsa-oaep — RSA-OAEP في XML Encryption 1.1 مع SHA-256 وMGF1-SHA-256 — لمفتاح RSA، وecdh-es (ConcatKDF، kw-aes256) لمفتاح EC. JOSE (ID Token في OpenID Connect): RSA-OAEP-256 أو RSA-OAEP لمفتاح RSA، وECDH-ES أو ECDH-ES+A128KW أو ECDH-ES+A256KW لمفتاح EC. تحذير: RSA-OAEP هو OAEP فوق SHA-1، معروض لشريك ليس لديه أحدث؛ وRSA-OAEP-256 هو الذي يُستخدم. يُرفض rsa-1_5 وRSA1_5 في كل وضع (Bleichenbacher). الفارغ يعني الافتراضي لنوع المفتاح."
+  },
+  "fed.schema.attributes.fedContentEncryptionAlgorithm.what": {
+    "en": "30df7b680dcf4979",
+    "text": "التعمية فوق التأكيد أو ID Token، والوحيدة المقبولة: aes256-gcm (الافتراضي) أو aes128-gcm لـ XML، وA256GCM (الافتراضي) أو A128GCM لـ JOSE. يُرفض AES-CBC — aes*-cbc في XML Encryption وA*CBC-HS* في JOSE — في كل وضع: شكل XML هو أوراكل الحشو لدى Jager وSomorovsky (2011)، وشريك يستطيع GCM في أحدهما يستطيعه في الآخر."
+  },
+  "fed.schema.attributes.fedAllowUnencrypted.what": {
+    "en": "c3d0a1b2ac50968b",
+    "text": "اقبل تأكيداً بالنص الواضح في وضع المنتج. مطفأ افتراضياً، والمطفأ يعني أن تأكيد SAML 2.0 أو WS-Federation، أو id_token في OpenID Connect عبر form_post، غير مشفّر إلى مفتاح هذه العلاقة يُرفض (STS-FED-0140). تحذير: تشغيله يتيح للشريك إرسال NameID للشخص وبريده ومجموعاته وكل سمة أخرى بالنص الواضح عبر متصفحه — سجله وامتداداته وكل وكيل ينهي TLS في الطريق. شغّله فقط لشريك لا يستطيع التشفير، وفضّل أن تطلب منه ذلك. وضع التطوير يقبل النص الواضح مهما قال هذا."
+  },
+  "fed.schema.attributes.fedEncryptionKey.what": {
+    "en": "b4d2ac940c13b9f8",
+    "text": "جدول المفاتيح: صف JSON واحد لكل مفتاح تفك هذه العلاقة التشفير به — kid الخاص به، ونوع مفتاحه، و`current` أو `previous`، وشهادته وسلسلته تحت وسيط نطاق الثقة هذا، والمفتاح الخاص، مختوم تحت مفتاح تشفير المفاتيح حيثما تستمر المفاتيح. يُبقى صف `previous` حتى retiresAt ثم تزيله مهمة المجدول federation.encryption-key-retire. لا يكتبه إلا الإنشاء والتدوير وتلك المهمة؛ ويُحجَب عن كل بحث LDAP في المنتج وعن كل صفحة وعن رد /admin-api، التي تنشر النصف العام. نوع المفتاح عمود حتى يستطيع مفتاح هجين ما بعد الكم أن يكون صفاً إلى جانب الكلاسيكي ما إن يُسجَّل واحد."
+  },
+  "fed.schema.attributes.fedClientCertificate.what": {
+    "en": "c8d1bb6c418a58bb",
+    "text": "OpenID Connect، وfedFapi 1-advanced فقط (#931). شهادة عميل TLS التي تقدّمها هذه الخدمة حين تتصل بنقطتي نهاية الرمز وUserInfo لدى الشريك: صف JSON واحد يحمل شهادة clientAuth من TLS Client Issuing CA لنطاق الثقة هذا (subject CN=federation <id> client، وsubjectAltName من نوع urn:sts:federation:)، وسلسلتها، وx5t#S256، وصلاحيتها، والمفتاح الخاص، مختوماً تحت مفتاح تشفير المفاتيح حيثما تستمر المفاتيح. تصادق العميل حيث يكون fedTokenAuth هو tls_client_auth (RFC 8705 section 2.1) وهي ما يربط الشريك رموز الوصول به (cnf.x5t#S256، section 3). تُصدر حين يصبح fedFapi هو 1-advanced، أو عند أول تسجيل دخول ليست له واحدة، أو بمهمة المجدول federation.client-certificate-renew، التي تجدّدها أيضاً قبل انتهائها بـ federation.clientCertificateRenewDays، بالموضوع نفسه. لا تكتبها إلا تلك؛ وتُحجَب عن كل بحث LDAP في المنتج وعن كل صفحة وعن رد /admin-api، التي تنشر النصف العام لتسجيله لدى الشريك."
+  },
+  "fed.schema.attributes.fedAllowUnsolicited.what": {
+    "en": "5b2a044dd3f46597",
+    "text": "اقبل استجابة لم تطلبها هذه الخدمة — Response غير المطلوب في SAML 2.0، والنمط الوحيد لعمل SAML 1.1. مطفأ افتراضياً لـ SAML 2.0 ومفروض مشغلاً لـ SAML 1.1، لأن ذلك الملف لا يملك طلباً يُستجاب له. تشغيله لـ SAML 2.0 يزيل فحص InResponseTo، وهو ما يستحق المعرفة لا الإخفاء."
+  },
+  "fed.schema.attributes.fedApplication.what": {
+    "en": "c8291b575c606bc3",
+    "text": "المؤشر، وكل ما يخزّنه هذا الطرف عن الشريك: معرّف إدخاله في ou=applications. يعيش entityID الخاص به وخدمة مستهلك التأكيد وURI إعادة التوجيه وشهادته هناك، حيث يقرأها كل وحدة بروتوكول بالفعل. نسخ أي منها إلى هنا هو إخفاق المخزنين الذي رُتّب هذا المستودع لتجنبه."
+  },
+  "fed.schema.attributes.fedAuthnMechanism.what": {
+    "en": "10e91a734e1d74b3",
+    "text": "كيف تصادق هذه الخدمة على الشخص حين يطلب منها هذا الشريك ذلك: password، أو password-mfa، أو webauthn، أو spnego — تذكرة Kerberos يحملها المتصفح بالفعل، بلا شاشة على الإطلاق — أو wallet — بيانات اعتماد أصدرها نطاق الثقة هذا وتُقدَّم من محفظة الشخص — أو federation، الذي يرسلهم إلى علاقة أخرى وهو ما يجعل هذه الخدمة جسر هوية بين بروتوكولين. الفارغ يعني أن هذه العلاقة لا تقول شيئاً، وهو ليس كـ password: يسقط إلى appFederationRelationship على إدخال التطبيق ثم إلى شاشة تسجيل الدخول، وهو تماماً ما فعلته كل علاقة قبل وجود هذه السمة."
+  },
+  "fed.schema.attributes.fedAuthnRelationship.what": {
+    "en": "e67f3ec502c8b6b8",
+    "text": "أي علاقة يُرسَل إليها الشخص، حين تكون الآلية `federation`. تسمّي علاقة من جهة مزود الخدمة في نطاق الثقة هذا — والسجل لكل نطاق ثقة، فمعرّف من نطاق آخر لا يسمّي شيئاً هنا — وتُفحص حين تُستخدَم لا حين تُكتَب، لأن العلاقة التي تسمّيها يمكن تعطيلها أو حذفها بعد ذلك على يد من لم ينظر إلى هذا الإدخال قط. تتجاهلها كل آلية أخرى، وتشترطها هذه: readinessOf() يسمّيها."
+  },
+  "fed.schema.attributes.fedRelease.what": {
+    "en": "c9c33e739003f762",
+    "text": "أي سمات تُطلَق إلى هذا الشريك، باسم المطالبة أو السمة. يصفّي ما كان /admin/claims و/admin/saml-attributes ومطالبة المجموعات سيضعه وإلا في أثر لهذا الجمهور، ولا يستطيع أن يمس شيئاً آخر — لا sub، ولا iss، ولا exp، ولا NameID. لا قيم هنا تعني عدم وجود سياسة، لا إطلاق لا شيء؛ انظر الترويسة، حيث يُحاجَج الفرق."
+  },
+  "fed.schema.attributes.fedFirstSeen.what": {
+    "en": "4eb7da413f19633b",
+    "text": "GeneralizedTime: متى استُخدمت هذه العلاقة أول مرة، وهو ليس متى أُنشئت."
+  },
+  "fed.schema.attributes.fedLastSeen.what": {
+    "en": "49fa18e0b49322c5",
+    "text": "GeneralizedTime، أحدث استخدام."
+  },
+  "fed.schema.attributes.fedAuthentications.what": {
+    "en": "2ee55bdb488ba64f",
+    "text": "كم من بيانات الاعتماد عبرت هذه العلاقة. تُسنَد عند كل تغيير — وعدّاد يراكم القيم يكون بلا معنى — وهو رقم حي في إدخال دليل، وهو ما لن يحمله دليل حقيقي."
+  },
+  "fed.schema.attributes.fedUsers.what": {
+    "en": "437b5b9e1a80bc48",
+    "text": "كم من الهويات المتميزة عبرتها. يُحسَب مقابل fedLastUser، فيعدّ تغيّر المستخدم لا مجموعة: صحيح للحالة العادية وناقص لمن يتناوب بين شريكين. يُذكَر هنا لأنه رقم على صفحة."
+  },
+  "fed.schema.attributes.fedLastUser.what": {
+    "en": "28541b4bc6a62e68",
+    "text": "أحدث هوية. على الإدخال لا في الذاكرة، لأن الإدخال هو المخزن."
+  },
+  "fed.schema.attributes.fedApplicationUse.what": {
+    "en": "3c112c1cef2a6f6d",
+    "text": "العدّان نفساهما، مقسومان بحسب التطبيق الذي كان تسجيل الدخول من أجله — قيمة واحدة لكل تطبيق، معبأة في صورة `application|authentications|users|lastUser|lastSeen`. توجد لأن fedAuthentications يجيب عن «كم عبر هذه العلاقة» ويجب أن تجيب الخريطة في /admin/federation/map عن «كم عبرها لكل تطبيق من التطبيقات المُعدّة لاستخدامها»، وهو سؤال مختلف في اللحظة التي يسمّي فيها تطبيق ثانٍ الشريك نفسه.\n\nهو من جهة مزود الخدمة فقط، وليس ذلك إغفالاً. علاقة من جهة مزود الهوية تسمّي تطبيقاً واحداً بالضبط (fedApplication)، فعدّها لكل تطبيق هو fedAuthentications، وسمة ثانية تحمل الرقم نفسه تحت اسم آخر هي النسخة التي ينتهي بها الأمر إلى الاختلاف.\n\nتُكتَب قيمة فقط لزوج هذه الخدمة مُعدّة له، ويُفحص مقابل التهيئة الحية في لحظة الكتابة ولا يُؤخذ من الطلب — انظر applicationConfiguredFor(). من دون ذلك الفحص تصبح هذه السمة قائمة غير محدودة من السلاسل اختارها أي شخص يستطيع بلوغ /federation/login/{id}، على الإدخال الوحيد في هذا الدليل الذي تقرر محتوياته هل يُرفض تأكيد.\n\nيُستبدَل `|` في أي من حقلي النص الحر بـ `~` عند الدخول، وهي المقايضة التي يصنعها هذا التنسيق وتُصرَّح ولا تُكتشَف: هذا عدّاد معبّأ يُرسم على صورة، وليس معرّفاً ينضم إليه أي شيء. يُقارَن التطبيق الذي يُودَع تحته صف بالإملاء المعبّأ نفسه في كل المواضع، فيعود الزوج إلى نفسه مهما كان اسمه."
+  },
+  "fed.schema.attributes.fedLastError.what": {
+    "en": "20801142f5a5592a",
+    "text": "سبب إخفاق المحاولة الأخيرة، بكلمات هذه الخدمة نفسها. إنها أنفع سمة هنا، وهي سبب تسجيل حالات الرفض لا الاكتفاء بتسجيلها في السجل: اتحاد لا يعمل يخفق عند خدمة طرف آخر، وجملة «لم يتحقق التوقيع مقابل الشهادة المُعدّة» هي التي تنهي الجدال عن أي طرف هو المكسور."
+  },
+  "fed.schema.attributes.fedLastErrorAt.what": {
+    "en": "5ff3120f0d87d356",
+    "text": "GeneralizedTime للسطر أعلاه. منفصل، حتى يُقرأ خطأ قديم إلى جانب نجاح حديث بوصفه تاريخاً لا الحالة الجارية."
+  },
+  "fed.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "هذه الخدمة"
+  },
+  "fed.schema.from.thisRegister": {
+    "en": "eb9ec04b4f5dbb7c",
+    "text": "هذا السجل"
+  },
+  "fedgraph.sentences.thisService": {
+    "en": "2ee8e73fd08187ad",
+    "text": "هذه الخدمة"
+  },
+  "fedgraph.sentences.noMechanism": {
+    "en": "85a969d1a113b8c5",
+    "text": "شاشة تسجيل الدخول (اسم المستخدم وكلمة المرور)"
+  },
+  "fedgraph.sentences.unknownMechanism": {
+    "en": "f76c6d8079660f9f",
+    "text": "{{mechanism}} — ليست آلية تمتلكها هذه الخدمة"
+  }
+}
