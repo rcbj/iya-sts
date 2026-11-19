@@ -1024,6 +1024,10 @@ function prefetch(changes) {
   // One change key per missing key id, to ask again after the read.
   const unheld = new Map();
   (changes || []).forEach(function (change) {
+    if (!realms.acceptsRows(change.realm)) {
+      // A realm removed here is not read for: see applyChange().
+      return;
+    }
     const id = unheldDekOfChange(change.key);
     if (id && !unheld.has(id) && worthRefreshFor(id)) {
       unheld.set(id, change.key);
@@ -1065,7 +1069,8 @@ function prefetchPage(changes) {
     }
     const id = parsed.handle + '\u0000' + change.realm + '\u0000' +
                parsed.storedName;
-    if (wanted.has(id)) {
+    if (wanted.has(id) || !realms.acceptsRows(change.realm)) {
+      // A realm removed here is not read for: see applyChange().
       return;
     }
     wanted.add(id);
@@ -1386,6 +1391,23 @@ function applyChange(change, refreshed) {
     log.debug("Leaving applyChange().");
     return Promise.resolve(false);
   }
+  // A REALM THIS PROCESS REMOVED IS NOT READ FOR (run #532). Its partition
+  // was purged and its data encryption keys dropped with it, so a row of it
+  // read now would not open, and would land nowhere if it did
+  // (`realms.acceptsRows()`). The rows are there to be read because the
+  // removal reaches the other processes before the flush that deletes the
+  // realm's minted rows commits, and other processes' flushes for it may
+  // still be landing; each one was read, failed to open, and was reported
+  // as a row under a foreign key-encryption key (STS-STORE-0016) — 4,140
+  // times in the mariadb mode of run #532, every one within ten seconds of
+  // a realm's removal, which hid any STS-STORE-0016 that meant what it says.
+  // FIRST, before the name is opened: a name sealed under the removed
+  // realm's key was waited for (five fresh reads of the data-key rows, the
+  // page's apply stalled behind them) and then skipped under STS-STORE-0089.
+  if (!realms.acceptsRows(change.realm)) {
+    log.debug("Leaving applyChange(). A realm removed here.");
+    return Promise.resolve(false);
+  }
   // THE INVERSE OF WHAT `recordChanges()` PACKS INTO A MINTED CHANGE ROW:
   // base64url(handle) + '.' + base64url(storedKey). It was `handle\u0000key`
   // until 2026-09-07 and could not be committed at all — `sts_changes.key` is
@@ -1516,6 +1538,23 @@ function applyChange(change, refreshed) {
         return false;
       }
       const text = keystore.open(row.body, 'minted-rows');
+      // A BODY UNDER A DATA ENCRYPTION KEY NOT HELD YET is waited for as a
+      // name is (#1070, #1118), and the change applied once more: the name
+      // and the body are sealed under two classes' keys (`minted-key`,
+      // `minted-rows`), so a name that opens says nothing about the body.
+      // Until run #532 this was STS-STORE-0016 and the change DROPPED, with
+      // the read of the data-key rows `keystore.open()` starts left running
+      // in the background for a change that no longer waited for it.
+      const bodyDek = text === null ? unheldDekOfHalf(row.body) : null;
+      if (bodyDek && !refreshed && worthRefreshFor(bodyDek)) {
+        return waitForDek(bodyDek, row.body).then(function (held) {
+          return held ? applyChange(change, true)
+                      : skipUnheld(change, handle, bodyDek);
+        });
+      }
+      if (bodyDek) {
+        return skipUnheld(change, handle, bodyDek);
+      }
       if (text === null) {
         // Written under a different key-encryption key. Reported once per row
         // rather than thrown: the alternative is replication wedging for ever

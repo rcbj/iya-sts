@@ -2119,6 +2119,21 @@ not remember such a name as unopenable, or the second asking would hit the
 remembered null. STS-STORE-0014 keeps its meaning — a key not of the shape
 `recordChanges()` writes. `tests/minted_unheld_dek.js`.
 
+**THE BODY TOO, AND NOTHING FOR A REALM REMOVED HERE (run #532,
+2026-11-19).** The body is sealed under another class's key (`minted-rows`)
+than the name (`minted-key`), so a name that opens says nothing about the
+body; a body under a key not held yet was STS-STORE-0016 and dropped. It now
+takes the name's `waitForDek()` and is applied once more (U7). And a change
+whose realm this process REMOVED (`realms.acceptsRows()` false) is dropped at
+the top of `applyChange()` and left out of `prefetch()`, before its name is
+opened: the removal reaches the other processes before the flush deleting
+the realm's minted rows commits, and late flushes for it still land, so its
+rows were read under the data keys the removal destroyed — 4,140
+STS-STORE-0016 lines in run #532's mariadb mode (170 in single-node), every
+one within ten seconds of a removal, and a name under such a key cost the
+page five reads of the data-key rows first (U8). **STS-STORE-0016 now means
+what it says**: a body that will not open under the keys this process holds.
+
 ## SECRET SETTINGS ARE SEALED AT THE DRIVER'S DOOR (#222, 2026-10-01)
 
 A runtime setting marked `secret: true` in `common/config.js` (today only

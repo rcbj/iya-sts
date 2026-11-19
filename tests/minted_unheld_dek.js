@@ -29,7 +29,13 @@
 //       flight, sent before the row committed — is read again, FRESH, and the
 //       change applied, not skipped (#1118, run #7's STS-STORE-0089);
 //   U6. a page whose one read in prefetch() misses such a key does not mark
-//       it unheld: the change is applied once the key's row is read.
+//       it unheld: the change is applied once the key's row is read;
+//   U7. a change whose NAME opens and whose BODY is sealed under a key not
+//       held yet waits for the key and is applied — not dropped under
+//       STS-STORE-0016 (run #532);
+//   U8. a change in a realm this process REMOVED reads no row and waits for
+//       no key, in applyChange() or in prefetch(), and says nothing at warn
+//       — the 4,140 STS-STORE-0016 lines of run #532's mariadb mode.
 //
 // In a child process: it installs a stand-in driver and stands in for the
 // keystore's data-key questions, and reads the module's log on stdout.
@@ -57,7 +63,7 @@ function child() {
   const write = process.stdout.write.bind(process.stdout);
   process.stdout.write = function (chunk) {
     String(chunk).split('\n').forEach(function (one) {
-      if (/STS-STORE-00(14|89)/.test(one)) {
+      if (/STS-STORE-00(14|16|89)/.test(one)) {
         try {
           lines.push(JSON.parse(one));
         } catch (e) {
@@ -119,6 +125,11 @@ function child() {
     };
     keystore.open = function (text, label) {
       if (label === 'minted-rows') {
+        // A body that names a key (U7) opens only once the key is held.
+        const bodyKey = dekOf(text);
+        if (bodyKey && !held.has(bodyKey)) {
+          return null;
+        }
         return JSON.stringify({ n: 7 });
       }
       const id = dekOf(text);
@@ -131,6 +142,8 @@ function child() {
 
     const batched = [];
     const single = [];
+    // The body every read answers; U7 seals it under a key of its own.
+    let body = 'sealed-body';
     minted.reset();
     minted.setDriver({
       origin: function () { return 'unheld-dek-test'; },
@@ -139,7 +152,7 @@ function child() {
       readMinted: function (handle, realm, key) {
         single.push(key);
         return Promise.resolve({ handle: handle, realm: realm, key: key,
-                                 body: 'sealed-body', writtenAt: 1 });
+                                 body: body, writtenAt: 1 });
       },
       readMintedMany: function (refs) {
         batched.push(refs.map(function (ref) {
@@ -147,7 +160,7 @@ function child() {
         }));
         return Promise.resolve(refs.map(function (ref) {
           return { handle: ref.handle, realm: ref.realm, key: ref.key,
-                   body: 'sealed-body', writtenAt: 1 };
+                   body: body, writtenAt: 1 };
         }));
       },
       purgeMinted: function () { return Promise.resolve(0); }
@@ -248,6 +261,51 @@ function child() {
          'the change is applied once the key is read',
          JSON.stringify({ pageLateApplied: pageLateApplied,
                           refreshes: refreshes, u6: u6 }));
+
+    // U7. The name opens (dekName is held and not malformed); the body is
+    // under a key whose row arrives at the second read.
+    held.add('dekName');
+    refreshes = 0;
+    late.clear();
+    late.set('dekBody', 2);
+    body = 'v2$dekBody$sealed';
+    const bodyApplied = await minted.applyChange(change('dekName', 'row-u7'));
+    body = 'sealed-body';
+    const u7 = store.get('row-u7');
+    note(bodyApplied === true && refreshes === 2 && u7 && u7.n === 7 &&
+         codes('STS-STORE-0016').length === 0 &&
+         codes('STS-STORE-0089').length === saidBefore,
+         'U7. a body under a key not held yet is waited for and applied — ' +
+         'not dropped under STS-STORE-0016',
+         JSON.stringify({ bodyApplied: bodyApplied, refreshes: refreshes,
+                          u7: u7, lines: lines }));
+
+    // U8. A realm defined and removed here: its rows are not read.
+    const gone8 = 'mud-removed';
+    const made = realms.create({ id: gone8, name: gone8,
+                                 description: 'minted_unheld_dek U8' });
+    note(made && made.ok, 'U8. the realm to remove was created',
+         JSON.stringify(made && made.errors));
+    realms.remove(gone8);
+    single.length = 0;
+    batched.length = 0;
+    refreshes = 0;
+    body = 'v2$dekDropped$sealed';
+    const removedChange = { kind: 'minted', realm: gone8,
+                            key: handle + '.v2$dekDropped$row-u8' };
+    await minted.prefetch([removedChange]);
+    const removedApplied = await minted.applyChange(removedChange);
+    minted.endPrefetch();
+    body = 'sealed-body';
+    note(removedApplied === false && single.length === 0 &&
+         batched.length === 0 && refreshes === 0 &&
+         codes('STS-STORE-0016').length === 0 &&
+         codes('STS-STORE-0089').length === saidBefore,
+         'U8. a change in a realm removed here reads no row, waits for no ' +
+         'key, and is reported under neither STS-STORE-0016 nor 0089',
+         JSON.stringify({ removedApplied: removedApplied, single: single,
+                          batched: batched, refreshes: refreshes,
+                          lines: lines }));
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {
