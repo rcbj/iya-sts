@@ -250,6 +250,22 @@ imported into memory costs memory; postgres is where that belongs.
   Every other removed version gets an Upload again form in its row
   (`web_risk.ts`'s `uploadAgain()`). No new address is dialled: these are
   the tenth and eighteenth rows of `federation/CLAUDE.md`'s list.
+* **A version name has a shape, held before the store is asked (GitHub run
+  #500's fuzz finding).** `RiskDatasets.versionProblem()`: not empty, at most
+  200 characters, no control character (C0, DEL, C1) and no half of a
+  surrogate pair. `activateVersion()`, `deleteVersion()` and
+  `reloadVersion()` refuse anything else `STS-RISK-0057` as their first act,
+  and an import's `admission()` does the same for a version it is given,
+  along with a NUL or lone surrogate in the licence, attribution, source or
+  SHA-256 it records or quotes (free text otherwise). Until then a version
+  holding a NUL reached PostgreSQL — `invalid byte sequence for encoding
+  "UTF8": 0x00` — and `POST /admin-api/risk/activate` answered 500. It is
+  here rather than at `risk_admin.ts`'s door (which holds the realm and the
+  dataset) so that the console, the API, an upload's query and the jobs all
+  meet one rule; and it is not a general body rule on `/admin-api`, whose
+  members are mostly free text with legitimate line breaks and whose model
+  says only `string`. The refusal is not audited and quotes nothing of the
+  value. `tests/risk_datasets.js` I4.
 
 **Retention is a scheduler job**, `risk.retention` (hourly, cluster):
 superseded versions past `risk.supersededRetentionDays` and refused versions

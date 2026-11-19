@@ -212,6 +212,33 @@ const RETENTION_EVERY_MS = 60 * 60 * 1000;
 /** The id of the job that refuses imports a stopped process left loading. */
 const STALLED_JOB = 'risk.stalled-imports';
 
+// ---------------------------------------------------------------------------
+// A VERSION NAME, AND THE TEXT AN IMPORT RECORDS (fuzz run #500).
+//
+// A version is a name this service shows on a page, writes on an audit row
+// and keys a store row by, so it has a shape: at most VERSION_MAX
+// characters, no control character (C0, DEL or C1) and no half of a
+// surrogate pair. Until run #500 any string reached the store:
+// `POST /admin-api/risk/activate` with a version holding a NUL was a
+// PostgreSQL error ("invalid byte sequence for encoding UTF8: 0x00") and a
+// 500, where a version nobody recorded is the caller's fault and a 400. The
+// realm and the dataset were already held at the door (risk_admin.ts, the
+// fuzz run on d96b74093); the version was not, and this is where it is held,
+// so the console, the API, an upload's query and every other caller of
+// these methods get the same refusal. The licence, attribution, source and
+// SHA-256 an import records or quotes are held only to what a text column can
+// store at all (no NUL, no lone surrogate): they are free text and stay so.
+// The value is never repeated back.
+// ---------------------------------------------------------------------------
+const VERSION_MAX = 200;
+const VERSION_FORBIDDEN = new RegExp(
+  '[\\u0000-\\u001f\\u007f-\\u009f]|' +
+  '[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|' +
+  '(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]');
+const UNSTORABLE = new RegExp(
+  '\\u0000|[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|' +
+  '(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]');
+
 interface RiskDatasetsDeps {
   log: { debug(m: string): void; info(m: string): void; warn(m: string): void;
          error(m: string): void };
@@ -520,6 +547,66 @@ class RiskDatasets {
     }
   }
 
+  /**
+   * Says what is wrong with a version name, or '' when it is one this
+   * service could have recorded: not empty, at most VERSION_MAX characters,
+   * no control character and no half of a surrogate pair. The sentence
+   * quotes nothing of the value.
+   *
+   * @param version - the version as the caller named it
+   * @returns the reason, or ''
+   */
+  static versionProblem(version: unknown): string {
+    log.debug("Entering RiskDatasets.versionProblem().");
+    const text = typeof version === 'string' ? version : '';
+    let why = '';
+    if (!text) {
+      why = 'Name the version.';
+    } else if (text.length > VERSION_MAX) {
+      why = 'A version is at most ' + VERSION_MAX + ' characters; this one ' +
+            'is ' + text.length + ', so no version by that name is recorded.';
+    } else if (VERSION_FORBIDDEN.test(text)) {
+      why = 'A version holds no control character and no half of a ' +
+            'surrogate pair, so no version by that name is recorded.';
+    }
+    log.debug("Leaving RiskDatasets.versionProblem(). " +
+              (why ? 'Refused.' : 'OK.'));
+    return why;
+  }
+
+  // The version an action names, refused before the store is asked (fuzz
+  // run #500). Not audited: the row would carry the very value refused.
+  private versionRefusal(version: unknown): Json | null {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.versionRefusal().");
+    const why = RiskDatasets.versionProblem(version);
+    log.debug("Leaving RiskDatasets.versionRefusal().");
+    return why ? errorCodes.mark({ ok: false, errors: [why] },
+                                 'STS-RISK-0057') : null;
+  }
+
+  // What an import names beyond the dataset, format and realm: a version of
+  // the shape above when one is given, and free text a column can store.
+  private static importTextProblem(o: Json): string {
+    log.debug("Entering RiskDatasets.importTextProblem().");
+    let why = '';
+    if (o.version !== undefined && o.version !== null && o.version !== '') {
+      why = RiskDatasets.versionProblem(String(o.version));
+    }
+    const fields = ['licence', 'attribution', 'sourceUri', 'sha256',
+                    'provider'];
+    for (let i = 0; i < fields.length && !why; i++) {
+      const value = o[fields[i]];
+      if (typeof value === 'string' && UNSTORABLE.test(value)) {
+        why = 'The ' + fields[i] + ' holds a NUL or half of a surrogate ' +
+              'pair, which no record can store.';
+      }
+    }
+    log.debug("Leaving RiskDatasets.importTextProblem(). " +
+              (why ? 'Refused.' : 'OK.'));
+    return why;
+  }
+
   // ===== IMPORT ============================================================
 
   // What an import is asked to do, checked before anything is read: the
@@ -562,6 +649,11 @@ class RiskDatasets {
                           record: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering RiskDatasets.admission(). " + o.dataset);
+    const textProblem = RiskDatasets.importTextProblem(o);
+    if (textProblem) {
+      log.debug("Leaving RiskDatasets.admission(). Ill-formed text.");
+      return { refusal: this.refused('STS-RISK-0057', textProblem, o) };
+    }
     const refusal = this.refusalOf(Object.assign({}, o, { realm: realm }));
     if (refusal) {
       log.debug("Leaving RiskDatasets.admission(). Refused.");
@@ -2183,6 +2275,11 @@ class RiskDatasets {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.activateVersion(). " + dataset + " " +
               version);
+    const badVersion = this.versionRefusal(version);
+    if (badVersion) {
+      log.debug("Leaving RiskDatasets.activateVersion(). Ill-formed version.");
+      return badVersion;
+    }
     const entry = CATALOGUE[dataset];
     if (!entry) {
       log.debug("Leaving RiskDatasets.activateVersion(). No such dataset.");
@@ -2297,6 +2394,11 @@ class RiskDatasets {
     const { log, store, config } = this.deps;
     log.debug("Entering RiskDatasets.reloadVersion(). " + dataset + " " +
               version);
+    const badVersion = this.versionRefusal(version);
+    if (badVersion) {
+      log.debug("Leaving RiskDatasets.reloadVersion(). Ill-formed version.");
+      return badVersion;
+    }
     const how = DOWNLOADS[dataset];
     const versions = CATALOGUE[dataset]
       ? await store.listVersions(String(realm || ''), dataset) : [];
@@ -2345,6 +2447,11 @@ class RiskDatasets {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.deleteVersion(). " + dataset + " " +
               version);
+    const badVersion = this.versionRefusal(version);
+    if (badVersion) {
+      log.debug("Leaving RiskDatasets.deleteVersion(). Ill-formed version.");
+      return badVersion;
+    }
     const entry = CATALOGUE[dataset];
     const versions = entry ? await store.listVersions(String(realm || ''),
                                                       dataset) : [];
