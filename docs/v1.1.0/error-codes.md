@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5730** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5733** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 74
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 79
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2717,8 +2717,8 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0009` | Product mode: a request delegates (OnBehalfOf/ActAs) but presents no credential of its own for the requester. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0010` | Product mode: a WS-Trust request presented no credential at all in its security header. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0011` | The issuance policy (the role gate) refused a token for this subject to this AppliesTo. | SOAP Fault wst:RequestFailed (HTTP 403), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0012` | ?encrypt=1 was requested but the request names no recipient certificate: neither the X.509 token its WS-Security signature references (a BinarySecurityToken, or a thumbprint, Subject Key Identifier or issuer and serial of a certificate this realm issued) nor an X509Certificate in the security header. Product mode refuses; development returns the assertion in clear and logs this. | SOAP Fault wst:InvalidRequest (HTTP 500) in product; none in development |
-| `STS-WSTRUST-0013` | ?encrypt=1 was requested and encrypting the assertion to the request's certificate failed. Product mode refuses; development returns the assertion in clear and logs this. | SOAP Fault wst:RequestFailed (HTTP 500) in product; none in development |
+| `STS-WSTRUST-0012` *(retired)* | RETIRED (#1668). ?encrypt=1 was requested but the request named no recipient certificate. WS-Trust encrypts a response only when the application's response switch is on, and a missing recipient is STS-WSTRUST-0076. | — |
+| `STS-WSTRUST-0013` *(retired)* | RETIRED (#1668). ?encrypt=1 was requested and encrypting the assertion failed. A response that cannot be encrypted is STS-WSTRUST-0077. | — |
 | `STS-WSTRUST-0014` | A Validate request carried no token in its ValidateTarget, so it was answered with a status of invalid. | wst:Status wst:Code .../status/invalid (HTTP 200) |
 | `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP Fault soap:Receiver (SOAP 1.2) / soap:Server (SOAP 1.1), in the request's SOAP version (HTTP 500) |
 | `STS-WSTRUST-0016` | A token was issued but starting the browser sign-on session the exchange also starts threw; the RSTR is unaffected. | — |
@@ -2780,6 +2780,11 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0072` | A request to POST /sts/mex (WS-MetadataExchange, #958) was not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not well-formed, or a root that is not soap:Envelope. | SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body that is not XML (STS-WSTRUST-0001) |
 | `STS-WSTRUST-0073` | A request to POST /sts/mex (#958) carried a wsa:Action that is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata (2004/09), or none, so there is no metadata request to answer. | SOAP Client (SOAP 1.2: Sender) fault, HTTP 500 |
 | `STS-WSTRUST-0074` *(retired)* | A WS-Trust requester's certificate (a WS-Security signer, or the TLS client certificate on the connection) names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. RETIRED before release (#1827, rcbj 2026-11-16: "any user with valid credentials should be able to authenticate through WS-Trust"): WS-Trust authenticates the entry whichever spelling names it. | — |
+| `STS-WSTRUST-0075` | XML Encryption of a WS-Trust request does not match the application's request map: the map is empty while request encryption is on, an expression matches an element that arrived in the clear or matches nothing restored from ciphertext, or a ciphertext will not open with this realm's keys. A wholly encrypted request is opened only when the service-wide switch is on, and the application it reveals is then held to its own switch. | SOAP Fault wst:FailedCheck (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0076` | Response encryption is on and the request names no recipient certificate element. The application's encryption certificate is unset, its recipient XPath matches nothing or not a certificate element, or the WS-Security signature names no certificate element. A thumbprint, a Subject Key Identifier or an issuer and serial is not one, and a configured step that cannot be used is not replaced by the next. A certificate element whose text is not a certificate is STS-WSTRUST-0077. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0077` | Response encryption is on and could not be completed: the response map is empty or matches nothing, a selected certificate element or the application's encryption certificate is not a certificate this process can read, the recipient is refused as an encryption recipient, or the cipher failed. The fault is sent in the clear. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0078` | The request carries wst:EncryptionAlgorithm or wst:EncryptWith while response encryption is off, or names a block cipher or a key transport other than the one configured for this application. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0079` | An XPath expression on a WS-Trust encryption map or recipient is outside the subset this service evaluates, or uses a prefix the element does not declare and this service does not know. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 

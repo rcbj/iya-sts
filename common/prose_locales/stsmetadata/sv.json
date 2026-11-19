@@ -2520,8 +2520,8 @@
     "text": "ICKE-SPEC (#594). Med ?id=, vad en plånbok sade till Notification Endpoint om intyget som det notification_id anger: händelsen, dess beskrivning och när (404 för ett id som den här utfärdaren inte utfärdade). Admin Read; fram till #594 det utvecklingsbara /oid4vci/notification/:id."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST ett SOAP RequestSecurityToken; fördelar på wst:RequestType (Issue, Renew, Validate, Cancel) och returnerar ett RSTR. GET beskriver slutpunkten. Lägg till ?encrypt=1 för att få det utfärdade intyget returnerat som en EncryptedAssertion."
+    "en": "dd027a41936ae3af",
+    "text": "POST ett SOAP RequestSecurityToken; fördelar på wst:RequestType (Issue, Renew, Validate, Cancel) och returnerar ett RSTR. GET beskriver slutpunkten. En applikation kan kräva att namngivna element i begäran och i svaret är XML Encryption (xenc:EncryptedData). Ett meddelande som inte matchar den kartan är ett fel, och bearbetningen stannar."
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

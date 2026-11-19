@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "Indique si un wst:TokenType qui nomme l'un des six ValueType du Kerberos Token Profile 1.1 reçoit en réponse un jeton Kerberos : un AP-REQ portant un ticket de service que le KDC de ce domaine a émis pour le sujet vers le service Kerberos que nomme AppliesTo, la sous-clé de l'Authenticator étant renvoyée comme jeton de preuve sur TLS. Un ticket ActAs nomme chaque partie ayant agi dans le S4U_DELEGATION_INFO de son PAC. Désactivé, une telle demande est refusée."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c74f4c7c47d9035",
+    "text": "Déchiffrer les éléments nommés d’une requête"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "5f309591d610ee41",
+    "text": "Indique si un RequestSecurityToken dont l’AppliesTo ne nomme aucune application propre doit arriver avec les éléments de wstrustEncryptRequestElements chiffrés (XML Encryption, type Element), et si une requête entièrement chiffrée — dont l’AppliesTo est dans le texte chiffré — est ouverte. Le wstrustEncryptRequest d’une application l’emporte pour une requête dont l’AppliesTo la nomme. Activé, et la carte est vide, une expression correspond à un élément arrivé en clair, une expression ne correspond à rien de ce qui a été restauré, ou un texte chiffré ne s’ouvre pas avec les clés de ce domaine, la requête est un wst:FailedCheck. Désactivé, le texte chiffré est laissé tel qu’il est arrivé et une requête illisible est la faute qu’elle était déjà."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "Chiffrer les éléments nommés d’une réponse"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Indique si un RequestSecurityTokenResponse voit les éléments de wstrustEncryptResponseElements remplacés par xenc:EncryptedData après sa construction, pour tout type de jeton. Le wstrustEncryptResponse d’une application l’emporte. Le destinataire est le wstrustEncryptionCertificate de cette application, sinon l’élément de certificat que sélectionne wstrustResponseRecipientXPath, sinon le premier élément de certificat du signataire que nomme la signature WS-Security de la requête. Une faute est envoyée en clair. Activé, et si le chiffrement ne peut pas être mené à terme, la requête est une faute dans les deux modes."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Algorithme de chiffrement de la réponse"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Le chiffrement par bloc avec lequel les éléments chiffrés d’une réponse WS-Trust sont chiffrés. Les deux GCM sont authentifiés : un texte chiffré altéré échoue à son étiquette et est refusé. Les deux CBC ne le sont pas. Le wstrustEncryptionAlgorithm d’une application l’emporte. Un élément wst:EncryptionAlgorithm peut nommer ce chiffrement, par son nom court ou son URI XML Encryption, seulement tant que le chiffrement de la réponse est activé."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Algorithme de transport de clé de la réponse"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Comment la clé de contenu à usage unique d’une réponse WS-Trust est enveloppée vers la clé publique RSA du destinataire. `rsa-oaep` est le RSA-OAEP de XML Encryption 1.1 avec SHA-256 et MGF1-SHA-256 ; `rsa-oaep-mgf1p` est OAEP sur SHA-1. Un destinataire dont le certificat est EC est chiffré par accord de clé ECDH-ES quoi que dise ce réglage. Le wstrustKeyTransportAlgorithm d’une application l’emporte. `rsa-1_5` est RSAES-PKCS1-v1_5 et il est cassé, et il est proposé parce qu’un demandeur déployé peut n’en accepter aucun autre. AVERTISSEMENT : rsa-1_5 est réservé au mode développement — en mode produit il est ignoré là où il est lu, sur ce réglage et sur le wstrustKeyTransportAlgorithm d’une application (rsa-oaep-mgf1p est utilisé, journalisé une fois, STS-CORE-0106), et le définir est refusé (STS-CORE-0103, STS-REG-0193). Un élément wst:EncryptWith peut nommer cet algorithme seulement tant que le chiffrement de la réponse est activé."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Connexion initiée par le fournisseur d’identité"

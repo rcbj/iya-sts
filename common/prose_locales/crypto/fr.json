@@ -1112,12 +1112,12 @@
     "text": "L’assertion SAML de la RequestSecurityTokenResponse, en 1.1 ou 2.0, par le signataire partagé."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "e1450965d276d357",
-    "text": "Il LIT le justificatif `<wsse:Security>` d’un demandeur et le `<ds:X509Certificate>` d’une requête signée — ce dernier pour savoir vers qui CHIFFRER. En mode produit, le mot de passe d’un UsernameToken est vérifié par rapport au `userPassword` de la personne, ou aux secrets client d’une application ; le mode développement le croit sur parole, sauf le mot réservé `invalid`."
+    "en": "b006491105a22a5c",
+    "text": "Il LIT le justificatif `<wsse:Security>` d’un demandeur. Le chiffrement de la réponse utilise le certificat de l’application, un élément de certificat que sélectionne son expression de destinataire, ou l’élément de certificat du signataire — pas un `<ds:X509Certificate>` à l’intérieur d’une assertion. En mode produit, le mot de passe d’un UsernameToken est vérifié par rapport au `userPassword` de la personne, ou aux secrets client d’une application ; le mode développement le croit sur parole, sauf le mot réservé `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "fa359afa3450379c",
-    "text": "Avec `?encrypt=1`, l’assertion 2.0 émise, vers le certificat trouvé dans la signature de la requête. Les deux mêmes tables que SAML 2.0, car il s’agit du même code — `saml/saml2.ts` le réexporte."
+    "en": "33f83b68482ff9b5",
+    "text": "Des éléments nommés d’une réponse, sous forme de xenc:EncryptedData, vers le certificat de l’application ou l’élément de certificat du signataire. `?encrypt=1` est retiré et ne chiffre rien. Le chiffrement est celui de cette famille, par crypto.js ; l’EncryptedAssertion de SAML reste dans `saml/saml2.ts`."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

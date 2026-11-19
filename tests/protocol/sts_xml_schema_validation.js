@@ -1263,9 +1263,9 @@ function rst(o) {
     ? "<wsse:Security xmlns:wsse=\"" + NS.wsse + "\"><wsse:UsernameToken>" +
       "<wsse:Username>" + o.username + "</wsse:Username><wsse:Password>" +
       o.password + "</wsse:Password></wsse:UsernameToken>" +
-      // The certificate `?encrypt=1` encrypts to: the endpoint takes one from
-      // the requester's own Security header, outside any assertion (a
-      // WS-Security signature's KeyInfo in a real client, #747).
+      // The certificate the response is encrypted to, when the application's
+      // recipient expression selects a ds:X509Certificate. It sits in the
+      // requester's own Security header, outside any assertion.
       (o.recipientCertB64 ? "<ds:X509Data xmlns:ds=\"http://www.w3.org/" +
         "2000/09/xmldsig#\"><ds:X509Certificate>" + o.recipientCertB64 +
         "</ds:X509Certificate></ds:X509Data>" : "") + "</wsse:Security>"
@@ -1327,15 +1327,43 @@ async function wsTrust(w) {
   await sts(w, "1.3 Validate with no token (status invalid)", {
     trustNs: NS.wst13, soap: "1.2", op: "Validate", username: w.person,
     password: PASSWORD, inner: "<wst:ValidateTarget/>" });
-  // An assertion encrypted to the relying party's registered certificate —
-  // `?encrypt=1`, the non-spec control this endpoint has for it.
-  const enc = await sts(w, "1.3 Issue, encrypted to the AppliesTo", {
+  // The issued assertion, encrypted to the certificate in the request.
+  // The expression is any ds:X509Certificate: this stub is X509Data, not
+  // a Signature. It is removed before ActAs, which must stay in the clear.
+  const assertionXPath = "//*[local-name()='Assertion' and " +
+    "namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']";
+  const recipientXPath = "//*[local-name()='X509Certificate' and " +
+    "namespace-uri()='http://www.w3.org/2000/09/xmldsig#']";
+  const wrote = await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustEncryptResponse",
+    value: "true" });
+  const added = await api(w.realm, "POST", "/applications/add", {
+    application: w.wsRp, attribute: "wstrustEncryptResponseElements",
+    value: assertionXPath });
+  const named = await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustResponseRecipientXPath",
+    value: recipientXPath });
+  const enc = await sts(w, "1.3 Issue, the assertion encrypted", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.person,
     password: PASSWORD, appliesTo: w.wsRp,
-    recipientCertB64: ENCRYPTER.certB64 }, "?encrypt=1");
-  await check(w.mode + " the encrypted Issue carries an EncryptedAssertion",
+    recipientCertB64: ENCRYPTER.certB64 });
+  await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustEncryptResponse", value: "" });
+  await api(w.realm, "POST", "/applications/remove", {
+    application: w.wsRp, attribute: "wstrustEncryptResponseElements",
+    value: assertionXPath });
+  await api(w.realm, "POST", "/applications/set", {
+    application: w.wsRp, attribute: "wstrustResponseRecipientXPath",
+    value: "" });
+  await check(w.mode + " the encrypted Issue carries EncryptedData",
               async function () {
-    if (!/EncryptedAssertion/.test(enc.body)) {
+    if (wrote.status !== 200 || added.status !== 200 ||
+        named.status !== 200) {
+      throw new Error("the application was not configured: " +
+        wrote.status + " " + added.status + " " + named.status);
+    }
+    if (enc.status !== 200 || !/EncryptedData/.test(enc.body) ||
+        /EncryptedAssertion/.test(enc.body)) {
       throw new Error("HTTP " + enc.status + " " + enc.body.slice(0, 400));
     }
   });

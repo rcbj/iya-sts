@@ -831,6 +831,30 @@ model WsTrustRelyingParty {
 
   @fromAttr(#{attr: "wstrustJwtScope"})
   `jwtScope`?: string[];
+
+  @fromAttr(#{attr: "wstrustEncryptRequest"})
+  `encryptRequest`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptRequestElements"})
+  `requestElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustEncryptResponse"})
+  `encryptResponse`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptResponseElements"})
+  `responseElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustEncryptionAlgorithm"})
+  `encryptionAlgorithm`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptionCertificate"})
+  `encryptionCertificate`?: string;
+
+  @fromAttr(#{attr: "wstrustKeyTransportAlgorithm"})
+  `keyTransportAlgorithm`?: string;
+
+  @fromAttr(#{attr: "wstrustResponseRecipientXPath"})
+  `responseRecipientXPath`?: string;
 }
 
 @domain(#{

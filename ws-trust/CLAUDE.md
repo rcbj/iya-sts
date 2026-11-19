@@ -1,8 +1,10 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`, and its metadata, #958, below). Five files: `wstrust.ts`, the
-endpoint; `wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
+`/sts/cert`, and its metadata, #958, below). Six files: `wstrust.ts`, the
+endpoint; `ws_encryption.ts`, XML Encryption of a request and a response
+(#1668), a library `wstrust.ts` requires — it registers nothing;
+`wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
 `wstrust_capabilities.ts`, the token capability model and the extension
 document and schema at `GET /sts/metadata/capabilities{,.xsd}`;
 `wstrust_mex.ts`, WS-MetadataExchange at `POST /sts/mex`; and `ws_model.ts`,
@@ -242,12 +244,13 @@ fault. Each refusal names its code at the place it refuses:
 | Code | Refusals | Why that one |
 |---|---|---|
 | `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
-| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025`, a delegated Kerberos token's `0054`, `0055`, `0058`–`0060` and `0063` (#658: no TLS for a Kerberos proof key), `0067` (a Renew or Cancel of a Kerberos token) | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
+| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0076` (#1668: response encryption is on and the request names no recipient certificate element), `0078` (a `wst:EncryptionAlgorithm` or `wst:EncryptWith` while response encryption is off, or naming a cipher other than the one configured), `0021`, `0025`, a delegated Kerberos token's `0054`, `0055`, `0058`–`0060` and `0063` (#658: no TLS for a Kerberos proof key), `0067` (a Renew or Cancel of a Kerberos token) | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
 | `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0039` (#1046, #1061), a signed request's `0040`–`0047`, `0049`, `0050`, `0052`, `0053` (#521), the requester's Kerberos token's `0054`–`0057` and a Kerberos-keyed signature's `0069` (#658) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
 | `AuthenticationBadElements` | `0040` when the reading's code is `STS-KEYS-0163` (#521): a signature that does not cover the Body or the Timestamp | section 11's "Insufficient Digest Elements", exactly |
 | `ExpiredData` | `0006`, in either seat, a JWT's `0027` in either seat (#477, #519), and a signed request's Timestamp, `0048` (#521) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
 | `BadRequest` | `0062` (#658: `wstrust.issueKerberos` off) and `0064` (an AppliesTo that is no Kerberos service) | section 11's "The request was invalid or malformed" is InvalidRequest's; BadRequest's own sentence in 1.4 is "The specified RequestSecurityToken is not understood" — a token type this STS does not issue here, which is what both are |
-| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell), `0061` (#658: a forwarded Kerberos ticket from a requester not trusted for delegation), `0065` (`wst:Delegatable` to a target not trusted for it), `0066` (the KDC could not mint the ticket) | the request was understood and authenticated, and could not be done |
+| `FailedCheck` | `0075` (#1668: request encryption is on and the request does not match its map — the map is empty, an expression matches an element that arrived in the clear or matches nothing restored, or a ciphertext will not open). Processing stops; nothing is issued | section 11's "The specified request failed a check by the STS". The signature was already read on the message as it arrived; the check that fails is the map |
+| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0077` (#1668: response encryption is on and could not be completed — an empty map, an expression that matches nothing, a certificate element or the application's encryption certificate that is not readable, a recipient the encryption check refuses, a cipher that failed), `0079` (an XPath expression outside the subset this service evaluates), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell), `0061` (#658: a forwarded Kerberos ticket from a requester not trusted for delegation), `0065` (`wst:Delegatable` to a target not trusted for it), `0066` (the KDC could not mint the ticket) | the request was understood and authenticated, and could not be done. A response fault is sent in the clear; the clear token is not |
 
 **Not used, and why**: `InvalidSecurityToken` is "Security token has been
 revoked" in 1.4's table, and nothing here checks revocation of a presented
@@ -305,8 +308,6 @@ what to present:**
   requester's assertion and the delegated one;
 * an **`OnBehalfOf` / `ActAs` with no requester credential**, and one whose inner
   token is not such an assertion — a name alone is not evidence of anybody;
-* **`?encrypt=1` that cannot encrypt** (`opensTestControls()` — the flag is a
-  non-spec test control and its plaintext fallback is the lenient half);
 * no subject is invented: `saml-subject` and `delegated-subject` are development's.
 * **a presented password is verified against `userPassword`** — WS-Trust had
   been checking only the reserved string `invalid` in both modes until
@@ -330,8 +331,12 @@ what to present:**
   with `wstrust.jwtAlgorithm` (RS256 by default; RS*/PS*/ES*/EdDSA). It is still
   not in the token register — that funnel is RS256 by construction — but
   `/admin/delegation` can now name what a JWT exchange produced.
-* **`?encrypt=1` honours `saml2.encryptionAlgorithm` / `saml2.keyTransportAlgorithm`**,
-  answered for the AppliesTo as `/saml2` answers them for a service provider.
+* **XML Encryption the application requires is a fault in both modes when it
+  cannot be completed** (#1668). `wstrust.encryptionAlgorithm` and
+  `wstrust.keyTransportAlgorithm` are the ciphers, overridable on the
+  application. The SAML settings are not read. A map mismatch stops
+  processing and returns the fault; the clear response is not sent. See
+  *XML ENCRYPTION*, below.
 * ~~`wstrust.issuer` and `saml.issuer` disagreeing is SAID~~ — **both retired
   by #523**: there is one name, so nothing can disagree (below).
 
@@ -904,42 +909,71 @@ UsernameToken's name is; any other signer is served where it arrived.
 refusal by code, wrapping and replay, signing with keys made at run time;
 `tests/protocol/sts_wstrust_signed_requests.js` drives it over HTTP.
 
-## `?encrypt=1` USES THE SIGNATURE'S CERTIFICATE (#1668)
+## XML ENCRYPTION, PER APPLICATION (#1668)
 
-`recipientCertificateOf()` walked `wsse:Security` for a `ds:X509Certificate`.
-Since v1.0.0 a signature this service accepts names its certificate the
-X.509 Certificate Token Profile 1.1 way (section 3.2): a
-`BinarySecurityToken` and a `SecurityTokenReference` to it, or a
-`KeyIdentifier` or `X509IssuerSerial`. That token's text is not an
-`X509Certificate` element, so a request the signature check accepted had, for
-`?encrypt=1`, no recipient. Development returned the assertion in clear
-(`STS-WSTRUST-0012` logged); product faulted. Section 3.4 says encrypted
-data may identify the decryption key by any of those token types or
-references, including a thumbprint or an issuer and serial that does not
-embed the certificate.
+`ws_encryption.ts` (`WsEncryption`) replaces the elements an application's
+XPath map names with `xenc:EncryptedData` of type Element, key inside the
+element. It is not `saml:EncryptedAssertion`, and it does not read
+`saml2.encryptAssertion`, `saml2.encryptionAlgorithm`,
+`saml2.keyTransportAlgorithm` or `samlEncryptionCertificate`. The two
+checkboxes default off. `?encrypt=1` is retired: a request that still
+carries it is handled as if the parameter were absent, and the parameter
+alone is not a fault. `STS-WSTRUST-0012` and `0013` are retired.
 
-The recipient is now that reading (`crypto.readWsSecuritySignature()`),
-resolved as `messageSignature()` resolves it: `keyReference.certB64` for a
-`Reference` to a `#X509v3` token, and `signingCertificateFor()` for a
-thumbprint, Subject Key Identifier or issuer and serial. A reference that
-names nothing returns no certificate and does not fall through to a
-different `X509Certificate` in the header — that would encrypt to the wrong
-party. A Kerberos reference, a signature that is not readable, and a
-`KeyInfo` with no `SignedInfo` (the older test-control shape, which the
-reader treats as no signature) keep the walk, which still skips every
-`Assertion` (#747). An unreferenced `BinarySecurityToken`, a JWT's, is not a
-recipient.
+**A MAP MISMATCH STOPS PROCESSING AND RETURNS THE FAULT.** `handleRst()`
+calls `messageSignature()` first, then `WsEncryption.openRequest()`. An
+empty request map, a clear match, a miss, or a decrypt that fails is
+`STS-WSTRUST-0075`, `wst:FailedCheck`, and `handleRst()` returns that fault
+and issues nothing. The response is sealed after the clear RSTR is built
+(`sealedBody` → `protectResponse`), on the success path only (`finishIssue`,
+Validate, Cancel). An empty response map or an expression that selects
+nothing is `STS-WSTRUST-0077`, `wst:RequestFailed`, returned in the clear;
+the caller does not send the token. `finishIssue` records the sighting only
+after a successful seal. Development does not return plaintext when
+encryption was required and could not be done.
 
-Paranoid PKI (`encryption-recipient`, `STS-PKI-0248`) is unchanged. A
-message-signing leaf is `digitalSignature` only, so product refuses to
-encrypt to it (`STS-WSTRUST-0013`, nothing in clear in either mode) after
-the certificate has been found. Development, where paranoid is off, encrypts
-to the public key. Finding the certificate is this change; the gate is not
-weakened to let a signing-only certificate receive ciphertext.
+**THE RECIPIENT DOES NOT FALL THROUGH**, and it is not
+`signingCertificateFor()`. A thumbprint, a Subject Key Identifier or an
+issuer and serial is not a recipient.
 
-`tests/wstrust_message_signature.js` I holds the token and the three
-references that do not carry it; `tests/wstrust_fault_codes.js` holds the
-bare `X509Certificate` and a certificate that lives only inside an assertion.
+1. `wstrustEncryptionCertificate` when set. Unreadable is `0077`.
+2. Else `wstrustResponseRecipientXPath`: the first `ds:X509Certificate`
+   (the XML Signature namespace, or none) or `#X509v3` BinarySecurityToken
+   it selects. No nodes, or not a certificate element, is `0076`. A
+   certificate element whose text is not a certificate is `0077`. The next
+   source is not tried.
+3. Else the first signer certificate element, and only when
+   `readWsSecuritySignature` is `present && ok`: `keyReference.certB64` for
+   a `#X509v3` token the reference points at, or `inlineCertificate` (a
+   `ds:X509Certificate` that is a direct child of `ds:Signature` under
+   `wsse:Security`). A `KeyInfo` with no `SignedInfo` is not a signature
+   (`present` is false), so that older shape needs the recipient expression.
+
+A certificate inside an assertion, or inside `OnBehalfOf` or `ActAs`, is
+not the signer's. No recipient with response encryption on is `0076` in
+both modes. A cipher failure, an empty response map, a response expression
+that matches nothing, or `CertificateTrust.pinnedSync('encryption-recipient')`
+refusing the leaf is `0077`. A message-signing leaf is `digitalSignature`
+only, so product paranoid PKI refuses it (`0077`). Development, where
+paranoid is off, encrypts to a real signer key. A certificate with no
+`keyUsage` may encrypt (RFC 5280). An expression outside the subset — `/`,
+`//`, `*`, a name, `prefix:local`, `|`, and `local-name()`, `namespace-uri()`
+and `@attr` joined by `and` — is `0079`. `wst:EncryptionAlgorithm` and
+`wst:EncryptWith` may name the configured cipher only while response
+encryption is on (`0078`). `wst:UseKey` and `wst:ProofEncryption` stay
+unimplemented.
+
+A wholly encrypted RST is opened only when the service-wide switch is on;
+the revealed application's own switch is then enforced. The switches are
+`applications.settingFor`. The maps, the certificate and the recipient
+expression are `DomainMap.fieldOf('WsTrustRelyingParty', …)`.
+
+`tests/wstrust_message_signature.js` I holds the signer token (development
+encrypts; a thumbprint, issuer-serial or SKI is `0076` in both modes; a
+message-signing leaf is `0077` in product), `tests/wstrust_fault_codes.js`
+holds a miss (`0076`) and a certificate element whose text is not a
+certificate (`0077`), and `tests/protocol/sts_wstrust_rules.js` E the same
+over HTTP. The cipher override is `wstrustEncryptionAlgorithm`.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
@@ -1102,7 +1136,7 @@ file, `models/generated/ws.json`, by the prefixes of their ids, and
   Fault of each SOAP version, the RSTR collection, the RSTR — its parts in
   THIS ENDPOINT'S order, because the schema makes it a sequence of `xs:any`
   — its RequestedSecurityToken (a SAML 2.0 or 1.1 assertion told apart by
-  namespace, an EncryptedAssertion, a BinarySecurityToken), the proof
+  namespace, an xenc:EncryptedData, a BinarySecurityToken), the proof
   token, the AppliesTo, the Lifetime, the two references and the Status.
   `WsModel.hold()` checks every envelope as it goes out — the assertion
   inside against SAML's own model — logs a gap under **STS-WSTRUST-0071**,
@@ -1127,8 +1161,9 @@ code or list of the two directories written outside the model, the readers
 and writers, and every recorded envelope held with nothing to say.
 
 **What stays in code, and why.** XML parsing (`helpers.firstByLocal()`,
-local names with the namespace ignored), canonicalisation, signing,
-encryption and every WS-Security signature check (`../common/crypto.js`).
+local names with the namespace ignored), canonicalisation, signing and
+every WS-Security signature check (`../common/crypto.js`). XML Encryption
+of a WS-Trust message is `ws_encryption.ts`, which calls `crypto.js`.
 Everything that needs state: a credential's verification, the delegation
 policy, a registered AppliesTo, the lifetime's clamp, a Kerberos token's
 acceptance. The Kerberos Token Profile's token and value types are

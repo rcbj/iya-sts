@@ -2495,6 +2495,77 @@ model Application {
     what: "THE OAUTH 2.0 SCOPES A WS-TRUST JWT FOR THIS APPLICATION CARRIES, one scope value each (#485). A JWT WS-Trust issues with this application as the AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) carries them in its `scope` claim, space-delimited (RFC 9068 section 2.2.3); with none set it carries no `scope`. A SAML token is unaffected.\n\n**EACH IS JUDGED AS AN OAUTH ACCESS TOKEN'S IS**, with this application as the client: `oauthAllowedScope` declares what it may be issued (in product; this service's protected scopes in every mode), and the issuance policy's per-scope question decides. A value the policy drops is LEFT OFF the token and audited (STS-OAUTH-0579), never issued. A write naming an undeclared scope is accepted here, because the declaration may change and development grants undeclared scopes: declare it on oauthAllowedScope too. A value the policy will drop is WARNED about where it is set (#488): beside this field, in the Save reply, and as `warnings` on the /admin-api write replies and the application's view."
   })
   wstrustJwtScope?: string[];
+  // XML Encryption of a WS-Trust request and response (#1668). The two
+  // switches override the service-wide settings; the maps, the certificate
+  // and the recipient expression are this application's alone.
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.encryptRequest",
+    what: "TRUE or FALSE: open the elements this application's request map names, overriding wstrust.encryptRequest. On, a request whose AppliesTo is this application is a FailedCheck when the map is empty, an expression matches an element that arrived in the clear, an expression matches nothing that was restored from ciphertext, or a ciphertext will not open with this realm's XML Encryption keys. A request whose AppliesTo is hidden inside ciphertext is opened only when the service-wide switch is on; the application revealed by that opening is then held to its own switch. Off, ciphertext for this application is refused rather than opened."
+  })
+  wstrustEncryptRequest?: string;
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "THE ELEMENTS OF A WS-TRUST REQUEST THAT MUST ARRIVE ENCRYPTED, one XPath 1.0 expression each. The subset is `/`, `//`, `*`, an element name, `prefix:local`, a union with `|`, and predicates `local-name()`, `namespace-uri()` and `@attr`, joined by `and`. Each expression must select at least one element that was restored from an xenc:EncryptedData of type Element. An expression outside that subset is a RequestFailed. A SOAP header, the SOAP body, or any element may be named, for any token type."
+  })
+  wstrustEncryptRequestElements?: string[];
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.encryptResponse",
+    what: "TRUE or FALSE: replace the elements this application's response map names with xenc:EncryptedData, overriding wstrust.encryptResponse. The response is built in the clear and then those elements are replaced, for any token type. A fault stays in the clear. On, and the encryption cannot be completed — no recipient, a map that matches nothing, or a cipher the recipient's certificate will not take — the request is a fault in both modes."
+  })
+  wstrustEncryptResponse?: string;
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "THE ELEMENTS OF A WS-TRUST RESPONSE THAT ARE ENCRYPTED, one XPath 1.0 expression each, the same subset as wstrustEncryptRequestElements. A SOAP header, the SOAP body, or any element may be named. An expression that matches nothing in the response that was built is a fault."
+  })
+  wstrustEncryptResponseElements?: string[];
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.encryptionAlgorithm",
+    what: "The block cipher used for this application's WS-Trust responses — aes256-gcm, aes128-gcm, aes256-cbc or aes128-cbc — overriding wstrust.encryptionAlgorithm. A wst:EncryptionAlgorithm element may name this cipher, by its short name or its XML Encryption URI, only while response encryption is on for this application."
+  })
+  wstrustEncryptionAlgorithm?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "THE CERTIFICATE A WS-TRUST RESPONSE IS ENCRYPTED TO, base64 DER or PEM. When it is set it is the recipient, and a certificate that cannot be read is a fault rather than a step down to the next source. When it is unset the recipient is the certificate element wstrustResponseRecipientXPath selects, or, when that expression is also unset, the first signer certificate element the request's WS-Security signature names."
+  })
+  wstrustEncryptionCertificate?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.keyTransportAlgorithm",
+    what: "How the content key is wrapped for this application's WS-Trust responses — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) or rsa-1_5 — overriding wstrust.keyTransportAlgorithm. A recipient whose certificate is EC is encrypted to by ECDH-ES whatever this says. A wst:EncryptWith element may name this algorithm, by its short name or its XML Encryption URI, only while response encryption is on for this application."
+  })
+  wstrustKeyTransportAlgorithm?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "AN XPATH EXPRESSION SELECTING THE CERTIFICATE ELEMENT A WS-TRUST RESPONSE IS ENCRYPTED TO: a ds:X509Certificate or a BinarySecurityToken whose ValueType ends in #X509v3. The same subset as the element maps. When it is set and it selects nothing, or it selects an element that is not one of those two, there is no recipient and the next source is not tried. A selected certificate element whose text is not a certificate is a completed-encryption fault, and the next source is not tried. When it is unset the recipient is the first signer certificate element the request's WS-Security signature names — the BinarySecurityToken that signature's reference points at, or a ds:X509Certificate in that signature's KeyInfo. A thumbprint, a Subject Key Identifier or an issuer and serial is not a certificate element."
+  })
+  wstrustResponseRecipientXPath?: string;
   // --- Kerberos and OID4VP ----------------------------------------------
   @attr(#{
     editable: "multi",

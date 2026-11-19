@@ -639,50 +639,120 @@ with no `AppliesTo` with `wst:InvalidRequest`, for every token type and for
 recorded (#496). The issuance policy — XACML, where it is configured — can
 refuse a token for a subject and audience with a SOAP Fault.
 
-### Encryption, as a test control
+### XML Encryption
 
-`POST /sts?encrypt=1` (**not part of WS-Trust**) encrypts the SAML assertion to
-the requester's certificate, with the algorithms `saml2.encryptionAlgorithm`
-and `saml2.keyTransportAlgorithm` answer for the `AppliesTo`.
+XML Encryption of a request, and of the response, is chosen per application.
+Each direction is a checkbox and an XPath expression map. Both checkboxes
+default to off. `wstrustEncryptRequest` and `wstrustEncryptResponse` on the
+application override `wstrust.encryptRequest` and `wstrust.encryptResponse`.
 
-The recipient is the certificate the request's WS-Security signature names,
-read the same way [a signed request](#a-signed-request) reads it. The X.509
-Certificate Token Profile 1.1 section 3.2 is how that reference names an
-X.509 token, and section 3.4 is how encrypted data identifies the decryption
-key by any of those types or references:
+`POST /sts?encrypt=1` is retired. A request that still carries it is handled
+as if the parameter were absent: nothing is encrypted because of it, and the
+parameter alone is not a fault. `STS-WSTRUST-0012` and `STS-WSTRUST-0013`
+named that parameter and are retired.
 
-* the `wsse:BinarySecurityToken` a `wsse:Reference` points at (`#X509v3`);
-* a certificate this realm's message-signing Issuing CA issued, named by a
-  `#ThumbprintSHA1` `KeyIdentifier`, a Subject Key Identifier, or an
-  `X509IssuerSerial` — those three need not carry the certificate in the
-  message;
-* and, where the header carries no readable X.509 signature, the
-  `ds:X509Certificate` in the security header. A `UsernameToken` request, and
-  a `KeyInfo` that signs nothing, still use that element.
+A selected element is replaced by `xenc:EncryptedData` with `Type`
+`http://www.w3.org/2001/04/xmlenc#Element`. The key sits inside that element.
+The response is not wrapped in `saml:EncryptedAssertion`. The SAML settings
+`saml2.encryptAssertion`, `saml2.encryptionAlgorithm`,
+`saml2.keyTransportAlgorithm` and `samlEncryptionCertificate` stay SAML-only.
 
-A certificate inside an assertion is not a recipient: that key is the
-issuer's, or a third party's inside `OnBehalfOf` or `ActAs`. A
-`BinarySecurityToken` the signature does not reference — a JWT, a Kerberos
-token — is not one either. A reference that names a certificate this realm
-cannot find is no recipient, rather than some other certificate sitting in
-the header.
+**A request or a response that does not match its map stops processing and
+returns a fault.** Nothing is issued, and the clear response is not sent.
+The fault itself stays in the clear, in both modes. Development no longer
+answers in clear when encryption was required and could not be done.
 
-A request with no such certificate, or one that cannot be encrypted to, is
-answered in clear in development and refused in product. Under
+* **The request.** The service verifies a WS-Security signature on the
+  message as it arrived, then opens the elements
+  `wstrustEncryptRequestElements` names, with this realm's XML Encryption
+  keys. An empty map, an expression that matches an element that arrived in
+  the clear, an expression that matches nothing restored from ciphertext, or
+  a ciphertext that will not open is `wst:FailedCheck`
+  (`STS-WSTRUST-0075`).
+* **The response.** The response is built in the clear, then every match of
+  `wstrustEncryptResponseElements` is replaced. An empty map, or an
+  expression that selects nothing, is `wst:RequestFailed`
+  (`STS-WSTRUST-0077`). A successful issue is recorded only after that seal
+  succeeds.
+* **Which application.** A clear `AppliesTo` names it. Encrypting the whole
+  `RequestSecurityToken` hides `AppliesTo`, so that body is opened only when
+  the service-wide `wstrust.encryptRequest` is on. The application that
+  opening reveals is then held to its own switch, and an application whose
+  switch is off is refused. Leave `AppliesTo` in the clear to decide from
+  that application alone.
+
+An expression is a stated subset of XPath: `/` and `//`, `*`, an element
+name, `prefix:local`, a union with `|`, and the predicates `local-name()`,
+`namespace-uri()` and `@attr`, joined by `and`. Anything else, or a prefix
+the element does not declare and this service does not know, is
+`wst:RequestFailed` (`STS-WSTRUST-0079`). Write `local-name()` and
+`namespace-uri()` when one expression should match SOAP 1.1 and SOAP 1.2.
+A prefix is resolved from the namespaces declared on the element, and from
+SOAP 1.1, SOAP 1.2, WS-Addressing, WS-Security, WS-Security Utility,
+WS-Trust, SAML, XML Signature and XML Encryption.
+
+The algorithms are `wstrust.encryptionAlgorithm`
+(`wstrustEncryptionAlgorithm`), `aes256-gcm` by default, and
+`wstrust.keyTransportAlgorithm` (`wstrustKeyTransportAlgorithm`),
+`rsa-oaep-mgf1p` by default. `aes128-gcm` and `rsa-oaep` are also available.
+`aes256-cbc`, `aes128-cbc` and `rsa-1_5` are available only where broken
+algorithms are allowed, and product mode ignores `rsa-1_5` and uses
+`rsa-oaep-mgf1p`. Where legacy hashes are not allowed, `rsa-oaep-mgf1p` is
+used as `rsa-oaep`. An elliptic-curve recipient uses ECDH-ES whatever the
+key transport says. `wst:EncryptionAlgorithm` and `wst:EncryptWith` may name
+the configured cipher, by its short name or its XML Encryption URI, only
+while response encryption is on. Anything else is `wst:InvalidRequest`
+(`STS-WSTRUST-0078`).
+
+The response is encrypted to one recipient. A configured step that cannot
+be used does not fall through to the next:
+
+1. `wstrustEncryptionCertificate`, when it is set: base64 DER or PEM. A
+   value that is not a certificate this process can read is
+   `STS-WSTRUST-0077`.
+2. Otherwise `wstrustResponseRecipientXPath`: the first
+   `ds:X509Certificate` (the XML Signature namespace, or no namespace) or
+   `#X509v3` `BinarySecurityToken` that expression selects. No nodes, or an
+   element that is not one of those two, is `wst:InvalidRequest`
+   (`STS-WSTRUST-0076`). A certificate element whose text is not a
+   certificate is `STS-WSTRUST-0077`. The next source is not tried.
+3. Otherwise the first signer certificate element the request's WS-Security
+   signature names, and only when that signature is present and verifies:
+   the `#X509v3` `BinarySecurityToken` the signature's reference points at,
+   or a `ds:X509Certificate` in that signature's `KeyInfo`.
+
+A thumbprint, a Subject Key Identifier or an issuer and serial is not a
+recipient. A certificate inside an assertion, or inside `OnBehalfOf` or
+`ActAs`, is not the signer's. With response encryption on and no recipient,
+the fault is `wst:InvalidRequest` (`STS-WSTRUST-0076`) in both modes. A
+cipher failure, or a certificate the encryption-recipient check refuses, is
+`wst:RequestFailed` (`STS-WSTRUST-0077`). Under
 [paranoid PKI mode](pki.md#paranoid-pki-mode) the certificate must permit
-`keyEncipherment` or `keyAgreement`. A message-signing certificate is
-`digitalSignature` only, so product refuses to encrypt to it
-(`STS-WSTRUST-0013`) once it has been found.
+`keyEncipherment` or `keyAgreement`. A message-signing certificate permits
+`digitalSignature` only, so product mode refuses it once it has been found.
+A certificate with no `keyUsage` may encrypt (RFC 5280). Set
+`wstrustEncryptionCertificate` when the signer's certificate cannot be an
+encryption recipient.
+
+To encrypt the issued SAML 2.0 assertion, set `wstrustEncryptResponse` to
+`true` and add this as one value of `wstrustEncryptResponseElements`:
+
+```
+//*[local-name()='Assertion' and namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']
+```
+
+Callers that looked for `EncryptedAssertion` find `EncryptedData`.
 
 ### Not implemented
 
 A signed request's certificate is found by thumbprint, issuer and serial or
 Subject Key Identifier only among the certificates this realm issued; a
-stored one is sent in a `BinarySecurityToken`. Only a signature over the
-request is read: a signed response is not offered, and `?encrypt=1` encrypts
-the issued SAML assertion to the certificate that signature names (see
-[Encryption, as a test control](#encryption-as-a-test-control)) rather than
-encrypting the SOAP response. `Validate` reports whether a token is
+stored one is sent in a `BinarySecurityToken`. Those references authenticate
+the requester. They are not an encryption recipient: a response is encrypted
+only to a certificate element, as [XML Encryption](#xml-encryption) says.
+Only a signature over the request is read: a signed response is not offered.
+`wst:UseKey` and `wst:ProofEncryption` are not implemented, because the
+tokens issued here are bearer tokens. `Validate` reports whether a token is
 **present**, not whether it verifies, except for a Kerberos token, which it
 accepts; `Cancel` recalls nothing already issued;
 and a SAML assertion presented as a credential is trusted only when **this**
@@ -707,8 +777,9 @@ codes, in the request's own trust namespace: on SOAP 1.1 it is the
 | A Kerberos token asked for while `wstrust.issueKerberos` is off, or for an `AppliesTo` that is no Kerberos service | `wst:BadRequest` |
 | A Kerberos token asked for without TLS; a Renew or Cancel of a Kerberos token | `wst:InvalidRequest` |
 | A forwarded Kerberos ticket from a requester not trusted for delegation; `wst:Delegatable` to a target not trusted for it; the KDC could not issue the ticket | `wst:RequestFailed` |
-| Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; `?encrypt=1` with no recipient certificate (product) | `wst:InvalidRequest` |
-| The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; `?encrypt=1` to a certificate that cannot be used (product); a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
+| Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; response encryption on and the request names no recipient certificate element; `wst:EncryptionAlgorithm` or `wst:EncryptWith` while response encryption is off, or naming a cipher other than the one configured | `wst:InvalidRequest` |
+| Request encryption on and the request does not match its map — the map is empty, an expression matches an element that arrived in the clear or matches nothing restored, or a ciphertext will not open. Processing stops | `wst:FailedCheck` |
+| The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; response encryption that cannot be completed (an empty map, an expression that matches nothing, a certificate element or the application's encryption certificate that is not readable, a recipient the encryption check refuses, a cipher that failed); an XPath expression outside the subset this service evaluates; a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
 
 A failure of the service itself, not of the request, is `soap:Receiver` (SOAP
 1.2) or `soap:Server` (SOAP 1.1), with no `wst:` code. `Validate` with no token
@@ -734,7 +805,7 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 | A Kerberos token, anywhere | checked by the acceptor, the same as product | checked by the acceptor: the ticket under this service's key, the Authenticator, the clock and the replay cache |
 | Who may act for whom | the issuance policy is asked and the act says what would have been refused; the token is issued | the policy must allow the act ([Delegation and impersonation](delegation.md)), or a `wst:RequestFailed` fault |
 | An assertion with no NameID | subjects such as `saml-subject` are invented | refused |
-| `?encrypt=1` that cannot encrypt | plaintext, logged | refused |
+| XML Encryption the application requires, when the message does not match its map or the response cannot be sealed | a fault, and the clear token is not sent | a fault, and the clear token is not sent |
 
 The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 "a delegation starts no session" hold in **both** modes. See
@@ -751,12 +822,17 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 | `wstrust.acceptClientCertificate` | `STS_WSTRUST_ACCEPT_CLIENT_CERTIFICATE` | `true` | yes | Whether the verified TLS client certificate on the connection authenticates a requester whose `wsse:Security` carries no credential (see [Credentials](#credentials)). |
 | `wstrust.acceptKerberos` | `STS_WSTRUST_ACCEPT_KERBEROS` | `true` | yes | Whether a [Kerberos token](#kerberos-tokens) is accepted as the requester's credential and inside `OnBehalfOf` / `ActAs`. |
 | `wstrust.issueKerberos` | `STS_WSTRUST_ISSUE_KERBEROS` | `false` | yes | Whether a `wst:TokenType` naming a Kerberos token is answered with one (see [Kerberos tokens](#kerberos-tokens)). |
+| `wstrust.encryptRequest` | `STS_WSTRUST_ENCRYPT_REQUEST` | `false` | yes | Whether a request whose `AppliesTo` names no application of its own must arrive with `wstrustEncryptRequestElements` encrypted. An application's `wstrustEncryptRequest` overrides it. On, a map mismatch stops processing (`STS-WSTRUST-0075`). |
+| `wstrust.encryptResponse` | `STS_WSTRUST_ENCRYPT_RESPONSE` | `false` | yes | Whether a response has `wstrustEncryptResponseElements` replaced by `xenc:EncryptedData`. An application's `wstrustEncryptResponse` overrides it. On, and the encryption cannot be completed, the request is a fault in both modes and the clear response is not sent. |
+| `wstrust.encryptionAlgorithm` | `STS_WSTRUST_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher those elements use. `aes128-gcm` is also available; `aes256-cbc` and `aes128-cbc` only where broken algorithms are allowed. An application's `wstrustEncryptionAlgorithm` overrides it. |
+| `wstrust.keyTransportAlgorithm` | `STS_WSTRUST_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | How the content key is wrapped to an RSA recipient. `rsa-oaep` is also available; `rsa-1_5` only where broken algorithms are allowed, and product mode ignores it. An EC recipient uses ECDH-ES. An application's `wstrustKeyTransportAlgorithm` overrides it. |
 
 A SAML token is shaped by the shared `saml.*` settings and the SAML 2.0
 assertion settings — see the
 [SAML 2.0 configuration](saml2-sso.md#configuration) and
-[the assertion settings](saml2-sso.md#the-assertion-settings-every-application-inherits);
-`?encrypt=1` uses `saml2.encryptionAlgorithm` and
+[the assertion settings](saml2-sso.md#the-assertion-settings-every-application-inherits).
+XML Encryption of the WS-Trust message uses the four settings above and the
+application's own attributes, not `saml2.encryptionAlgorithm` or
 `saml2.keyTransportAlgorithm`. This table is a copy; the live source is
 `/admin/wstrust` and `GET /admin-api/config`. See
 [Configuration](configuration.md) for how a value is resolved; a setting is

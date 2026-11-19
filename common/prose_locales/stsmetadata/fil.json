@@ -2520,8 +2520,8 @@
     "text": "HINDI SPEC (#594). Sa ?id=, ang sinabi ng wallet sa Notification Endpoint tungkol sa credential na pinapangalanan ng notification_id na iyon: ang event, ang paglalarawan nito at kung kailan (404 para sa id na hindi in-issue ng issuer na ito). Admin Read; hanggang #594 ang /oid4vci/notification/:id na para lamang sa development."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "Mag-POST ng SOAP RequestSecurityToken; nagdi-dispatch ayon sa wst:RequestType (Issue, Renew, Validate, Cancel) at nagbabalik ng RSTR. Inilalarawan ng GET ang endpoint. Idagdag ang ?encrypt=1 para maibalik ang ibinigay na assertion bilang EncryptedAssertion."
+    "en": "dd027a41936ae3af",
+    "text": "Mag-POST ng SOAP RequestSecurityToken; nagdi-dispatch ayon sa wst:RequestType (Issue, Renew, Validate, Cancel) at nagbabalik ng RSTR. Inilalarawan ng GET ang endpoint. Maaaring hingin ng isang application na ang mga pinangalanang elemento ng request at ng response ay XML Encryption (xenc:EncryptedData). Ang mensaheng hindi tumutugma sa mapang iyon ay fault, at humihinto ang pagproseso."
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

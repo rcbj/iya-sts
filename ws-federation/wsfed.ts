@@ -706,10 +706,9 @@ class WsFederation {
   //   * `wreq`, which carries a whole RST — the spec-blessed way to say
   //     anything WS-Trust can express, and TokenType is what a passive client
   //     puts in it
-  //   * `tokenType`, a NON-SPEC query parameter in the manner of /sts's
-  //     ?encrypt=1, because typing a whole RST into a URL to see the other
-  //     token type is not something anybody should have to do to try this by
-  //     hand
+  //   * `tokenType`, a NON-SPEC query parameter, because typing a whole RST
+  //     into a URL to see the other token type is not something anybody
+  //     should have to do to try this by hand
   //   * the default, SAML 1.1
   //
   // `wreqptr` is refused rather than dereferenced. It names a URL the IdP is
@@ -2493,11 +2492,10 @@ class WsFederation {
                    'fetch, and fetching an arbitrary URL from a query ' +
                    'parameter is a server-side request forgery.'],
        ['wp, wencoding', 'Recorded in the log. No policy is enforced.'],
-       ['tokenType, trust', 'NON-SPEC, in the manner of ' +
-        '<code>/sts?encrypt=1</code>: <code>tokenType=saml2</code> asks for ' +
-        'a SAML 2.0 assertion instead of the SAML 1.1 default, and <code>' +
-        'trust=1.3</code> wraps it in a ws-sx 200512 RSTR Collection instead ' +
-        'of a 2005/02 RequestSecurityTokenResponse.']
+       ['tokenType, trust', 'NON-SPEC: <code>tokenType=saml2</code> asks ' +
+        'for a SAML 2.0 assertion instead of the SAML 1.1 default, and ' +
+        '<code>trust=1.3</code> wraps it in a ws-sx 200512 RSTR Collection ' +
+        'instead of a 2005/02 RequestSecurityTokenResponse.']
       ].map((r) => {
         return '<tr><td><code>' + r[0] + '</code></td><td>' + r[1] +
             '</td></tr>';
@@ -2505,10 +2503,10 @@ class WsFederation {
       'and stated rather than left to be discovered: <code>wresultptr</code> ' +
       '(the response is always by value), the attribute and pseudonym ' +
       'services (<code>wattr1.0</code>, <code>wpseudo1.0</code>, both ' +
-      'answered 501), token encryption in this profile (there is no ' +
-      'recipient certificate in a passive request to encrypt to — <code>' +
-      '/sts?encrypt=1</code> has one because a WS-Security signature carries ' +
-      'it), and the WS-Federation metadata exchange over SOAP.</div></div>';
+      'answered 501), token encryption in this profile (a passive request ' +
+      'carries no recipient certificate; WS-Trust replaces the elements an ' +
+      'application names with xenc:EncryptedData), and the WS-Federation ' +
+      'metadata exchange over SOAP.</div></div>';
     log.debug("Leaving WsFederation.descriptionPage().");
     return inner;
   }

@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "Si un wst:TokenType que nombra uno de los seis ValueType del Kerberos Token Profile 1.1 se responde con un token Kerberos: un AP-REQ que lleva un ticket de servicio que el KDC de este reino emitió para el sujeto al servicio Kerberos que nombra AppliesTo, con la subclave del Authenticator devuelta como token de prueba por TLS. Un ticket ActAs nombra a cada parte que actuó en el S4U_DELEGATION_INFO de su PAC. Desactivado, esa solicitud se rechaza."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c74f4c7c47d9035",
+    "text": "Descifrar los elementos nombrados de una solicitud"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "5f309591d610ee41",
+    "text": "Si un RequestSecurityToken cuyo AppliesTo no nombra ninguna aplicación propia debe llegar con los elementos de wstrustEncryptRequestElements cifrados (XML Encryption, tipo Element), y si una solicitud cifrada por completo — cuyo AppliesTo está dentro del texto cifrado — se abre. El wstrustEncryptRequest de una aplicación prevalece para una solicitud cuyo AppliesTo la nombra. Activado, y el mapa está vacío, una expresión coincide con un elemento que llegó en claro, una expresión no coincide con nada de lo restaurado, o un texto cifrado no se abre con las claves de este dominio, la solicitud es un wst:FailedCheck. Desactivado, el texto cifrado se deja como llegó y una solicitud que no se puede leer es la falta que ya era."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "Cifrar los elementos nombrados de una respuesta"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Si un RequestSecurityTokenResponse tiene los elementos de wstrustEncryptResponseElements sustituidos por xenc:EncryptedData después de construirse, para cualquier tipo de token. El wstrustEncryptResponse de una aplicación prevalece. El destinatario es el wstrustEncryptionCertificate de esa aplicación, si no el elemento de certificado que selecciona wstrustResponseRecipientXPath, si no el primer elemento de certificado del firmante que nombra la firma WS-Security de la solicitud. Una falta se envía en claro. Activado, y si el cifrado no puede completarse, la solicitud es una falta en ambos modos."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Algoritmo de cifrado de la respuesta"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "El cifrado por bloques con el que se cifran los elementos cifrados de una respuesta WS-Trust. Los dos GCM están autenticados: un texto cifrado alterado falla su etiqueta y se rechaza. Los dos CBC no. El wstrustEncryptionAlgorithm de una aplicación prevalece. Un elemento wst:EncryptionAlgorithm puede nombrar este cifrado, por su nombre corto o su URI de XML Encryption, solo mientras el cifrado de la respuesta está activado."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Algoritmo de transporte de clave de la respuesta"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Cómo se envuelve la clave de contenido de un solo uso de una respuesta WS-Trust hacia la clave pública RSA del destinatario. `rsa-oaep` es el RSA-OAEP de XML Encryption 1.1 con SHA-256 y MGF1-SHA-256; `rsa-oaep-mgf1p` es OAEP sobre SHA-1. Un destinatario cuyo certificado es EC se cifra mediante acuerdo de claves ECDH-ES diga lo que diga este ajuste. El wstrustKeyTransportAlgorithm de una aplicación prevalece. `rsa-1_5` es RSAES-PKCS1-v1_5 y está roto, y se ofrece porque un solicitante desplegado puede no aceptar ningún otro. ADVERTENCIA: rsa-1_5 es solo del modo de desarrollo — en modo producto se ignora donde se lee, en este ajuste y en el wstrustKeyTransportAlgorithm de una aplicación (se usa rsa-oaep-mgf1p, se registra una vez, STS-CORE-0106), y fijarlo se rechaza (STS-CORE-0103, STS-REG-0193). Un elemento wst:EncryptWith puede nombrar este algoritmo solo mientras el cifrado de la respuesta está activado."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"

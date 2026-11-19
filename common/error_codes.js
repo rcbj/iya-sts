@@ -12608,21 +12608,16 @@ const CODES = [
     spec: 'SOAP Fault wst:RequestFailed (HTTP 403), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0012',
-    summary: '?encrypt=1 was requested but the request names no recipient ' +
-      'certificate: neither the X.509 token its WS-Security signature ' +
-      'references (a BinarySecurityToken, or a thumbprint, Subject Key ' +
-      'Identifier or issuer and serial of a certificate this realm ' +
-      'issued) nor an X509Certificate in the security header. Product ' +
-      'mode refuses; development returns the assertion in clear and ' +
-      'logs this.',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500) in product; none ' +
-      'in development' },
+    summary: 'RETIRED (#1668). ?encrypt=1 was requested but the request ' +
+      'named no recipient certificate. WS-Trust encrypts a response only ' +
+      'when the application\'s response switch is on, and a missing ' +
+      'recipient is STS-WSTRUST-0076.',
+    spec: '', retired: true },
   { code: 'STS-WSTRUST-0013',
-    summary: '?encrypt=1 was requested and encrypting the assertion to the ' +
-      'request\'s certificate failed. Product mode refuses; ' +
-      'development returns the assertion in clear and logs this.',
-    spec: 'SOAP Fault wst:RequestFailed (HTTP 500) in product; none ' +
-      'in development' },
+    summary: 'RETIRED (#1668). ?encrypt=1 was requested and encrypting the ' +
+      'assertion failed. A response that cannot be encrypted is ' +
+      'STS-WSTRUST-0077.',
+    spec: '', retired: true },
   { code: 'STS-WSTRUST-0014',
     summary: 'A Validate request carried no token in its ValidateTarget, so ' +
       'it was answered with a status of invalid.',
@@ -12975,6 +12970,47 @@ const CODES = [
       'through WS-Trust"): WS-Trust authenticates the entry whichever ' +
       'spelling names it.',
     spec: '', retired: true },
+  { code: 'STS-WSTRUST-0075',
+    summary: 'XML Encryption of a WS-Trust request does not match the ' +
+      'application\'s request map: the map is empty while request ' +
+      'encryption is on, an expression matches an element that arrived in ' +
+      'the clear or matches nothing restored from ciphertext, or a ' +
+      'ciphertext will not open with this realm\'s keys. A wholly ' +
+      'encrypted request is opened only when the service-wide switch is ' +
+      'on, and the application it reveals is then held to its own switch.',
+    spec: 'SOAP Fault wst:FailedCheck (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0076',
+    summary: 'Response encryption is on and the request names no recipient ' +
+      'certificate element. The application\'s encryption certificate is ' +
+      'unset, its recipient XPath matches nothing or not a certificate ' +
+      'element, or the WS-Security signature names no certificate element. ' +
+      'A thumbprint, a Subject Key Identifier or an issuer and serial is ' +
+      'not one, and a configured step that cannot be used is not replaced ' +
+      'by the next. A certificate element whose text is not a certificate ' +
+      'is STS-WSTRUST-0077.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0077',
+    summary: 'Response encryption is on and could not be completed: the ' +
+      'response map is empty or matches nothing, a selected certificate ' +
+      'element or the application\'s encryption certificate is not a ' +
+      'certificate this process can read, the recipient is refused as an ' +
+      'encryption recipient, or the cipher failed. The fault is sent in ' +
+      'the clear.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0078',
+    summary: 'The request carries wst:EncryptionAlgorithm or wst:EncryptWith ' +
+      'while response encryption is off, or names a block cipher or a key ' +
+      'transport other than the one configured for this application.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0079',
+    summary: 'An XPath expression on a WS-Trust encryption map or recipient ' +
+      'is outside the subset this service evaluates, or uses a prefix the ' +
+      'element does not declare and this service does not know.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

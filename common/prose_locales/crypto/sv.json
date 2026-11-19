@@ -1112,12 +1112,12 @@
     "text": "SAML-intygandet i RequestSecurityTokenResponse, 1.1 eller 2.0, genom den delade signeraren."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "e1450965d276d357",
-    "text": "Den LÄSER en begärares `<wsse:Security>`-autentiseringsuppgift och `<ds:X509Certificate>` i en signerad begäran — det senare för att ta reda på vem den ska KRYPTERA till. I produktläge verifieras en UsernameTokens lösenord mot personens `userPassword`, eller mot en applikations klienthemligheter; utvecklingsläget tror på det, utom det reserverade `invalid`."
+    "en": "b006491105a22a5c",
+    "text": "Den LÄSER en begärares `<wsse:Security>`-autentiseringsuppgift. Svarskryptering använder applikationens certifikat, ett certifikatelement som dess mottagaruttryck väljer, eller signeringscertifikatelementet — inte ett `<ds:X509Certificate>` inuti ett intyg. I produktläge verifieras en UsernameTokens lösenord mot personens `userPassword`, eller mot en applikations klienthemligheter; utvecklingsläget tror på det, utom det reserverade `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "fa359afa3450379c",
-    "text": "Med `?encrypt=1`, det utfärdade 2.0-intygandet, till certifikatet som hittas i begärans signatur. Samma två tabeller som SAML 2.0, eftersom det är samma kod — `saml/saml2.ts` återexporterar den."
+    "en": "33f83b68482ff9b5",
+    "text": "Namngivna element i ett svar, som xenc:EncryptedData, till applikationens certifikat eller signeringscertifikatelementet. `?encrypt=1` är avvecklat och krypterar ingenting. Chiffret är den här familjens, genom crypto.js; SAML:s EncryptedAssertion stannar i `saml/saml2.ts`."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

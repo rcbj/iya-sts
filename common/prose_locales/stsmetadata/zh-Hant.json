@@ -2520,8 +2520,8 @@
     "text": "非規範（#594）。使用 ?id= 時，錢包就該 notification_id 所指明的憑證告訴 Notification Endpoint 的內容：事件、其描述以及時間（對於此簽發者未簽發的 id 回傳 404）。Admin Read；在 #594 之前是僅限開發的 /oid4vci/notification/:id。"
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST 一個 SOAP RequestSecurityToken；依 wst:RequestType（Issue、Renew、Validate、Cancel）分派並回傳 RSTR。GET 描述此端點。加上 ?encrypt=1 可讓簽發的判斷提示以 EncryptedAssertion 回傳。"
+    "en": "dd027a41936ae3af",
+    "text": "POST 一個 SOAP RequestSecurityToken；依 wst:RequestType（Issue、Renew、Validate、Cancel）分派並回傳 RSTR。GET 描述此端點。應用程式可以要求請求和回應中被點名的元素是 XML Encryption（xenc:EncryptedData）。與該對應不匹配的訊息是故障，處理立即停止。"
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

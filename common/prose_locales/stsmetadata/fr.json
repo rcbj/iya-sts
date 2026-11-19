@@ -2520,8 +2520,8 @@
     "text": "NON SPÉCIFIÉ (#594). Avec ?id=, ce qu’un portefeuille a dit au Notification Endpoint du justificatif que nomme ce notification_id : l’événement, sa description et quand (404 pour un id que cet émetteur n’a pas émis). Admin Read ; jusqu’à #594, le /oid4vci/notification/:id réservé au développement."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST d’un RequestSecurityToken SOAP ; aiguille selon wst:RequestType (Issue, Renew, Validate, Cancel) et renvoie un RSTR. GET décrit le point de terminaison. Ajoutez ?encrypt=1 pour que l’assertion émise soit renvoyée sous forme d’EncryptedAssertion."
+    "en": "dd027a41936ae3af",
+    "text": "POST d’un RequestSecurityToken SOAP ; aiguille selon wst:RequestType (Issue, Renew, Validate, Cancel) et renvoie un RSTR. GET décrit le point de terminaison. Une application peut exiger que des éléments nommés de la requête et de la réponse soient du XML Encryption (xenc:EncryptedData). Un message qui ne correspond pas à cette carte est une faute, et le traitement s’arrête."
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

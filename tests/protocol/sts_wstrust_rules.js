@@ -25,8 +25,8 @@
 //      (STS-WSTRUST-0027) and a SAML 1.1 assertion (0006) inside ActAs; and
 //      K2b, a JWT another issuer named — another realm's (0026).
 //   B. the fault's namespace is the request's own (2005/02).
-//   E. the RSTR says Bearer when PublicKey was asked for; ?encrypt=1 reads
-//      the cipher from the AppliesTo's application (#747).
+//   E. the RSTR says Bearer when PublicKey was asked for; the AppliesTo's
+//      application chooses the response cipher (#747, #1668).
 //   R. `reserved_password_refusal.js`'s WS-Trust half: `invalid` refused in
 //      both modes with a wrong password's answer, and the LDAP half: an LDAPS
 //      simple bind with `invalid` is 49 in both modes, STS-LDAP-0001 in
@@ -69,6 +69,29 @@ const LAST = URL_OF("wf-last");
 const PLAIN = URL_OF("wf-plain");
 const PAYROLL = URL_OF("wf-payroll");
 const BASIC = "urn:oasis:names:tc:SAML:2.0:attrname-format:basic";
+const ASSERTION_XPATH = "//*[local-name()='Assertion' and " +
+  "namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']";
+const RECIPIENT_XPATH = "//*[local-name()='Security']/*[local-name()=" +
+  "'Signature']//*[local-name()='X509Certificate' and namespace-uri()=" +
+  "'http://www.w3.org/2000/09/xmldsig#']";
+
+async function responseMap(id, on, algorithm) {
+  log.debug("Entering responseMap(). " + id + " " + on);
+  await api(id, "/applications/set", { application: "wf-back",
+    attribute: "wstrustEncryptResponse", value: on ? "true" : "" });
+  await api(id, on ? "/applications/add" : "/applications/remove", {
+    application: "wf-back", attribute: "wstrustEncryptResponseElements",
+    value: ASSERTION_XPATH });
+  await api(id, "/applications/set", { application: "wf-back",
+    attribute: "wstrustResponseRecipientXPath",
+    value: on ? RECIPIENT_XPATH : "" });
+  if (algorithm !== undefined) {
+    await api(id, "/applications/set", { application: "wf-back",
+      attribute: "wstrustEncryptionAlgorithm",
+      value: on ? algorithm : "" });
+  }
+  log.debug("Leaving responseMap().");
+}
 
 async function api(id, path, body, what) {
   log.debug("Entering api(). " + path);
@@ -211,19 +234,19 @@ async function faults(P, D) {
      "STS-WSTRUST-0009", "FailedAuthentication"],
     [P, "no credential at all", { appliesTo: BACK }, "STS-WSTRUST-0010",
      "FailedAuthentication"],
-    [P, "?encrypt=1 with no recipient certificate",
+    [P, "response encryption with no recipient certificate",
      { security: W.stripCertificates(aliceSigned), appliesTo: BACK },
-     "STS-WSTRUST-0012", "InvalidRequest", "?encrypt=1"],
-    [P, "?encrypt=1 with a certificate only inside the header's assertion",
-     { security: aliceSigned, appliesTo: BACK }, "STS-WSTRUST-0012",
-     "InvalidRequest", "?encrypt=1"],
-    [P, "?encrypt=1 with a certificate only inside the delegated assertion",
+     "STS-WSTRUST-0076", "InvalidRequest"],
+    [P, "response encryption with a certificate only inside the assertion",
+     { security: aliceSigned, appliesTo: BACK }, "STS-WSTRUST-0076",
+     "InvalidRequest"],
+    [P, "response encryption with a certificate only inside ActAs",
      { security: W.stripCertificates(frontSigned),
        body: W.actAs(aliceForFront), appliesTo: BACK },
-     "STS-WSTRUST-0012", "InvalidRequest", "?encrypt=1"],
-    [P, "?encrypt=1 to a certificate that is not one",
+     "STS-WSTRUST-0076", "InvalidRequest"],
+    [P, "response encryption to a certificate element that is not one",
      { security: badCertificate + aliceSigned, appliesTo: BACK },
-     "STS-WSTRUST-0013", "RequestFailed", "?encrypt=1"],
+     "STS-WSTRUST-0077", "RequestFailed"],
     [P, "a protected subject", { security: frontSigned,
       body: W.actAs(carlForFront), appliesTo: BACK }, "STS-WSTRUST-0018",
      "RequestFailed"],
@@ -269,9 +292,14 @@ async function faults(P, D) {
             W.onBehalfOf(await tokenFor(D, "wf-alice", FRONT)),
       appliesTo: BACK }, "STS-WSTRUST-0025", "InvalidRequest"]
   ];
+  // wf-back's response map is on for the four encryption refusals. A
+  // mismatch is the fault those cases record. It is off again before any
+  // later success against the same application.
+  await responseMap(P, true);
   for (const c of cases) {
     await refusal(c[0], c[1], c[2], c[3], c[4], c[5]);
   }
+  await responseMap(P, false);
   // A JWT about somebody the directory does not hold, with autocreate off.
   await K.set(D, "ldap.autocreateUsers", false);
   await refusal(D, "a JWT about somebody the directory does not hold",
@@ -303,20 +331,19 @@ async function faults(P, D) {
           });
   const certificate = (/<ds:X509Certificate>([^<]+)</.exec(
     await tokenFor(D, "wf-alice")) || [])[1] || "";
-  const cipher = await K.appSet(D, "wf-back", "saml2EncryptionAlgorithm",
-                                "aes128-gcm");
-  const encrypted = await W.post(D, { appliesTo: BACK, query: "?encrypt=1",
+  await responseMap(D, true, "aes128-gcm");
+  const encrypted = await W.post(D, { appliesTo: BACK,
     security: UT("wf-alice", "x") + '<ds:Signature xmlns:ds="http://www.w3' +
       '.org/2000/09/xmldsig#"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>' +
       certificate + "</ds:X509Certificate></ds:X509Data></ds:KeyInfo>" +
       "</ds:Signature>" });
-  await K.appSet(D, "wf-back", "saml2EncryptionAlgorithm", "");
-  K.check("E2. ?encrypt=1 takes the cipher from the AppliesTo's " +
-          "application, whose identifier is not the AppliesTo", function () {
+  await responseMap(D, false, "aes128-gcm");
+  K.check("E2. the AppliesTo's application chooses the cipher, and its " +
+          "identifier is not the AppliesTo", function () {
     assert.ok(certificate, "no certificate to encrypt to");
-    assert.strictEqual(cipher.status, 200, cipher.text.slice(0, 300));
     assert.strictEqual(encrypted.status, 200, encrypted.text.slice(0, 300));
-    assert.ok(/EncryptedAssertion/.test(encrypted.text) &&
+    assert.ok(/EncryptedData/.test(encrypted.text) &&
+              !/EncryptedAssertion/.test(encrypted.text) &&
               /xmlenc11#aes128-gcm/.test(encrypted.text),
               encrypted.text.slice(0, 500));
   });

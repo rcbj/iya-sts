@@ -1287,6 +1287,38 @@
     "en": "86ac83dbe366a17b",
     "text": "LES PORTÉES OAUTH 2.0 QUE PORTE UN JWT WS-TRUST POUR CETTE APPLICATION, une valeur de portée chacune (#485). Un JWT que WS-Trust émet avec cette application comme AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) les porte dans sa revendication `scope`, séparées par des espaces (RFC 9068 section 2.2.3) ; si aucune n’est définie, il ne porte pas de `scope`. Un jeton SAML n’est pas concerné.\n\n**CHACUNE EST JUGÉE COMME CELLES D’UN JETON D’ACCÈS OAUTH**, avec cette application comme client : `oauthAllowedScope` déclare ce qui peut lui être émis (en mode produit ; les portées protégées de ce service dans tous les modes), et la question par portée de la politique d’émission décide. Une valeur que la politique écarte est OMISE du jeton et auditée (STS-OAUTH-0579), jamais émise. Une écriture nommant une portée non déclarée est acceptée ici, car la déclaration peut changer et le mode développement accorde les portées non déclarées : déclarez-la aussi sur oauthAllowedScope. Une valeur que la politique écartera fait l’objet d’un AVERTISSEMENT là où elle est définie (#488) : à côté de ce champ, dans la réponse à Enregistrer, et sous forme de `warnings` dans les réponses d’écriture de /admin-api et dans la vue de l’application."
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "2fc947c1194f5438",
+    "text": "VRAI ou FAUX : ouvrir les éléments que nomme la carte de requête de cette application, en l’emportant sur wstrust.encryptRequest. Activé, une requête dont l’AppliesTo est cette application est un FailedCheck lorsque la carte est vide, qu’une expression correspond à un élément arrivé en clair, qu’une expression ne correspond à rien de ce qui a été restauré depuis le texte chiffré, ou qu’un texte chiffré ne s’ouvre pas avec les clés XML Encryption de ce domaine. Une requête dont l’AppliesTo est caché dans le texte chiffré n’est ouverte que lorsque le commutateur de tout le service est activé ; l’application révélée par cette ouverture est ensuite tenue à son propre commutateur. Désactivé, le texte chiffré pour cette application est refusé plutôt qu’ouvert."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "64d29149c3c87cba",
+    "text": "LES ÉLÉMENTS D’UNE REQUÊTE WS-TRUST QUI DOIVENT ARRIVER CHIFFRÉS, une expression XPath 1.0 chacun. Le sous-ensemble est `/`, `//`, `*`, un nom d’élément, `prefix:local`, une union avec `|`, et les prédicats `local-name()`, `namespace-uri()` et `@attr`, joints par `and`. Chaque expression doit sélectionner au moins un élément qui a été restauré depuis un xenc:EncryptedData de type Element. Une expression hors de ce sous-ensemble est un RequestFailed. Un en-tête SOAP, le corps SOAP, ou n’importe quel élément peut être nommé, pour tout type de jeton."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "VRAI ou FAUX : remplacer les éléments que nomme la carte de réponse de cette application par xenc:EncryptedData, en l’emportant sur wstrust.encryptResponse. La réponse est construite en clair, puis ces éléments sont remplacés, pour tout type de jeton. Une faute reste en clair. Activé, et si le chiffrement ne peut pas être mené à terme — pas de destinataire, une carte qui ne correspond à rien, ou un chiffrement que le certificat du destinataire ne prend pas — la requête est une faute dans les deux modes."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "LES ÉLÉMENTS D’UNE RÉPONSE WS-TRUST QUI SONT CHIFFRÉS, une expression XPath 1.0 chacun, le même sous-ensemble que wstrustEncryptRequestElements. Un en-tête SOAP, le corps SOAP, ou n’importe quel élément peut être nommé. Une expression qui ne correspond à rien dans la réponse construite est une faute."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "Le chiffrement par bloc utilisé pour les réponses WS-Trust de cette application — aes256-gcm, aes128-gcm, aes256-cbc ou aes128-cbc — en l’emportant sur wstrust.encryptionAlgorithm. Un élément wst:EncryptionAlgorithm peut nommer ce chiffrement, par son nom court ou son URI XML Encryption, seulement tant que le chiffrement de la réponse est activé pour cette application."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "LE CERTIFICAT À DESTINATION DUQUEL UNE RÉPONSE WS-TRUST EST CHIFFRÉE, en DER base64 ou en PEM. Lorsqu’il est défini, il est le destinataire, et un certificat illisible est une faute plutôt qu’un repli vers la source suivante. Lorsqu’il n’est pas défini, le destinataire est l’élément de certificat que sélectionne wstrustResponseRecipientXPath, ou, lorsque cette expression n’est pas définie non plus, le premier élément de certificat du signataire que nomme la signature WS-Security de la requête."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Comment la clé de contenu est enveloppée pour les réponses WS-Trust de cette application — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) ou rsa-1_5 — en l’emportant sur wstrust.keyTransportAlgorithm. Un destinataire dont le certificat est EC est chiffré par ECDH-ES quoi que dise ce réglage. Un élément wst:EncryptWith peut nommer cet algorithme, par son nom court ou son URI XML Encryption, seulement tant que le chiffrement de la réponse est activé pour cette application."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "UNE EXPRESSION XPATH SÉLECTIONNANT L’ÉLÉMENT DE CERTIFICAT À DESTINATION DUQUEL UNE RÉPONSE WS-TRUST EST CHIFFRÉE : un ds:X509Certificate ou un BinarySecurityToken dont le ValueType se termine par #X509v3. Le même sous-ensemble que les cartes d’éléments. Lorsqu’elle est définie et qu’elle ne sélectionne rien, ou qu’elle sélectionne un élément qui n’est pas l’un de ces deux-là, il n’y a pas de destinataire et la source suivante n’est pas essayée. Un élément de certificat sélectionné dont le texte n’est pas un certificat est une faute de chiffrement achevé, et la source suivante n’est pas essayée. Lorsqu’elle n’est pas définie, le destinataire est le premier élément de certificat du signataire que nomme la signature WS-Security de la requête — le BinarySecurityToken que vise la référence de cette signature, ou un ds:X509Certificate dans le KeyInfo de cette signature. Une empreinte, un Subject Key Identifier ou un émetteur et un numéro de série n’est pas un élément de certificat."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "LE SPN, par exemple HTTP/sts@EXAMPLE.COM — l’attribut identifiant de Kerberos v5. Un service Kerberos est une application comme les autres ici, et c’est celle dont ce service peut avoir créé l’identifiant à la demande (KRB5_SERVICE_DOMAINS). Les valeurs s’accumulent, et c’est ici le cas ordinaire plutôt que l’exception : un même service répond couramment à plusieurs SPN — HTTP/host et HTTP/host.example.com — et un vrai KDC les rattache tous à un seul compte."

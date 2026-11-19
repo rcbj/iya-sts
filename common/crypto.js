@@ -1559,9 +1559,8 @@ function readWsSecuritySignature(xml) {
   const signedInfo = directChildByLocal(sigEl, 'SignedInfo', DS_NS);
   if (!signedInfo) {
     // A ds:Signature with no SignedInfo signs nothing: it is not a
-    // signature over the request, and is read as none. One shape carries it
-    // on purpose — WS-Trust's `?encrypt=1` test control, which reads the
-    // recipient certificate out of a bare KeyInfo there.
+    // signature over the request, and is read as none. A KeyInfo that is
+    // not part of a signature is not a certificate the signature names.
     log.debug("Leaving readWsSecuritySignature(). A KeyInfo, no SignedInfo.");
     return { present: false };
   }
@@ -2081,8 +2080,9 @@ function verifyQueryString(queryString, opts) {
 //
 // So this is centralization by MOVE. It was already one implementation with two
 // callers; it is now one implementation in the module where the other three
-// crypto families live, and `saml/saml2.ts` re-exports it so WS-Trust's
-// `?encrypt=1` path is untouched.
+// crypto families live, and `saml/saml2.ts` re-exports it. WS-Trust encrypts
+// through `encryptElement()` with `bare`, so the result is an EncryptedData
+// and not a SAML wrapper.
 // ---------------------------------------------------------------------------
 
 // Every block cipher this service will encrypt with or decrypt, by its
@@ -2351,8 +2351,9 @@ function artifact(opts, what, stage, value) {
  * @param xml - the element to encrypt
  * @param certPem - the recipient's certificate
  * @param opts - `wrapper` (`saml:EncryptedAssertion` by default),
- *   `algorithm`, `keyTransport`, `keyWrap` and `logArtifact`
- * @returns the wrapper element's XML
+ *   `bare` (the EncryptedData alone, no wrapper), `algorithm`,
+ *   `keyTransport`, `keyWrap` and `logArtifact`
+ * @returns the wrapper element's XML, or the EncryptedData when `bare`
  */
 function encryptElement(xml, certPem, opts) {
   log.debug("Entering encryptElement().");
@@ -2366,7 +2367,8 @@ function encryptElement(xml, certPem, opts) {
     !mode.allowsLegacyHashes() ? 'rsa-oaep' : named;
   const transport = KEY_TRANSPORTS[transportName];
   const wrapName = KEY_WRAPS[opts.keyWrap] ? opts.keyWrap : 'kw-aes256';
-  artifact(opts, 'SAML 2.0 ' + wrapper, 'before encryption', xml);
+  const label = opts.bare ? 'XML Encryption' : ('SAML 2.0 ' + wrapper);
+  artifact(opts, label, 'before encryption', xml);
 
   // WHICH KIND OF KEY THE RECIPIENT HOLDS decides between transport and
   // agreement (#168): an EC certificate has no RSA key to wrap to, and
@@ -2385,7 +2387,8 @@ function encryptElement(xml, certPem, opts) {
   c.update(forge.util.createBuffer(forge.util.encodeUtf8(xml)));
   if (!c.finish()) {
     log.debug("Leaving encryptElement(). The cipher refused.");
-    throw new Error('SAML encryption failed in ' + cipher.mode);
+    throw new Error((opts.bare ? 'XML Encryption' : 'SAML encryption') +
+                    ' failed in ' + cipher.mode);
   }
   const body = cipher.tagBytes
     ? iv + c.output.getBytes() + c.mode.tag.getBytes()
@@ -2489,8 +2492,7 @@ function encryptElement(xml, certPem, opts) {
     how = 'key wrapped with ' + transportName;
   }
 
-  const encrypted =
-    '<' + wrapper + ' xmlns:saml="' + NS_SAML + '">' +
+  const encryptedData =
     '<xenc:EncryptedData xmlns:xenc="' + XENC_NS + '" Type="' + XENC_NS +
     'Element"><xenc:EncryptionMethod ' +
       'Algorithm="' + cipher.uri + '"/>' +
@@ -2498,9 +2500,14 @@ function encryptElement(xml, certPem, opts) {
       '</ds:KeyInfo>' +
       '<xenc:CipherData><xenc:CipherValue>' + forge.util.encode64(body) +
       '</xenc:CipherValue></xenc:CipherData>' +
-    '</xenc:EncryptedData></' + wrapper + '>';
+    '</xenc:EncryptedData>';
+  // `bare` is the element itself. The SAML wrapper stays the default so a
+  // caller that encrypts an assertion is unchanged.
+  const encrypted = opts.bare ? encryptedData
+    : ('<' + wrapper + ' xmlns:saml="' + NS_SAML + '">' + encryptedData +
+       '</' + wrapper + '>');
 
-  artifact(opts, 'SAML 2.0 ' + wrapper,
+  artifact(opts, label,
            'after encryption (' + cipher.name + ', ' +
            how + ')',
            encrypted);

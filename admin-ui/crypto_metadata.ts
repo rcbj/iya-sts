@@ -2276,17 +2276,20 @@ class CryptoMetadata {
       { name: 'WS-Trust',
         signs: 'The SAML assertion in the RequestSecurityTokenResponse, 1.1 ' +
                'or 2.0, through the shared signer.',
-        verifies: 'It READS a requester\'s `<wsse:Security>` credential and ' +
-                  'the `<ds:X509Certificate>` in a signed request — the ' +
-                  'latter to find out who to ENCRYPT to. In product mode a ' +
-                  'UsernameToken\'s password is verified against the ' +
+        verifies: 'It READS a requester\'s `<wsse:Security>` credential. ' +
+                  'Response encryption uses the application\'s certificate, ' +
+                  'a certificate element its recipient expression selects, ' +
+                  'or the signer certificate element — not a ' +
+                  '`<ds:X509Certificate>` inside an assertion. In product ' +
+                  'mode a UsernameToken\'s password is verified against the ' +
                   'person\'s `userPassword`, or an application\'s client ' +
                   'secrets; development believes it, except the reserved ' +
                   '`invalid`.',
-        encrypts: 'With `?encrypt=1`, the issued 2.0 assertion, to the ' +
-                  'certificate found in the request signature. Same two ' +
-                  'tables as SAML 2.0, because it is the same code — ' +
-                  '`saml/saml2.ts` re-exports it.',
+        encrypts: 'Named elements of a response, as xenc:EncryptedData, to ' +
+                  'the application\'s certificate or the signer certificate ' +
+                  'element. `?encrypt=1` is retired and encrypts nothing. ' +
+                  'The cipher is this family\'s, through crypto.js; SAML\'s ' +
+                  'EncryptedAssertion stays in `saml/saml2.ts`.',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
         // "It polices no delegation" until #543's review: #108 and #186 put

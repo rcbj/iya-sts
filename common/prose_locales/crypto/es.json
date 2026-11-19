@@ -1112,12 +1112,12 @@
     "text": "La aserción SAML de la RequestSecurityTokenResponse, 1.1 o 2.0, mediante el firmante compartido."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "e1450965d276d357",
-    "text": "LEE la credencial `<wsse:Security>` de un solicitante y el `<ds:X509Certificate>` de una solicitud firmada — esto último para saber para quién CIFRAR. En modo producto la contraseña de un UsernameToken se verifica contra el `userPassword` de la persona, o contra los secretos de cliente de una aplicación; el modo de desarrollo la da por buena, salvo la reservada `invalid`."
+    "en": "b006491105a22a5c",
+    "text": "LEE la credencial `<wsse:Security>` de un solicitante. El cifrado de la respuesta usa el certificado de la aplicación, un elemento de certificado que selecciona su expresión de destinatario, o el elemento de certificado del firmante — no un `<ds:X509Certificate>` dentro de una aserción. En modo producto la contraseña de un UsernameToken se verifica contra el `userPassword` de la persona, o contra los secretos de cliente de una aplicación; el modo de desarrollo la da por buena, salvo la reservada `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "fa359afa3450379c",
-    "text": "Con `?encrypt=1`, la aserción 2.0 emitida, para el certificado encontrado en la firma de la solicitud. Las mismas dos tablas que SAML 2.0, porque es el mismo código — `saml/saml2.ts` lo reexporta."
+    "en": "33f83b68482ff9b5",
+    "text": "Elementos nombrados de una respuesta, como xenc:EncryptedData, para el certificado de la aplicación o el elemento de certificado del firmante. `?encrypt=1` está retirado y no cifra nada. El cifrado es el de esta familia, a través de crypto.js; la EncryptedAssertion de SAML permanece en `saml/saml2.ts`."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

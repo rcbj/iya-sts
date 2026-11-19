@@ -911,13 +911,17 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    tokenLifetimeMin: 60,          // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,     // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",         // JWT signature algorithm
-    jwtCertificateHeader: "x5u",   // JWT certificate header
-    acceptClientCertificate: true, // Accept the TLS client certificate as the requester's credential
-    acceptKerberos: true,          // Accept a Kerberos token
-    issueKerberos: false           // Issue Kerberos tokens
+    tokenLifetimeMin: 60,                    // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,               // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",                   // JWT signature algorithm
+    jwtCertificateHeader: "x5u",             // JWT certificate header
+    acceptClientCertificate: true,           // Accept the TLS client certificate as the requester's credential
+    acceptKerberos: true,                    // Accept a Kerberos token
+    issueKerberos: false,                    // Issue Kerberos tokens
+    encryptRequest: false,                   // Decrypt the named elements of a request
+    encryptResponse: false,                  // Encrypt the named elements of a response
+    encryptionAlgorithm: "aes256-gcm",       // Response encryption algorithm
+    keyTransportAlgorithm: "rsa-oaep-mgf1p"  // Response key transport algorithm
   },
 
   // --- WS-Federation ---------------------------------------------------

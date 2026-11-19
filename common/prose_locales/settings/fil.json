@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "Kung sinasagot ng Kerberos token ang wst:TokenType na nagpapangalan sa isa sa anim na ValueType ng Kerberos Token Profile 1.1: isang AP-REQ na may dalang service ticket na inilabas ng KDC ng realm na ito para sa subject patungo sa Kerberos service na pinapangalanan ng AppliesTo, at ibinabalik ang subkey ng Authenticator bilang proof token sa TLS. Pinapangalanan ng isang ActAs ticket ang bawat partidong kumilos sa S4U_DELEGATION_INFO ng PAC nito. Kapag naka-off, tinatanggihan ang ganitong kahilingan."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c74f4c7c47d9035",
+    "text": "I-decrypt ang mga pinangalanang elemento ng isang request"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "5f309591d610ee41",
+    "text": "Kung ang isang RequestSecurityToken na ang AppliesTo ay walang sariling application ay dapat dumating nang naka-encrypt ang mga elemento ng wstrustEncryptRequestElements (XML Encryption, uri Element), at kung bubuksan ang isang ganap na naka-encrypt na request — ang AppliesTo ay nasa loob ng ciphertext. Ino-override ito ng wstrustEncryptRequest ng isang application para sa request na ang AppliesTo ay tumutukoy dito. Naka-on, at walang laman ang mapa, tumutugma ang isang expression sa elementong dumating nang klaro, walang tinutugma ang isang expression sa anumang naibalik, o hindi mabubuksan ang ciphertext gamit ang mga key ng realm na ito, ang request ay isang wst:FailedCheck. Naka-off, iniiwan ang ciphertext kung paano ito dumating at ang request na hindi mabasa ay ang fault na nariyan na."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "I-encrypt ang mga pinangalanang elemento ng isang response"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Kung ang isang RequestSecurityTokenResponse ay pinapalitan ang mga elemento ng wstrustEncryptResponseElements ng xenc:EncryptedData pagkatapos itong mabuo, para sa anumang uri ng token. Ino-override ito ng wstrustEncryptResponse ng isang application. Ang recipient ay ang wstrustEncryptionCertificate ng application na iyon, kung hindi ang elemento ng certificate na pinipili ng wstrustResponseRecipientXPath, kung hindi ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request. Ang fault ay ipinapadala nang klaro. Naka-on, at hindi makumpleto ang encryption, ang request ay fault sa parehong mode."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Algorithm ng encryption ng response"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Ang block cipher na ginagamit sa mga naka-encrypt na elemento ng isang WS-Trust response. Ang dalawang GCM ay authenticated: ang binagong ciphertext ay bumibigo sa tag nito at tinatanggihan. Ang dalawang CBC ay hindi. Ino-override ito ng wstrustEncryptionAlgorithm ng isang application. Maaaring pangalanan ng elementong wst:EncryptionAlgorithm ang cipher na ito, sa maikling pangalan nito o sa XML Encryption URI nito, habang naka-on lang ang response encryption."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Algorithm ng key transport ng response"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Paano ibinabalot ang one-time na content key ng isang WS-Trust response sa RSA public key ng recipient. Ang `rsa-oaep` ay ang RSA-OAEP ng XML Encryption 1.1 na may SHA-256 at MGF1-SHA-256; ang `rsa-oaep-mgf1p` ay OAEP sa SHA-1. Ang recipient na EC ang certificate ay ini-encrypt sa pamamagitan ng ECDH-ES key agreement anuman ang sabihin nito. Ino-override ito ng wstrustKeyTransportAlgorithm ng isang application. Ang `rsa-1_5` ay RSAES-PKCS1-v1_5 at sira na, at iniaalok ito dahil maaaring wala nang tanggapin ang isang naka-deploy na requester. BABALA: ang rsa-1_5 ay development mode lang — sa product mode hindi ito pinapansin kung saan ito binabasa, sa setting na ito at sa wstrustKeyTransportAlgorithm ng isang application (ginagamit ang rsa-oaep-mgf1p, nila-log nang isang beses, STS-CORE-0106), at tinatanggihan ang pagtatakda nito (STS-CORE-0103, STS-REG-0193). Maaaring pangalanan ng elementong wst:EncryptWith ang algorithm na ito habang naka-on lang ang response encryption."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Sign-in na sinimulan ng identity provider"

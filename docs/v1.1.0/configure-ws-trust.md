@@ -586,23 +586,57 @@ protected subjects and the realm settings are on
 [Delegation and impersonation](delegation.md). The live policy is
 `GET /admin-api/delegation/policy`.
 
-## An encrypted SAML 2.0 assertion
+## An encrypted response
 
-`POST /sts?encrypt=1` encrypts a SAML 2.0 assertion. It is not part of
-WS-Trust. The key is the requester's certificate. The algorithms are
-`saml2.encryptionAlgorithm` and `saml2.keyTransportAlgorithm`.
+XML Encryption of a WS-Trust response is per application, and it is off
+until that application turns it on. `POST /sts?encrypt=1` is retired: a
+request that still carries it is handled as if the parameter were absent.
+The algorithms are `wstrust.encryptionAlgorithm` and
+`wstrust.keyTransportAlgorithm`, overridable on the application. They are
+not the SAML assertion settings.
 
-A signed request names that certificate the way
-[a signed request](#a-signed-request-as-the-requesters-credential) names it
-(X.509 Certificate Token Profile 1.1): the `BinarySecurityToken` the
-signature's `SecurityTokenReference` points at, or a thumbprint, Subject
-Key Identifier or issuer and serial of a certificate this realm issued for
-message signing.
+Set the response switch and name the issued SAML 2.0 assertion. The same
+shape names any other element, including a SOAP header or the body. The
+expression is one value of `wstrustEncryptResponseElements`:
 
-A request that is not signed that way still uses the first
-`ds:X509Certificate` in `wsse:Security`, outside any assertion. A
-`UsernameToken` with the certificate beside it is that older shape.
-`sts_xml_schema_validation.js` puts the certificate in the security header:
+```
+//*[local-name()='Assertion' and namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']
+```
+
+```bash
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustEncryptResponse","value":"true"}'
+api applications/add '{"application":"https://wsrp.example/","attribute":"wstrustEncryptResponseElements","value":"<the expression above>"}'
+```
+
+A request or a response that does not match the configured map stops
+processing and returns a fault. Nothing is issued, and the clear response
+is not sent. The fault stays in the clear, in both modes.
+
+The recipient is one certificate, and a step that cannot be used does not
+fall through:
+
+1. `wstrustEncryptionCertificate` on the application, base64 DER or PEM,
+   when it is set. A value that is not a readable certificate is
+   `wst:RequestFailed` (`STS-WSTRUST-0077`).
+2. Otherwise `wstrustResponseRecipientXPath`: the first
+   `ds:X509Certificate` or `#X509v3` `BinarySecurityToken` that expression
+   selects. Nothing, or an element that is not one of those, is
+   `wst:InvalidRequest` (`STS-WSTRUST-0076`). A certificate element whose
+   text is not a certificate is `STS-WSTRUST-0077`.
+3. Otherwise the first signer certificate element the request's WS-Security
+   signature names: the `#X509v3` `BinarySecurityToken` the reference
+   points at, or a `ds:X509Certificate` in that signature's `KeyInfo`.
+
+A thumbprint, Subject Key Identifier or issuer and serial is not a
+recipient. A certificate inside an assertion is not one either. With the
+switch on and no recipient, the fault is `STS-WSTRUST-0076`. An empty map,
+an expression that matches nothing, or a cipher that fails is
+`STS-WSTRUST-0077`.
+
+A `UsernameToken` with the certificate beside the signature is the shape
+`sts_xml_schema_validation.js` sends. Point
+`wstrustResponseRecipientXPath` at that element when the header is not a
+signature this service accepts:
 
 ```xml
 <wsse:Security xmlns:wsse="…">
@@ -614,15 +648,24 @@ A request that is not signed that way still uses the first
 ```
 
 ```bash
-curl -sk -X POST "$BASE/sts?encrypt=1" -H 'content-type: application/soap+xml' --data-binary @rst.xml
+curl -sk -X POST "$BASE/sts" -H 'content-type: application/soap+xml' --data-binary @rst.xml
 ```
 
-The answer carries an `EncryptedAssertion`. With no certificate, or one that
-cannot be used, development mode returns the assertion unencrypted and logs
-it, and product mode refuses the request. A message-signing certificate
-permits `digitalSignature` only, so under paranoid PKI mode (on in product)
-the request is refused once that certificate has been found: encryption
-needs `keyEncipherment` or `keyAgreement`.
+The answer carries `xenc:EncryptedData`, not an `EncryptedAssertion`. A
+message-signing certificate permits `digitalSignature` only, so under
+paranoid PKI mode (on in product) the request is refused once that
+certificate has been found: encryption needs `keyEncipherment` or
+`keyAgreement`. Set `wstrustEncryptionCertificate` to a certificate that
+may encrypt. A certificate with no `keyUsage` may encrypt (RFC 5280).
+
+The request map is the same idea in the other direction.
+`wstrustEncryptRequest` and `wstrustEncryptRequestElements` require the
+named elements to arrive as `xenc:EncryptedData`. An empty map, a clear
+match, a miss, or a ciphertext that will not open is `wst:FailedCheck`
+(`STS-WSTRUST-0075`) and processing stops. An expression outside the
+subset this service evaluates — `/`, `//`, `*`, an element name,
+`prefix:local`, `|`, and `local-name()`, `namespace-uri()` and `@attr`
+joined by `and` — is `wst:RequestFailed` (`STS-WSTRUST-0079`).
 
 ## Related
 

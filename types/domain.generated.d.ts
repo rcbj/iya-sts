@@ -1131,6 +1131,14 @@ declare namespace IyaDomain {
   interface WsTrustRelyingParty {
     appliesTo?: string[];
     jwtScope?: string[];
+    encryptRequest?: string;
+    requestElements?: string[];
+    encryptResponse?: string;
+    responseElements?: string[];
+    encryptionAlgorithm?: string;
+    encryptionCertificate?: string;
+    keyTransportAlgorithm?: string;
+    responseRecipientXPath?: string;
   }
 
   /**

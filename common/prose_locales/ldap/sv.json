@@ -1287,6 +1287,38 @@
     "en": "86ac83dbe366a17b",
     "text": "DE OAUTH 2.0-SCOPES SOM EN WS-TRUST-JWT FÖR DEN HÄR APPLIKATIONEN BÄR, ett scope-värde vardera (#485). En JWT som WS-Trust utfärdar med den här applikationen som AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) bär dem i sitt `scope`-anspråk, blankstegsavgränsade (RFC 9068 avsnitt 2.2.3); om inga är satta bär den inget `scope`. En SAML-token påverkas inte.\n\n**VART OCH ETT BEDÖMS SOM EN OAUTH-ÅTKOMSTTOKENS**, med den här applikationen som klient: `oauthAllowedScope` deklarerar vad den får utfärdas (i produktläge; den här tjänstens skyddade scopes i alla lägen), och utfärdandepolicyns fråga per scope avgör. Ett värde som policyn tar bort UTELÄMNAS från token och granskas (STS-OAUTH-0579), utfärdas aldrig. En skrivning som anger ett odeklarerat scope godtas här, eftersom deklarationen kan ändras och utvecklingsläget beviljar odeklarerade scopes: deklarera det även i oauthAllowedScope. Ett värde som policyn kommer att ta bort VARNAS för där det sätts (#488): bredvid det här fältet, i svaret på Spara, och som `warnings` i svaren på skrivningar via /admin-api och i applikationens vy."
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "2fc947c1194f5438",
+    "text": "SANT eller FALSKT: öppna de element som den här applikationens begäranskarta namnger, och åsidosätt wstrust.encryptRequest. På är en begäran vars AppliesTo är den här applikationen ett FailedCheck när kartan är tom, ett uttryck matchar ett element som anlände i klartext, ett uttryck matchar inget av det som återställdes från chiffertext, eller en chiffertext inte öppnas med den här sfärens XML Encryption-nycklar. En begäran vars AppliesTo är gömt inuti chiffertext öppnas endast när tjänstens omkopplare är på; applikationen som den öppningen avslöjar hålls sedan till sin egen omkopplare. Avstängd avvisas chiffertext för den här applikationen i stället för att öppnas."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "64d29149c3c87cba",
+    "text": "DE ELEMENT I EN WS-TRUST-BEGÄRAN SOM MÅSTE ANLÄNDA KRYPTERADE, ett XPath 1.0-uttryck vardera. Delmängden är `/`, `//`, `*`, ett elementnamn, `prefix:local`, en union med `|`, och predikaten `local-name()`, `namespace-uri()` och `@attr`, sammanfogade med `and`. Varje uttryck måste välja minst ett element som återställdes från en xenc:EncryptedData av typen Element. Ett uttryck utanför den delmängden är ett RequestFailed. Ett SOAP-huvud, SOAP-kroppen eller vilket element som helst får namnges, för vilken tokentyp som helst."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "SANT eller FALSKT: ersätt de element som den här applikationens svarskarta namnger med xenc:EncryptedData, och åsidosätt wstrust.encryptResponse. Svaret byggs i klartext och sedan ersätts de elementen, för vilken tokentyp som helst. Ett fel förblir i klartext. På, och krypteringen inte kan slutföras — ingen mottagare, en karta som inte matchar något, eller ett chiffer som mottagarens certifikat inte tar — är begäran ett fel i båda lägena."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "DE ELEMENT I ETT WS-TRUST-SVAR SOM KRYPTERAS, ett XPath 1.0-uttryck vardera, samma delmängd som wstrustEncryptRequestElements. Ett SOAP-huvud, SOAP-kroppen eller vilket element som helst får namnges. Ett uttryck som inte matchar något i det svar som byggdes är ett fel."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "Blockchiffret som används för den här applikationens WS-Trust-svar — aes256-gcm, aes128-gcm, aes256-cbc eller aes128-cbc — och åsidosätter wstrust.encryptionAlgorithm. Ett wst:EncryptionAlgorithm-element får namnge det här chiffret, med dess korta namn eller dess XML Encryption-URI, endast medan svarskryptering är på för den här applikationen."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "DET CERTIFIKAT SOM ETT WS-TRUST-SVAR KRYPTERAS TILL, base64 DER eller PEM. När det är satt är det mottagaren, och ett certifikat som inte kan läsas är ett fel i stället för ett steg ned till nästa källa. När det inte är satt är mottagaren det certifikatelement som wstrustResponseRecipientXPath väljer, eller, när det uttrycket inte heller är satt, det första signeringscertifikatelement som begärans WS-Security-signatur namnger."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Hur innehållsnyckeln omsluts för den här applikationens WS-Trust-svar — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) eller rsa-1_5 — och åsidosätter wstrust.keyTransportAlgorithm. En mottagare vars certifikat är EC krypteras till med ECDH-ES vad det här än säger. Ett wst:EncryptWith-element får namnge den här algoritmen, med dess korta namn eller dess XML Encryption-URI, endast medan svarskryptering är på för den här applikationen."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "ETT XPATH-UTTRYCK SOM VÄLJER DET CERTIFIKATELEMENT SOM ETT WS-TRUST-SVAR KRYPTERAS TILL: ett ds:X509Certificate eller en BinarySecurityToken vars ValueType slutar på #X509v3. Samma delmängd som elementkartorna. När det är satt och inte väljer något, eller väljer ett element som inte är ett av de två, finns ingen mottagare och nästa källa prövas inte. Ett valt certifikatelement vars text inte är ett certifikat är ett fel för slutförd kryptering, och nästa källa prövas inte. När det inte är satt är mottagaren det första signeringscertifikatelement som begärans WS-Security-signatur namnger — den BinarySecurityToken som den signaturens referens pekar på, eller ett ds:X509Certificate i den signaturens KeyInfo. Ett tumavtryck, en Subject Key Identifier eller en utfärdare och ett serienummer är inte ett certifikatelement."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN:EN, t.ex. HTTP/sts@EXAMPLE.COM — Kerberos v5:s identifierarattribut. En Kerberos-tjänst är en applikation som de andra här, och den är den vars identifierare den här tjänsten kan ha skapat på begäran (KRB5_SERVICE_DOMAINS). Den ackumuleras, och här är det det vanliga fallet snarare än det ovanliga: en tjänst svarar ofta på flera SPN:er — HTTP/host och HTTP/host.example.com — och en verklig KDC håller dem alla mot ett konto."

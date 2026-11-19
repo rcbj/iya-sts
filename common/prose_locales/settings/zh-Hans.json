@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "指定 Kerberos Token Profile 1.1 六种 ValueType 之一的 wst:TokenType 是否以 Kerberos 令牌应答：一个 AP-REQ，携带本领域 KDC 为主体签发、发给 AppliesTo 所指 Kerberos 服务的服务票据，并通过 TLS 把 Authenticator 的子密钥作为证明令牌返回。ActAs 票据在其 PAC 的 S4U_DELEGATION_INFO 中列出每个执行过操作的参与方。关闭时，拒绝此类请求。"
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c74f4c7c47d9035",
+    "text": "解密请求中被点名的元素"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "5f309591d610ee41",
+    "text": "一个 AppliesTo 未点名自身应用的 RequestSecurityToken 是否必须带着已加密的 wstrustEncryptRequestElements 元素到达（XML Encryption，类型 Element），以及一份完全加密的请求——其 AppliesTo 位于密文之内——是否会被打开。应用的 wstrustEncryptRequest 对 AppliesTo 点名该应用的请求覆盖此项。开启时，若映射为空、某个表达式匹配到以明文到达的元素、某个表达式没有匹配到任何已还原的内容，或者密文无法用此领域的密钥打开，该请求是 wst:FailedCheck。关闭时，密文保持到达时的样子，无法读取的请求仍是它原本的故障。"
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "加密响应中被点名的元素"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "RequestSecurityTokenResponse 在构建之后是否将其 wstrustEncryptResponseElements 元素替换为 xenc:EncryptedData，适用于任何令牌类型。应用的 wstrustEncryptResponse 覆盖此项。接收方是该应用的 wstrustEncryptionCertificate，否则是 wstrustResponseRecipientXPath 选中的证书元素，否则是请求的 WS-Security 签名所点名的第一个签名者证书元素。故障以明文发送。开启时，若加密无法完成，该请求在两种模式下都是故障。"
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "响应加密算法"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "WS-Trust 响应中被加密元素所用的分组密码。两种 GCM 带认证：被改动的密文无法通过其标签并被拒绝。两种 CBC 则没有。应用的 wstrustEncryptionAlgorithm 覆盖此项。wst:EncryptionAlgorithm 元素可以以其短名或其 XML Encryption URI 点名此密码，仅在响应加密开启时。"
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "响应密钥传输算法"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "WS-Trust 响应的一次性内容密钥如何封装到接收方的 RSA 公钥。`rsa-oaep` 是 XML Encryption 1.1 的 RSA-OAEP，使用 SHA-256 与 MGF1-SHA-256；`rsa-oaep-mgf1p` 是基于 SHA-1 的 OAEP。证书为 EC 的接收方无论此项如何设置，都通过 ECDH-ES 密钥协商加密。应用的 wstrustKeyTransportAlgorithm 覆盖此项。`rsa-1_5` 是 RSAES-PKCS1-v1_5，已经破损，之所以提供是因为已部署的请求方可能不接受其他算法。警告：rsa-1_5 仅用于开发模式——在产品模式中，读取此项以及应用的 wstrustKeyTransportAlgorithm 时会忽略它（改用 rsa-oaep-mgf1p，记录一次，STS-CORE-0106），并且拒绝设置它（STS-CORE-0103、STS-REG-0193）。wst:EncryptWith 元素仅在响应加密开启时可以点名此算法。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"

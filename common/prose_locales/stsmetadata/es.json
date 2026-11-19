@@ -2520,8 +2520,8 @@
     "text": "NO ESPECIFICADO (#594). Con ?id=, lo que una billetera dijo al Notification Endpoint sobre la credencial que nombra ese notification_id: el evento, su descripción y cuándo (404 para un id que este emisor no emitió). Admin Read; hasta #594, el /oid4vci/notification/:id solo de desarrollo."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST de un RequestSecurityToken SOAP; despacha según wst:RequestType (Issue, Renew, Validate, Cancel) y devuelve un RSTR. GET describe el endpoint. Añada ?encrypt=1 para que la aserción emitida se devuelva como EncryptedAssertion."
+    "en": "dd027a41936ae3af",
+    "text": "POST de un RequestSecurityToken SOAP; despacha según wst:RequestType (Issue, Renew, Validate, Cancel) y devuelve un RSTR. GET describe el endpoint. Una aplicación puede exigir que elementos nombrados de la solicitud y de la respuesta sean XML Encryption (xenc:EncryptedData). Un mensaje que no coincide con ese mapa es una falta, y el procesamiento se detiene."
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

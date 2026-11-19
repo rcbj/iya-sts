@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "Om en wst:TokenType som anger en av Kerberos Token Profile 1.1:s sex ValueType besvaras med en Kerberos-token: en AP-REQ med en tjänstebiljett som den här sfärens KDC utfärdade för subjektet till den Kerberos-tjänst som AppliesTo anger, med Authenticators undernyckel returnerad som bevistoken över TLS. En ActAs-biljett anger varje part som agerade i sin PAC:s S4U_DELEGATION_INFO. Av: en sådan begäran avvisas."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c74f4c7c47d9035",
+    "text": "Dekryptera de namngivna elementen i en begäran"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "5f309591d610ee41",
+    "text": "Om ett RequestSecurityToken vars AppliesTo inte namnger någon egen applikation måste anlända med elementen i wstrustEncryptRequestElements krypterade (XML Encryption, typ Element), och om en helt krypterad begäran — en vars AppliesTo ligger inuti chiffertexten — öppnas alls. En applikations wstrustEncryptRequest åsidosätter detta för en begäran vars AppliesTo namnger den. På, och kartan är tom, ett uttryck matchar ett element som anlände i klartext, ett uttryck matchar inget av det som återställdes, eller en chiffertext inte öppnas med den här sfärens nycklar, är begäran ett wst:FailedCheck. Avstängd lämnas chiffertexten som den anlände och en begäran som inte kan läsas är det fel den redan var."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "Kryptera de namngivna elementen i ett svar"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Om ett RequestSecurityTokenResponse får elementen i wstrustEncryptResponseElements ersatta av xenc:EncryptedData efter att det byggts, för vilken tokentyp som helst. En applikations wstrustEncryptResponse åsidosätter detta. Mottagaren är den applikationens wstrustEncryptionCertificate, annars det certifikatelement som wstrustResponseRecipientXPath väljer, annars det första signeringscertifikatelement som begärans WS-Security-signatur namnger. Ett fel skickas i klartext. På, och krypteringen inte kan slutföras, är begäran ett fel i båda lägena."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Svarets krypteringsalgoritm"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Blockchiffret som de krypterade elementen i ett WS-Trust-svar krypteras med. De två GCM är autentiserade: en ändrad chiffertext misslyckas med sin tagg och avvisas. De två CBC är det inte. En applikations wstrustEncryptionAlgorithm åsidosätter detta. Ett wst:EncryptionAlgorithm-element får namnge det här chiffret, med dess korta namn eller dess XML Encryption-URI, endast medan svarskryptering är på."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Svarets nyckeltransportalgoritm"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Hur engångsinnehållsnyckeln i ett WS-Trust-svar omsluts till mottagarens RSA-publika nyckel. `rsa-oaep` är XML Encryption 1.1:s RSA-OAEP med SHA-256 och MGF1-SHA-256; `rsa-oaep-mgf1p` är OAEP över SHA-1. En mottagare vars certifikat är EC krypteras till med ECDH-ES-nyckelöverenskommelse vad det här än säger. En applikations wstrustKeyTransportAlgorithm åsidosätter detta. `rsa-1_5` är RSAES-PKCS1-v1_5 och är brutet, och det erbjuds eftersom en driftsatt begärare kanske inte godtar något annat. VARNING: rsa-1_5 är endast utvecklingsläge — i produktläge ignoreras det där det läses, på den här inställningen och på en applikations wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p används, loggas en gång, STS-CORE-0106), och att ställa in det avvisas (STS-CORE-0103, STS-REG-0193). Ett wst:EncryptWith-element får namnge den här algoritmen endast medan svarskryptering är på."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
