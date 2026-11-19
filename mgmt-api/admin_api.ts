@@ -136,6 +136,9 @@ import ApiRows = require('../common/api_rows');
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
 import ResponseModelKit = require('../common/response_model_kit');
+// The OpenAPI documents are sent compressed (`compressDocument()`): a 7 MB
+// body over HTTP/2 sometimes never reached the console's page whole.
+import ShellDocument = require('../common/shell_document');
 // THE CONSOLE'S LANGUAGE (#539 phase 5): the catalogs and the negotiation,
 // and the hosted surfaces' table for the console's own client id — and the
 // prose a view carries, in the caller's language (#543). Libraries.
@@ -2827,6 +2830,11 @@ class AdminApi {
           // THE MANAGEMENT OPERATIONS ALONE (#454): the console's own are
           // described by `GET /admin-api/console/openapi.json`, so what an
           // integrator reads here is what they can rely on.
+          // COMPRESSED where the caller accepts it: about 7 MB as JSON, which
+          // the console fetches before it sends a form, and which Chrome
+          // sometimes stopped delivering part-way over HTTP/2 (run
+          // 44544256231). It carries no secret, so BREACH has nothing to read.
+          ShellDocument.compressDocument(req, res);
           self.sendJson(res, 200,
                         spec.buildSpec(self.routesOfKind('management'),
                                        self.specOptions(req)));
@@ -10625,6 +10633,8 @@ class AdminApi {
         mirrors: 'GET /admin/sts-metadata',
         handler: function (req, res) {
           log.debug("Entering the console OpenAPI document endpoint.");
+          // Compressed, as the management document is, and for its reason.
+          ShellDocument.compressDocument(req, res);
           self.sendJson(res, 200,
                         spec.buildSpec(self.routesOfKind('console'),
                                        Object.assign(self.specOptions(req),

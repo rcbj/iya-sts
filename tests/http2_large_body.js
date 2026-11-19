@@ -36,6 +36,11 @@
 //   C. THROUGH THE REQUEST POOL: the same load against a front app proxying
 //      to a worker that answers 6.5 MB with one `end()`, as a request worker
 //      does — the pipe's path, which must stay whole.
+//   E. COMPRESSED (run 44544256231): asked with a browser's codings, the
+//      management and the console OpenAPI documents are sent brotli or
+//      gzip, under 1 MB, with `Vary: Accept-Encoding`, and are the same JSON
+//      uncompressed; identity is still the JSON itself, and another answer
+//      is not compressed.
 //   D. THE PACED METHODS' CONTRACT, on an adapted app's own routes: a large
 //      `write()` then a small `end()`, a large `end()` with a callback, and
 //      a pipe of large chunks each arrive whole; `writableEnded` reads true
@@ -74,16 +79,18 @@ function childMain() {
 
   // One request on a session: its status, its body's bytes, and how it
   // ended. `pauseMs` pauses the reader that long once a megabyte is in.
-  function fetchOn(session, pathname, pauseMs) {
+  function fetchOn(session, pathname, pauseMs, extra) {
     return new Promise(function (resolve) {
       if (session.destroyed || session.closed) {
         resolve({ status: 0, bytes: 0, error: 'session gone' });
         return;
       }
-      const s = session.request({ ':path': pathname });
+      const s = session.request(Object.assign({ ':path': pathname },
+                                              extra || {}));
       const parts = [];
       let bytes = 0;
       let status = 0;
+      let headers = {};
       let paused = false;
       let settled = false;
       const settle = function (out) {
@@ -97,7 +104,10 @@ function childMain() {
         settle({ status: status, bytes: bytes, error: 'stalled' });
         s.close();
       }, BOUND_MS);
-      s.on('response', function (h) { status = h[':status']; });
+      s.on('response', function (h) {
+        status = h[':status'];
+        headers = h;
+      });
       s.on('data', function (d) {
         parts.push(d);
         bytes += d.length;
@@ -108,7 +118,7 @@ function childMain() {
         }
       });
       s.on('end', function () {
-        settle({ status: status, bytes: bytes,
+        settle({ status: status, bytes: bytes, headers: headers,
                  body: Buffer.concat(parts) });
       });
       s.on('error', function (e) {
@@ -204,6 +214,70 @@ function childMain() {
          'is refused', refused.length + ': ' + describe(refused.slice(0, 5)));
     note(!loaded.sessionError, 'B. and the session never fails',
          loaded.sessionError);
+
+    // E. The OpenAPI documents COMPRESSED where the caller accepts it (run
+    // 44544256231): Chrome sometimes stopped delivering the 7 MB body to the
+    // console part-way over HTTP/2, and the form waited for ever. A caller
+    // that names no coding (A and B above) is still sent the JSON itself.
+    const zlib = require('zlib');
+    const ce = http2.connect(url, tls);
+    ce.on('error', function () {});
+    const br = await fetchOn(ce, '/admin-api/openapi.json', 0,
+                             { 'accept-encoding': 'gzip, deflate, br, zstd' });
+    let brPlain = null;
+    try {
+      brPlain = zlib.brotliDecompressSync(br.body);
+    } catch (e) {
+      brPlain = null;
+    }
+    note(br.status === 200 && br.headers['content-encoding'] === 'br' &&
+         br.bytes < 1e6 && brPlain && brPlain.equals(doc.body) &&
+         /accept-encoding/i.test(String(br.headers.vary || '')),
+         'E. asked with the codings a browser names, the document is sent ' +
+         'brotli, under 1 MB, with Vary: Accept-Encoding, and is the same ' +
+         'JSON uncompressed',
+         br.status + ' ' + br.headers['content-encoding'] + ' ' + br.bytes +
+         ' vary=' + br.headers.vary);
+    const gz = await fetchOn(ce, '/admin-api/openapi.json', 0,
+                             { 'accept-encoding': 'gzip, br;q=0' });
+    let gzPlain = null;
+    try {
+      gzPlain = zlib.gunzipSync(gz.body);
+    } catch (e) {
+      gzPlain = null;
+    }
+    note(gz.status === 200 && gz.headers['content-encoding'] === 'gzip' &&
+         Number(gz.headers['content-length']) === gz.bytes &&
+         gzPlain && gzPlain.equals(doc.body),
+         'E. a caller refusing brotli is sent gzip, its length the bytes ' +
+         'sent, and the same JSON uncompressed',
+         gz.status + ' ' + gz.headers['content-encoding'] + ' ' + gz.bytes);
+    const plain = await fetchOn(ce, '/admin-api/openapi.json', 0,
+                                { 'accept-encoding': 'identity' });
+    note(plain.status === 200 && !plain.headers['content-encoding'] &&
+         plain.body && plain.body.equals(doc.body),
+         'E. a caller accepting only identity is sent the JSON itself',
+         plain.status + ' ' + plain.headers['content-encoding']);
+    const ownDoc = await fetchOn(ce, '/admin-api/console/openapi.json', 0,
+                              { 'accept-encoding': 'gzip' });
+    let ownPlain = null;
+    try {
+      ownPlain = zlib.gunzipSync(ownDoc.body);
+    } catch (e) {
+      ownPlain = null;
+    }
+    note(ownDoc.status === 200 &&
+         ownDoc.headers['content-encoding'] === 'gzip' &&
+         ownPlain && parses(ownPlain),
+         'E. the console\'s own document is compressed the same way',
+         ownDoc.status + ' ' + ownDoc.headers['content-encoding']);
+    const listed = await fetchOn(ce, '/admin-api/pki/trust', 0,
+                                 { 'accept-encoding': 'gzip, br' });
+    note(listed.status === 200 && !listed.headers['content-encoding'],
+         'E. and an answer that is not an OpenAPI document is not ' +
+         'compressed (BREACH)',
+         listed.status + ' ' + listed.headers['content-encoding']);
+    ce.close();
 
     // C. Through the request pool, to a worker answering with one end().
     const pool = require(ROOT_DIR + '/common/request_pool');

@@ -169,6 +169,15 @@ async function tabText(driver, tab) {
 // 22 local runs (Chrome 157 and the suite image's 152, CPU-throttled, with
 // the realm switcher's long list) never showed it again.
 //
+// AND THE PRESS WAS NOT IT (GitHub run 44544256231, memory): with the press
+// watched, it landed, the form fired `submit` and the console claimed it,
+// and what was left in flight was `GET /admin-api/openapi.json`. That run's
+// record is the first that sees a request still in flight, which the two
+// runs above could not (resource timing lists only finished requests). The
+// cause was the service's: Chrome sometimes stopped handing that 7 MB body
+// to the page part-way over HTTP/2, and it is now sent compressed
+// (`ShellDocument.compressDocument()`, `tests/http2_large_body.js` E).
+//
 // SO THE PRESS IS NO LONGER TAKEN ON TRUST:
 //   * BEFORE IT, the form is waited for until it is SUBMITTABLE as the
 //     console sees it — valid, its button enabled and not inert, none of the
