@@ -1066,6 +1066,16 @@ and the start's format list is the issuer's formats plus the Verifier's
   `oid4vp.requireStatusReference` as for any foreign credential; the issuer
   is exempted by its ANCHOR's thumbprint in `oid4vp.statusOptionalIssuers`,
   the document signer's being useless for a key that rotates.
+* **The authority is minted once per realm under a cluster claim**
+  (`mdoc_authority.ts`), and a process that loses the claim finds the
+  winner's pair through the keystore's held rows — certificates AND the
+  document signer's private key by the HELD row's kid. Until CI run #532 the
+  key was looked up through the kid of the caller's own key-set row, which
+  only the minting process has, so in every store-backed mode each loser
+  waited the whole 15 s (`STS-PKI-0288`) and minted a second authority, and
+  `GET /oid4vci/mdoc-iaca` timed out under `sts_route_inputs`. The requests
+  of one process share one mint (`inFlight`), as `credential_signer.js`'s
+  do. `tests/mdoc_authority_held.js` holds both.
 * **A sign-in of an mdoc this realm issued** (#1862): the register is keyed
   by the base64url of `issuerAuth`'s `#6.24` payload, and the sign-in
   requires the presented device key's thumbprint to be the one recorded.

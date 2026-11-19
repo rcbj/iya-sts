@@ -5851,8 +5851,26 @@ const directoryHooks = {
     // a new entry and is left to rebuild after a replacement (#351).
     // A WINDOWED WORKER (#349) asks what it holds, not the store, and ADOPTS
     // the row: what the store holds, not a write of this process's.
-    const replaced = directoryWindow
-      ? !!directoryWindow.peekIn(realmId, key) : store.has(key);
+    const previous = directoryWindow
+      ? directoryWindow.peekIn(realmId, key) : local;
+    const replaced = !!previous;
+    // ---------------------------------------------------------------------
+    // THE NAMES THE REPLACED ENTRY ANSWERED TO, read before the write, so
+    // the username index can take out the ones the row no longer carries
+    // (CI run #532, the `mariadb` mode). This called
+    // noteUsernameIndexRefresh(), which only ADDS names and is sound only
+    // for a mutation that removes none (applyVcAttributes()'s). A row from
+    // another process can remove one — a pseudonym taken off, a `uid`
+    // changed — and the old name stayed in the index pointing at this
+    // entry, with the index stamped current, so this worker signed the
+    // address in as its former owner until something else made it rebuild.
+    // `commitPseudonymChange()` already folds a local removal in with
+    // noteUsernameIndexPut(); a replicated one is the same write. It showed
+    // on MariaDB only because a process there holds the directory whole
+    // (no bridge, so no window) and resolves a name through this index,
+    // where a windowed PostgreSQL worker asks the store (`byName`).
+    // ---------------------------------------------------------------------
+    const hadNames = previous ? usernameKeysOf(previous) : [];
     if (directoryWindow) {
       directoryWindow.adopt(realmId, key, stored);
     } else {
@@ -5873,7 +5891,7 @@ const directoryHooks = {
     realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
       touchDirectory(stored.dn);
     });
-    noteUsernameIndexRefresh(stored, usernameWasCurrent);
+    noteUsernameIndexPut(stored, hadNames, usernameWasCurrent);
     noteUuidIndexPut(stored, uuidWasCurrent && !replaced);
     // AN ANCHOR ANOTHER PROCESS ADDED reaches this process's listeners here:
     // the entry is in the store now, and the truststore array is what a

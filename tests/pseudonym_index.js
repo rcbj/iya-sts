@@ -18,6 +18,8 @@
 //   4. userFor of a live alias, and of a live email, is the filing name.
 //      identityKeyOf stays a pure fold.
 //   5. Removing the alias drops it from the index.
+//   6. A name another process removed, applied here as its row, drops it
+//      from the index too (CI run #532); the names the row keeps stay.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -149,6 +151,32 @@ function childMain() {
       note(byMail.username === who && byMail.sub === claims.sub,
            'userFor of the live email is the filing person',
            JSON.stringify({ username: byMail.username, sub: byMail.sub }));
+      // 6. ANOTHER PROCESS TOOK THE EMAIL OFF (CI run #532): its row, as
+      // the change-log applier hands it over, carries every attribute but
+      // that one. The index must lose the name. It was stamped current
+      // with the old name still in it, and a worker holding the directory
+      // whole (every MariaDB one) signed the address in as its former
+      // owner. The lookup first makes the index current, as a busy worker's
+      // is.
+      const heldNow = ldap.existingUserEntry(who);
+      const theirs = JSON.parse(JSON.stringify(heldNow.attributes));
+      theirs.stspseudonym = (theirs.stspseudonym || [])
+        .filter(function (one) {
+          return String(one).toLowerCase() !== email.toLowerCase();
+        });
+      ldap.existingUserEntry('p644.other');
+      ldap.directoryHooks.applyEntry('default',
+        String(heldNow.dn).toLowerCase(),
+        { dn: heldNow.dn, attributes: theirs, origin: 'other process',
+          createdAt: heldNow.createdAt, modifiedAt: heldNow.modifiedAt });
+      const goneElsewhere = ldap.existingUserEntry(email);
+      note(!goneElsewhere || goneElsewhere.dn !== owner.dn,
+           'a name another process removed is no longer the owner here',
+           goneElsewhere && goneElsewhere.dn);
+      const keptElsewhere = ldap.existingUserEntry('p644.other');
+      note(!!(keptElsewhere && keptElsewhere.dn === owner.dn),
+           'a name that row still carries still finds the owner',
+           keptElsewhere && keptElsewhere.dn);
       const removed = await ldap.writePseudonyms(who, {
         op: 'remove', value: alias, source: 'admin'
       });
