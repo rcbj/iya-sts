@@ -2524,8 +2524,8 @@
     "text": "NON-SPEC (#594)। ?id= के साथ, वॉलेट ने Notification Endpoint को उस क्रेडेंशियल के बारे में क्या बताया जिसे notification_id नाम देता है: घटना, उसका विवरण और कब (ऐसी id के लिए 404 जिसे इस जारीकर्ता ने जारी नहीं किया)। Admin Read; #594 तक केवल-development /oid4vci/notification/:id।"
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "SOAP RequestSecurityToken पोस्ट करें; wst:RequestType (Issue, Renew, Validate, Cancel) पर प्रेषित करता है और RSTR लौटाता है। GET एंडपॉइंट का वर्णन करता है। जारी अभिकथन को EncryptedAssertion के रूप में पाने के लिए ?encrypt=1 जोड़ें।"
+    "en": "dd027a41936ae3af",
+    "text": "SOAP RequestSecurityToken पोस्ट करें; wst:RequestType (Issue, Renew, Validate, Cancel) पर प्रेषित करता है और RSTR लौटाता है। GET एंडपॉइंट का वर्णन करता है। एक अनुप्रयोग अनुरोध और प्रतिक्रिया के नामित तत्वों के XML Encryption (xenc:EncryptedData) होने की अपेक्षा कर सकता है। जो संदेश उस मानचित्र से मेल नहीं खाता वह दोष है, और प्रसंस्करण रुक जाता है।"
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

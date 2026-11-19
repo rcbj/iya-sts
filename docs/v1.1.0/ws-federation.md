@@ -299,8 +299,8 @@ party is a 404 (`STS-WSFED-0019`) in both modes.
 `wresultptr` (the response is always by value), the attribute and pseudonym
 services (`wattr1.0`, `wpseudo1.0`, which answer 501 explaining what they would
 have done), token encryption (a passive request carries no recipient
-certificate to encrypt to — where `/sts?encrypt=1` has one, because a
-WS-Security signature carries it), the metadata exchange over SOAP, and any
+certificate; WS-Trust replaces the elements an application names with
+`xenc:EncryptedData`), the metadata exchange over SOAP, and any
 authorization or policy enforcement (`wp` and `wencoding` are logged and
 nothing more). `wreqptr` is refused by design.
 

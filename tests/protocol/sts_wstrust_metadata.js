@@ -18,7 +18,10 @@
 //      its version defines (May 2004 has no Cancel), each operation reading
 //      its version's RST and answering its RSTR (an RSTRC for a 1.3/1.4
 //      Issue), WS-Trust's input action and the output action an RSTR
-//      carries; eight ports at the realm's /sts; a schema per trust
+//      carries; sixteen ports at the realm's /sts (eight under the
+//      IYA-STS suite), by default none naming an endpoint identity, and
+//      all sixteen naming the encryption certificate while
+//      `wstrust.advertiseEndpointIdentity` is on (V5); a schema per trust
 //      namespace; the capability document and WS-MEX named, optionally.
 //   C. GET /sts/metadata/capabilities (#958's extension): every credential
 //      in the order the endpoint reads them, every issued type, every pair
@@ -118,6 +121,23 @@ function envelope(soapNs, wsaNs, action, body, messageId) {
 }
 
 // ----------------------------------------------------------------- V, W, F
+// The ports that carry WS-AddressingIdentity's Identity with one
+// X509Certificate of some length: the encryption certificate.
+function identityPorts(root) {
+  log.debug("Entering identityPorts().");
+  const out = elements(root, WSDL, "port").filter(function (port) {
+    const ids = port.getElementsByTagNameNS(
+      "http://schemas.xmlsoap.org/ws/2006/02/addressingidentity",
+      "Identity");
+    const certs = port.getElementsByTagNameNS(
+      "http://www.w3.org/2000/09/xmldsig#", "X509Certificate");
+    return ids.length === 1 && certs.length === 1 &&
+      String(certs[0].textContent).trim().length > 100;
+  });
+  log.debug("Leaving identityPorts(). " + out.length);
+  return out;
+}
+
 async function wsdl(id, label) {
   log.debug("Entering wsdl(). " + label);
   const rb = K.rb(id);
@@ -191,13 +211,26 @@ async function wsdl(id, label) {
     });
   }
   const ports = elements(root, WSDL, "port");
-  K.check("V3 (" + label + "). eight ports, each version over SOAP 1.1 " +
-          "and 1.2, every one at the realm's /sts", function () {
-    assert.strictEqual(ports.length, 8);
+  // #1668 (rcbj on #1908): eight more ports carry the IYA-STS algorithm
+  // suite in a policy of their own. The encryption certificate as each
+  // port's endpoint identity is wstrust.advertiseEndpointIdentity, OFF BY
+  // DEFAULT (rcbj, 2026-11-19): WS-AddressingIdentity is Microsoft's and was
+  // never standardised, so by default no port carries it (V5 turns it on).
+  K.check("V3 (" + label + "). sixteen ports, each version over SOAP 1.1 " +
+          "and 1.2 under each algorithm suite, every one at the realm's " +
+          "/sts, and by default none naming an endpoint identity",
+          function () {
+    assert.strictEqual(ports.length, 16);
+    assert.strictEqual(ports.filter(function (one) {
+      return /IyaSuite$/.test(one.getAttribute("name"));
+    }).length, 8);
     for (const port of ports) {
       const address = port.getElementsByTagNameNS("*", "address")[0];
       assert.strictEqual(address.getAttribute("location"), rb + "/sts");
     }
+    assert.strictEqual(identityPorts(root).length, 0,
+                       "a port names an endpoint identity by default");
+    assert.strictEqual(elements(root, WSA10, "EndpointReference").length, 0);
   });
   const schemas = elements(root, "http://www.w3.org/2001/XMLSchema",
                            "schema").map(function (one) {
@@ -224,6 +257,43 @@ async function wsdl(id, label) {
   });
   formatted(xml, label);
   log.debug("Leaving wsdl().");
+}
+
+// V5. wstrust.advertiseEndpointIdentity on (rcbj, 2026-11-19): every one
+// of the sixteen ports carries the encryption certificate as its
+// wsa:EndpointReference/wsid:Identity, the document still validates, and
+// off again it is gone.
+async function endpointIdentity(id) {
+  log.debug("Entering endpointIdentity().");
+  const rb = K.rb(id);
+  await K.set(id, "wstrust.advertiseEndpointIdentity", true);
+  const on = (await K.send(rb + "/sts/metadata")).text;
+  const onRoot = parse(on).documentElement;
+  K.check("V5. with wstrust.advertiseEndpointIdentity on, all sixteen " +
+          "ports name the encryption certificate as their endpoint " +
+          "identity", function () {
+    const ports = elements(onRoot, WSDL, "port");
+    assert.strictEqual(ports.length, 16);
+    assert.strictEqual(identityPorts(onRoot).length, 16);
+    const certs = elements(onRoot, "http://www.w3.org/2000/09/xmldsig#",
+                           "X509Certificate").map(function (one) {
+      return String(one.textContent).trim();
+    });
+    assert.strictEqual(new Set(certs).size, 1, "one certificate");
+  });
+  const lint = xmllint(on, path.join(SCHEMA_DIR, "all.xsd"));
+  K.check("V5/W. the WSDL with the endpoint identity validates against " +
+          "the published schemas", function () {
+    assert.ok(lint.ok, lint.errors.slice(0, 600));
+  });
+  await K.unset(id, "wstrust.advertiseEndpointIdentity");
+  const off = (await K.send(rb + "/sts/metadata")).text;
+  K.check("V5. unset again, no port names an endpoint identity",
+          function () {
+    assert.strictEqual(identityPorts(parse(off).documentElement).length, 0);
+    assert.ok(off.indexOf("addressingidentity") < 0);
+  });
+  log.debug("Leaving endpointIdentity().");
 }
 
 function formatted(xml, label) {
@@ -468,6 +538,7 @@ async function test() {
   const P = await K.realm("wm-p", "product");
   await wsdl(D, "development");
   await wsdl(P, "product");
+  await endpointIdentity(D);
   await capabilities(D, P);
   await mex(D);
   log.debug("Leaving test().");

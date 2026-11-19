@@ -1287,6 +1287,58 @@
     "en": "86ac83dbe366a17b",
     "text": "ANG MGA OAUTH 2.0 SCOPE NA DALA NG WS-TRUST JWT PARA SA APPLICATION NA ITO, isang scope value bawat isa (#485). Ang JWT na ini-issue ng WS-Trust na ang application na ito ang AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) ay dinadala ang mga ito sa `scope` claim nito, pinaghihiwalay ng espasyo (RFC 9068 section 2.2.3); kapag walang itinakda, walang dala itong `scope`. Hindi naaapektuhan ang SAML token.\n\n**HINUHUSGAHAN ANG BAWAT ISA TULAD NG SA ISANG OAUTH ACCESS TOKEN**, na ang application na ito ang client: idinedeklara ng `oauthAllowedScope` ang puwedeng i-issue dito (sa product; ang mga protected scope ng serbisyong ito sa bawat mode), at ang per-scope na tanong ng issuance policy ang nagpapasya. Ang value na tinatanggal ng policy ay INIIWAN sa labas ng token at ina-audit (STS-OAUTH-0579), hindi kailanman ini-issue. Ang pagsulat na nagpapangalan ng hindi idineklarang scope ay tinatanggap dito, dahil puwedeng magbago ang deklarasyon at nagkakaloob ang development ng mga hindi idineklarang scope: ideklara rin ito sa oauthAllowedScope. Ang value na tatanggalin ng policy ay BINABABALAAN kung saan ito itinatakda (#488): sa tabi ng field na ito, sa sagot ng Save, at bilang `warnings` sa mga sagot sa pagsulat ng /admin-api at sa view ng application."
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE o FALSE: hingin na dumating nang naka-encrypt ang mga elementong pinangalanan ng request map ng application na ito, na pumapalit sa wstrust.encryptRequest. Kapag naka-on, ang request na ang AppliesTo ay ang application na ito ay isang FailedCheck kapag walang laman ang map, may expression na tumutugma sa elementong dumating nang hindi naka-encrypt, o may expression na walang tinutugmang naibalik mula sa ciphertext. Ang wstrustAcceptEncryptedElements ang nagpapasya kung aling ciphertext ang bubuksan; binabasa ang AppliesTo mula sa nabuksang request, at ang ciphertext na hindi mabuksan ay isang FailedCheck sa alinmang kaso."
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE o FALSE: tanggapin ang XML Encryption saanman sa isang request na ang AppliesTo ay ang application na ito, sa isang header o sa body, nang walang request map na nagpapangalan dito, na pumapalit sa wstrust.acceptEncryptedElements. Kapag naka-off, tinatanggap lang ang ciphertext kung saan ito pinangalanan ng wstrustEncryptRequestElements — ang bawat naibalik na elemento ay dapat piliin ng isang expression, o nasa loob ng isa — at ang ciphertext na walang map ay isang InvalidRequest. Sa alinmang kaso, dapat mabuksan ang ciphertext gamit ang mga key ng realm na ito."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "ANG MGA ELEMENTO NG ISANG WS-TRUST REQUEST NA DAPAT DUMATING NANG NAKA-ENCRYPT, isang XPath 1.0 expression bawat isa. Ang subset ay `/`, `//`, `*`, isang pangalan ng elemento, `prefix:local`, isang union gamit ang `|`, at ang mga predicate na `local-name()`, `namespace-uri()` at `@attr`, pinagdugtong ng `and`. Ang bawat expression ay dapat pumili ng kahit isang elementong naibalik mula sa ciphertext: isang xenc:EncryptedData na may uring Element o Content, o isang EncryptedHeader ng WS-Security 1.1. Ang expression na nasa labas ng subset na iyon ay isang RequestFailed. Maaaring pangalanan ang isang SOAP header, ang SOAP body, o anumang elemento, para sa anumang uri ng token."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE o FALSE: palitan ng xenc:EncryptedData ang mga elementong pinangalanan ng response map ng application na ito, na nag-o-override sa wstrust.encryptResponse. Binubuo ang response nang klaro at pagkatapos ay pinapalitan ang mga elementong iyon, para sa anumang uri ng token. Nanatiling klaro ang fault. Naka-on, at hindi makumpleto ang encryption — walang recipient, isang map na walang tinutugma, o isang cipher na hindi tatanggapin ng certificate ng recipient — ang request ay fault sa parehong mode."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "ANG MGA ELEMENTONG NAKA-ENCRYPT NG ISANG WS-TRUST RESPONSE, isang XPath 1.0 expression bawat isa, kapareho ng subset ng wstrustEncryptRequestElements. Maaaring pangalanan ang isang SOAP header, ang SOAP body, o anumang elemento. Ang expression na walang tinutugma sa nabuong response ay fault."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "Ang block cipher na ginagamit para sa mga WS-Trust response ng application na ito — aes256-gcm, aes128-gcm, aes256-cbc o aes128-cbc — na nag-o-override sa wstrust.encryptionAlgorithm. Maaaring pangalanan ng elementong wst:EncryptionAlgorithm ang cipher na ito, sa maikling pangalan nito o sa XML Encryption URI nito, habang naka-on lang ang response encryption para sa application na ito."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "ANG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG ISANG WS-TRUST RESPONSE, base64 DER o PEM. Kapag nakatakda ito ang recipient, at ang certificate na hindi mabasa ay fault sa halip na bumaba sa susunod na pinagmulan. Kapag hindi nakatakda, ang recipient ay ang elemento ng certificate na pinipili ng wstrustResponseRecipientXPath, o, kapag hindi rin nakatakda ang expression na iyon, ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Paano ibinabalot ang content key para sa mga WS-Trust response ng application na ito — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) o rsa-1_5 — na nag-o-override sa wstrust.keyTransportAlgorithm. Ang recipient na EC ang certificate ay ini-encrypt sa pamamagitan ng ECDH-ES anuman ang sabihin nito. Maaaring pangalanan ng elementong wst:EncryptWith ang algorithm na ito, sa maikling pangalan nito o sa XML Encryption URI nito, habang naka-on lang ang response encryption para sa application na ito."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "ISANG XPATH EXPRESSION NA PUMIPILI SA ELEMENTO NG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG ISANG WS-TRUST RESPONSE: isang ds:X509Certificate o isang BinarySecurityToken na ang ValueType ay nagtatapos sa #X509v3. Kapareho ng subset ng mga element map. Kapag nakatakda ito at walang pinipili, o pumipili ito ng elementong hindi isa sa dalawang iyon, walang recipient at hindi sinusubukan ang susunod na pinagmulan. Ang napiling elemento ng certificate na ang teksto ay hindi certificate ay fault ng natapos na encryption, at hindi sinusubukan ang susunod na pinagmulan. Kapag hindi nakatakda, ang recipient ay ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request — ang BinarySecurityToken na tinutukoy ng reference ng signature na iyon, o isang ds:X509Certificate sa KeyInfo ng signature na iyon. Ang thumbprint, ang Subject Key Identifier o ang issuer at serial ay hindi elemento ng certificate."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "ANG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG WS-TRUST REQUEST PARA SA APPLICATION NA ITO, PEM. Habang nakatakda ito, dine-decrypt ang request para sa application na ito gamit ang private key nito at hindi ang sa realm, at FailedCheck ang request para rito na naka-encrypt sa key ng realm. Pampubliko: ibinibigay ito ng pahina ng application at ng GET /admin-api/applications."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Ang mga certificate ng certificate authority na nag-isyu ng wstrustDecryptionCertificate, PEM, una ang Issuing CA, para sa key pair na inisyu dito. Walang laman para sa in-upload."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "Ang private key ng wstrustDecryptionCertificate, PEM. Naka-seal kung saan nananatili ang mga key, hindi ibinibigay sa anumang pahina, sagot ng /admin-api o pagbasa ng directory, at hindi kailanman nilo-log."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "Kung saan nagmula ang key pair na pang-decrypt: issued (ginawa dito at sinertipikahan ng CA ng realm) o uploaded (in-upload)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "ANG SPN, hal. HTTP/sts@EXAMPLE.COM — ang identifier attribute ng Kerberos v5. Ang Kerberos service ay isang application tulad ng iba rito, at ito ang may identifier na maaaring ginawa ng serbisyong ito kapag kailangan (KRB5_SERVICE_DOMAINS). Nag-iipon ito, at dito iyon ang karaniwang kaso at hindi ang hindi pangkaraniwan: karaniwang sumasagot ang isang serbisyo sa ilang SPN — HTTP/host at HTTP/host.example.com — at hawak ng isang tunay na KDC ang lahat ng ito laban sa iisang account."

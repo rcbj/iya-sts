@@ -1991,6 +1991,18 @@
     "en": "6e2d0aef72c7b82c",
     "text": "Ein Zertifikat wurde vom Eintrag einer Person oder einer Anwendung entfernt"
   },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "Einer Anwendung wurde ein WS-Trust-Entschlüsselungsschlüsselpaar ausgestellt"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "Für eine Anwendung wurde ein WS-Trust-Entschlüsselungsschlüsselpaar hochgeladen"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "Das WS-Trust-Entschlüsselungsschlüsselpaar einer Anwendung wurde entfernt"
+  },
   "audit.actions.federation.link.add.label": {
     "en": "5e6953235158adac",
     "text": "Ein Administrator hat eine Person mit dem Subjekt eines Partners verknüpft"

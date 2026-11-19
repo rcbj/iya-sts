@@ -7614,6 +7614,16 @@ class AdminApi {
           { action: 'remove-certificate',
             operationId: 'removeApplicationCertificate' },
 
+          // THE CREDENTIALS SECTION'S WS-TRUST DECRYPTION KEY PAIR (#1668):
+          // issued from the realm's CA, uploaded, or removed. The
+          // certificate is in `credentials.wstrustDecryption` of the GET.
+          { action: 'issue-wstrust-decryption-key',
+            operationId: 'issueApplicationWsTrustDecryptionKey' },
+          { action: 'upload-wstrust-decryption-key',
+            operationId: 'uploadApplicationWsTrustDecryptionKey' },
+          { action: 'remove-wstrust-decryption-key',
+            operationId: 'removeApplicationWsTrustDecryptionKey' },
+
           // THE SOFTWARE STATEMENTS SECTION'S CONTROL (RFC 7591 section 2.3,
           // 2026-09-13).
           { action: 'issue-software-statement',

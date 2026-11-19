@@ -549,8 +549,10 @@ class Saml2Assertions {
   // UNCHANGED, AND IS RE-EXPORTED FROM HERE.
   //
   // It did not move because it was duplicated — it never was: one
-  // implementation with two callers, this file's SSO profile and WS-Trust's
-  // `?encrypt=1`. It moved because the four crypto families are now in one
+  // implementation, this file's SSO profile its caller. WS-Trust used to
+  // call it for `?encrypt=1`; since #1668 WS-Trust encrypts through
+  // `crypto.js` itself (`ws-trust/ws_encryption.ts`), as `xenc:EncryptedData`.
+  // It moved because the four crypto families are now in one
   // module, and leaving the only cipher in the service inside a SAML file would
   // have meant "all of it except that one" — which is the shape of exception
   // that stops being true.

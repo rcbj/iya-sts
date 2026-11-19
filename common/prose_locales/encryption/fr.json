@@ -207,6 +207,14 @@
     "en": "7aa85457f3f98d8b",
     "text": "Quiconque la détient peut s’authentifier auprès de ce partenaire en tant que ce service (`tls_client_auth`) et présenter les jetons d’accès que le partenaire a liés au certificat. Scellée au repos partout où les clés sont persistées, et retenue — chiffré compris — de toute recherche LDAP, page et réponse `/admin-api`, qui ne portent que le certificat."
   },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "La clé privée de déchiffrement WS-Trust propre à une application (#1668) — `wstrustDecryptionPrivateKey` : ce avec quoi une requête WS-Trust pour cette application, chiffrée vers son certificat, est déchiffrée"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Qui la détient lit toute requête chiffrée vers cette application — les identifiants et les claims que le chiffrement garde hors du réseau. Scellée au repos partout où les clés persistent, et retenue — texte chiffré compris — de toute recherche LDAP, page et réponse de `/admin-api`, qui ne portent que le certificat."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Ce que ce service chiffre AU REPOS, avec quelle clé, sous quel algorithme, et combien de fois c’est arrivé dans ce processus."

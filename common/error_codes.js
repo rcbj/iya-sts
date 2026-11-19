@@ -12616,18 +12616,16 @@ const CODES = [
     spec: 'SOAP Fault wst:RequestFailed (HTTP 403), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0012',
-    summary: '?encrypt=1 was requested but the request carries no recipient ' +
-      'X509Certificate to encrypt the assertion to. Product mode ' +
-      'refuses; development returns the assertion in clear and logs ' +
-      'this.',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500) in product; none ' +
-      'in development' },
+    summary: 'RETIRED (#1668). ?encrypt=1 was requested but the request ' +
+      'named no recipient certificate. WS-Trust encrypts a response only ' +
+      'when the application\'s response switch is on, and a missing ' +
+      'recipient is STS-WSTRUST-0076.',
+    spec: '', retired: true },
   { code: 'STS-WSTRUST-0013',
-    summary: '?encrypt=1 was requested and encrypting the assertion to the ' +
-      'request\'s certificate failed. Product mode refuses; ' +
-      'development returns the assertion in clear and logs this.',
-    spec: 'SOAP Fault wst:RequestFailed (HTTP 500) in product; none ' +
-      'in development' },
+    summary: 'RETIRED (#1668). ?encrypt=1 was requested and encrypting the ' +
+      'assertion failed. A response that cannot be encrypted is ' +
+      'STS-WSTRUST-0077.',
+    spec: '', retired: true },
   { code: 'STS-WSTRUST-0014',
     summary: 'A Validate request carried no token in its ValidateTarget, so ' +
       'it was answered with a status of invalid.',
@@ -12980,6 +12978,86 @@ const CODES = [
       'through WS-Trust"): WS-Trust authenticates the entry whichever ' +
       'spelling names it.',
     spec: '', retired: true },
+  { code: 'STS-WSTRUST-0075',
+    summary: 'XML Encryption of a WS-Trust request does not match the ' +
+      'application\'s request map: the map is empty while request ' +
+      'encryption is on, an expression matches an element that arrived in ' +
+      'the clear or matches nothing restored from ciphertext, or a ' +
+      'ciphertext will not open with this realm\'s keys. Encryption is ' +
+      'optional on the wire: whatever arrives encrypted is opened, and ' +
+      'the map is applied only where the application requires it, read ' +
+      'from the opened request. More than 64 ciphertexts, or nesting ' +
+      'more than eight deep, is this code too.',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0076',
+    summary: 'Response encryption is on and the request names no recipient ' +
+      'certificate element. The application\'s encryption certificate is ' +
+      'unset, its recipient XPath matches nothing or not a certificate ' +
+      'element, or the WS-Security signature names no certificate element. ' +
+      'A thumbprint, a Subject Key Identifier or an issuer and serial is ' +
+      'not one, and a configured step that cannot be used is not replaced ' +
+      'by the next. A certificate element whose text is not a certificate ' +
+      'is STS-WSTRUST-0077.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0077',
+    summary: 'Response encryption is on and could not be completed: the ' +
+      'response map is empty or matches nothing, a selected certificate ' +
+      'element or the application\'s encryption certificate is not a ' +
+      'certificate this process can read, the recipient is refused as an ' +
+      'encryption recipient, or the cipher failed. The fault is sent in ' +
+      'the clear.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0078',
+    summary: 'The request carries wst:EncryptionAlgorithm or wst:EncryptWith ' +
+      'while response encryption is off, or names a block cipher or a key ' +
+      'transport other than the one configured for this application.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0079',
+    summary: 'An XPath expression on a WS-Trust encryption map or recipient ' +
+      'is outside the subset this service evaluates, or uses a prefix the ' +
+      'element does not declare and this service does not know.',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0080',
+    summary: 'A WS-Trust request carries XML Encryption the application ' +
+      'does not accept: arbitrary encrypted elements are off ' +
+      '(wstrust.acceptEncryptedElements, the application\'s ' +
+      'wstrustAcceptEncryptedElements, the default), and either no ' +
+      'request map is configured or an element restored from the ' +
+      'ciphertext is not one an expression of the map selects or inside ' +
+      'one. Nothing is issued.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0081',
+    summary: 'Response encryption is on and the certificate ' +
+      'wstrustResponseRecipientXPath selects is neither the BinarySecurity' +
+      'Token the request\'s accepted WS-Security signature names nor ' +
+      'inside a part that signature references, so it is a certificate a ' +
+      'party on the path could have put there. An unsigned request has no ' +
+      'such certificate. Nothing is issued.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0082',
+    summary: 'A WS-Trust request carried ciphertext encrypted to an ' +
+      'application\'s own decryption key, and the request is not for that ' +
+      'application: the AppliesTo the opened request names is another ' +
+      'application, or none, or its ciphertexts were encrypted to the keys ' +
+      'of more than one application. A key that opens a request does not ' +
+      'choose whose it is. Nothing is issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0083',
+    summary: 'A WS-Trust request for an application that holds its own ' +
+      'decryption key pair carried ciphertext encrypted to the realm\'s ' +
+      'XML Encryption key. While the application holds one, a request for ' +
+      'it is encrypted to its certificate and to nothing else. Nothing is ' +
+      'issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -27185,6 +27263,50 @@ const CODES = [
       'Security Administrator, and nobody would be left to grant it.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  // #1668: an application's own WS-Trust decryption key pair, issued,
+  // uploaded and removed on its page and through /admin-api.
+  { code: 'STS-ADMIN-0945',
+    summary: 'A WS-Trust decryption key pair could not be issued to an ' +
+      'application from the realm\'s certificate authority: the realm has ' +
+      'none yet, the key type is not rsa-3072 or ec-p256, or the issue ' +
+      'failed. Nothing was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0946',
+    summary: 'An uploaded WS-Trust decryption key pair was refused because ' +
+      'the certificate is not exactly one PEM certificate, or the private ' +
+      'key is not an unencrypted PEM private key. Nothing was written ' +
+      '(#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0947',
+    summary: 'An uploaded WS-Trust decryption key pair was refused because ' +
+      'the private key is not the private half of the certificate. Nothing ' +
+      'was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0948',
+    summary: 'An uploaded WS-Trust decryption key pair was refused for its ' +
+      'key type: XML Encryption here unwraps a content key with RSA of at ' +
+      'least 2048 bits or EC on P-256, P-384 or P-521 and nothing else. ' +
+      'Nothing was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0949',
+    summary: 'An uploaded WS-Trust decryption certificate was refused ' +
+      'because its keyUsage leaves out keyEncipherment (an RSA key) or ' +
+      'keyAgreement (an EC key), or its validity has ended. Nothing was ' +
+      'written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0950',
+    summary: 'An application\'s WS-Trust decryption key pair was asked to ' +
+      'be issued, uploaded or removed and the realm\'s registry holds no ' +
+      'such application, or a remove found no key pair on it, or an ' +
+      'uploaded certificate is already another application\'s. Nothing ' +
+      'was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -29356,6 +29478,31 @@ const CODES = [
       'attribute removed outside this door is restored at the next start ' +
       '(#825).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  // #1668: an application's own WS-Trust decryption key pair.
+  { code: 'STS-REG-0370',
+    summary: 'A WS-Trust decryption key pair was written to, or cleared ' +
+      'from, an application the realm\'s registry does not hold. Nothing ' +
+      'was written (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0371',
+    summary: 'An application\'s WS-Trust decryption private key could not ' +
+      'be sealed under the key-encryption key where keys persist, so the ' +
+      'key pair was not written: a private key is never stored in the ' +
+      'clear there (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0372',
+    summary: 'The directory refused the write of an application\'s ' +
+      'WS-Trust decryption key pair (the certificate, its chain, the ' +
+      'sealed private key and its source, written together). Nothing ' +
+      'changed (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0373',
+    summary: 'More than one application holds the same WS-Trust decryption ' +
+      'certificate, so a request whose EncryptedKey names it is opened by ' +
+      'none of them: the key would otherwise decide whose request it was. ' +
+      'Logged at the request; remove the certificate from all but one ' +
+      '(#1668).',
+    spec: 'none (logged; the request is then refused STS-WSTRUST-0075)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger was refused to a subject that is not a person, ' +
       'is not named, or did not authenticate.',

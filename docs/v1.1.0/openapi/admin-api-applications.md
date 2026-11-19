@@ -524,6 +524,54 @@ Scope: `admin:read`.
 | `credentials.stored.errors[]` | string |  |  |
 | `credentials.stored.ok` | boolean |  |  |
 | `credentials.stored.rule` | string |  |  |
+| `credentials.wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `credentials.wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `credentials.wstrustDecryption.attributes.certificate` | string |  |  |
+| `credentials.wstrustDecryption.attributes.chain` | string |  |  |
+| `credentials.wstrustDecryption.attributes.privateKey` | string |  |  |
+| `credentials.wstrustDecryption.attributes.source` | string |  |  |
+| `credentials.wstrustDecryption.caAvailable` | boolean |  |  |
+| `credentials.wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `credentials.wstrustDecryption.certificate.expired` | boolean |  |  |
+| `credentials.wstrustDecryption.certificate.issuer` | string |  |  |
+| `credentials.wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `credentials.wstrustDecryption.certificate.keyType` | string |  |  |
+| `credentials.wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `credentials.wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `credentials.wstrustDecryption.certificate.notAfter` | string |  |  |
+| `credentials.wstrustDecryption.certificate.notBefore` | string |  |  |
+| `credentials.wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `credentials.wstrustDecryption.certificate.serialHex` | string |  |  |
+| `credentials.wstrustDecryption.certificate.subject` | string |  |  |
+| `credentials.wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `credentials.wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `credentials.wstrustDecryption.certificate.unreadable` | string |  |  |
+| `credentials.wstrustDecryption.certificatePem` | string |  |  |
+| `credentials.wstrustDecryption.chain` | list |  |  |
+| `credentials.wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `credentials.wstrustDecryption.chain[].expired` | boolean |  |  |
+| `credentials.wstrustDecryption.chain[].issuer` | string |  |  |
+| `credentials.wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `credentials.wstrustDecryption.chain[].keyType` | string |  |  |
+| `credentials.wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `credentials.wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `credentials.wstrustDecryption.chain[].notAfter` | string |  |  |
+| `credentials.wstrustDecryption.chain[].notBefore` | string |  |  |
+| `credentials.wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `credentials.wstrustDecryption.chain[].serialHex` | string |  |  |
+| `credentials.wstrustDecryption.chain[].subject` | string |  |  |
+| `credentials.wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `credentials.wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `credentials.wstrustDecryption.chain[].unreadable` | string |  |  |
+| `credentials.wstrustDecryption.commonName` | string |  |  |
+| `credentials.wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `credentials.wstrustDecryption.held` | boolean |  |  |
+| `credentials.wstrustDecryption.keyAlgorithms` | list |  |  |
+| `credentials.wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `credentials.wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `credentials.wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `credentials.wstrustDecryption.source` | string |  |  |
+| `credentials.wstrustDecryption.wstrustDeclared` | boolean |  |  |
 | `customClaims` | list |  |  |
 | `customClaims[].attribute` | string |  |  |
 | `customClaims[].effective` | list |  |  |
@@ -1118,6 +1166,54 @@ Scope: `admin:read`.
 | `page.credentials.stored.errors[]` | string |  |  |
 | `page.credentials.stored.ok` | boolean |  |  |
 | `page.credentials.stored.rule` | string |  |  |
+| `page.credentials.wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `page.credentials.wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `page.credentials.wstrustDecryption.attributes.certificate` | string |  |  |
+| `page.credentials.wstrustDecryption.attributes.chain` | string |  |  |
+| `page.credentials.wstrustDecryption.attributes.privateKey` | string |  |  |
+| `page.credentials.wstrustDecryption.attributes.source` | string |  |  |
+| `page.credentials.wstrustDecryption.caAvailable` | boolean |  |  |
+| `page.credentials.wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `page.credentials.wstrustDecryption.certificate.expired` | boolean |  |  |
+| `page.credentials.wstrustDecryption.certificate.issuer` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyType` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyUsage[]` | object |  | Nested deeper than this page draws. |
+| `page.credentials.wstrustDecryption.certificate.notAfter` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.notBefore` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `page.credentials.wstrustDecryption.certificate.serialHex` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.subject` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.unreadable` | string |  |  |
+| `page.credentials.wstrustDecryption.certificatePem` | string |  |  |
+| `page.credentials.wstrustDecryption.chain` | list |  |  |
+| `page.credentials.wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `page.credentials.wstrustDecryption.chain[].expired` | boolean |  |  |
+| `page.credentials.wstrustDecryption.chain[].issuer` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyType` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyUsage[]` | object |  | Nested deeper than this page draws. |
+| `page.credentials.wstrustDecryption.chain[].notAfter` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].notBefore` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `page.credentials.wstrustDecryption.chain[].serialHex` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].subject` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].unreadable` | string |  |  |
+| `page.credentials.wstrustDecryption.commonName` | string |  |  |
+| `page.credentials.wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `page.credentials.wstrustDecryption.held` | boolean |  |  |
+| `page.credentials.wstrustDecryption.keyAlgorithms` | list |  |  |
+| `page.credentials.wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `page.credentials.wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `page.credentials.wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `page.credentials.wstrustDecryption.source` | string |  |  |
+| `page.credentials.wstrustDecryption.wstrustDeclared` | boolean |  |  |
 | `page.did` | object |  |  |
 | `page.did.did` | string, or null |  |  |
 | `page.did.methods` | list |  |  |
@@ -2181,7 +2277,7 @@ Scope: `admin:read`.
 
 **Add a value to a multi-valued attribute**
 
-For the attributes that hold a LIST — `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship`.
+For the attributes that hold a LIST — `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship`.
 
 This is the one that matters most: a value added to `oauthRedirectUri` is a redirect URI RFC 9700 mode accepts by exact string match on the next authorization request. Note that it is the REGISTERED list — `appRedirectUriObserved`, which records what a client actually used, is not editable, because "registered" and "used" are different facts and section 2.1 is entirely about not confusing them.
 
@@ -2201,7 +2297,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `application` | string | yes |  |
-| `attribute` | one of `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship` | yes |  |
+| `attribute` | one of `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship` | yes |  |
 | `value` | string | yes |  |
 
 **200**: The application as it now stands.
@@ -3039,7 +3135,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `fields` | object |  | THE ATTRIBUTES THE ENTRY IS CREATED WITH, keyed by the schema's own attribute name and valued with a string or an array of strings. This is where the per-protocol identifiers and the redirect URIs go — `oauthClientId`, `samlEntityId`, `wsfedRealm`, `krb5ServicePrincipalName`, `oauthRedirectUri`, `samlAssertionConsumerService`, `wsfedReplyUrl` and the rest. GET /admin-api/applications/new publishes the list as `declarations`, with the families each attribute serves and whether it holds a list; it is the same walk of the protocol table the console's form is drawn from, so this document and that page cannot offer different fields. GET /admin/ldap/applications publishes every attribute in the schema with an `editable` member. **Only DECLARED attributes may be given.** A derived one — a counter, a sighting, `appProtocol`, `appRedirectUriObserved` — is REFUSED by name rather than written, because an entry created with one would be asserting a past it does not have. A single-valued attribute given several values is refused as well, rather than truncated to the first: the only one you are likely to meet is `oauthTlsClientAuthSubjectDn`, which an RFC 8705 check compares by exact string equality, and quietly keeping one of two is exactly the wrong answer there. **Nothing given here is CHECKED except the OAuth redirect URIs, and those only in RFC 9700 mode.** The rest are recorded, in the way being in this registry at all is a record. **106 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute. |
+| `fields` | object |  | THE ATTRIBUTES THE ENTRY IS CREATED WITH, keyed by the schema's own attribute name and valued with a string or an array of strings. This is where the per-protocol identifiers and the redirect URIs go — `oauthClientId`, `samlEntityId`, `wsfedRealm`, `krb5ServicePrincipalName`, `oauthRedirectUri`, `samlAssertionConsumerService`, `wsfedReplyUrl` and the rest. GET /admin-api/applications/new publishes the list as `declarations`, with the families each attribute serves and whether it holds a list; it is the same walk of the protocol table the console's form is drawn from, so this document and that page cannot offer different fields. GET /admin/ldap/applications publishes every attribute in the schema with an `editable` member. **Only DECLARED attributes may be given.** A derived one — a counter, a sighting, `appProtocol`, `appRedirectUriObserved` — is REFUSED by name rather than written, because an entry created with one would be asserting a past it does not have. A single-valued attribute given several values is refused as well, rather than truncated to the first: the only one you are likely to meet is `oauthTlsClientAuthSubjectDn`, which an RFC 8705 check compares by exact string equality, and quietly keeping one of two is exactly the wrong answer there. **Nothing given here is CHECKED except the OAuth redirect URIs, and those only in RFC 9700 mode.** The rest are recorded, in the way being in this registry at all is a record. **114 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements` (WS-Trust), `wstrustEncryptRequestElements` (WS-Trust), `wstrustEncryptResponse` (WS-Trust), `wstrustEncryptResponseElements` (WS-Trust), `wstrustEncryptionAlgorithm` (WS-Trust), `wstrustEncryptionCertificate` (WS-Trust), `wstrustKeyTransportAlgorithm` (WS-Trust), `wstrustResponseRecipientXPath` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute. |
 | `identifier` | string | yes | The client_id, wtrealm, AppliesTo, entityID or service principal name. One application per identifier whatever protocol brings it, so this is refused if one is already here. |
 | `kind` | one of `oauth2-client`, `oauth2-resource-server`, `oidc-relying-party`, `saml2-service-provider`, `saml11-relying-party`, `wsfed-relying-party`, `wstrust-relying-party`, `oid4vp-verifier`, `federation-identity-provider`, `kerberos-service`, `gnap-client`, `gnap-resource-server` |  | Optional, one of the kinds GET /admin-api/applications/new lists. It is a claim about what this application IS, which is why a value the registry does not know is refused rather than recorded. **No console form offers this any more** and it is still taken here. It was a select on /admin/applications/new beside the protocol families, which is two vocabularies for one question — eight kinds against fourteen families, five of them with no kind at all — and it is DERIVED rather than declared: a kind is written when a protocol actually recognises the identifier, so a form choosing one asserted a sighting that had not happened. Prefer `protocols`. |
 | `lifetimeDays` | integer or string |  | The lifetime of the client secret the create carries in `fields.oauthClientSecret` (#394), as `add-secret` takes it: whole days, 0 to 730, 0 never expiring; omitted or empty, `oauth2.clientSecretLifetimeDays` (`defaultSecretLifetimeDays` in GET /admin-api/applications/new). It is stamped on the secret's record as its `expires`. A lifetime outside that range is refused, and so is one given with no secret, or with a whole secret record, which keeps the expiry it carries. |
@@ -5324,6 +5420,149 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `purpose` | string |  |  |
 
+## POST /admin-api/applications/issue-wstrust-decryption-key
+
+`issueApplicationWsTrustDecryptionKey`
+
+**Issue an application its own WS-Trust decryption key pair from this realm's CA**
+
+Generates a key pair and certifies it from the realm's certificate authority with the `key-encipherment` profile (keyUsage keyEncipherment for RSA, keyAgreement for EC, never digitalSignature), subject `CN=<application>-encrypt` with the realm's organisation and country, subjectAltName `urn:sts:application:<application>` (#1668). It replaces the pair the application held. The private key is sealed where keys persist and is in no answer, page or directory read; the certificate is in the answer and in `credentials.wstrustDecryption` of GET /admin-api/applications?application=, which is how a requester gets it. From then on a WS-Trust request for this application is decrypted with this key (chosen by the recipient its EncryptedKey names), and a request for it encrypted to the realm's key is refused (STS-WSTRUST-0083). Refused when the realm has no certificate authority or the key type is not rsa-3072 or ec-p256 (STS-ADMIN-0945), and for an application the registry does not hold (STS-ADMIN-0950).
+
+**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string | yes | The application's identifier, exactly as this registry holds it. |
+| `days` | integer |  | The certificate's lifetime in days; pki.leafLifetimeDays when absent. Clamped to the Issuing CA's own expiry. |
+| `keyAlg` | one of `rsa-3072`, `ec-p256` |  | The key type: `rsa-3072` (the default) or `ec-p256`. |
+
+**200**: The key pair issued, as it now stands.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
 ## POST /admin-api/applications/load-resource-metadata
 
 `loadProtectedResourceMetadata`
@@ -6069,7 +6308,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `application` | string | yes |  |
-| `attribute` | one of `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship` | yes |  |
+| `attribute` | one of `appCorsOrigin`, `appAllowedProtocol`, `oauthClientId`, `oauthAudience`, `oauthRedirectUri`, `oauthClaimsRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthAllowedTokenResponseTypes`, `oauthScope`, `oauthAllowedScope`, `oauthPermission`, `oauthRoleGatedPermission`, `oauthDelegatedPermission`, `oauthGlobalConsent`, `oauthTokenEndpointAuthMethod`, `oauthRequestUri`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `authzenAttribute`, `appAuthzenApplication`, `appAuthzenCallbackUri`, `oauthAssertionIssuer`, `oauthSamlAssertionIssuer`, `oauthSoftwareStatementIssuer`, `samlEntityId`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `samlSigningCertificate`, `oauthAccessTokenClaim`, `appRequiredRole`, `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appDelegationSemantics`, `wsfedRealm`, `wsfedReplyUrl`, `wsfedSignOutUri`, `wstrustAppliesTo`, `wstrustJwtScope`, `wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`, `krb5ServicePrincipalName`, `krb5S4uSelfRealm`, `oid4vpClientId`, `federationPartnerId`, `ldapBindDn`, `scimClientId`, `acmeAllowedProfiles`, `estAllowedProfiles`, `scepAllowedProfiles`, `didPublicKeyJwk`, `didService`, `didAlsoKnownAs`, `scimClientScopeGroups`, `scimClientGroups`, `scimClientCells`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapResourceServerUri`, `spiffeWorkloadId`, `appFederationRelationship` | yes |  |
 | `value` | string | yes |  |
 
 **200**: The application as it now stands.
@@ -7022,6 +7261,147 @@ Scope: `admin:write`.
 | `replaced` | boolean |  |  |
 | `secretId` | string |  |  |
 
+## POST /admin-api/applications/remove-wstrust-decryption-key
+
+`removeApplicationWsTrustDecryptionKey`
+
+**Take an application's WS-Trust decryption key pair off its entry**
+
+Removes the application's WS-Trust decryption key pair: the certificate, its chain, the private key and its source (#1668). A request for the application is decrypted with the realm's key again. This is not revocation: a certificate issued here stays valid and is on no revocation list. Refused when the application holds none or the registry holds no such application (STS-ADMIN-0950).
+
+**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string | yes | The application's identifier, exactly as this registry holds it. |
+
+**200**: The application, with no key pair.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
 ## POST /admin-api/applications/reveal-secret
 
 `revealApplicationSecret`
@@ -7778,11 +8158,11 @@ Scope: `admin:write`.
 
 **Set a single-valued attribute**
 
-For the attributes that hold ONE value — `appName`, `appHomePageUrl`, `appLaunchProtocol`, `description`, `oauthClientSecret`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthPermissionBaseUri`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthNativeSso`, `oauthNativeSsoGroup`, `oauthBackchannelTokenDeliveryMode`, `oauthBackchannelClientNotificationEndpoint`, `oauthCommandEndpoint`, `oauthBackchannelAuthenticationRequestSigningAlg`, `oauthBackchannelUserCodeParameter`, `oauthSubjectType`, `oauthSectorIdentifierUri`, `oauthDidClaimWithPairwise`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAssertionJwks`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey`, `oauthAssertionKid`, `oauthAssertionExpiresAt`, `oauthAssertionKeySource`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource`, `oauthIssuedSoftwareStatement`, `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint`, `samlSpMetadataUrl`, `samlSpMetadata`, `samlEncryptionCertificate`, `samlSpMetadataSigningCertificate`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthMaxAuthAgeS`, `oauthClaimsAccessToken`, `oauthClaimsIdToken`, `oauthClaimsUserinfo`, `oauthClaimAttributesAccessToken`, `oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`, `oauthClaimsCombineAccessToken`, `oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`, `oauthPermissionClaims`, `oauthAccessTokenClaimsCombine`, `oauthRevokeRefreshOnLogout`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso`, `oauthInitiateLoginUri`, `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, `oauthTokenExchangeRefreshToken`, `appDefaultDelegationSemantics`, `appNotDelegated`, `appMayAct`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `wsfedAssertionLifetimeMin`, `saml2CustomAttributes`, `saml11CustomAttributes`, `saml2ClaimAttributes`, `saml11ClaimAttributes`, `saml2ClaimsCombine`, `saml11ClaimsCombine`, `vcCredentialClaimAttributes`, `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS`, `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `krb5ClaimsPac`, `gnapClaimsAccessToken`, `krb5TrustedForDelegation`, `krb5ForeignTgtDelegation`, `appRegistrationAccessToken`, `acmeDefaultProfile`, `acmeCertificateLifetimeDays`, `estDefaultProfile`, `estCertificateLifetimeDays`, `scepDefaultProfile`, `scepCertificateLifetimeDays`, `estBasicAuthentication`, `estCertificateAuthentication`, `estServerKeyGeneration`, `enrollMaxCertificates`, `didPrivateKeys`, `secretDestProvider`, `secretDestPayload`, `secretDestRegion`, `secretDestProject`, `secretDestEndpoint`, `secretDestMount`, `secretDestField`, `secretDestDirectory`, `secretDestCaCertificates`, `secretDestCredential`, `scimClientBaseUrl`, `scimClientEnabled`, `scimClientAuthMethod`, `scimClientUsername`, `scimClientPassword`, `scimClientTokenEndpoint`, `scimClientOAuthClientId`, `scimClientOAuthClientSecret`, `scimClientOAuthClientAuth`, `scimClientOAuthScope`, `scimClientOAuthResource`, `scimClientTlsSource`, `scimClientTlsCertificate`, `scimClientTlsPrivateKey`, `scimClientCaCertificates`, `scimClientScopeMode`, `scimClientScopeFilter`, `scimClientGroupMode`, `scimClientDeprovision`, `scimClientReconcileMinutes`, `scimClientJurisdiction`, `scimClientMaxRequestsPerSecond`, `ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`, `ssfRiscIncludeReasons`, `ssfRiscReasonLanguage`, `ssfRiscOmitEventTimestamp`, `ssfSigningAlgorithm`, `ssfMinVerificationInterval`, `ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`, `ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`, `ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`, `ssfPushTimeoutMs`, `ssfPushRetries`, `ssfPushRetryDelayMs`, `gnapInstanceId`, `gnapKey`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey`, `gnapSymmetricAlg`, `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapScopedSignals`, `appFederationAutoRedirect`, `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`, `appPasswordPolicy`, `appPostLoginPolicy`, `umaOwnsResources`. An empty `value` CLEARS the attribute.
+For the attributes that hold ONE value — `appName`, `appHomePageUrl`, `appLaunchProtocol`, `description`, `oauthClientSecret`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthPermissionBaseUri`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthNativeSso`, `oauthNativeSsoGroup`, `oauthBackchannelTokenDeliveryMode`, `oauthBackchannelClientNotificationEndpoint`, `oauthCommandEndpoint`, `oauthBackchannelAuthenticationRequestSigningAlg`, `oauthBackchannelUserCodeParameter`, `oauthSubjectType`, `oauthSectorIdentifierUri`, `oauthDidClaimWithPairwise`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAssertionJwks`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey`, `oauthAssertionKid`, `oauthAssertionExpiresAt`, `oauthAssertionKeySource`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource`, `oauthIssuedSoftwareStatement`, `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint`, `samlSpMetadataUrl`, `samlSpMetadata`, `samlEncryptionCertificate`, `samlSpMetadataSigningCertificate`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptResponse`, `wstrustEncryptionAlgorithm`, `wstrustEncryptionCertificate`, `wstrustKeyTransportAlgorithm`, `wstrustResponseRecipientXPath`, `saml2EncryptLogoutNameId`, `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthMaxAuthAgeS`, `oauthClaimsAccessToken`, `oauthClaimsIdToken`, `oauthClaimsUserinfo`, `oauthClaimAttributesAccessToken`, `oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`, `oauthClaimsCombineAccessToken`, `oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`, `oauthPermissionClaims`, `oauthAccessTokenClaimsCombine`, `oauthRevokeRefreshOnLogout`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso`, `oauthInitiateLoginUri`, `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, `oauthTokenExchangeRefreshToken`, `appDefaultDelegationSemantics`, `appNotDelegated`, `appMayAct`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `wsfedAssertionLifetimeMin`, `saml2CustomAttributes`, `saml11CustomAttributes`, `saml2ClaimAttributes`, `saml11ClaimAttributes`, `saml2ClaimsCombine`, `saml11ClaimsCombine`, `vcCredentialClaimAttributes`, `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS`, `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `krb5ClaimsPac`, `gnapClaimsAccessToken`, `krb5TrustedForDelegation`, `krb5ForeignTgtDelegation`, `appRegistrationAccessToken`, `acmeDefaultProfile`, `acmeCertificateLifetimeDays`, `estDefaultProfile`, `estCertificateLifetimeDays`, `scepDefaultProfile`, `scepCertificateLifetimeDays`, `estBasicAuthentication`, `estCertificateAuthentication`, `estServerKeyGeneration`, `enrollMaxCertificates`, `didPrivateKeys`, `secretDestProvider`, `secretDestPayload`, `secretDestRegion`, `secretDestProject`, `secretDestEndpoint`, `secretDestMount`, `secretDestField`, `secretDestDirectory`, `secretDestCaCertificates`, `secretDestCredential`, `scimClientBaseUrl`, `scimClientEnabled`, `scimClientAuthMethod`, `scimClientUsername`, `scimClientPassword`, `scimClientTokenEndpoint`, `scimClientOAuthClientId`, `scimClientOAuthClientSecret`, `scimClientOAuthClientAuth`, `scimClientOAuthScope`, `scimClientOAuthResource`, `scimClientTlsSource`, `scimClientTlsCertificate`, `scimClientTlsPrivateKey`, `scimClientCaCertificates`, `scimClientScopeMode`, `scimClientScopeFilter`, `scimClientGroupMode`, `scimClientDeprovision`, `scimClientReconcileMinutes`, `scimClientJurisdiction`, `scimClientMaxRequestsPerSecond`, `ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`, `ssfRiscIncludeReasons`, `ssfRiscReasonLanguage`, `ssfRiscOmitEventTimestamp`, `ssfSigningAlgorithm`, `ssfMinVerificationInterval`, `ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`, `ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`, `ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`, `ssfPushTimeoutMs`, `ssfPushRetries`, `ssfPushRetryDelayMs`, `gnapInstanceId`, `gnapKey`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey`, `gnapSymmetricAlg`, `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapScopedSignals`, `appFederationAutoRedirect`, `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`, `appPasswordPolicy`, `appPostLoginPolicy`, `umaOwnsResources`. An empty `value` CLEARS the attribute.
 
 **What may be changed is DECLARED and not DERIVED.** Configuration — what this application is allowed to do, which is what RFC 9700 mode reads — is editable. The counters, the sightings, the kinds and the protocols are what HAPPENED, and are refused with a list of what is not: a call that could rewrite them would make this registry lie about the service's own behaviour, in a way indistinguishable from the recording being broken. `ldapmodify` still reaches every attribute, which is a deliberate difference — refusing them HERE is the difference between offering an operation and merely not preventing it.
 
-**106 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute.
+**114 attributes are scoped to a PROTOCOL FAMILY and REFUSED on an application declared for none of them: `oauthNativeSso` (OpenID Connect), `oauthNativeSsoGroup` (OpenID Connect), `oauthBackchannelTokenDeliveryMode` (OpenID Connect), `oauthBackchannelClientNotificationEndpoint` (OpenID Connect), `oauthCommandEndpoint` (OpenID Connect), `oauthBackchannelAuthenticationRequestSigningAlg` (OpenID Connect), `oauthBackchannelUserCodeParameter` (OpenID Connect), `oauthSubjectType` (OpenID Connect), `oauthSectorIdentifierUri` (OpenID Connect), `oauthDidClaimWithPairwise` (OpenID Connect), `oauthTokenEndpointAuthSigningAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthIntrospectionEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthRequestUri` (OAuth 2.0, OpenID Connect), `oauthRequestObjectSigningAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionAlg` (OAuth 2.0, OpenID Connect), `oauthRequestObjectEncryptionEnc` (OAuth 2.0, OpenID Connect), `oauthRequireSignedRequestObject` (OAuth 2.0, OpenID Connect), `oauthRequirePushedAuthorizationRequests` (OAuth 2.0, OpenID Connect), `oauthHttpSignedRequests` (OAuth 2.0, OpenID Connect), `oauthAuthorizationDetailsType` (OAuth 2.0, OpenID Connect, GNAP), `oauthAuthorizationDetailsTypes` (OAuth 2.0, OpenID Connect), `authzenAttribute` (OAuth 2.0, OpenID Connect), `appAuthzenApplication` (OAuth 2.0, OpenID Connect), `appAuthzenCallbackUri` (OAuth 2.0, OpenID Connect), `oauthStepUpAcrValues` (OAuth 2.0, OpenID Connect), `oauthStepUpMaxAge` (OAuth 2.0, OpenID Connect), `oauthIdTokenSignedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseAlg` (OpenID Connect), `oauthIdTokenEncryptedResponseEnc` (OpenID Connect), `oauthUserinfoSignedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseAlg` (OpenID Connect), `oauthUserinfoEncryptedResponseEnc` (OpenID Connect), `oauthAuthorizationSignedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseAlg` (OAuth 2.0, OpenID Connect), `oauthAuthorizationEncryptedResponseEnc` (OAuth 2.0, OpenID Connect), `oauthDefaultAcrValues` (OpenID Connect), `oauthDefaultMaxAge` (OpenID Connect), `oauthThirdPartyInitiatedLogin` (OAuth 2.0, OpenID Connect), `oauthSpInitiatedSso` (OAuth 2.0, OpenID Connect), `oauthInitiateLoginUri` (OAuth 2.0, OpenID Connect), `oauthLogoUri` (OAuth 2.0, OpenID Connect), `oauthPolicyUri` (OAuth 2.0, OpenID Connect), `oauthTosUri` (OAuth 2.0, OpenID Connect), `oauthTokenExchangeRefreshToken` (OAuth 2.0, OpenID Connect), `vcCredentialClaimAttributes` (OpenID4VCI), `wstrustJwtScope` (WS-Trust), `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements` (WS-Trust), `wstrustEncryptRequestElements` (WS-Trust), `wstrustEncryptResponse` (WS-Trust), `wstrustEncryptResponseElements` (WS-Trust), `wstrustEncryptionAlgorithm` (WS-Trust), `wstrustEncryptionCertificate` (WS-Trust), `wstrustKeyTransportAlgorithm` (WS-Trust), `wstrustResponseRecipientXPath` (WS-Trust), `krb5S4uSelfRealm` (Kerberos v5), `krb5ForeignTgtDelegation` (Kerberos v5), `secretDestProvider` (Secret push destination), `secretDestPayload` (Secret push destination), `secretDestRegion` (Secret push destination), `secretDestProject` (Secret push destination), `secretDestEndpoint` (Secret push destination), `secretDestMount` (Secret push destination), `secretDestField` (Secret push destination), `secretDestDirectory` (Secret push destination), `secretDestCaCertificates` (Secret push destination), `secretDestCredential` (Secret push destination), `scimClientBaseUrl` (SCIM client (outbound provisioning)), `scimClientEnabled` (SCIM client (outbound provisioning)), `scimClientAuthMethod` (SCIM client (outbound provisioning)), `scimClientUsername` (SCIM client (outbound provisioning)), `scimClientPassword` (SCIM client (outbound provisioning)), `scimClientTokenEndpoint` (SCIM client (outbound provisioning)), `scimClientOAuthClientId` (SCIM client (outbound provisioning)), `scimClientOAuthClientSecret` (SCIM client (outbound provisioning)), `scimClientOAuthClientAuth` (SCIM client (outbound provisioning)), `scimClientOAuthScope` (SCIM client (outbound provisioning)), `scimClientOAuthResource` (SCIM client (outbound provisioning)), `scimClientTlsSource` (SCIM client (outbound provisioning)), `scimClientTlsCertificate` (SCIM client (outbound provisioning)), `scimClientTlsPrivateKey` (SCIM client (outbound provisioning)), `scimClientCaCertificates` (SCIM client (outbound provisioning)), `scimClientScopeMode` (SCIM client (outbound provisioning)), `scimClientScopeGroups` (SCIM client (outbound provisioning)), `scimClientScopeFilter` (SCIM client (outbound provisioning)), `scimClientGroupMode` (SCIM client (outbound provisioning)), `scimClientGroups` (SCIM client (outbound provisioning)), `scimClientDeprovision` (SCIM client (outbound provisioning)), `scimClientReconcileMinutes` (SCIM client (outbound provisioning)), `scimClientJurisdiction` (SCIM client (outbound provisioning)), `scimClientCells` (SCIM client (outbound provisioning)), `scimClientMaxRequestsPerSecond` (SCIM client (outbound provisioning)), `ssfAllowedEvents` (Shared Signals), `ssfCaepIncludeReasons` (Shared Signals), `ssfCaepReasonLanguage` (Shared Signals), `ssfCaepOmitEventTimestamp` (Shared Signals), `ssfRiscIncludeReasons` (Shared Signals), `ssfRiscReasonLanguage` (Shared Signals), `ssfRiscOmitEventTimestamp` (Shared Signals), `ssfSigningAlgorithm` (Shared Signals), `ssfMinVerificationInterval` (Shared Signals), `ssfInactivityTimeoutS` (Shared Signals), `ssfInactivityAction` (Shared Signals), `ssfVerificationEveryS` (Shared Signals), `ssfStreamStatusOnCreate` (Shared Signals), `ssfMaxStreams` (Shared Signals), `ssfMaxSubjectsPerStream` (Shared Signals), `ssfMaxQueuedEvents` (Shared Signals), `ssfPollMaxEvents` (Shared Signals), `ssfDeadLetterMaxPerStream` (Shared Signals), `ssfPushTimeoutMs` (Shared Signals), `ssfPushRetries` (Shared Signals), `ssfPushRetryDelayMs` (Shared Signals).** That is unlike every other attribute here, which is inert rather than wrong on an entry that never reaches the protocol it belongs to — these decide what an ENDPOINT does for an identifier, so on an entry no request could ever name they would read as a policy that was in force. Declare the family first (`protocols` on the create, or add to `appAllowedProtocol`). Clearing one is never refused, and `ldapmodify` reaches them like every other attribute.
 
 This writes the same entry LDAP writes, through the same functions, so it takes effect on the very next authorization request.
 
@@ -7804,7 +8184,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `application` | string | yes | The identifier, exactly as the registry holds it. |
-| `attribute` | one of `appName`, `appHomePageUrl`, `appLaunchProtocol`, `description`, `oauthClientSecret`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthPermissionBaseUri`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthNativeSso`, `oauthNativeSsoGroup`, `oauthBackchannelTokenDeliveryMode`, `oauthBackchannelClientNotificationEndpoint`, `oauthCommandEndpoint`, `oauthBackchannelAuthenticationRequestSigningAlg`, `oauthBackchannelUserCodeParameter`, `oauthSubjectType`, `oauthSectorIdentifierUri`, `oauthDidClaimWithPairwise`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAssertionJwks`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey`, `oauthAssertionKid`, `oauthAssertionExpiresAt`, `oauthAssertionKeySource`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource`, `oauthIssuedSoftwareStatement`, `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint`, `samlSpMetadataUrl`, `samlSpMetadata`, `samlEncryptionCertificate`, `samlSpMetadataSigningCertificate`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId`, `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthMaxAuthAgeS`, `oauthClaimsAccessToken`, `oauthClaimsIdToken`, `oauthClaimsUserinfo`, `oauthClaimAttributesAccessToken`, `oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`, `oauthClaimsCombineAccessToken`, `oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`, `oauthPermissionClaims`, `oauthAccessTokenClaimsCombine`, `oauthRevokeRefreshOnLogout`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso`, `oauthInitiateLoginUri`, `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, `oauthTokenExchangeRefreshToken`, `appDefaultDelegationSemantics`, `appNotDelegated`, `appMayAct`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `wsfedAssertionLifetimeMin`, `saml2CustomAttributes`, `saml11CustomAttributes`, `saml2ClaimAttributes`, `saml11ClaimAttributes`, `saml2ClaimsCombine`, `saml11ClaimsCombine`, `vcCredentialClaimAttributes`, `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS`, `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `krb5ClaimsPac`, `gnapClaimsAccessToken`, `krb5TrustedForDelegation`, `krb5ForeignTgtDelegation`, `appRegistrationAccessToken`, `acmeDefaultProfile`, `acmeCertificateLifetimeDays`, `estDefaultProfile`, `estCertificateLifetimeDays`, `scepDefaultProfile`, `scepCertificateLifetimeDays`, `estBasicAuthentication`, `estCertificateAuthentication`, `estServerKeyGeneration`, `enrollMaxCertificates`, `didPrivateKeys`, `secretDestProvider`, `secretDestPayload`, `secretDestRegion`, `secretDestProject`, `secretDestEndpoint`, `secretDestMount`, `secretDestField`, `secretDestDirectory`, `secretDestCaCertificates`, `secretDestCredential`, `scimClientBaseUrl`, `scimClientEnabled`, `scimClientAuthMethod`, `scimClientUsername`, `scimClientPassword`, `scimClientTokenEndpoint`, `scimClientOAuthClientId`, `scimClientOAuthClientSecret`, `scimClientOAuthClientAuth`, `scimClientOAuthScope`, `scimClientOAuthResource`, `scimClientTlsSource`, `scimClientTlsCertificate`, `scimClientTlsPrivateKey`, `scimClientCaCertificates`, `scimClientScopeMode`, `scimClientScopeFilter`, `scimClientGroupMode`, `scimClientDeprovision`, `scimClientReconcileMinutes`, `scimClientJurisdiction`, `scimClientMaxRequestsPerSecond`, `ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`, `ssfRiscIncludeReasons`, `ssfRiscReasonLanguage`, `ssfRiscOmitEventTimestamp`, `ssfSigningAlgorithm`, `ssfMinVerificationInterval`, `ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`, `ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`, `ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`, `ssfPushTimeoutMs`, `ssfPushRetries`, `ssfPushRetryDelayMs`, `gnapInstanceId`, `gnapKey`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey`, `gnapSymmetricAlg`, `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapScopedSignals`, `appFederationAutoRedirect`, `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`, `appPasswordPolicy`, `appPostLoginPolicy`, `umaOwnsResources` | yes | One of the editable single-valued attributes. GET /admin/ldap/applications publishes the schema with an `editable` member on every row. |
+| `attribute` | one of `appName`, `appHomePageUrl`, `appLaunchProtocol`, `description`, `oauthClientSecret`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthPermissionBaseUri`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthNativeSso`, `oauthNativeSsoGroup`, `oauthBackchannelTokenDeliveryMode`, `oauthBackchannelClientNotificationEndpoint`, `oauthCommandEndpoint`, `oauthBackchannelAuthenticationRequestSigningAlg`, `oauthBackchannelUserCodeParameter`, `oauthSubjectType`, `oauthSectorIdentifierUri`, `oauthDidClaimWithPairwise`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAssertionJwks`, `oauthAssertionCertificate`, `oauthAssertionCertificateChain`, `oauthAssertionPrivateKey`, `oauthAssertionKid`, `oauthAssertionExpiresAt`, `oauthAssertionKeySource`, `oauthSamlAssertionSigningCertificate`, `oauthSamlAssertionCertificate`, `oauthSamlAssertionCertificateChain`, `oauthSamlAssertionPrivateKey`, `oauthSamlAssertionThumbprint`, `oauthSamlAssertionExpiresAt`, `oauthSamlAssertionKeySource`, `oauthIssuedSoftwareStatement`, `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint`, `samlSpMetadataUrl`, `samlSpMetadata`, `samlEncryptionCertificate`, `samlSpMetadataSigningCertificate`, `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptResponse`, `wstrustEncryptionAlgorithm`, `wstrustEncryptionCertificate`, `wstrustKeyTransportAlgorithm`, `wstrustResponseRecipientXPath`, `saml2EncryptLogoutNameId`, `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthMaxAuthAgeS`, `oauthClaimsAccessToken`, `oauthClaimsIdToken`, `oauthClaimsUserinfo`, `oauthClaimAttributesAccessToken`, `oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`, `oauthClaimsCombineAccessToken`, `oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`, `oauthPermissionClaims`, `oauthAccessTokenClaimsCombine`, `oauthRevokeRefreshOnLogout`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso`, `oauthInitiateLoginUri`, `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, `oauthTokenExchangeRefreshToken`, `appDefaultDelegationSemantics`, `appNotDelegated`, `appMayAct`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `wsfedAssertionLifetimeMin`, `saml2CustomAttributes`, `saml11CustomAttributes`, `saml2ClaimAttributes`, `saml11ClaimAttributes`, `saml2ClaimsCombine`, `saml11ClaimsCombine`, `vcCredentialClaimAttributes`, `saml2AssertionLifetimeMin`, `saml2SignAssertion`, `saml2SignResponse`, `saml2NameIdFormat`, `saml2ArtifactTtlS`, `saml11AssertionLifetimeMin`, `saml11SignAssertion`, `saml11SignResponse`, `saml11NameIdFormat`, `saml11ArtifactTtlS`, `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `krb5ClaimsPac`, `gnapClaimsAccessToken`, `krb5TrustedForDelegation`, `krb5ForeignTgtDelegation`, `appRegistrationAccessToken`, `acmeDefaultProfile`, `acmeCertificateLifetimeDays`, `estDefaultProfile`, `estCertificateLifetimeDays`, `scepDefaultProfile`, `scepCertificateLifetimeDays`, `estBasicAuthentication`, `estCertificateAuthentication`, `estServerKeyGeneration`, `enrollMaxCertificates`, `didPrivateKeys`, `secretDestProvider`, `secretDestPayload`, `secretDestRegion`, `secretDestProject`, `secretDestEndpoint`, `secretDestMount`, `secretDestField`, `secretDestDirectory`, `secretDestCaCertificates`, `secretDestCredential`, `scimClientBaseUrl`, `scimClientEnabled`, `scimClientAuthMethod`, `scimClientUsername`, `scimClientPassword`, `scimClientTokenEndpoint`, `scimClientOAuthClientId`, `scimClientOAuthClientSecret`, `scimClientOAuthClientAuth`, `scimClientOAuthScope`, `scimClientOAuthResource`, `scimClientTlsSource`, `scimClientTlsCertificate`, `scimClientTlsPrivateKey`, `scimClientCaCertificates`, `scimClientScopeMode`, `scimClientScopeFilter`, `scimClientGroupMode`, `scimClientDeprovision`, `scimClientReconcileMinutes`, `scimClientJurisdiction`, `scimClientMaxRequestsPerSecond`, `ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`, `ssfRiscIncludeReasons`, `ssfRiscReasonLanguage`, `ssfRiscOmitEventTimestamp`, `ssfSigningAlgorithm`, `ssfMinVerificationInterval`, `ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`, `ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`, `ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`, `ssfPushTimeoutMs`, `ssfPushRetries`, `ssfPushRetryDelayMs`, `gnapInstanceId`, `gnapKey`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey`, `gnapSymmetricAlg`, `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapScopedSignals`, `appFederationAutoRedirect`, `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`, `appPasswordPolicy`, `appPostLoginPolicy`, `umaOwnsResources` | yes | One of the editable single-valued attributes. GET /admin/ldap/applications publishes the schema with an `editable` member on every row. |
 | `confirm` | string |  | Required when this write changes oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds on the admin console, the user portal or the reports application. true, "true", "on" or "1". An unchanged value does not need it (#825). |
 | `value` | string |  | The new value; empty clears the attribute. For the admin console, the user portal and the reports application, emptying oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds is refused. |
 
@@ -9217,4 +9597,147 @@ Scope: `admin:write`.
 | `warnings[].reason` | string |  |  |
 | `warnings[].text` | string |  |  |
 | `warnings[].value` | string |  |  |
+
+## POST /admin-api/applications/upload-wstrust-decryption-key
+
+`uploadApplicationWsTrustDecryptionKey`
+
+**Store a certificate and private key as an application's WS-Trust decryption key pair**
+
+Stores an uploaded certificate and its private key as the application's WS-Trust decryption key pair, in place of the one it held (#1668). Both are PEM; PKCS#12 is not taken. Refused when the certificate is not exactly one certificate or the key is not an unencrypted PEM private key (STS-ADMIN-0946), when the key is not the certificate's private half (STS-ADMIN-0947), when the key is not RSA of at least 2048 bits or EC on P-256, P-384 or P-521 — what XML Encryption here unwraps a content key with (STS-ADMIN-0948) — when the certificate's keyUsage leaves out keyEncipherment (RSA) or keyAgreement (EC) or it has expired (STS-ADMIN-0949), and when the certificate is already another application's or the registry holds no such application (STS-ADMIN-0950). The private key is sealed where keys persist and is in no answer.
+
+**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string | yes | The application's identifier, exactly as this registry holds it. |
+| `certificate` | string | yes | The certificate, one PEM block. |
+| `privateKey` | string | yes | Its private key, an unencrypted PEM private key (PKCS#8, PKCS#1 or SEC 1). |
+
+**200**: The key pair stored, as it now stands.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
 {% endraw %}

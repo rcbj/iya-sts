@@ -11697,6 +11697,122 @@ const SETTINGS = [
                  'party that acted in its PAC\'s S4U_DELEGATION_INFO. Off, ' +
                  'such a request is refused.' },
 
+  // XML ENCRYPTION OF A WS-TRUST REQUEST AND RESPONSE (#1668). The two
+  // switches default off, so a request and a response stay as they were
+  // until an operator turns one on. Which elements, and which certificate
+  // a response is encrypted to, are the application's own attributes.
+  { key: 'wstrust.encryptRequest', group: 'WS-Trust',
+    label: 'Require the named elements of a request encrypted',
+    env: 'STS_WSTRUST_ENCRYPT_REQUEST', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityToken whose AppliesTo names no ' +
+                 'application of its own must arrive with the elements of ' +
+                 'wstrustEncryptRequestElements encrypted. An ' +
+                 'application\'s wstrustEncryptRequest overrides this for ' +
+                 'a request whose AppliesTo names it. Which ciphertext is ' +
+                 'opened at all is wstrust.acceptEncryptedElements; the ' +
+                 'AppliesTo is read from the opened request. ' +
+                 'On, and the map is empty, or an expression matches an ' +
+                 'element that arrived in the clear or nothing that was ' +
+                 'restored, the request is a wsse:FailedCheck. A ' +
+                 'ciphertext that will not open is that fault either way.' },
+  // ARBITRARY CIPHERTEXT (rcbj on #1908, 2026-11-18). OFF BY DEFAULT IN
+  // BOTH MODES: what a request may hide is then what an administrator
+  // named in a map, and nothing else is decrypted on a requester's say-so.
+  // Development does not differ, because the WSDL offers request
+  // encryption only where this is on, and a development realm that offered
+  // what product refuses would teach a client the wrong contract. An
+  // operator, or an application, turns it on.
+  { key: 'wstrust.acceptEncryptedElements', group: 'WS-Trust',
+    label: 'Accept encrypted elements no map names',
+    env: 'STS_WSTRUST_ACCEPT_ENCRYPTED_ELEMENTS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether a RequestSecurityToken may carry XML Encryption ' +
+                 'anywhere, in a header or the body, with no request map ' +
+                 'naming it. On, every encrypted element is opened. Off, ' +
+                 'ciphertext is accepted only where the application\'s ' +
+                 'wstrustEncryptRequestElements names it, and ciphertext ' +
+                 'with no map is a wst:InvalidRequest. Either way a ' +
+                 'ciphertext must open with this realm\'s keys. An ' +
+                 'application\'s wstrustAcceptEncryptedElements overrides ' +
+                 'this. The WSDL offers request encryption only while it ' +
+                 'is on.' },
+  // THE ENCRYPTION CERTIFICATE AS EACH PORT'S ENDPOINT IDENTITY (rcbj,
+  // 2026-11-19, on #1908). OFF BY DEFAULT IN BOTH MODES: the element is
+  // WS-AddressingIdentity's, a Microsoft specification that never became
+  // an OASIS or W3C standard, and a realm does not advertise a
+  // non-standard element unless an operator asks for it. Off, a client
+  // takes the certificate out of band (ws-trust/CLAUDE.md). One WSDL per
+  // realm, so a realm setting and no application attribute.
+  { key: 'wstrust.advertiseEndpointIdentity', group: 'WS-Trust',
+    label: 'Advertise the encryption certificate as each port\'s identity',
+    env: 'STS_WSTRUST_ADVERTISE_ENDPOINT_IDENTITY', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether every port of the WSDL at /sts/metadata carries ' +
+                 'a wsa:EndpointReference whose wsid:Identity holds this ' +
+                 'realm\'s XML Encryption certificate, the certificate a ' +
+                 'request is encrypted to. The element is from ' +
+                 'WS-AddressingIdentity, a Microsoft specification that ' +
+                 'was never standardised; WCF reads it, and so do the ' +
+                 'toolkits that copy WCF. Off, the WSDL names no ' +
+                 'certificate and a client is configured with it out of ' +
+                 'band: the KeyDescriptor use="encryption" of ' +
+                 '/saml2/metadata, which is the same certificate. What a ' +
+                 'request may encrypt is unchanged either way.' },
+  { key: 'wstrust.encryptResponse', group: 'WS-Trust',
+    label: 'Encrypt the named elements of a response',
+    env: 'STS_WSTRUST_ENCRYPT_RESPONSE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityTokenResponse has the elements ' +
+                 'of wstrustEncryptResponseElements replaced by ' +
+                 'xenc:EncryptedData after it is built, for any token ' +
+                 'type. An application\'s wstrustEncryptResponse overrides ' +
+                 'this. The recipient is that application\'s ' +
+                 'wstrustEncryptionCertificate, else the certificate ' +
+                 'element wstrustResponseRecipientXPath selects, else the ' +
+                 'first signer certificate element the request\'s ' +
+                 'WS-Security signature names. A fault is sent in the ' +
+                 'clear. On, and the encryption cannot be completed, the ' +
+                 'request is a fault in both modes.' },
+  { key: 'wstrust.encryptionAlgorithm', group: 'WS-Trust',
+    label: 'Response encryption algorithm',
+    env: 'STS_WSTRUST_ENCRYPTION_ALGORITHM', type: 'enum',
+    enumValues: ['aes256-gcm', 'aes128-gcm', 'aes256-cbc', 'aes128-cbc'],
+    dflt: 'aes256-gcm', runtime: true,
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['aes256-cbc', 'aes128-cbc'],
+    description: 'The block cipher a WS-Trust response\'s encrypted ' +
+                 'elements are encrypted with. The two GCM ones are ' +
+                 'authenticated: an altered ciphertext fails its tag and ' +
+                 'is refused. The two CBC ones are not. An application\'s ' +
+                 'wstrustEncryptionAlgorithm overrides this. A ' +
+                 'wst:EncryptionAlgorithm element may name this cipher, by ' +
+                 'its short name or its XML Encryption URI, only while ' +
+                 'response encryption is on.' },
+  { key: 'wstrust.keyTransportAlgorithm', group: 'WS-Trust',
+    label: 'Response key transport algorithm',
+    env: 'STS_WSTRUST_KEY_TRANSPORT_ALGORITHM', type: 'enum',
+    enumValues: ['rsa-oaep-mgf1p', 'rsa-oaep', 'rsa-1_5'],
+    dflt: 'rsa-oaep-mgf1p', runtime: true,
+    onlyWhile: 'usesBrokenAlgorithms', onlyWhileValues: ['rsa-1_5'],
+    description: 'How the one-time content key of a WS-Trust response is ' +
+                 'wrapped to the recipient\'s RSA public key. `rsa-oaep` ' +
+                 'is XML Encryption 1.1\'s RSA-OAEP with SHA-256 and ' +
+                 'MGF1-SHA-256; `rsa-oaep-mgf1p` is OAEP over SHA-1. A ' +
+                 'recipient whose certificate is EC is encrypted to by ' +
+                 'ECDH-ES key agreement whatever this says. An ' +
+                 'application\'s wstrustKeyTransportAlgorithm overrides ' +
+                 'this. `rsa-1_5` is RSAES-PKCS1-v1_5 and is broken, and ' +
+                 'it is offered because a deployed requester may accept ' +
+                 'nothing else. WARNING: rsa-1_5 is development mode ' +
+                 'only — in product mode it is ignored where it is read, ' +
+                 'on this setting and on an application\'s ' +
+                 'wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p is used, ' +
+                 'logged once, STS-CORE-0106), and setting it is refused ' +
+                 '(STS-CORE-0103, STS-REG-0193). A wst:EncryptWith element ' +
+                 'may name this algorithm only while response encryption ' +
+                 'is on.' },
+
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section
   // 13.2.1); /wsfed/initiate/{rp} is this identity provider's, posting to the

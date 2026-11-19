@@ -1287,6 +1287,58 @@
     "en": "86ac83dbe366a17b",
     "text": "此應用程式的 WS-TRUST JWT 所攜帶的 OAUTH 2.0 範圍，每個值一個範圍（#485）。WS-Trust 以此應用程式為 AppliesTo 簽發的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）會在其 `scope` 宣告中攜帶它們，以空格分隔（RFC 9068 第 2.2.3 節）；未設定時則不攜帶 `scope`。SAML 權杖不受影響。\n\n**每個範圍都以 OAuth 存取權杖的範圍方式判斷**，以此應用程式作為用戶端：`oauthAllowedScope` 宣告它可以獲簽發什麼（在產品模式下；本服務的受保護範圍則在每種模式下），並由簽發原則的逐範圍問題決定。被原則丟棄的值會從權杖中「略去」並記錄稽核（STS-OAUTH-0579），絕不簽發。指名未宣告範圍的寫入在此會被接受，因為宣告可能變更，且開發模式會授予未宣告的範圍：也請在 oauthAllowedScope 上宣告它。會被原則丟棄的值，會在設定它的地方發出「警告」（#488）：在此欄位旁、在儲存回覆中，以及在 /admin-api 寫入回覆與應用程式檢視中的 `warnings`。"
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE 或 FALSE：要求此應用程式的請求對應所點名的元素以加密形式到達，覆寫 wstrust.encryptRequest。開啟時，若對應為空、某個運算式符合以明文到達的元素，或某個運算式未符合任何從密文還原的內容，則 AppliesTo 為此應用程式的請求即為 FailedCheck。哪些密文會被開啟由 wstrustAcceptEncryptedElements 決定；AppliesTo 從開啟後的請求中讀取，無法開啟的密文在任何情況下都是 FailedCheck。"
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE 或 FALSE：接受 AppliesTo 為此應用程式的請求中任何位置（標頭或本文）的 XML 加密，而無需請求對應點名，覆寫 wstrust.acceptEncryptedElements。關閉時，僅在 wstrustEncryptRequestElements 點名之處接受密文——每個被還原的元素必須是某個運算式選取的元素或位於其中——沒有對應的密文為 InvalidRequest。無論哪種情況，密文都必須能以本領域的金鑰開啟。"
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "WS-TRUST 請求中必須以加密形式到達的元素，每個一條 XPath 1.0 運算式。子集為 `/`、`//`、`*`、元素名稱、`prefix:local`、以 `|` 的聯集，以及述詞 `local-name()`、`namespace-uri()` 與 `@attr`，以 `and` 連接。每個運算式必須至少選取一個從密文還原的元素：類型為 Element 或 Content 的 xenc:EncryptedData，或 WS-Security 1.1 的 EncryptedHeader。超出該子集的運算式為 RequestFailed。可以點名 SOAP 標頭、SOAP 本文或任何元素，適用於任何權杖類型。"
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE 或 FALSE：將此應用程式的回應對應所點名的元素替換為 xenc:EncryptedData，覆蓋 wstrust.encryptResponse。回應先以明文建構，然後再替換這些元素，適用於任何權杖類型。故障保持明文。開啟時，若加密無法完成——沒有接收方、對應什麼都不比對，或接收方憑證不接受該密碼——該請求在兩種模式下都是故障。"
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "被加密的 WS-Trust 回應元素，每個一條 XPath 1.0 運算式，子集與 wstrustEncryptRequestElements 相同。可以點名 SOAP 標頭、SOAP 本文或任何元素。在已建構的回應中什麼都不比對的運算式是故障。"
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "此應用程式的 WS-Trust 回應所用的區塊密碼——aes256-gcm、aes128-gcm、aes256-cbc 或 aes128-cbc——覆蓋 wstrust.encryptionAlgorithm。wst:EncryptionAlgorithm 元素可以以其短名或其 XML Encryption URI 點名此密碼，僅在此應用程式的回應加密開啟時。"
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "WS-Trust 回應加密所用的憑證，base64 DER 或 PEM。設定之後它就是接收方，無法讀取的憑證是故障，而不會退到下一個來源。未設定時，接收方是 wstrustResponseRecipientXPath 選中的憑證元素；該運算式也未設定時，則是請求的 WS-Security 簽章所點名的第一個簽章者憑證元素。"
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "此應用程式的 WS-Trust 回應如何封裝內容金鑰——rsa-oaep-mgf1p、rsa-oaep（SHA-256、MGF1-SHA-256）或 rsa-1_5——覆蓋 wstrust.keyTransportAlgorithm。憑證為 EC 的接收方無論此項如何設定，都透過 ECDH-ES 加密。wst:EncryptWith 元素可以以其短名或其 XML Encryption URI 點名此演算法，僅在此應用程式的回應加密開啟時。"
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "選取 WS-Trust 回應加密所用憑證元素的 XPath 運算式：一個 ds:X509Certificate，或 ValueType 以 #X509v3 結尾的 BinarySecurityToken。子集與元素對應相同。設定之後若什麼都不選中，或選中的元素不是這兩種之一，就沒有接收方，並且不會嘗試下一個來源。選中的憑證元素其文字不是憑證時，是一次已完成加密的故障，並且不會嘗試下一個來源。未設定時，接收方是請求的 WS-Security 簽章所點名的第一個簽章者憑證元素——該簽章的參照所指向的 BinarySecurityToken，或該簽章 KeyInfo 中的 ds:X509Certificate。指紋、Subject Key Identifier 或簽發者與序號不是憑證元素。"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "發給此應用程式的 WS-TRUST 請求所加密到的憑證，PEM。設定後，發給此應用程式的請求以其私密金鑰而非領域的私密金鑰解密，而加密到領域金鑰的發給它的請求是 FailedCheck。公開：應用程式頁面和 GET /admin-api/applications 會提供它。"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "簽發 wstrustDecryptionCertificate 的憑證授權單位的憑證，PEM，簽發 CA 在前，用於在此簽發的金鑰對。上傳的金鑰對為空。"
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "wstrustDecryptionCertificate 的私密金鑰，PEM。在金鑰持久保存的地方密封，不提供給任何頁面、任何 /admin-api 回應和任何目錄讀取，且從不記錄。"
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "解密金鑰對的來源：issued（在此產生並由領域的 CA 認證）或 uploaded（上傳）。"
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN，例如 HTTP/sts@EXAMPLE.COM——Kerberos v5 的識別碼屬性。Kerberos 服務與此處其他應用程式一樣是一個應用程式，而且是唯一其識別碼可能由本服務隨需建立的應用程式（KRB5_SERVICE_DOMAINS）。它可累積，而且在這裡這是常態而非特例：一個服務通常回應多個 SPN——HTTP/host 與 HTTP/host.example.com——而實際的 KDC 會將它們全部保存在同一個帳戶下。"

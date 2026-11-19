@@ -1,8 +1,12 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`, and its metadata, #958, below). Five files: `wstrust.ts`, the
-endpoint; `wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
+`/sts/cert`, and its metadata, #958, below). Seven files: `wstrust.ts`, the
+endpoint; `ws_encryption.ts`, XML Encryption of a request and a response
+(#1668), a library `wstrust.ts` requires — it registers nothing;
+`ws_decryption_key.ts`, an application's own decryption key pair (#1668,
+*AN APPLICATION'S OWN DECRYPTION KEY PAIR*, below), a library too;
+`wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
 `wstrust_capabilities.ts`, the token capability model and the extension
 document and schema at `GET /sts/metadata/capabilities{,.xsd}`;
 `wstrust_mex.ts`, WS-MetadataExchange at `POST /sts/mex`; and `ws_model.ts`,
@@ -33,6 +37,40 @@ advertised moves with what is accepted:
   sets. **The policy assertions are in SP 1.2's namespace (200702)**: SP 1.3's
   200802 declares only the five assertions 1.3 added, and they were written
   there until the check found it.
+  **The message signature is an `sp:AsymmetricBinding`, and each message has
+  a policy of its own (#1668, rcbj on #1908, 2026-11-18).** The binding's
+  InitiatorToken is the signer's X.509 v3 certificate, its RecipientToken
+  `/sts/cert`'s (never included: the file's header keeps the certificate out
+  of the WSDL), `sp:Basic256Sha256` (the one suite whose signature half
+  product verifies), `sp:Lax`, `sp:OnlySignEntireHeadersAndBody`, and
+  `sp:Wss11` naming the key references `messageSignature()` resolves; the
+  RecipientToken is the realm's XML Encryption certificate, which every port
+  carries as its endpoint identity (`wsa:EndpointReference/wsid:Identity`,
+  where WCF reads it; drawn per request, no-store, so a rotation shows)
+  **only while `wstrust.advertiseEndpointIdentity` is on — off by default**
+  (*THE ENDPOINT IDENTITY*, below).
+  **The IYA-STS suite** (`SUITE_NS`, AES-256-GCM, RSA-OAEP-SHA256,
+  RSA-SHA256), product's, is in a policy of its own on eight `IyaSuite`
+  ports: CXF refuses a policy whose suite it has no loader for, and one
+  unbuildable alternative took the whole RequesterAuthentication with it.
+  **No
+  `sp:IncludeTimestamp`**: WS-SP 1.3 section 6.2 applies it to the answer
+  too and requires that Timestamp signed, and this STS signs no answer.
+  `RequestProtection` on every input offers signing every header and the
+  Body, and encryption only where the realm would accept it under the
+  port's suite (`offers()`: `wstrust.acceptEncryptedElements` on, an RSA
+  key, the suite's ciphers read); `ResponseProtection` on every output
+  exists only where the service-wide cipher is the port's suite's and
+  offers no signing. Each has an `IyaSuite` twin. Each choice is an ExactlyOne whose FIRST alternative is empty,
+  not `wsp:Optional`: WCF and Metro take the first alternative they
+  support and CXF the smallest, so all of them keep sending today's
+  message. **An `sp:IssuedToken` carries an empty nested `wsp:Policy`**: WS-SP
+  1.2 section 5.4.2 requires it, and without it Apache CXF 4.0.5 refused to
+  load the WSDL at all. On #1908's review CXF 4.0.5 loaded both documents
+  with no assertion its builders did not know and supported every
+  alternative, and WSS4J 3.0.3's own sign-then-encrypt, encrypt-then-sign
+  and encrypted-signature requests were answered (`tests/wstrust_metadata.js`
+  P holds the policies; the CXF and WSS4J run is not in the tests image).
 * **The capability document is an IYA-STS extension, not a standard**
   (`urn:iya-sts:metadata:token-capabilities:1`): WS-SecurityPolicy cannot
   say which credential is exchanged for which token type, and the ticket
@@ -242,12 +280,13 @@ fault. Each refusal names its code at the place it refuses:
 | Code | Refusals | Why that one |
 |---|---|---|
 | `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
-| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025`, a delegated Kerberos token's `0054`, `0055`, `0058`–`0060` and `0063` (#658: no TLS for a Kerberos proof key), `0067` (a Renew or Cancel of a Kerberos token) | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
+| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0076` (#1668: response encryption is on and the request names no recipient certificate element), `0078` (a `wst:EncryptionAlgorithm` or `wst:EncryptWith` while response encryption is off, or naming a cipher other than the one configured), `0021`, `0025`, a delegated Kerberos token's `0054`, `0055`, `0058`–`0060` and `0063` (#658: no TLS for a Kerberos proof key), `0067` (a Renew or Cancel of a Kerberos token) | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
 | `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0039` (#1046, #1061), a signed request's `0040`–`0047`, `0049`, `0050`, `0052`, `0053` (#521), the requester's Kerberos token's `0054`–`0057` and a Kerberos-keyed signature's `0069` (#658) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
 | `AuthenticationBadElements` | `0040` when the reading's code is `STS-KEYS-0163` (#521): a signature that does not cover the Body or the Timestamp | section 11's "Insufficient Digest Elements", exactly |
 | `ExpiredData` | `0006`, in either seat, a JWT's `0027` in either seat (#477, #519), and a signed request's Timestamp, `0048` (#521) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
 | `BadRequest` | `0062` (#658: `wstrust.issueKerberos` off) and `0064` (an AppliesTo that is no Kerberos service) | section 11's "The request was invalid or malformed" is InvalidRequest's; BadRequest's own sentence in 1.4 is "The specified RequestSecurityToken is not understood" — a token type this STS does not issue here, which is what both are |
-| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell), `0061` (#658: a forwarded Kerberos ticket from a requester not trusted for delegation), `0065` (`wst:Delegatable` to a target not trusted for it), `0066` (the KDC could not mint the ticket) | the request was understood and authenticated, and could not be done |
+| `FailedCheck` | `0075` (#1668: request encryption is on and the request does not match its map — the map is empty, an expression matches an element that arrived in the clear or matches nothing restored, or a ciphertext will not open). Processing stops; nothing is issued | section 11's "The specified request failed a check by the STS". The signature was already read on the message as it arrived; the check that fails is the map |
+| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0077` (#1668: response encryption is on and could not be completed — an empty map, an expression that matches nothing, a certificate element or the application's encryption certificate that is not readable, a recipient the encryption check refuses, a cipher that failed), `0079` (an XPath expression outside the subset this service evaluates), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell), `0061` (#658: a forwarded Kerberos ticket from a requester not trusted for delegation), `0065` (`wst:Delegatable` to a target not trusted for it), `0066` (the KDC could not mint the ticket) | the request was understood and authenticated, and could not be done. A response fault is sent in the clear; the clear token is not |
 
 **Not used, and why**: `InvalidSecurityToken` is "Security token has been
 revoked" in 1.4's table, and nothing here checks revocation of a presented
@@ -305,8 +344,6 @@ what to present:**
   requester's assertion and the delegated one;
 * an **`OnBehalfOf` / `ActAs` with no requester credential**, and one whose inner
   token is not such an assertion — a name alone is not evidence of anybody;
-* **`?encrypt=1` that cannot encrypt** (`opensTestControls()` — the flag is a
-  non-spec test control and its plaintext fallback is the lenient half);
 * no subject is invented: `saml-subject` and `delegated-subject` are development's.
 * **a presented password is verified against `userPassword`** — WS-Trust had
   been checking only the reserved string `invalid` in both modes until
@@ -330,8 +367,12 @@ what to present:**
   with `wstrust.jwtAlgorithm` (RS256 by default; RS*/PS*/ES*/EdDSA). It is still
   not in the token register — that funnel is RS256 by construction — but
   `/admin/delegation` can now name what a JWT exchange produced.
-* **`?encrypt=1` honours `saml2.encryptionAlgorithm` / `saml2.keyTransportAlgorithm`**,
-  answered for the AppliesTo as `/saml2` answers them for a service provider.
+* **XML Encryption the application requires is a fault in both modes when it
+  cannot be completed** (#1668). `wstrust.encryptionAlgorithm` and
+  `wstrust.keyTransportAlgorithm` are the ciphers, overridable on the
+  application. The SAML settings are not read. A map mismatch stops
+  processing and returns the fault; the clear response is not sent. See
+  *XML ENCRYPTION*, below.
 * ~~`wstrust.issuer` and `saml.issuer` disagreeing is SAID~~ — **both retired
   by #523**: there is one name, so nothing can disagree (below).
 
@@ -904,6 +945,222 @@ UsernameToken's name is; any other signer is served where it arrived.
 refusal by code, wrapping and replay, signing with keys made at run time;
 `tests/protocol/sts_wstrust_signed_requests.js` drives it over HTTP.
 
+## XML ENCRYPTION, PER APPLICATION (#1668)
+
+`ws_encryption.ts` (`WsEncryption`) replaces the elements an application's
+XPath map names with `xenc:EncryptedData` of type Element, key inside the
+element. It is not `saml:EncryptedAssertion`, and it does not read
+`saml2.encryptAssertion`, `saml2.encryptionAlgorithm`,
+`saml2.keyTransportAlgorithm` or `samlEncryptionCertificate`. The two
+checkboxes default off. `STS-WSTRUST-0012` and `0013` are retired with the
+query parameter they named.
+
+**WHICH CIPHERTEXT A REQUEST MAY CARRY IS `wstrust.acceptEncryptedElements`
+(rcbj on #1908, 2026-11-18; an application's `wstrustAcceptEncryptedElements`),
+OFF BY DEFAULT IN BOTH MODES.** On, ciphertext anywhere is opened without a
+map. Off, every element restored from ciphertext must be one the request map
+selects or inside one (`namedByMap()`), and ciphertext with no map is
+`STS-WSTRUST-0080`; with the AppliesTo in the clear that application decides
+before anything is decrypted. `openRequest()` opens an `EncryptedData` of type
+Element or Content, or a WS-Security 1.1 `EncryptedHeader` (which the header
+replaces), its key in its own KeyInfo or in an `EncryptedKey` in a
+`wsse:Security` header whose ReferenceList lists it or whose Id its
+SecurityTokenReference names (`headerKeyFor()`, WSS4J's and WCF's shape),
+the fragment parsed in the namespaces in scope where it stood
+(`crypto.decryptElement()`'s `namespaces`). At most 64 ciphertexts and eight
+rounds (`0075`). `wstrust.encryptRequest` makes the map REQUIRED (`0075`).
+Development does not differ: the WSDL offers request encryption only where
+the setting is on, and a development realm offering what product refuses
+would teach a client the wrong contract. **A map's prefixes are the
+service's** (`PREFIXES`), never the request's declarations: a request that
+bound `wsa` to a namespace of its own could offer a decoy the map matched
+(`tests/wstrust_message_signature.js` J9).
+
+**THE ENDPOINT IDENTITY IS A SETTING, OFF BY DEFAULT (rcbj, 2026-11-19, on
+#1908).** Until then every one of the sixteen ports carried the realm's XML
+Encryption certificate as
+`wsa10:EndpointReference/wsid:Identity/ds:KeyInfo/ds:X509Data`, in
+`http://schemas.xmlsoap.org/ws/2006/02/addressingidentity`:
+WS-AddressingIdentity, Microsoft's, which never became an OASIS or W3C
+standard. rcbj's decision: a realm does not advertise a non-standard
+element by default. It is kept for WCF and the toolkits that copy it,
+behind `wstrust.advertiseEndpointIdentity` (`STS_WSTRUST_ADVERTISE_ENDPOINT_IDENTITY`),
+a realm setting because the WSDL is one document per realm — never an
+application attribute, so no directory attribute or OID. It decides two
+things together: which WSDL is advertised (`service()` gets the certificate
+only while it is on, through `document()`; `liveFlags()` reads it, so
+`/sts/metadata` and WS-MEX agree), and whether that element is how a
+client learns the certificate. **Off, the client is configured out of
+band**, and what a request may encrypt is unchanged: the per-application
+maps and checkboxes, `wstrust.encryptRequest`/`encryptResponse` and
+`wstrust.acceptEncryptedElements`. The out-of-band source is the first
+`md:KeyDescriptor use="encryption"` of `/saml2/metadata`, which reads the
+same `helpers.ownXmlEncryptionCertificates()` list `encryptionCertificate()`
+does; `/sts/cert` is the same certificate only while
+`saml.signatureAlgorithm` is RSA, because it serves `STS.xmlSigner`, so
+the documentation names `/saml2/metadata` first. **There is no WS-Trust
+surface that names the encryption certificate as such** — no console page
+or `/admin-api` operation labels it; the SAML metadata is where it is
+published. The `wsdl:documentation` sentence follows the setting
+(`description()`). `tests/wstrust_metadata.js` P8 holds both shapes, and
+its W case turns the setting on so the identity is schema-checked; the
+`declaredNames()` entry for the namespace is needed only then.
+
+**THE SIGNATURE IS READ IN WS-SECURITY'S ORDER** (`signedReading()`, also
+`prepareMessageSignature()`'s): an EncryptedKey, ReferenceList or
+EncryptedData ahead of the `ds:Signature`, or no signature in the clear,
+reads it over an opened copy first (SignBeforeEncrypting, WS-SP's default);
+otherwise over the message as it arrived, and the other order when the first
+does not verify. The accepted reading is kept on the connection, and the
+document marked (`WsEncryption.markSigned()`). **What opens is held to the
+signed Body once more** (`partsOutsideSignedBody()`, product), inside
+`openRequest()` before any setting is read: anybody can encrypt to the
+realm's certificate, and an unsigned header that opened to an RST or an
+AppliesTo was read first in document order beside a genuinely signed Body,
+and would have chosen whose settings applied — `0046`. The endpoint's door (the claimed name, the
+home cell, the risk assessment) reads an opened copy too, or an encrypted
+UsernameToken was assessed as nobody's.
+
+**A MAP MISMATCH STOPS PROCESSING AND RETURNS THE FAULT.** An empty request
+map, a clear match, a miss, or a decrypt that fails is `STS-WSTRUST-0075`,
+`wsse:FailedCheck` — WS-Security 1.1 section 12's code, in the wsse
+namespace (`wsse.fault` in `models/ws/soap.tsp`); WS-Trust section 11 has no
+FailedCheck, and `wst:FailedCheck` threw in `soapFault()` until #1908's
+review, so every such refusal had been `0015` — and `handleRst()` returns
+that fault and issues nothing. The response is sealed after the clear RSTR is built
+(`sealedBody` → `protectResponse`), on the success path only (`finishIssue`,
+Validate, Cancel). An empty response map or an expression that selects
+nothing is `STS-WSTRUST-0077`, `wst:RequestFailed`, returned in the clear;
+the caller does not send the token. `finishIssue` records the sighting only
+after a successful seal. Development does not return plaintext when
+encryption was required and could not be done.
+
+**THE RECIPIENT DOES NOT FALL THROUGH**, and it is not
+`signingCertificateFor()`. A thumbprint, a Subject Key Identifier or an
+issuer and serial is not a recipient.
+
+1. `wstrustEncryptionCertificate` when set. Unreadable is `0077`.
+2. Else `wstrustResponseRecipientXPath`: the first `ds:X509Certificate`
+   (the XML Signature namespace, or none) or `#X509v3` BinarySecurityToken
+   it selects. No nodes, or not a certificate element, is `0076`. A
+   certificate element whose text is not a certificate is `0077`. The next
+   source is not tried.
+3. Else the first signer certificate element, and only when
+   `readWsSecuritySignature` is `present && ok`: `keyReference.certB64` for
+   a `#X509v3` token the reference points at, or `inlineCertificate` (a
+   `ds:X509Certificate` that is a direct child of `ds:Signature` under
+   `wsse:Security`). A `KeyInfo` with no `SignedInfo` is not a signature
+   (`present` is false), so that older shape needs the recipient expression.
+
+A certificate inside an assertion, or inside `OnBehalfOf` or `ActAs`, is
+not the signer's. No recipient with response encryption on is `0076` in
+both modes. A cipher failure, an empty response map, a response expression
+that matches nothing, or `CertificateTrust.pinnedSync('encryption-recipient')`
+refusing the leaf is `0077`. A message-signing leaf is `digitalSignature`
+only, so product paranoid PKI refuses it (`0077`). Development, where
+paranoid is off, encrypts to a real signer key. A certificate with no
+`keyUsage` may encrypt (RFC 5280). An expression outside the subset — `/`,
+`//`, `*`, a name, `prefix:local`, `|`, and `local-name()`, `namespace-uri()`
+and `@attr` joined by `and` — is `0079`. `wst:EncryptionAlgorithm` and
+`wst:EncryptWith` may name the configured cipher only while response
+encryption is on (`0078`). `wst:UseKey` and `wst:ProofEncryption` stay
+unimplemented.
+
+The application is read from the opened request. The switches are
+`applications.settingFor`. The maps, the certificate and the recipient
+expression are `DomainMap.fieldOf('WsTrustRelyingParty', …)`.
+
+`tests/wstrust_message_signature.js` I holds the signer token (development
+encrypts; a thumbprint, issuer-serial or SKI is `0076` in both modes; a
+message-signing leaf is `0077` in product), `tests/wstrust_fault_codes.js`
+holds a miss (`0076`) and a certificate element whose text is not a
+certificate (`0077`), and `tests/protocol/sts_wstrust_rules.js` E the same
+over HTTP. The cipher override is `wstrustEncryptionAlgorithm`.
+`tests/wstrust_message_signature.js` J holds the request side: the header's
+key, the Body's content, an EncryptedHeader, an encrypted UsernameToken,
+both orders, a signed header beyond the Timestamp, the smuggled header
+(`0046`) and a ciphertext that will not open (`0075`).
+
+**THE ANSWER ANNOUNCES ITS CIPHERTEXT** (`announce()`, rcbj on #1908): each
+EncryptedKey moves to the answer's `wsse:Security` header (`soap*.Header`'s
+`security` in `models/ws/soap.tsp`, added after the hold) with an Id, a
+ReferenceList and a `#ThumbprintSHA1` SecurityTokenReference to the
+recipient (Basic Security Profile R5426, which WSS4J enforces;
+`crypto.wssThumbprintSha1()`), the EncryptedData pointing at it; a header is
+wrapped in an EncryptedHeader. WSS4J 3.0.3 decrypted a real answer this way
+on #1908's review. **A recipient expression selects only what the accepted
+signature covers** (`coveredBySignature()`): the signer's own token or an
+element inside a referenced part, else `0081`.
+
+**AN APPLICATION'S OWN DECRYPTION KEY PAIR (#1668, rcbj's request of
+2026-11-19: "a configuration field to either upload or generate (from the
+internal CA) a keypair for use with encryption").** `ws_decryption_key.ts`
+(`WsDecryptionKey`, a static utility class, `federation_encryption.ts`'s
+shape) and four application attributes, OIDs 773-776:
+`wstrustDecryptionCertificate`, `…CertificateChain`, `…PrivateKey` and
+`…KeySource`. None is `editable`: they are written together by
+`applications.setWstrustDecryptionKey()` and by nothing else, because a
+certificate set by hand beside a key it does not match decrypts nothing.
+
+* **Issued** by `pki.issueEncryptionKeyPair()` with `encryptionHolder:
+  'application'` — the federation relationship's leaf (#168), the
+  `key-encipherment` profile of the Certificate Workbench (keyEncipherment
+  for RSA, keyAgreement for EC, never digitalSignature, the XML Encryption
+  1.1 section 6.1.3 hazard), the realm's default Issuing CA. The subject is
+  the one every leaf of `issueSigningKeyPair()` carries, `CN`, then the
+  hierarchy's `O` and `C`, with `CN=<identifier>-encrypt`; the
+  subjectAltName `urn:sts:application:<identifier>` and the kid prefix
+  `appenc-` are the `application` holder's. The identifier is the
+  registry's — a client's `client_id` where it is one.
+* **Uploaded** as one PEM certificate and an unencrypted PEM key,
+  `crypto.decryptionKeyPairProblem()`: node's `checkPrivateKey`, RSA of
+  2048 bits or more or EC on P-256/384/521 (what `decryptElement()`
+  unwraps with), a keyUsage naming keyEncipherment or keyAgreement where
+  there is one, not expired. A problem per code, `STS-ADMIN-0946` to `0949`;
+  a certificate another application holds is `0950`, since one handle must
+  choose one application. **PKCS#12 is not taken**: `/admin/pki`'s upload,
+  the model rcbj named, takes PEM, and this service has no PKCS#12 reader.
+* **The private key** is in `SEALED_FIELDS` and `WITHHELD_FIELDS`
+  (`scimClientTlsPrivateKey`'s arrangement, not the assertion keys', which
+  are OPENED for the console), label `wstrust-decryption-key`
+  (`keystore.DIRECTORY_CLASSES`, `/admin/encryption`'s last row), and in
+  `names.tsp`'s secret list. The one reader is
+  `applications.wstrustDecryptionKeyOf()`, at the decryption. **In
+  development it is written in the clear**, as every sealed field is,
+  `sealFieldValue()`'s reason: the key-encryption key there is ephemeral,
+  and an entry the `ldif` or `postgres` store keeps would come back with a
+  private key that never opens. It is still withheld from every answer and
+  every directory read.
+* **Choosing the key** (`ws_encryption.ts`, `recipientHandles()`): the
+  `EncryptedKey`'s `KeyInfo` (or an agreement's `RecipientKeyInfo`, never
+  the `OriginatorKeyInfo`) gives handles — `sha1:`, `ski:`, `is:<serial>:
+  <issuer>` (`crypto.wssCertificateHandles()`, issuer RDNs compared in any
+  order) — and the listing's `byDecryptionKey` index answers which
+  application holds that certificate, without a walk. A handle that names
+  no application's certificate, or no handle, is the realm's keys as
+  before. **The key is chosen before the AppliesTo is read**, which is what
+  lets a wholly encrypted RST open; `ownersProblem()` then holds what
+  opened it to the application the opened request names: another
+  application's key is `0082`, the realm's key for an application with
+  its own is `0083`, both `wsse:FailedCheck` with one sentence that says
+  nothing about the plaintext. `encryptionFault()` lists both literals.
+* **Publishing**: the certificate is in the page's section (with a `data:`
+  download) and `credentials.wstrustDecryption` of the GET. The WSDL is one
+  document per realm and names the realm's certificate only, even with
+  `wstrust.advertiseEndpointIdentity` on: no per-application WSDL (the
+  integrator's decision on #1908). A response is still encrypted to the
+  requester's certificate, never to this one.
+* **Not exported**: an application's LDIF export carries editable
+  attributes only, so the key pair stays behind; an imported application
+  is issued or given one again.
+
+`tests/wstrust_decryption_key.js` holds all of it in process;
+`tests/protocol/sts_wstrust_decryption_key.js` over the wire.
+
+**NOT YET**: the answer is never signed (a follow-up ticket of rcbj's), so
+no output policy offers signing and the binding has no
+`sp:IncludeTimestamp`.
+
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
 `requesterCredential()` passes `door: 'wstrust'`, so in product a person who
@@ -1065,7 +1322,7 @@ file, `models/generated/ws.json`, by the prefixes of their ids, and
   Fault of each SOAP version, the RSTR collection, the RSTR — its parts in
   THIS ENDPOINT'S order, because the schema makes it a sequence of `xs:any`
   — its RequestedSecurityToken (a SAML 2.0 or 1.1 assertion told apart by
-  namespace, an EncryptedAssertion, a BinarySecurityToken), the proof
+  namespace, an xenc:EncryptedData, a BinarySecurityToken), the proof
   token, the AppliesTo, the Lifetime, the two references and the Status.
   `WsModel.hold()` checks every envelope as it goes out — the assertion
   inside against SAML's own model — logs a gap under **STS-WSTRUST-0071**,
@@ -1090,8 +1347,9 @@ code or list of the two directories written outside the model, the readers
 and writers, and every recorded envelope held with nothing to say.
 
 **What stays in code, and why.** XML parsing (`helpers.firstByLocal()`,
-local names with the namespace ignored), canonicalisation, signing,
-encryption and every WS-Security signature check (`../common/crypto.js`).
+local names with the namespace ignored), canonicalisation, signing and
+every WS-Security signature check (`../common/crypto.js`). XML Encryption
+of a WS-Trust message is `ws_encryption.ts`, which calls `crypto.js`.
 Everything that needs state: a credential's verification, the delegation
 policy, a registered AppliesTo, the lifetime's clamp, a Kerberos token's
 acceptance. The Kerberos Token Profile's token and value types are

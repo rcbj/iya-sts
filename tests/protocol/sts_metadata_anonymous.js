@@ -767,9 +767,14 @@ const DOCUMENTS = [
   { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/metadata",
     type: WSDL_TYPE, json: false, badCredential: "ignored",
     // THE WSDL (#958): a port type per trust version. WS-MetadataExchange
-    // is POST /sts/mex, a SOAP request rather than a document. The
-    // certificate stays at /sts/cert; this document names that address and
-    // does not carry the key.
+    // is POST /sts/mex, a SOAP request rather than a document. The signing
+    // certificate stays at /sts/cert. Since #1668 (rcbj on #1908) the
+    // message signature is an AsymmetricBinding under sp:Basic256Sha256 on
+    // eight ports and the IYA-STS suite on eight more. The encryption
+    // certificate as each port's endpoint identity is
+    // wstrust.advertiseEndpointIdentity, OFF BY DEFAULT (rcbj, 2026-11-19:
+    // WS-AddressingIdentity was never standardised), so by default no port
+    // carries one; sts_wstrust_metadata.js V5 turns it on.
     must: function (text) {
       log.debug("Entering must().");
       const bad = [];
@@ -793,8 +798,22 @@ const DOCUMENTS = [
       if (/WssSamlV12|AQ-RES/.test(text)) {
         bad.push("advertises SAML 1.2 or AQ-RES");
       }
-      if (/AlgorithmSuite|Basic256/.test(text)) {
-        bad.push("names an algorithm suite");
+      if (!/<sp:Basic256Sha256\/>/.test(text) ||
+          !/iyasp:Basic256GcmRsaOaepSha256 xmlns:iyasp="urn:iya-sts:ws-securitypolicy:algorithm-suite:1"/
+            .test(text)) {
+        bad.push("does not name both algorithm suites");
+      }
+      if (/IncludeTimestamp/.test(text)) {
+        bad.push("binds the answer to a signed Timestamp");
+      }
+      if ((text.match(/<wsdl:port name="/g) || []).length !== 16 ||
+          (text.match(/<wsdl:port name="[^"]*IyaSuite"/g) || []).length !==
+            8) {
+        bad.push("not eight ports under each suite");
+      }
+      if (/addressingidentity|<wsid:Identity[\s>]|EndpointReference/
+        .test(text)) {
+        bad.push("a port names an endpoint identity by default");
       }
       if (!/location="[^"]*\/sts"/.test(text)) {
         bad.push("the RST address is not /sts");

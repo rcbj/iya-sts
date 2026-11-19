@@ -598,6 +598,20 @@ two routes, each visible to the other immediately.
   only the registration, the secret and the registration access token.
 * **`forget` is the one operation that loses a fact**, which is why it is
   separate from `revoke-registration`.
+* **WS-Trust decryption key pair** (`issue-wstrust-decryption-key`,
+  `upload-wstrust-decryption-key`, `remove-wstrust-decryption-key`, #1668)
+  is on the **Credentials** tab of a WS-Trust relying party, and of any
+  application already holding one: the certificate a request for the
+  application is encrypted to in place of the realm's, with its subject,
+  issuer, serial, validity, SHA-256 and `#ThumbprintSHA1` thumbprints and a
+  **Download the certificate (PEM)** link; **Issue a key pair** from the
+  realm's certificate authority (`CN=<application>-encrypt`, the
+  `key-encipherment` profile, `rsa-3072` or `ec-p256`); a box for a PEM
+  certificate and its private key with **Upload the key pair**; and
+  **Remove the key pair**. The private key is never shown or answered.
+  `credentials.wstrustDecryption` of `GET /admin-api/applications?application=`
+  is the same state. [Configuring WS-Trust](configure-ws-trust.md#an-applications-own-decryption-key-pair)
+  has the steps and every refusal.
 * **Stored certificates** (`add-certificate`, `remove-certificate`) are on
   the **Credentials** tab of every application, whatever it is declared for:
   what the entry stores in `userCertificate` — subject, issuer, validity and

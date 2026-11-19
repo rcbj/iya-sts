@@ -13,9 +13,10 @@
 // asserted without the stack. send() is the route: the media type, no-store,
 // and the same document the request's base would be given.
 //
-// What is refused on purpose: SAML 1.2, the internal label AQ-RES, an
-// algorithm suite, and a Kerberos issued type while wstrust.issueKerberos
-// is off. The RST address is /sts. This document's own URL is not one.
+// What is refused on purpose: SAML 1.2, the internal label AQ-RES, any
+// algorithm suite but the binding's sp:Basic256Sha256, sp:IncludeTimestamp,
+// and a Kerberos issued type while wstrust.issueKerberos is off. The RST
+// address is /sts. This document's own URL is not one.
 //
 // V. EACH TRUST VERSION IS ITS OWN CONTRACT: a port type per version whose
 //    messages are that version's elements (resolved through the prefixes
@@ -43,6 +44,10 @@
 //    1.2 and the trust schemas (tests/xml-schemas), with every element it
 //    names declared by one of them, because a lax wildcard skips an element
 //    nothing declares (that is how sp: in 1.3's namespace passed).
+// P. THE MESSAGE POLICIES (#1668, rcbj on #1908): signing every header and
+//    the Body offered on every input, encryption only where the realm reads
+//    the binding's suite, the answer's only where it is written under it,
+//    and every choice an ExactlyOne whose first alternative is empty.
 // F. ALWAYS FORMATTED (rcbj, 2026-11-13): the WSDL is one element a line,
 //    each two spaces deeper than its parent, and the text is the same
 //    document with the indentation taken out; so is the WSDL in WS-MEX.
@@ -75,7 +80,10 @@ function flags(over) {
     acceptKerberos: true,
     issueKerberos: false,
     acceptClientCertificate: true,
-    verifiesCredentials: false
+    verifiesCredentials: false,
+    decryptsRequests: true,
+    readsBasic256: true,
+    encryptsResponses: false
   };
   Object.keys(over || {}).forEach(function (key) {
     out[key] = over[key];
@@ -193,8 +201,19 @@ function run(t) {
           !contains(dev, 'WssSamlV12'),
           'SAML 1.2 is denied, and AQ-RES and the SAML 1.1 Kerberos ' +
           'method are absent');
-  t.check(!contains(dev, 'AlgorithmSuite') && !contains(dev, 'Basic256'),
-          'no alternative names an algorithm suite');
+  // #1668: the binding is written once per suite: sp:Basic256Sha256 and
+  // the IYA-STS suite, in its own namespace, and no sp:IncludeTimestamp,
+  // which would bind the answer to carry a signed Timestamp.
+  const suites = dev.match(/<sp:AlgorithmSuite>[\s\S]*?<\/sp:AlgorithmSuite>/g)
+    || [];
+  t.check(suites.length === 2 && /<sp:Basic256Sha256\/>/.test(suites[0]) &&
+          /<iyasp:Basic256GcmRsaOaepSha256 xmlns:iyasp="urn:iya-sts:ws-securitypolicy:algorithm-suite:1"\/>/
+            .test(suites[1]) &&
+          !contains(dev, 'IncludeTimestamp') &&
+          contains(dev, '/IncludeToken/Never'),
+          'two AsymmetricBindings, sp:Basic256Sha256 and the IYA-STS ' +
+          'suite, the RecipientToken never included, no IncludeTimestamp',
+          suites.join(' | '));
   t.check(contains(dev, '<soap:address location="' + BASE + '/sts"/>') &&
           contains(dev, '<soap12:address location="' + BASE + '/sts"/>') &&
           !/address location="[^"]*\/sts\/(metadata|mex)/.test(dev),
@@ -250,8 +269,10 @@ function run(t) {
     t.check(contains(onOut, uri),
             'each Kerberos ValueType is issued while the flag is on', uri);
   });
-  t.check(!contains(on, '<wsp:All/>'),
+  t.check(!contains(slicePolicy(on, 'RequesterAuthentication'),
+                    '<wsp:All/>'),
           'product has no empty alternative');
+  messagePolicies(t);
 
   answered(t);
   const source = fs.readFileSync(path.join(__dirname, '..', 'ws-trust',
@@ -259,6 +280,156 @@ function run(t) {
   t.check(contains(source, "'/sts/metadata'"),
           'wstrust.ts registers GET /sts/metadata');
   log.debug("Leaving run().");
+}
+
+// P. THE MESSAGE POLICIES (#1668, rcbj on #1908): every input names
+// RequestProtection, which offers signing every header and the Body, and
+// encrypting them only where the realm decrypts sp:Basic256Sha256; every
+// output names ResponseProtection only where the answer may be encrypted
+// under it, and never offers signing (this STS signs no answer). Each
+// choice is an ExactlyOne whose first alternative is empty, so a client
+// that takes the first sends what it sends today.
+const WSU_UTILITY = 'http://docs.oasis-open.org/wss/2004/01/' +
+  'oasis-200401-wss-wssecurity-utility-1.0.xsd';
+
+function messagePolicies(t) {
+  log.debug("Entering messagePolicies().");
+  const firstEmpty = function (xml) {
+    log.debug("Entering firstEmpty().");
+    const doc = parse('<x xmlns:wsp="' + SPEC.wsp + '" xmlns:sp="' +
+                      SPEC.sp + '" xmlns:wsu="' + WSU_UTILITY + '">' + xml +
+                      '</x>');
+    const ones = elements(doc.documentElement, SPEC.wsp, 'ExactlyOne');
+    const ok = ones.length > 0 && ones.every(function (one) {
+      let first = one.firstChild;
+      while (first && first.nodeType !== 1) {
+        first = first.nextSibling;
+      }
+      return first && first.localName === 'All' &&
+        !elements(first, '*', '*').length;
+    });
+    log.debug("Leaving firstEmpty().");
+    return ok;
+  };
+  const dev = documentOf(flags({ decryptsRequests: true,
+                                 encryptsResponses: false }));
+  // The document is indented (F); the assertions read it flat.
+  const flat = function (xml) {
+    log.debug("Entering flat().");
+    log.debug("Leaving flat().");
+    return String(xml).replace(/>\s+</g, '><');
+  };
+  const devIn = flat(slicePolicy(dev, 'RequestProtection'));
+  t.check(contains(devIn, '<sp:SignedParts/>') &&
+          contains(devIn, '<sp:EncryptedParts><sp:Body/><sp:Header ' +
+                   'Namespace="http://www.w3.org/2005/08/addressing"/>' +
+                   '<sp:Header Namespace="http://schemas.xmlsoap.org/ws/' +
+                   '2004/08/addressing"/></sp:EncryptedParts>') &&
+          contains(devIn, 'sp:EncryptedElements XPathVersion=' +
+                   '"http://www.w3.org/TR/1999/REC-xpath-19991116"') &&
+          contains(devIn, 'UsernameToken') && firstEmpty(devIn),
+          'P1. development: a request may sign every header and the Body, ' +
+          'and encrypt the Body, either WS-Addressing namespace\'s headers ' +
+          'or, by XPath, any header and a UsernameToken; each choice ' +
+          'empty first', devIn.slice(0, 1500));
+  const inputs = (dev.match(/<wsdl:input>\s*<wsp:PolicyReference URI="#Req/g)
+    || []).length;
+  const ops = (dev.match(/<wsdl:input>/g) || []).length;
+  // #1668: thirty operations on the eight ports, and thirty more on the
+  // eight IYA-STS suite ports.
+  t.check(ops === 60 && inputs === ops &&
+          !contains(dev, 'ResponseProtection'),
+          'P2. every binding operation\'s input names RequestProtection, ' +
+          'and no output names a ResponseProtection there is not', inputs +
+          ' of ' + ops);
+  const prod = documentOf(flags({ verifiesCredentials: true,
+                                  decryptsRequests: false }));
+  const prodIn = flat(slicePolicy(prod, 'RequestProtection'));
+  t.check(contains(prodIn, '<sp:SignedParts/>') &&
+          !contains(prodIn, 'Encrypted') && firstEmpty(prodIn),
+          'P3. a realm that accepts no ciphertext no map names offers no ' +
+          'request encryption, and still offers signing', prodIn);
+  // P3. Product with ciphertext accepted: the IYA-STS suite's ports offer
+  // it, sp:Basic256Sha256's (AES-CBC, never read in product) do not.
+  const gcm = documentOf(flags({ verifiesCredentials: true,
+                                 decryptsRequests: true,
+                                 readsBasic256: false }));
+  t.check(!contains(flat(slicePolicy(gcm, 'RequestProtection')),
+                    'Encrypted') &&
+          contains(flat(slicePolicy(gcm, 'RequestProtectionIyaSuite')),
+                   '<sp:EncryptedParts>'),
+          'P3. product offers request encryption on the IYA-STS suite\'s ' +
+          'ports only');
+  const out = documentOf(flags({ decryptsRequests: true,
+                                 encryptsResponses: true }));
+  const outPolicy = flat(slicePolicy(out, 'ResponseProtection'));
+  const outPolicy2 = flat(slicePolicy(out, 'ResponseProtectionIyaSuite'));
+  const outputs = (out.match(
+    /<wsp:PolicyReference URI="#ResponseProtectionIyaSuite"/g) || []).length;
+  t.check(outPolicy === '' && contains(outPolicy2, '<sp:EncryptedParts>' +
+                   '<sp:Body/><sp:Header ' +
+                   'Namespace="http://www.w3.org/2005/08/addressing"/>' +
+                   '</sp:EncryptedParts>') &&
+          !contains(outPolicy2, 'Signed') &&
+          !contains(outPolicy2, 'UsernameToken') && firstEmpty(outPolicy2) &&
+          outputs === 30,
+          'P4. an answer encrypted under the IYA-STS suite is offered on ' +
+          'that suite\'s thirty outputs, never signed',
+          outPolicy2.slice(0, 1200));
+  t.check([dev, prod, out].every(function (one) {
+    return !/encrypt=1/.test(one);
+  }), 'P5. the retired ?encrypt=1 is named nowhere in the WSDL');
+  // P6. Each suite in its own requester policy: a client that cannot build
+  // the IYA-STS suite (Apache CXF) still builds RequesterAuthentication.
+  const std = flat(slicePolicy(dev, 'RequesterAuthentication'));
+  const iya = flat(slicePolicy(dev, 'RequesterAuthenticationIyaSuite'));
+  t.check(contains(std, '<sp:Basic256Sha256/>') &&
+          !contains(std, 'iyasp:') &&
+          contains(iya, '<iyasp:Basic256GcmRsaOaepSha256 ') &&
+          !contains(iya, 'UsernameToken') &&
+          (dev.match(/<wsdl:port name="[^"]*IyaSuite"/g) || []).length === 8,
+          'P6. sp:Basic256Sha256 on the eight ports, the IYA-STS suite in a ' +
+          'policy of its own on eight more');
+  // P7. The answer's suite must be one the document offers.
+  const cbcAnswer = documentOf(flags({ decryptsRequests: true,
+    readsBasic256: false, responseSuite: 'basic256sha256' }));
+  const gcmAnswer = documentOf(flags({ decryptsRequests: false,
+                                       responseSuite: 'iya' }));
+  t.check(contains(cbcAnswer, '#ResponseProtection"') &&
+          !contains(cbcAnswer, '#ResponseProtectionIyaSuite') &&
+          contains(gcmAnswer, '#ResponseProtectionIyaSuite') &&
+          !contains(gcmAnswer, '#ResponseProtection"'),
+          'P7. ResponseProtection only under a suite the document offers');
+  // P8. The encryption certificate as every port's identity, where WCF
+  // reads it, only while wstrust.advertiseEndpointIdentity is on (rcbj,
+  // 2026-11-19): off, the default, no port carries wsid:Identity even with
+  // a certificate; on, all sixteen do, and none without a certificate.
+  const certificate = 'MIIBAAEC';
+  const identitiesOf = function (xml) {
+    log.debug("Entering identitiesOf().");
+    log.debug("Leaving identitiesOf().");
+    return flat(xml).split('<wsid:Identity xmlns:wsid="http://' +
+      'schemas.xmlsoap.org/ws/2006/02/addressingidentity"><ds:KeyInfo ' +
+      'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
+      '<ds:X509Certificate>' + certificate + '</ds:X509Certificate>')
+      .length - 1;
+  };
+  const silent = documentOf(flags({ encryptionCertificate: certificate }));
+  t.check(!contains(silent, 'wsid:Identity') &&
+          !contains(silent, 'wsa10:EndpointReference') &&
+          !contains(silent, certificate),
+          'P8. off by default: no port carries an endpoint identity, ' +
+          'though a certificate exists');
+  const named = documentOf(flags({ encryptionCertificate: certificate,
+                                   advertiseEndpointIdentity: true }));
+  const unnamed = documentOf(flags({ advertiseEndpointIdentity: true }));
+  const identities = identitiesOf(named);
+  t.check(identities === 16 && !contains(dev, 'wsid:Identity') &&
+          !contains(unnamed, 'wsid:Identity'),
+          'P8. on: each of the sixteen ports carries the encryption ' +
+          'certificate as its endpoint identity, and none without one',
+          identities);
+  log.debug("Leaving messagePolicies().");
 }
 
 // xmllint, which the tests image carries (tests/Dockerfile): the document
@@ -379,7 +550,8 @@ function versions(t, xml) {
     });
   });
   const ports = elements(root, WSDL, 'port');
-  t.equal(ports.length, 8, 'eight ports: each version over SOAP 1.1 and 1.2');
+  t.equal(ports.length, 16, 'sixteen ports: each version over SOAP 1.1 ' +
+          'and 1.2, under each algorithm suite (#1668)');
   const schemas = elements(root, 'http://www.w3.org/2001/XMLSchema',
                            'schema').map(function (one) {
     return one.getAttribute('targetNamespace');
@@ -683,7 +855,10 @@ function declaredNames() {
     const key = ns[1].replace(/\/$/, '') === SPEC.versions[2].ns
       ? SPEC.versions[2].ns : ns[1];
     out[key] = out[key] || new Set();
-    const re = /<(?:xs|xsd):element\s+[^>]*?name\s*=\s*["']([^"']+)["']/g;
+    // Prefixed or not: the XML Signature schema declares its elements in
+    // the default namespace (#1668, the ports' ds:KeyInfo).
+    const re =
+      /<(?:(?:xs|xsd):)?element\s+[^>]*?name\s*=\s*["']([^"']+)["']/g;
     let m;
     while ((m = re.exec(text)) !== null) {
       out[key].add(m[1]);
@@ -695,6 +870,14 @@ function declaredNames() {
     add(fs.readFileSync(path.join(SCHEMA_DIR, name), 'utf8'));
   });
   add(WsTrustCapabilities.schema());
+  // #1668: the IYA-STS algorithm suite's own schema, and WCF's identity
+  // namespace, whose published schema the corpora image does not carry:
+  // the one element of it a port writes. A port writes it only while
+  // wstrust.advertiseEndpointIdentity is on (off by default, rcbj
+  // 2026-11-19); the W case below turns it on so that it is checked.
+  add(WsTrustMetadata.suiteSchema());
+  out['http://schemas.xmlsoap.org/ws/2006/02/addressingidentity'] =
+    new Set(['Identity']);
   log.debug("Leaving declaredNames().");
   return out;
 }
@@ -751,9 +934,17 @@ function alternativesOf(doc, id) {
           all.parentNode.parentNode !== policy) {
         return;
       }
-      const token = elements(all, SPEC.sp, '*').filter(function (one) {
-        return one.parentNode === all && /Token$/.test(one.localName);
-      })[0];
+      // #1668: the message signature is an AsymmetricBinding, written as
+      // its InitiatorToken.
+      const binding = elements(all, SPEC.sp, 'AsymmetricBinding')[0];
+      const initiator = binding
+        ? elements(binding, SPEC.sp, 'InitiatorToken')[0] : null;
+      const token = initiator ? elements(initiator, SPEC.sp, '*')
+        .filter(function (one) {
+          return /Token$/.test(one.localName);
+        })[0] : elements(all, SPEC.sp, '*').filter(function (one) {
+          return one.parentNode === all && /Token$/.test(one.localName);
+        })[0];
       if (!token) {
         out.push('');
         return;
@@ -770,7 +961,14 @@ function alternativesOf(doc, id) {
           return one.localName;
         }).join(' ');
       }
-      out.push(token.localName + ' ' + what);
+      // The binding's suite, by local name (#1668: one alternative each).
+      const suite = binding
+        ? elements(elements(binding, SPEC.sp, 'AlgorithmSuite')[0],
+                   '*', '*').filter(function (one) {
+          return one.localName !== 'Policy';
+        })[0] : null;
+      out.push((binding ? 'AsymmetricBinding(' + suite.localName + ') '
+                        : '') + token.localName + ' ' + what);
     });
   }
   log.debug("Leaving alternativesOf(). " + out.length);
@@ -789,21 +987,28 @@ function wholeContract(t) {
   const declared = declaredNames();
   const cases = [
     { name: 'development, everything on',
-      flags: flags({ issueKerberos: true }),
+      // A base64 certificate and the identity advertised, so the ports'
+      // identity is validated too.
+      flags: flags({ issueKerberos: true, encryptionCertificate: 'MIIBAA==',
+                     advertiseEndpointIdentity: true,
+                     responseSuite: 'iya' }),
       inputs: ['', 'HttpsToken RequireClientCertificate',
                'IssuedToken ' + SPEC.jwt,
                'KerberosToken WssKerberosV5ApReqToken11',
                'SamlToken WssSamlV11Token11', 'SamlToken WssSamlV20Token11',
                'UsernameToken WssUsernameToken11',
-               'X509Token WssX509V3Token11'],
+               'AsymmetricBinding(Basic256Sha256) X509Token ' +
+                 'WssX509V3Token11'],
       outputs: [SPEC.saml2, SPEC.saml11, SPEC.jwt].concat(SPEC.kerberos) },
     { name: 'product, Kerberos and TLS off',
       flags: flags({ verifiesCredentials: true, acceptKerberos: false,
-                     acceptClientCertificate: false }),
+                     acceptClientCertificate: false,
+                     readsBasic256: false }),
       inputs: ['IssuedToken ' + SPEC.jwt, 'SamlToken WssSamlV11Token11',
                'SamlToken WssSamlV20Token11',
                'UsernameToken WssUsernameToken11',
-               'X509Token WssX509V3Token11'],
+               'AsymmetricBinding(Basic256Sha256) X509Token ' +
+                 'WssX509V3Token11'],
       outputs: [SPEC.saml2, SPEC.saml11, SPEC.jwt] }
   ];
   cases.forEach(function (one) {
@@ -949,7 +1154,7 @@ function wholeContract(t) {
             });
         return tag + (transportOk && actionsOk && addressOk ? '' : '!');
       }).sort();
-      t.equal(soaps.join(' '), 'soap11 soap12',
+      t.equal(soaps.join(' '), 'soap11 soap11 soap12 soap12',
               'W7. ' + one.name + ': ' + v.title + ' is bound to SOAP 1.1 ' +
               'and SOAP 1.2 over HTTP, with its actions, at /sts');
     });

@@ -207,6 +207,14 @@
     "en": "7aa85457f3f98d8b",
     "text": "Sinumang may hawak nito ay makapag-a-authenticate sa partner na iyon bilang serbisyong ito (`tls_client_auth`) at makapagpapakita ng mga access token na itinali ng partner sa certificate. Naka-seal kapag nakaimbak saanman nagpe-persist ang mga key, at itinatago — kasama ang ciphertext — sa bawat LDAP search, page at sagot ng `/admin-api`, na certificate lamang ang dala."
   },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "Ang sariling WS-Trust na private key na pang-decrypt ng isang application (#1668) — `wstrustDecryptionPrivateKey`: ang ginagamit para i-decrypt ang WS-Trust request para sa application na iyon, na naka-encrypt sa certificate nito"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Sinumang may hawak nito ay nakababasa ng bawat request na naka-encrypt sa application na iyon — ang mga credential at claim na inilalayo ng encryption sa network. Naka-seal habang nakaimbak saanman nananatili ang mga key, at hindi ibinibigay — kasama ang ciphertext — sa anumang paghahanap sa LDAP, pahina at sagot ng `/admin-api`, na certificate lamang ang dala."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Ang ine-encrypt ng serbisyong ito AT REST, gamit ang aling key, sa ilalim ng aling algorithm, at gaano karami na nito ang nangyari sa process na ito."

@@ -1287,6 +1287,58 @@
     "en": "86ac83dbe366a17b",
     "text": "نطاقات صلاحية OAuth 2.0 التي يحملها JWT من WS-Trust لهذا التطبيق، قيمة واحدة لكل منها (#485). ويحمل JWT الذي يصدره WS-Trust وهذا التطبيق هو AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) تلك القيم في مطالبة `scope`، مفصولة بمسافات (RFC 9068 القسم 2.2.3)؛ وإن لم يُضبط شيء فلا يحمل `scope`. ولا يتأثر رمز SAML.\n\n**يُحكم على كل منها كما يُحكم على ما لرمز وصول OAuth**، مع هذا التطبيق عميلًا: يعلن `oauthAllowedScope` ما يجوز إصداره (في وضع المنتج؛ ونطاقات الصلاحية المحمية لهذه الخدمة في كل وضع)، ويحسم سؤال سياسة الإصدار لكل نطاق صلاحية. والقيمة التي تسقطها السياسة تُترك خارج الرمز وتُدقَّق (STS-OAUTH-0579)، ولا تُصدَر أبدًا. وتُقبل هنا كتابة تسمي نطاق صلاحية غير معلن، لأن الإعلان قد يتغير ووضع التطوير يمنح نطاقات الصلاحية غير المعلنة: أعلنه على oauthAllowedScope أيضًا. ويُحذَّر من قيمة ستسقطها السياسة حيث تُضبط (#488): إلى جانب هذا الحقل، وفي رد الحفظ، وكـ `warnings` على ردود الكتابة في /admin-api وعلى عرض التطبيق."
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE أو FALSE: اشتراط أن تصل العناصر التي تسميها خريطة الطلب لهذا التطبيق مشفّرة، متجاوزًا wstrust.encryptRequest. عند التفعيل، يكون الطلب الذي AppliesTo الخاص به هو هذا التطبيق FailedCheck إذا كانت الخريطة فارغة، أو طابق تعبير عنصرًا وصل بنص واضح، أو لم يطابق تعبير أي شيء مستعاد من نص مشفّر. أي نص مشفّر يُفتح يقرره wstrustAcceptEncryptedElements؛ ويُقرأ AppliesTo من الطلب المفتوح، والنص المشفّر الذي لا يُفتح هو FailedCheck في كل الأحوال."
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE أو FALSE: قبول تشفير XML في أي مكان من طلب يكون AppliesTo الخاص به هذا التطبيق، في ترويسة أو في الجسم، دون أن تسميه خريطة طلب، متجاوزًا wstrust.acceptEncryptedElements. عند التعطيل لا يُقبل النص المشفّر إلا حيث يسميه wstrustEncryptRequestElements — يجب أن يكون كل عنصر مستعاد مما يختاره تعبير أو داخله — والنص المشفّر بلا خريطة هو InvalidRequest. وفي كل الأحوال يجب أن يُفتح النص المشفّر بمفاتيح هذا النطاق."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "عناصر طلب WS-TRUST التي يجب أن تصل مشفّرة، تعبير XPath 1.0 لكل منها. المجموعة الجزئية هي `/` و`//` و`*` واسم عنصر و`prefix:local` واتحاد بـ `|`، والمحمولات `local-name()` و`namespace-uri()` و`@attr`، مربوطة بـ `and`. يجب أن يختار كل تعبير عنصرًا واحدًا على الأقل مستعادًا من نص مشفّر: xenc:EncryptedData من النوع Element أو Content، أو EncryptedHeader من WS-Security 1.1. التعبير خارج هذه المجموعة الجزئية هو RequestFailed. يمكن تسمية ترويسة SOAP أو جسم SOAP أو أي عنصر، لأي نوع من الرموز."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE أو FALSE: استبدل العناصر التي تسميها خريطة استجابة هذا التطبيق بـ xenc:EncryptedData، متجاوزًا wstrust.encryptResponse. تُبنى الاستجابة واضحة ثم تُستبدل تلك العناصر، لأي نوع من الرموز. يبقى الخطأ واضحًا. عند التشغيل، وتعذّر إتمام التشفير — لا مستلم، أو خريطة لا تطابق شيئًا، أو تشفير لا تقبله شهادة المستلم — يكون الطلب خطأ في الوضعين."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "عناصر استجابة WS-TRUST التي تُشفَّر، تعبير XPath 1.0 لكل منها، المجموعة الجزئية نفسها كما في wstrustEncryptRequestElements. يجوز تسمية ترويسة SOAP أو جسم SOAP أو أي عنصر. التعبير الذي لا يطابق شيئًا في الاستجابة التي بُنيت هو خطأ."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "تشفير الكتلة المستخدم لاستجابات WS-Trust لهذا التطبيق — aes256-gcm أو aes128-gcm أو aes256-cbc أو aes128-cbc — متجاوزًا wstrust.encryptionAlgorithm. يجوز لعنصر wst:EncryptionAlgorithm أن يسمي هذا التشفير، باسمه القصير أو بمعرّف URI لـ XML Encryption، فقط ما دام تشفير الاستجابة قيد التشغيل لهذا التطبيق."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "الشهادة التي تُشفَّر إليها استجابة WS-TRUST، بترميز DER بصيغة base64 أو PEM. عندما تُعيَّن تكون هي المستلم، والشهادة التي لا تُقرأ خطأ بدلًا من النزول إلى المصدر التالي. عندما لا تُعيَّن يكون المستلم عنصر الشهادة الذي يحدده wstrustResponseRecipientXPath، أو، عندما لا يُعيَّن ذلك التعبير أيضًا، أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "كيف يُغلَّف مفتاح المحتوى لاستجابات WS-Trust لهذا التطبيق — rsa-oaep-mgf1p أو rsa-oaep (SHA-256، MGF1-SHA-256) أو rsa-1_5 — متجاوزًا wstrust.keyTransportAlgorithm. المستلم الذي شهادته EC يُشفَّر إليه بـ ECDH-ES مهما قال هذا. يجوز لعنصر wst:EncryptWith أن يسمي هذه الخوارزمية، باسمها القصير أو بمعرّف URI لـ XML Encryption، فقط ما دام تشفير الاستجابة قيد التشغيل لهذا التطبيق."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "تعبير XPATH يحدّد عنصر الشهادة الذي تُشفَّر إليه استجابة WS-TRUST: ds:X509Certificate أو BinarySecurityToken ينتهي ValueType الخاص به بـ #X509v3. المجموعة الجزئية نفسها كما في خرائط العناصر. عندما يُعيَّن ولا يحدّد شيئًا، أو يحدّد عنصرًا ليس أحد هذين، لا يوجد مستلم ولا يُجرَّب المصدر التالي. عنصر الشهادة المحدَّد الذي ليس نصه شهادة هو خطأ تشفير مكتمل، ولا يُجرَّب المصدر التالي. عندما لا يُعيَّن يكون المستلم أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب — BinarySecurityToken الذي تشير إليه مرجعية ذلك التوقيع، أو ds:X509Certificate في KeyInfo ذلك التوقيع. البصمة أو Subject Key Identifier أو المُصدِر والرقم التسلسلي ليس عنصر شهادة."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "الشهادة التي يُشفَّر إليها طلب WS-TRUST لهذا التطبيق، بصيغة PEM. ما دامت معيَّنة، يُفك تشفير الطلب الموجَّه إلى هذا التطبيق بمفتاحها الخاص لا بمفتاح النطاق، والطلب الموجَّه إليه المشفَّر إلى مفتاح النطاق هو FailedCheck. عامة: تقدمها صفحة التطبيق و GET /admin-api/applications."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "شهادات سلطة الشهادات التي أصدرت wstrustDecryptionCertificate، بصيغة PEM، والسلطة المُصدِرة أولًا، لزوج مفاتيح صادر هنا. فارغة لزوج مرفوع."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "المفتاح الخاص لـ wstrustDecryptionCertificate، بصيغة PEM. مختوم حيث تبقى المفاتيح، ومحجوب عن كل صفحة وكل إجابة من /admin-api وكل قراءة من الدليل، ولا يُسجَّل أبدًا."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "مصدر زوج مفاتيح فك التشفير: issued (أُنشئ هنا وصادقت عليه سلطة شهادات النطاق) أو uploaded (مرفوع)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN، مثل HTTP/sts@EXAMPLE.COM — سمة المعرّف في Kerberos v5. وخدمة Kerberos تطبيق كسائر التطبيقات هنا، وهي التي ربما أنشأت هذه الخدمة معرّفها عند الطلب (KRB5_SERVICE_DOMAINS). وهو يتراكم، وهنا تلك هي الحالة العادية لا النادرة: فالخدمة الواحدة تجيب عادة عن عدة SPN — HTTP/host وHTTP/host.example.com — ويحفظ KDC حقيقي بها كلها مقابل حساب واحد."

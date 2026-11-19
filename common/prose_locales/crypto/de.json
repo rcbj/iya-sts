@@ -1112,12 +1112,16 @@
     "text": "Die SAML-Assertion in der RequestSecurityTokenResponse, 1.1 oder 2.0, durch den gemeinsamen Signierer."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "e1450965d276d357",
-    "text": "Es LIEST die `<wsse:Security>`-Anmeldedaten eines Anfragenden und das `<ds:X509Certificate>` in einer signierten Anfrage — Letzteres, um zu ermitteln, an wen zu VERSCHLÜSSELN ist. Im Produktmodus wird das Passwort eines UsernameToken gegen das `userPassword` der Person oder gegen die Client-Geheimnisse einer Anwendung geprüft; der Entwicklungsmodus glaubt es, außer dem reservierten `invalid`."
+    "en": "b006491105a22a5c",
+    "text": "Es LIEST die `<wsse:Security>`-Anmeldedaten eines Anfragenden. Die Antwortverschlüsselung verwendet das Zertifikat der Anwendung, ein Zertifikatelement, das ihr Empfängerausdruck auswählt, oder das Zertifikatelement des Signierers — nicht ein `<ds:X509Certificate>` innerhalb einer Assertion. Im Produktmodus wird das Passwort eines UsernameToken gegen das `userPassword` der Person oder gegen die Client-Geheimnisse einer Anwendung geprüft; der Entwicklungsmodus glaubt es, außer dem reservierten `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "fa359afa3450379c",
-    "text": "Mit `?encrypt=1` die ausgestellte 2.0-Assertion, an das Zertifikat, das in der Anfragesignatur gefunden wurde. Dieselben zwei Tabellen wie bei SAML 2.0, weil es derselbe Code ist — `saml/saml2.ts` exportiert ihn erneut."
+    "en": "9b946662ee148582",
+    "text": "Benannte Elemente einer Antwort, als xenc:EncryptedData, an das Zertifikat der Anwendung oder an das Zertifikatelement des Signierers. Die Chiffre ist die dieser Familie, über crypto.js; die EncryptedAssertion von SAML bleibt in `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "Jedes verschlüsselte Element einer Anfrage, an den XML-Encryption-Schlüssel dieses Bereichs: ein EncryptedData vom Typ Element oder Content oder ein EncryptedHeader, über crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

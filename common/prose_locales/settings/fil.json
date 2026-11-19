@@ -5711,6 +5711,54 @@
     "en": "52a63db9be2c6460",
     "text": "Kung sinasagot ng Kerberos token ang wst:TokenType na nagpapangalan sa isa sa anim na ValueType ng Kerberos Token Profile 1.1: isang AP-REQ na may dalang service ticket na inilabas ng KDC ng realm na ito para sa subject patungo sa Kerberos service na pinapangalanan ng AppliesTo, at ibinabalik ang subkey ng Authenticator bilang proof token sa TLS. Pinapangalanan ng isang ActAs ticket ang bawat partidong kumilos sa S4U_DELEGATION_INFO ng PAC nito. Kapag naka-off, tinatanggihan ang ganitong kahilingan."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "Hingin na naka-encrypt ang mga pinangalanang elemento ng isang request"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "a4747360d56b0948",
+    "text": "Kung ang isang RequestSecurityToken na ang AppliesTo ay walang sariling application ay dapat dumating nang naka-encrypt ang mga elemento ng wstrustEncryptRequestElements. Pinapalitan ito ng wstrustEncryptRequest ng isang application para sa request na ang AppliesTo ay ito. Ang wstrust.acceptEncryptedElements ang nagpapasya kung aling ciphertext ang bubuksan; binabasa ang AppliesTo mula sa nabuksang request. Kapag naka-on, at walang laman ang map, o may expression na tumutugma sa elementong dumating nang hindi naka-encrypt o walang naibalik, ang request ay isang wsse:FailedCheck. Ang ciphertext na hindi mabuksan ay ganoong fault sa alinmang kaso."
+  },
+  "wstrust.acceptEncryptedElements|label": {
+    "en": "fdb0c37def2e9c0a",
+    "text": "Tanggapin ang mga naka-encrypt na elementong walang map na nagpapangalan"
+  },
+  "wstrust.acceptEncryptedElements|description": {
+    "en": "91a62934f0ef031e",
+    "text": "Kung ang isang RequestSecurityToken ay maaaring magdala ng XML Encryption saanman, sa isang header o sa body, nang walang request map na nagpapangalan dito. Kapag naka-on, binubuksan ang bawat naka-encrypt na elemento. Kapag naka-off, tinatanggap lang ang ciphertext kung saan ito pinangalanan ng wstrustEncryptRequestElements ng application, at ang ciphertext na walang map ay isang wst:InvalidRequest. Sa alinmang kaso, dapat mabuksan ang ciphertext gamit ang mga key ng realm na ito. Pinapalitan ito ng wstrustAcceptEncryptedElements ng isang application. Nag-aalok lang ang WSDL ng encryption ng request habang naka-on ito."
+  },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "I-anunsyo ang encryption certificate bilang pagkakakilanlan ng bawat port"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Kung ang bawat port ng WSDL sa /sts/metadata ay may wsa:EndpointReference na ang wsid:Identity ay naglalaman ng XML Encryption certificate ng realm na ito, ang certificate kung saan ine-encrypt ang isang request. Ang elemento ay mula sa WS-AddressingIdentity, isang specification ng Microsoft na hindi kailanman naging pamantayan; binabasa ito ng WCF, at ng mga toolkit na gumagaya sa WCF. Kapag naka-off, walang certificate na pinangangalanan ang WSDL at kino-configure ang isang client gamit ito sa labas ng band: ang KeyDescriptor use=\"encryption\" ng /saml2/metadata, na siya ring certificate. Hindi nagbabago kahit kailan kung ano ang maaaring i-encrypt ng isang request."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "I-encrypt ang mga pinangalanang elemento ng isang response"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Kung ang isang RequestSecurityTokenResponse ay pinapalitan ang mga elemento ng wstrustEncryptResponseElements ng xenc:EncryptedData pagkatapos itong mabuo, para sa anumang uri ng token. Ino-override ito ng wstrustEncryptResponse ng isang application. Ang recipient ay ang wstrustEncryptionCertificate ng application na iyon, kung hindi ang elemento ng certificate na pinipili ng wstrustResponseRecipientXPath, kung hindi ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request. Ang fault ay ipinapadala nang klaro. Naka-on, at hindi makumpleto ang encryption, ang request ay fault sa parehong mode."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Algorithm ng encryption ng response"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Ang block cipher na ginagamit sa mga naka-encrypt na elemento ng isang WS-Trust response. Ang dalawang GCM ay authenticated: ang binagong ciphertext ay bumibigo sa tag nito at tinatanggihan. Ang dalawang CBC ay hindi. Ino-override ito ng wstrustEncryptionAlgorithm ng isang application. Maaaring pangalanan ng elementong wst:EncryptionAlgorithm ang cipher na ito, sa maikling pangalan nito o sa XML Encryption URI nito, habang naka-on lang ang response encryption."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Algorithm ng key transport ng response"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Paano ibinabalot ang one-time na content key ng isang WS-Trust response sa RSA public key ng recipient. Ang `rsa-oaep` ay ang RSA-OAEP ng XML Encryption 1.1 na may SHA-256 at MGF1-SHA-256; ang `rsa-oaep-mgf1p` ay OAEP sa SHA-1. Ang recipient na EC ang certificate ay ini-encrypt sa pamamagitan ng ECDH-ES key agreement anuman ang sabihin nito. Ino-override ito ng wstrustKeyTransportAlgorithm ng isang application. Ang `rsa-1_5` ay RSAES-PKCS1-v1_5 at sira na, at iniaalok ito dahil maaaring wala nang tanggapin ang isang naka-deploy na requester. BABALA: ang rsa-1_5 ay development mode lang — sa product mode hindi ito pinapansin kung saan ito binabasa, sa setting na ito at sa wstrustKeyTransportAlgorithm ng isang application (ginagamit ang rsa-oaep-mgf1p, nila-log nang isang beses, STS-CORE-0106), at tinatanggihan ang pagtatakda nito (STS-CORE-0103, STS-REG-0193). Maaaring pangalanan ng elementong wst:EncryptWith ang algorithm na ito habang naka-on lang ang response encryption."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Sign-in na sinimulan ng identity provider"

@@ -240,6 +240,10 @@ const BUILT = {
   'uma/uma_console.ts|action': {
     via: { call: 'self.record', arg: 0 }, except: ['kind'],
     values: ['uma.share.add', 'uma.share.remove', 'uma.approval.answer'] },
+  // ---- ws-trust: an application's decryption key pair (#1668), each act
+  // naming its action at the call.
+  'ws-trust/ws_decryption_key.ts|action': {
+    via: { call: 'WsDecryptionKey.audited', arg: 0 } },
   // ---- xacml
   "xacml/xacml_admin.ts|'xacml.pep.' + (on ? 'enable' : 'disable')": {
     values: ['xacml.pep.enable', 'xacml.pep.disable'] },

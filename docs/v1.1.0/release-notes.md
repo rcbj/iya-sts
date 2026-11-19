@@ -352,6 +352,194 @@ nothing in `x5c` to compare the credential's `iss` with
   verify either way. `ldp_vc` and `mso_mdoc` are not affected, and neither
   is the trusted list, which its scheme operator signs.
 
+### WS-Trust uses XML Encryption selected by an XPath expression map; `?encrypt=1` is retired
+
+`POST /sts?encrypt=1` encrypted the issued SAML 2.0 assertion to the
+requester's certificate. That query parameter was this service's own test
+control. It was never part of WS-Trust, and it is retired. A request that
+still carries `encrypt=1` is handled as if the parameter were absent:
+nothing is encrypted because of it, and the parameter alone is not a fault.
+
+XML Encryption of a WS-Trust message is now chosen per application, once
+for the request and once for the response. Each direction is a checkbox
+and an XPath expression map: a list of expressions, one per value, naming
+what must be element-encrypted. An expression may select a SOAP header,
+the SOAP body, or any other element, so a SAML assertion, a JWT, a
+username token and any other token are covered by the same map. Each
+selected element is replaced by `xenc:EncryptedData` with `Type`
+`http://www.w3.org/2001/04/xmlenc#Element`, and the key sits inside that
+element. The response is not wrapped in `saml:EncryptedAssertion`.
+
+This does not use the SAML assertion settings.
+`saml2.encryptAssertion`, `saml2.encryptionAlgorithm`,
+`saml2.keyTransportAlgorithm` and `samlEncryptionCertificate` are
+unchanged and apply to SAML only. WS-Trust has its own settings and its
+own attributes.
+
+* **Each direction has a checkbox and its XPath map.** Both checkboxes
+  default to off, and an application may override either.
+  * `wstrust.encryptRequest` (`wstrustEncryptRequest`) requires every
+    expression in `wstrustEncryptRequestElements` to arrive as XML
+    Encryption. The service verifies a WS-Security signature on the
+    message as it arrived, then decrypts those elements with the realm's
+    XML private keys.
+  * `wstrust.encryptResponse` (`wstrustEncryptResponse`) replaces every
+    match of `wstrustEncryptResponseElements` in the response.
+  * A switch that is on with an empty map is a fault. An expression that
+    matches nothing is a fault. Either one stops processing at once and
+    returns that fault: nothing is issued, and the clear response is not
+    sent.
+* **An expression is a stated subset of XPath.** It may use `/` and `//`,
+  `*`, an element name, `prefix:local`, a union with `|`, and the
+  predicates `local-name()`, `namespace-uri()` and `@attr`, joined by
+  `and`. Any other expression is `wst:RequestFailed`
+  (`STS-WSTRUST-0079`). Write `local-name()` and `namespace-uri()` when
+  one expression should match SOAP 1.1 and SOAP 1.2. A prefix is resolved
+  from the namespaces declared on the element, and from SOAP 1.1, SOAP
+  1.2, WS-Addressing, WS-Security, WS-Security Utility, WS-Trust, SAML,
+  XML Signature and XML Encryption.
+* **The algorithms are WS-Trust settings, overridable per application.**
+  `wstrust.encryptionAlgorithm` (`wstrustEncryptionAlgorithm`) defaults to
+  `aes256-gcm`. `aes128-gcm` is also available, and `aes256-cbc` and
+  `aes128-cbc` only where broken algorithms are allowed.
+  `wstrust.keyTransportAlgorithm` (`wstrustKeyTransportAlgorithm`)
+  defaults to `rsa-oaep-mgf1p`. `rsa-oaep` is also available, and
+  `rsa-1_5` only where broken algorithms are allowed. Where legacy hashes
+  are not allowed, `rsa-oaep-mgf1p` is used as `rsa-oaep`. An
+  elliptic-curve recipient uses ECDH-ES whatever the key transport says.
+* **The response is encrypted to one recipient, and a configured step
+  that cannot be used does not fall through to the next.**
+  1. `wstrustEncryptionCertificate` on the application, when it is set:
+     base64 DER or PEM. A value that cannot be used is a fault.
+  2. Otherwise `wstrustResponseRecipientXPath`: the first
+     `ds:X509Certificate` or `#X509v3` `BinarySecurityToken` that
+     expression selects in the request. An expression that is set and
+     matches nothing, or that selects an element that is not one of
+     those two, is `wst:InvalidRequest` (`STS-WSTRUST-0076`). A
+     certificate element whose text is not a certificate is
+     `wst:RequestFailed` (`STS-WSTRUST-0077`). The next source is not
+     tried.
+  3. Otherwise the first signer certificate element the request's
+     WS-Security signature names, in document order. That is the
+     `#X509v3` `BinarySecurityToken` the signature's reference points
+     at, or a `ds:X509Certificate` in that signature's `KeyInfo`.
+  A thumbprint, Subject Key Identifier or issuer-serial that does not
+  carry the certificate element is not a recipient. A certificate inside
+  an assertion, or inside `OnBehalfOf` or `ActAs`, is not the signer's.
+  With response encryption on and no recipient, the fault is
+  `wst:InvalidRequest` (`STS-WSTRUST-0076`) in both modes. A cipher
+  failure, a response expression that matches nothing, or a certificate
+  the encryption-recipient check refuses is `wst:RequestFailed`
+  (`STS-WSTRUST-0077`). Under paranoid PKI mode the certificate must
+  permit `keyEncipherment` or `keyAgreement`. A message-signing
+  certificate permits `digitalSignature` only, so set
+  `wstrustEncryptionCertificate` when the signer's certificate cannot be
+  an encryption recipient. A certificate with no `keyUsage` may encrypt
+  (RFC 5280).
+* **A request element the map requires, sent in clear, is refused in both
+  modes.** After decryption every request expression must select at least
+  one node, and every selected node must be one restored from ciphertext
+  or inside one. A clear match, a miss, or a decrypt that fails is
+  `wsse:FailedCheck` (`STS-WSTRUST-0075`), WS-Security 1.1's code. Development mode no longer
+  answers in clear when encryption was required and could not be done.
+* **Arbitrary ciphertext is a setting, off by default.** With
+  `wstrust.acceptEncryptedElements` (an application's
+  `wstrustAcceptEncryptedElements`) on, an encrypted element anywhere in a
+  request is opened: an `EncryptedData` of type Element or Content, a
+  WS-Security 1.1 `EncryptedHeader`, its key in its own `KeyInfo` or in an
+  `EncryptedKey` in the security header that lists it. Off, ciphertext is
+  accepted only where the request map names it, and anything else is
+  `STS-WSTRUST-0080`. A ciphertext must open with this realm's keys either
+  way. A signature is verified in the order the security header gives, so
+  a request signed before it was encrypted verifies, and what opens outside
+  the signed Body is `STS-WSTRUST-0046` in product.
+* **A map's prefixes are the service's.** `wst`, `wsa`, `saml` and the
+  rest mean what [WS-Trust](ws-trust.md#xml-encryption) lists, whatever the
+  request declares.
+* **An encrypted answer announces itself.** Its `EncryptedKey` and
+  `ReferenceList` are in a `wsse:Security` header, so WSS4J and WCF decrypt
+  it in their own security processing.
+* **A recipient expression selects only what the signature covers.** The
+  certificate `wstrustResponseRecipientXPath` selects must be the signer's
+  own token or inside a part the accepted signature references, or the
+  request is `STS-WSTRUST-0081`.
+* **The WSDL describes it** ([the metadata document](ws-trust.md#the-metadata-document)).
+  The message signature is an `sp:AsymmetricBinding` under
+  `sp:Basic256Sha256` on the eight ports, and under this service's own
+  suite, `urn:iya-sts:ws-securitypolicy:algorithm-suite:1`
+  `Basic256GcmRsaOaepSha256` (AES-256-GCM, RSA-OAEP over SHA-256,
+  RSA-SHA256), on eight more `IyaSuite` ports. A request may
+  sign every header and the Body, and may be encrypted where the realm
+  accepts it under the port's suite; an answer may be encrypted where the
+  service-wide cipher is that suite's. Each choice is optional. An
+  `sp:IssuedToken` now carries the nested `wsp:Policy` WS-SecurityPolicy
+  requires; without it Apache CXF would not load the WSDL.
+* **The encryption certificate as each port's identity is a setting, off by
+  default.** With `wstrust.advertiseEndpointIdentity` on, every port
+  carries the realm's encryption certificate in a
+  `wsa:EndpointReference/wsid:Identity`, where WCF reads it. That element is
+  from WS-AddressingIdentity, a Microsoft specification that was never
+  standardised, so the WSDL does not carry it by default. Off, a client is
+  configured with the certificate from `/saml2/metadata`
+  ([The encryption certificate](ws-trust.md#the-encryption-certificate)).
+* **An RST may name a cipher only inside the application's policy.**
+  Absent `wst:EncryptionAlgorithm` and `wst:EncryptWith`, the
+  application's settings are used as they stand. Either element may name
+  a cipher only when response encryption is already on and the name is
+  the configured algorithm. Anything beyond that is `wst:InvalidRequest`
+  (`STS-WSTRUST-0078`). `wst:UseKey` and `wst:ProofEncryption` stay
+  unimplemented, because this service issues bearer tokens.
+* **`STS-WSTRUST-0012` and `STS-WSTRUST-0013` are retired.** They named
+  the query parameter. A fault response is not encrypted.
+
+To encrypt the issued SAML 2.0 assertion, set `wstrustEncryptResponse`
+to `true` and add this as one value of
+`wstrustEncryptResponseElements`:
+
+```
+//*[local-name()='Assertion' and namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']
+```
+
+Callers that looked for `EncryptedAssertion` find `EncryptedData`.
+
+Nothing already stored has to be migrated, and there is no upgrade-script
+step. Both switches default to off, so a deployment that never sent
+`?encrypt=1` is unchanged. A caller that did has to set the application
+as above. The query parameter no longer encrypts the assertion.
+
+### New: an application's own WS-Trust decryption key pair
+
+An application may now hold a decryption key pair of its own, so a request
+for it is encrypted to its certificate rather than to the realm's XML
+Encryption certificate (#1668). On the application's **Credentials** tab,
+**WS-Trust decryption key pair**, and through three new management API
+operations:
+
+* **Issue** one from the realm's certificate authority
+  (`POST /admin-api/applications/issue-wstrust-decryption-key`): the
+  `key-encipherment` profile, `rsa-3072` or `ec-p256`, subject
+  `CN=<application>-encrypt` with the realm's organisation.
+* **Upload** a PEM certificate and its unencrypted private key
+  (`upload-wstrust-decryption-key`). The key must be the certificate's, RSA
+  of 2048 bits or more or EC on P-256, P-384 or P-521; each refusal has its
+  code, `STS-ADMIN-0946` to `0950`.
+* **Remove** it (`remove-wstrust-decryption-key`).
+
+The private key is sealed where keys persist and is never shown, answered
+or logged. The certificate is on the page, with a download, and in
+`credentials.wstrustDecryption` of `GET /admin-api/applications?application=`.
+The WSDL does not name it: configure the client out of band.
+
+A request is opened with the key its `EncryptedKey` names, so a request
+whose `AppliesTo` is inside the ciphertext still opens. Ciphertext opened
+with an application's key in another application's request is
+`wsse:FailedCheck` (`STS-WSTRUST-0082`), and a request for an application
+with its own key encrypted to the realm's key is `STS-WSTRUST-0083`. An
+application without one is unchanged. Four new directory attributes carry
+it (`wstrustDecryptionCertificate`, `wstrustDecryptionCertificateChain`,
+`wstrustDecryptionPrivateKey`, `wstrustDecryptionKeySource`); nothing
+existing has to be migrated, and there is no upgrade-script step.
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the

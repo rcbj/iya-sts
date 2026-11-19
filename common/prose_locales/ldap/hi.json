@@ -1287,6 +1287,58 @@
     "en": "86ac83dbe366a17b",
     "text": "वे OAuth 2.0 स्कोप जो इस अनुप्रयोग के WS-Trust JWT लेकर चलता है, प्रत्येक एक स्कोप मान (#485)। JWT जिसे WS-Trust इस अनुप्रयोग को AppliesTo मानकर जारी करता है (wst:TokenType urn:ietf:params:oauth:token-type:jwt) उन्हें अपने `scope` दावे में लेकर चलता है, स्पेस से अलग करके (RFC 9068 अनुभाग 2.2.3); कुछ सेट न हो तो कोई `scope` नहीं लेकर चलता। SAML टोकन अप्रभावित रहता है।\n\n**प्रत्येक का निर्णय वैसे ही होता है जैसे OAuth एक्सेस टोकन का**, इस अनुप्रयोग को क्लाइंट मानकर: `oauthAllowedScope` घोषित करता है कि क्या जारी हो सकता है (product में; हर मोड में इस सेवा के संरक्षित स्कोप), और जारी करने की नीति का प्रति-स्कोप प्रश्न निर्णय करता है। नीति जो मान छोड़ती है वह टोकन पर नहीं रखा जाता और ऑडिट होता है (STS-OAUTH-0579), कभी जारी नहीं किया जाता। अघोषित स्कोप का नाम लेने वाला लेखन यहाँ स्वीकार होता है, क्योंकि घोषणा बदल सकती है और development अघोषित स्कोप प्रदान करता है: इसे oauthAllowedScope पर भी घोषित करें। नीति जिस मान को छोड़ेगी, उसके बारे में जहाँ वह सेट हो वहाँ चेतावनी दी जाती है (#488): इस फ़ील्ड के पास, Save उत्तर में, और /admin-api के लेखन उत्तरों तथा अनुप्रयोग के दृश्य पर `warnings` के रूप में।"
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE या FALSE: इस अनुप्रयोग के अनुरोध मैप द्वारा नामित तत्वों का एन्क्रिप्टेड आना आवश्यक करें, wstrust.encryptRequest को ओवरराइड करते हुए। चालू होने पर, जिस अनुरोध का AppliesTo यह अनुप्रयोग है, वह FailedCheck है जब मैप खाली हो, कोई अभिव्यक्ति स्पष्ट पाठ में आए तत्व से मेल खाए, या कोई अभिव्यक्ति सिफरटेक्स्ट से पुनर्स्थापित किसी भी चीज़ से मेल न खाए। कौन-सा सिफरटेक्स्ट खोला जाए, यह wstrustAcceptEncryptedElements तय करता है; AppliesTo खुले हुए अनुरोध से पढ़ा जाता है, और जो सिफरटेक्स्ट नहीं खुलता वह हर स्थिति में FailedCheck है।"
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE या FALSE: जिस अनुरोध का AppliesTo यह अनुप्रयोग है, उसमें कहीं भी, किसी हेडर या बॉडी में, XML एन्क्रिप्शन स्वीकारें, बिना किसी अनुरोध मैप के उसे नामित किए, wstrust.acceptEncryptedElements को ओवरराइड करते हुए। बंद होने पर सिफरटेक्स्ट केवल वहीं स्वीकार होता है जहाँ wstrustEncryptRequestElements उसे नामित करता है — हर पुनर्स्थापित तत्व किसी अभिव्यक्ति द्वारा चुना गया हो या उसके भीतर हो — और बिना मैप का सिफरटेक्स्ट InvalidRequest है। हर स्थिति में सिफरटेक्स्ट इस रील्म की कुंजियों से खुलना चाहिए।"
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "WS-TRUST अनुरोध के वे तत्व जिन्हें एन्क्रिप्टेड आना ही चाहिए, हर एक के लिए एक XPath 1.0 अभिव्यक्ति। उपसमुच्चय है `/`, `//`, `*`, एक तत्व नाम, `prefix:local`, `|` के साथ संघ, और प्रेडिकेट `local-name()`, `namespace-uri()` और `@attr`, `and` से जुड़े। हर अभिव्यक्ति को सिफरटेक्स्ट से पुनर्स्थापित कम से कम एक तत्व चुनना चाहिए: Element या Content प्रकार का xenc:EncryptedData, या WS-Security 1.1 का EncryptedHeader। उस उपसमुच्चय के बाहर की अभिव्यक्ति RequestFailed है। कोई SOAP हेडर, SOAP बॉडी या कोई भी तत्व नामित किया जा सकता है, किसी भी टोकन प्रकार के लिए।"
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE या FALSE: इस अनुप्रयोग के प्रतिक्रिया मानचित्र द्वारा नामित तत्व xenc:EncryptedData से बदलें, wstrust.encryptResponse को ओवरराइड करते हुए। प्रतिक्रिया साफ़ पाठ में बनती है और फिर वे तत्व बदल दिए जाते हैं, किसी भी टोकन प्रकार के लिए। दोष साफ़ रहता है। चालू होने पर, और एन्क्रिप्शन पूरा न हो सके — कोई प्राप्तकर्ता नहीं, ऐसा मानचित्र जो कुछ से मेल न खाए, या ऐसा सिफर जिसे प्राप्तकर्ता का प्रमाणपत्र न ले — तो अनुरोध दोनों मोड में दोष है।"
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "WS-TRUST प्रतिक्रिया के वे तत्व जो एन्क्रिप्ट होते हैं, प्रत्येक एक XPath 1.0 व्यंजक, वही उपसमुच्चय जो wstrustEncryptRequestElements का है। SOAP शीर्षलेख, SOAP बॉडी, या कोई भी तत्व नामित हो सकता है। जो व्यंजक बनी हुई प्रतिक्रिया में कुछ से मेल नहीं खाता वह दोष है।"
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "इस अनुप्रयोग की WS-Trust प्रतिक्रियाओं के लिए प्रयुक्त ब्लॉक सिफर — aes256-gcm, aes128-gcm, aes256-cbc या aes128-cbc — wstrust.encryptionAlgorithm को ओवरराइड करते हुए। तत्व wst:EncryptionAlgorithm इस सिफर का नाम, उसके छोटे नाम या उसके XML Encryption URI से, केवल तभी ले सकता है जब इस अनुप्रयोग के लिए प्रतिक्रिया एन्क्रिप्शन चालू हो।"
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "वह प्रमाणपत्र जिस पर WS-TRUST प्रतिक्रिया एन्क्रिप्ट की जाती है, base64 DER या PEM। सेट होने पर वही प्राप्तकर्ता है, और जो प्रमाणपत्र पढ़ा नहीं जा सकता वह अगले स्रोत पर उतरने के बजाय दोष है। अनसेट होने पर प्राप्तकर्ता वह प्रमाणपत्र तत्व है जिसे wstrustResponseRecipientXPath चुनता है, या, जब वह व्यंजक भी अनसेट हो, अनुरोध के WS-Security हस्ताक्षर द्वारा नामित पहला हस्ताक्षरकर्ता प्रमाणपत्र तत्व।"
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "इस अनुप्रयोग की WS-Trust प्रतिक्रियाओं के लिए सामग्री कुंजी कैसे लपेटी जाती है — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) या rsa-1_5 — wstrust.keyTransportAlgorithm को ओवरराइड करते हुए। जिस प्राप्तकर्ता का प्रमाणपत्र EC है उसे ECDH-ES से एन्क्रिप्ट किया जाता है, यह कुछ भी कहे। तत्व wst:EncryptWith इस एल्गोरिदम का नाम, उसके छोटे नाम या उसके XML Encryption URI से, केवल तभी ले सकता है जब इस अनुप्रयोग के लिए प्रतिक्रिया एन्क्रिप्शन चालू हो।"
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "एक XPATH व्यंजक जो उस प्रमाणपत्र तत्व को चुनता है जिस पर WS-TRUST प्रतिक्रिया एन्क्रिप्ट होती है: एक ds:X509Certificate या एक BinarySecurityToken जिसका ValueType #X509v3 पर समाप्त होता है। वही उपसमुच्चय जो तत्व मानचित्रों का है। सेट होने पर और कुछ न चुनने पर, या इन दोनों में से नहीं होने वाला तत्व चुनने पर, कोई प्राप्तकर्ता नहीं है और अगला स्रोत आज़माया नहीं जाता। चुना हुआ प्रमाणपत्र तत्व जिसका पाठ प्रमाणपत्र नहीं है वह पूर्ण एन्क्रिप्शन का दोष है, और अगला स्रोत आज़माया नहीं जाता। अनसेट होने पर प्राप्तकर्ता अनुरोध के WS-Security हस्ताक्षर द्वारा नामित पहला हस्ताक्षरकर्ता प्रमाणपत्र तत्व है — वह BinarySecurityToken जिस पर उस हस्ताक्षर का संदर्भ इंगित करता है, या उस हस्ताक्षर के KeyInfo में एक ds:X509Certificate। थंबप्रिंट, Subject Key Identifier, या जारीकर्ता और क्रमांक कोई प्रमाणपत्र तत्व नहीं है।"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "वह प्रमाणपत्र जिस पर इस एप्लिकेशन के लिए WS-TRUST अनुरोध एन्क्रिप्ट किया जाता है, PEM। जब तक यह सेट है, इस एप्लिकेशन के लिए अनुरोध इसकी निजी कुंजी से डिक्रिप्ट होता है, रियल्म की कुंजी से नहीं, और रियल्म की कुंजी पर एन्क्रिप्ट किया गया उसके लिए अनुरोध FailedCheck है। सार्वजनिक: एप्लिकेशन पृष्ठ और GET /admin-api/applications इसे देते हैं।"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "wstrustDecryptionCertificate जारी करने वाले प्रमाणपत्र प्राधिकरण के प्रमाणपत्र, PEM, जारीकर्ता CA पहले, यहाँ जारी कुंजी युग्म के लिए। अपलोड किए गए के लिए खाली।"
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "wstrustDecryptionCertificate की निजी कुंजी, PEM। जहाँ कुंजियाँ स्थायी रहती हैं वहाँ सील, हर पृष्ठ, हर /admin-api उत्तर और हर निर्देशिका पठन से रोकी गई, और कभी लॉग नहीं की जाती।"
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "डिक्रिप्शन कुंजी युग्म कहाँ से आया: issued (यहाँ बनाया गया और रियल्म के CA द्वारा प्रमाणित) या uploaded (अपलोड किया गया)।"
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN, उदाहरण के लिए HTTP/sts@EXAMPLE.COM — Kerberos v5 की पहचानकर्ता विशेषता। Kerberos सेवा यहाँ की अन्य सेवाओं की तरह एक अनुप्रयोग है, और यही वह है जिसका पहचानकर्ता यह सेवा माँग पर बना सकती है (KRB5_SERVICE_DOMAINS)। यह संचित होता है, और यहाँ वह असामान्य नहीं बल्कि सामान्य मामला है: एक सेवा प्रायः कई SPN का उत्तर देती है — HTTP/host और HTTP/host.example.com — और वास्तविक KDC उन सब को एक खाते के विरुद्ध रखता है।"

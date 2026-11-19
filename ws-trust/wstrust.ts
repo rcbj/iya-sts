@@ -180,6 +180,9 @@ import WsTrustMetadata = require('./wstrust_metadata');
 // WS-MetadataExchange at POST /sts/mex (#958), a leaf over the same
 // documents.
 import WsTrustMex = require('./wstrust_mex');
+// XML Encryption of a request and a response (#1668). A library: it
+// registers nothing and does not require this module.
+import WsEncryption = require('./ws_encryption');
 // The names a leaf gives its holder, defined once (#1827).
 import SubjectUrn = require('../common/subject_urn');
 
@@ -698,31 +701,44 @@ class WsTrust {
     return String(kept || '').trim();
   }
 
-  // WHO ?encrypt=1 ENCRYPTS TO (#747): the requester, by the certificate in its
-  // own WS-Security header. Not the first X509Certificate in the document,
-  // which with a UsernameToken requester and an OnBehalfOf or ActAs assertion
-  // was the delegated assertion's, so the token went to the wrong party's key.
-  // An assertion in the header is skipped too: its KeyInfo is its ISSUER's
-  // certificate, which is this service's, and names nobody asking.
-  private recipientCertificateOf(doc) {
-    const { log, firstByLocal } = this.deps;
-    log.debug("Entering WsTrust.recipientCertificateOf().");
-    const found = (node) => {
-      const kids = (node && node.childNodes) || [];
-      for (let i = 0; i < kids.length; i += 1) {
-        const kid = kids[i];
-        if (kid.nodeType === 1 && kid.localName !== 'Assertion') {
-          const inner = kid.localName === 'X509Certificate' ? kid : found(kid);
-          if (inner) {
-            return inner;
-          }
-        }
-      }
-      return null;
-    };
-    const cert = found(firstByLocal(doc, 'Security'));
-    log.debug("Leaving WsTrust.recipientCertificateOf(). " + !!cert);
-    return cert ? String(cert.textContent || '').replace(/\s+/g, '') : '';
+  // A success envelope, encrypted where the application's response
+  // switch is on (#1668). envelope() has already held the clear text to
+  // the model. What is sent is the encrypted document, and a fault is
+  // not this function's to send: the caller returns it in the clear.
+  private sealedBody(clear, doc, audience, version, trustNs): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.sealedBody().");
+    const sealed = WsEncryption.protectResponse(clear, doc,
+      this.appliesToApplication(audience));
+    if (!sealed.ok) {
+      log.debug("Leaving WsTrust.sealedBody(). Not sealed.");
+      return { fault: this.encryptionFault(version, sealed, trustNs) };
+    }
+    log.debug("Leaving WsTrust.sealedBody().");
+    return { xml: sealed.xml };
+  }
+
+  // Every encryption refusal, as one SOAP Fault. The code that happened
+  // is one of the nine literals beside the call.
+  private encryptionFault(version, fault, trustNs): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.encryptionFault().");
+    log.info('wstrust: encryption refused the exchange — ' +
+             String(fault.reason || '') + '.');
+    const code = fault.code === 'STS-WSTRUST-0075' ? 'STS-WSTRUST-0075'
+      : fault.code === 'STS-WSTRUST-0076' ? 'STS-WSTRUST-0076'
+      : fault.code === 'STS-WSTRUST-0078' ? 'STS-WSTRUST-0078'
+      : fault.code === 'STS-WSTRUST-0079' ? 'STS-WSTRUST-0079'
+      : fault.code === 'STS-WSTRUST-0080' ? 'STS-WSTRUST-0080'
+      : fault.code === 'STS-WSTRUST-0081' ? 'STS-WSTRUST-0081'
+      : fault.code === 'STS-WSTRUST-0082' ? 'STS-WSTRUST-0082'
+      : fault.code === 'STS-WSTRUST-0083' ? 'STS-WSTRUST-0083'
+      : 'STS-WSTRUST-0077';
+    log.debug("Leaving WsTrust.encryptionFault().");
+    return { status: 500, version: version, errorCode: code,
+             body: this.soapFault(version, String(fault.reason ||
+               'Encryption could not be completed.'),
+               fault.trustFault || 'RequestFailed', trustNs) };
   }
 
   // THE APPLICATION A TOKEN IS FOR (#483): the one registered for the
@@ -1287,11 +1303,18 @@ class WsTrust {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.soapFault(). version=" + version + ", " +
         "reason=" + reason);
+    // WS-Security's FailedCheck (#1668) is `wsse:`, not section 11's: a
+    // decryption, or a map an encrypted request does not match.
+    // `wst:FailedCheck` is no code, and asking the model for it threw, so
+    // every such refusal became STS-WSTRUST-0015 (#1908's review).
+    const security = trustFault === 'FailedCheck';
+    const prefix = security ? 'wsse' : 'wst';
     const wstDecl = trustFault
-      ? ' xmlns:wst="' + xmlEscape(trustNs || WST_NS) + '"' : '';
+      ? ' xmlns:' + prefix + '="' + xmlEscape(security ? WSSE_NS
+          : (trustNs || WST_NS)) + '"' : '';
     // Section 11's code, a term of the model's `wst.fault`.
-    const code = trustFault ? 'wst:' + WsModel.term('wst.fault', trustFault)
-                            : '';
+    const code = trustFault ? prefix + ':' + WsModel.term(security
+      ? 'wsse.fault' : 'wst.fault', trustFault) : '';
     const body = version === '1.1'
       ? '<soap:Fault>' + WsModel.children('soap11.Fault', {
         faultcode: '<faultcode' + wstDecl + '>' +
@@ -1865,6 +1888,12 @@ class WsTrust {
       log.debug("Leaving WsTrust.messageSignature(). No document.");
       return null;
     }
+    // Already accepted on this connection, on the message as it arrived
+    // (#1668). The prepare reading is the first and must still run.
+    if (connection && connection.acceptedSignature && prepare !== true) {
+      log.debug("Leaving WsTrust.messageSignature(). Already accepted.");
+      return connection.acceptedSignature;
+    }
     const xml = new XMLSerializer().serializeToString(doc);
     const reading = stsCrypto.readWsSecuritySignature(xml);
     if (!reading.present) {
@@ -2075,9 +2104,10 @@ class WsTrust {
   // (`0046`) and a Timestamp that is fresh (`0047`, `0048`). Answers
   // `{ refusal }` or `{ skewMs, expires }`.
   // ---------------------------------------------------------------------------
-  private signedPartsProblem(doc, reading, refused): any {
-    const { config, log } = this.deps;
-    log.debug("Entering WsTrust.signedPartsProblem().");
+  // The RST_PARTS a document carries outside its SOAP Body, by name.
+  private partsOutsideSignedBody(doc): string[] {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.partsOutsideSignedBody().");
     const body = this.signedBodyOf(doc);
     const outside = RST_PARTS.filter((name: string): boolean => {
       const all = doc.getElementsByTagNameNS('*', name);
@@ -2088,6 +2118,50 @@ class WsTrust {
       }
       return false;
     });
+    log.debug("Leaving WsTrust.partsOutsideSignedBody(). " + outside.length);
+    return outside;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGNATURE, READ IN WS-SECURITY'S ORDER (#1668, on #1908's review).
+  // WS-SecurityPolicy's default protection order is SignBeforeEncrypting,
+  // which WCF and Apache WSS4J both send: the signature's digests are of
+  // the plaintext, so read over the ciphertext it does not verify. The
+  // reading the header's order names is taken first
+  // (WsEncryption.decryptsBeforeVerifying()), and the other only when the
+  // first is not a signature that verifies and there is ciphertext to open.
+  // `prepare` is prepareMessageSignature()'s reading, which has to find the
+  // same signature the request is answered on.
+  // ---------------------------------------------------------------------------
+  private signedReading(doc, connection, prepare: boolean): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.signedReading().");
+    if (!doc || !WsEncryption.hasCiphertext(doc)) {
+      log.debug("Leaving WsTrust.signedReading(). In the clear.");
+      return this.messageSignature(doc, connection, prepare);
+    }
+    const opened = WsEncryption.openedCopy(doc);
+    const order = WsEncryption.decryptsBeforeVerifying(doc) && opened
+      ? [opened, doc] : (opened ? [doc, opened] : [doc]);
+    let first: any = undefined;
+    for (let i = 0; i < order.length; i++) {
+      const reading = this.messageSignature(order[i], connection, prepare);
+      if (reading && reading.ok) {
+        log.debug("Leaving WsTrust.signedReading(). Reading " + i + ".");
+        return reading;
+      }
+      if (first === undefined || (first === null && reading)) {
+        first = reading;
+      }
+    }
+    log.debug("Leaving WsTrust.signedReading(). Neither verified.");
+    return first === undefined ? null : first;
+  }
+
+  private signedPartsProblem(doc, reading, refused): any {
+    const { config, log } = this.deps;
+    log.debug("Entering WsTrust.signedPartsProblem().");
+    const outside = this.partsOutsideSignedBody(doc);
     if (outside.length) {
       log.debug("Leaving WsTrust.signedPartsProblem(). Outside the Body.");
       return { refusal: refused('STS-WSTRUST-0046', 'the request carries ' +
@@ -2305,7 +2379,7 @@ class WsTrust {
       log.debug("Leaving WsTrust.prepareMessageSignature(). Nothing to do.");
       return;
     }
-    const first = this.messageSignature(doc, null, true);
+    const first = this.signedReading(doc, null, true);
     if (!first || !first.ok || !first.prepared) {
       log.debug("Leaving WsTrust.prepareMessageSignature(). Not to be " +
                 "prepared.");
@@ -3983,15 +4057,15 @@ class WsTrust {
    *
    * @param rawBody - the request body
    * @param contentType - the request's content type
-   * @param options - `encrypt`, to encrypt an issued assertion; and
-   * `connection` (#1046), the request's `{ socket, revocation }`, whose
-   * verified TLS client certificate is the requester's fourth credential
+   * @param options - `connection` (#1046), the request's
+   * `{ socket, revocation }`, whose verified TLS client certificate is
+   * the requester's fourth credential, and `base`, this request's base
    * @returns the HTTP status, the SOAP version, the envelope body and, where
    * issued, the sign-in to record
    */
   handleRst(rawBody, contentType, options): any {
     const {
-      config, validation, encryptAssertion, applications, gate, delegation,
+      config, validation, applications, gate, delegation,
       mode, errorCodes, log, xmlEscape, iso, firstByLocal, textByLocal,
       subjectForName, hasSubjectResolver, delegationPolicy
     } = this.deps;
@@ -4040,6 +4114,77 @@ class WsTrust {
                                       { kerberos: kerberos }) }));
       });
     }
+    // THE SIGNATURE, AND THEN THE REQUEST'S ENCRYPTED ELEMENTS (#1668). A
+    // Kerberos token stays in the header and is accepted above, before
+    // either. The signature is read in the order WS-Security processes the
+    // header (signedReading()): over the message as it arrived when it was
+    // made after the encryption, over an opened copy when it was made
+    // before it or is itself encrypted. A success is kept on the
+    // connection, so it is not read again off a document whose digests are
+    // the other reading's.
+    if (!options.connection) {
+      options.connection = {};
+    }
+    const signed = this.signedReading(doc, options.connection, false);
+    const earlyVersion = this.detectSoapVersion(doc, contentType);
+    const earlyRst = firstByLocal(doc, 'RequestSecurityToken');
+    const earlyNs = (earlyRst && earlyRst.namespaceURI) || WST_NS;
+    if (signed && signed.ok === false) {
+      log.debug("Leaving WsTrust.handleRst(). The signature was refused.");
+      return { status: 500, version: earlyVersion,
+               errorCode: signed.errorCode,
+               // error-code: none — messageSignature() decided it
+               body: this.soapFault(earlyVersion,
+                 signed.reason || 'Authentication failed.',
+                 signed.trustFault || 'FailedAuthentication', earlyNs) };
+    }
+    if (signed && signed.ok === true && !signed.prepared) {
+      options.connection.acceptedSignature = signed;
+      // The recipient expression may select only what this signature
+      // covers (WsEncryption.coveredBySignature()).
+      WsEncryption.markSigned(doc);
+    }
+    // WHAT WAS OPENED IS HELD TO THE SIGNED BODY TOO (#521's step 5, on
+    // #1908's review), before any encryption setting is read. A signature
+    // over ciphertext covers only where the ciphertext stood: anybody can
+    // encrypt to this realm's certificate, so an unsigned header that opens
+    // to a RequestSecurityToken or an AppliesTo would be read first in
+    // document order, beside a genuinely signed Body — and would choose
+    // whose settings apply. Product checks the parts once more on the
+    // opened document; development believes the signature and never
+    // checked them.
+    const outsideBody = (): any => {
+      if (!options.connection.acceptedSignature ||
+          !mode.verifiesCredentials()) {
+        return null;
+      }
+      const outside = this.partsOutsideSignedBody(doc);
+      if (!outside.length) {
+        return null;
+      }
+      log.info(errorCodes.tag('STS-WSTRUST-0046') + 'wstrust: the request ' +
+               'opened to ' + outside.join(', ') + ' outside the signed ' +
+               'SOAP Body.');
+      return { ok: false, code: 'STS-WSTRUST-0046',
+               trustFault: 'FailedAuthentication',
+               reason: 'The WS-Security signature on this request was ' +
+                 'refused: the request carries ' + outside.join(', ') +
+                 ' outside the signed SOAP Body once it is decrypted.' };
+    };
+    const opened = WsEncryption.openRequest(doc, outsideBody);
+    if (!opened.ok && opened.code === 'STS-WSTRUST-0046') {
+      log.debug("Leaving WsTrust.handleRst(). Opened outside the Body.");
+      return { status: 500, version: earlyVersion,
+               errorCode: 'STS-WSTRUST-0046',
+               body: this.soapFault(earlyVersion, opened.reason,
+                                    opened.trustFault, earlyNs) };
+    }
+    if (!opened.ok) {
+      const openedRst = firstByLocal(doc, 'RequestSecurityToken');
+      const openedNs = (openedRst && openedRst.namespaceURI) || earlyNs;
+      log.debug("Leaving WsTrust.handleRst(). The request would not open.");
+      return this.encryptionFault(earlyVersion, opened, openedNs);
+    }
     const version = this.detectSoapVersion(doc, contentType);
     const requestType = textByLocal(doc, 'RequestType');
     // Operation from the LAST path segment of RequestType, so any WS-Trust
@@ -4063,6 +4208,16 @@ class WsTrust {
     const audience = appliesToEl ?
                      (textByLocal(appliesToEl, 'Address') ||
                       (appliesToEl.textContent || '').trim()) : '';
+    // wst:EncryptionAlgorithm and wst:EncryptWith name a cipher only when
+    // response encryption is on, and only the cipher this application
+    // configures (#1668). Before a token is built, so Validate and Cancel
+    // are held to it too.
+    const algorithm = WsEncryption.beyondPolicy(doc,
+      this.appliesToApplication(audience));
+    if (!algorithm.ok) {
+      log.debug("Leaving WsTrust.handleRst(). The encryption algorithm.");
+      return this.encryptionFault(version, algorithm, trustNs);
+    }
     // THE LIFETIME (2026-09-12). The default was the literal 60 and is
     // `wstrust.tokenLifetimeMin`. A requested wst:Lifetime REPLACED it with no
     // bound at all, so a caller could ask for a token valid for a year and get
@@ -4201,11 +4356,17 @@ class WsTrust {
           code: '<wst:Code>' + code + '</wst:Code>',
           reason: '<wst:Reason>' + xmlEscape(reason) + '</wst:Reason>' }) +
           '</wst:Status>' });
+      const held = this.sealedBody(this.envelope(version,
+        WsTrust.answerAction('validate', trustNs), rstr), doc, audience,
+        version, trustNs);
+      if (held.fault) {
+        log.debug("Leaving WsTrust.handleRst(). Validate was not sealed.");
+        return held.fault;
+      }
       log.debug("Leaving WsTrust.handleRst(). Validate answered with " +
                 "wst:Status.");
       return { status: 200, version: version, errorCode: invalidCode,
-               body: this.envelope(version,
-                 WsTrust.answerAction('validate', trustNs), rstr) };
+               body: held.xml };
     }
 
     if (op === 'cancel' && trustNs === WST_2004_04_NS) {
@@ -4222,11 +4383,16 @@ class WsTrust {
     if (op === 'cancel') {
       const rstr = this.response(trustNs, {
         requestedTokenCancelled: '<wst:RequestedTokenCancelled/>' });
+      const held = this.sealedBody(this.envelope(version,
+        WsTrust.answerAction('cancel', trustNs), rstr), doc, audience,
+        version, trustNs);
+      if (held.fault) {
+        log.debug("Leaving WsTrust.handleRst(). Cancel was not sealed.");
+        return held.fault;
+      }
       log.debug("Leaving WsTrust.handleRst(). Cancel answered with " +
                 "wst:RequestedTokenCancelled.");
-      return { status: 200, version: version,
-               body: this.envelope(version,
-                 WsTrust.answerAction('cancel', trustNs), rstr) };
+      return { status: 200, version: version, body: held.xml };
     }
 
     // -------------------------------------------------------------------------
@@ -4492,98 +4658,127 @@ class WsTrust {
   // ---------------------------------------------------------------------------
   // WHAT FOLLOWS AN ISSUED TOKEN (#658: moved out of handleRst() unchanged, so
   // a token minted asynchronously — a Kerberos ticket — reaches it as one
-  // built in place does): the optional encryption, the relying party's
-  // sighting, the delegation act, the RSTR and the session it signs in.
+  // built in place does): the RSTR, then its encryption where the
+  // application asks for it, and — only once that answer exists — the
+  // relying party's sighting, the delegation act and the session.
   // ---------------------------------------------------------------------------
   private finishIssue(issuing: any, tok: any): any {
     const {
-      config, encryptAssertion, applications, delegation, mode, errorCodes,
-      log, xmlEscape, iso, firstByLocal, delegationPolicy
+      applications, delegation, log, xmlEscape, iso, delegationPolicy
     } = this.deps;
     log.debug("Entering WsTrust.finishIssue().");
-    const { options, doc, version, trustNs, audience, subject, auth,
+    const { doc, version, trustNs, audience, subject, auth,
             delegationDecision, lifetimeMin, keyTypeIssued, op } = issuing;
 
-    // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
-    // recipient certificate carried in the request's WS-Security signature
-    // (X509Data).
+    const appliesToOut = audience
+      ? '<wsp:AppliesTo xmlns:wsp="' + WSP_NS + '" xmlns:wsa="' + WSA_NS +
+        '">' + WsModel.children('wsp.AppliesTo', {
+          endpointReference: '<wsa:EndpointReference>' +
+            WsModel.children('wsa.EndpointReference', {
+              address: '<wsa:Address>' + xmlEscape(audience) +
+                '</wsa:Address>' }) + '</wsa:EndpointReference>' }) +
+        '</wsp:AppliesTo>'
+      : '';
+    // The RSTR's children, in the order the model says `/sts` writes them.
+    const rstrParts = {
+      tokenType: '<wst:TokenType>' + tok.tokenType + '</wst:TokenType>',
+      requestedSecurityToken: '<wst:RequestedSecurityToken>' + tok.xml +
+        '</wst:RequestedSecurityToken>',
+      // #658: a Kerberos token's session key, which the holder needs to use
+      // it (WS-Trust 1.4 section 4.4.2), over TLS only.
+      requestedProofToken: tok.proof || '',
+      appliesTo: appliesToOut,
+      // A Kerberos token's Lifetime is its Authenticator's window: it is
+      // good once, within the clock skew of when it was made.
+      lifetime: '<wst:Lifetime xmlns:wsu="' + WSU_NS + '">' +
+        WsModel.children('wst.Lifetime', {
+          created: '<wsu:Created>' + (tok.created || iso(0)) +
+            '</wsu:Created>',
+          expires: '<wsu:Expires>' + (tok.expires || iso(lifetimeMin)) +
+            '</wsu:Expires>' }) + '</wst:Lifetime>',
+      keyType: '<wst:KeyType>' + keyTypeIssued + '</wst:KeyType>',
+      // 2004/04 spells the reference RequestedTokenReference (#188), the
+      // model's `or`.
+      requestedAttachedReference: trustNs === WST_2004_04_NS
+        ? tok.ref.split('wst:' + WsModel.message(
+          'wst.RequestedAttachedReference').element)
+          .join('wst:RequestedTokenReference')
+        : tok.ref,
+      requestedUnattachedReference: tok.unattached || ''
+    };
+
+    // ---------------------------------------------------------------------
+    // WHAT THIS EXCHANGE SIGNED IN, for the caller to act on (2026-09-05).
     //
-    // TWO CHANGES ON 2026-09-12. The algorithms are `saml2.encryptionAlgorithm`
-    // and `saml2.keyTransportAlgorithm`, answered for the AppliesTo as
-    // `/saml2` answers them for a service provider — they were passed nowhere
-    // and the cipher's own defaults decided, so the settings a console page
-    // said were in force did nothing to a WS-Trust assertion. And a FAILURE is
-    // a refusal in product mode: development returns the plaintext and logs it,
-    // because a mock that stopped issuing when a certificate was missing is
-    // useless while somebody sets this up; product returns a SOAP Fault
-    // instead, because an assertion the caller asked to have encrypted crossing
-    // the wire readable is the one outcome the flag exists to prevent. The
-    // predicate is `sendsWeakerThanAsked()`: what a response may lose on the
-    // way out, which is the question here, rather than who may drive a test
-    // control.
-    if (options.encrypt && tok.tokenType === SAML2_TOKEN_TYPE) {
-      const recipB64 = this.recipientCertificateOf(doc);
-      // BY THE APPLICATION THE ASSERTION IS FOR (#747, #483's defect): an
-      // AppliesTo need not be the entry's identifier.
-      const answering = this.appliesToApplication(audience) || audience || '';
-      let failure = '';
-      let heldRefused = false;
-      if (recipB64) {
-        const recipPem = '-----BEGIN CERTIFICATE-----\n' +
-            (recipB64.match(/.{1,64}/g) || []).join('\n') + '\n-----END ' +
-            'CERTIFICATE-----\n';
-        const how = {
-          algorithm: String(applications.settingFor(answering,
-                                                    'saml2.encryptionAlgorithm',
-                                                    config) || ''),
-          keyTransport: String(applications.settingFor(
-            answering, 'saml2.keyTransportAlgorithm', config) || '')
-        };
-        // The requester's certificate, held to its use case under paranoid PKI
-        // mode (#1360). Refused, nothing is sent in clear in either mode.
-        const held = require('../common/certificate_trust')
-          .pinnedSync('encryption-recipient', recipPem);
-        if (!held.ok) {
-          failure = 'the certificate in the request is refused: ' + held.why;
-          heldRefused = true;
-        } else try {
-          tok.xml = encryptAssertion(tok.xml, recipPem, how);
-          tok.ref = '';
-        } catch (e) {
-          failure = 'the assertion could not be encrypted to the certificate ' +
-                    'in the request: ' +
-                    e.message;
-        }
-      } else {
-        failure = '?encrypt=1 was requested and the request carries no ' +
-                  'recipient certificate (no X509Certificate in its ' +
-                  'WS-Security signature)';
-      }
-      if (failure) {
-        if (heldRefused || !mode.sendsWeakerThanAsked()) {
-          log.info('wstrust: refused to return a plaintext assertion — ' +
-                   failure + '.');
-          log.debug("Leaving WsTrust.finishIssue(). Encryption was required " +
-                    "and did not happen.");
-          // No recipient certificate is the REQUEST lacking what it asked
-          // to be answered with, `wst:InvalidRequest`; a certificate that
-          // could not be encrypted to is `wst:RequestFailed` (#183).
-          return { status: 500, version: version,
-                   errorCode: recipB64 ? 'STS-WSTRUST-0013'
-                                       : 'STS-WSTRUST-0012',
-                   body: this.soapFault(version,
-                                   'Encryption was requested and ' + failure +
-                                            '. In product mode the assertion ' +
-                                            'is not returned in clear ' +
-                                            'instead.',
-                                   recipB64 ? 'RequestFailed'
-                                            : 'InvalidRequest', trustNs) };
-        }
-        log.error(errorCodes.tag(recipB64 ? 'STS-WSTRUST-0013' :
-                                 'STS-WSTRUST-0012') +
-                  failure + '; returning plaintext.');
-      }
+    // **AN ISSUED CREDENTIAL IMPLIES A SESSION THIS SERVICE TRACKS**, and until
+    // this day WS-Trust was the one family here that issued one and tracked
+    // nothing: `startSession()` was called zero times in this file. What that
+    // cost was not visible from inside this endpoint — it answered correctly
+    // and always had — but from `/admin/sessions` and from a global sign-out,
+    // where an assertion this service had minted for somebody five minutes ago
+    // belonged to nobody who was signed in. An identity provider that cannot
+    // say "this is live" cannot say "I have ended it" either, which is the
+    // whole of what a sign-out is.
+    //
+    // IT IS RETURNED RATHER THAN DONE HERE, and that is deliberate: this
+    // function has no `res` and must not acquire one. It is called by the route
+    // below AND directly by callers that hand it a body and read a body back,
+    // so a cookie written from inside it would be a side effect on an object
+    // half its callers do not have. The route starts the session; this says
+    // who.
+    //
+    // ONLY ON AN ISSUE THAT AUTHENTICATED. A Renew whose requester was
+    // anonymous is signing nobody in — its subject came off the RenewTarget,
+    // which the token said and nobody presented — and Validate and Cancel issue
+    // nothing at all. Each of those returns above this line.
+    //
+    // AND NEVER ON A DELEGATION (2026-09-12). `auth.subject` on an OnBehalfOf /
+    // ActAs request is the DELEGATED subject — the person who presented nothing
+    // — so this used to start a browser session in the name of somebody who was
+    // not there, with amr ["pwd"], on the response to whoever asked. That is
+    // wrong in every mode: the requester authenticated and the subject did not,
+    // and a session is a statement that its subject signed in. The requester is
+    // not signed in either — the token is about somebody else — so nothing is.
+    //
+    // THE AMR SAYS WHICH CREDENTIAL IT WAS. `pwd` for a UsernameToken, as
+    // before; nothing for a SAML assertion, which is evidence of an earlier
+    // sign-in elsewhere rather than of a password presented now.
+    //
+    // #1046: `swk` for a TLS client certificate (amrOf()), and no session for
+    // an APPLICATION's certificate — it is a client credential and not a
+    // sign-in, `/tls/sign-in`'s rule for the same certificate.
+    const signIn = auth.subject && auth.subject !== 'anonymous' &&
+                   auth.kind !== 'delegated' &&
+                   !((auth.kind === 'certificate' ||
+                      auth.kind === 'signature' ||
+                      auth.kind === 'kerberos') && auth.isClient)
+      ? { username: auth.subject, method: auth.method || 'WS-Trust',
+          via: 'WS-Trust ' + op,
+          amr: this.amrOf(auth) }
+      : null;
+
+    const inner = op === 'renew' || WsTrust.preOasis(trustNs)
+      ? this.response(trustNs, rstrParts)
+      : ('<wst:RequestSecurityTokenResponseCollection xmlns:wst="' +
+        trustNs + '">' + WsModel.children(
+        'wst.RequestSecurityTokenResponseCollection', {
+          response: '<wst:RequestSecurityTokenResponse>' +
+            WsModel.children('wst.RequestSecurityTokenResponse',
+                             rstrParts) +
+            '</wst:RequestSecurityTokenResponse>' }) +
+        '</wst:RequestSecurityTokenResponseCollection>');
+    const action = WsTrust.answerAction(op === 'renew' ? 'renew' : 'issue',
+                                        trustNs);
+    const held = this.sealedBody(this.envelope(version, action, inner),
+                                 doc, audience, version, trustNs);
+    if (held.fault) {
+      log.debug("Leaving WsTrust.finishIssue(). The response was not " +
+                "sealed.");
+      return held.fault;
     }
+    // The sighting and the delegation act follow a response that will be
+    // sent. A seal that failed issued nothing.
+
     // THE RELYING PARTY. AppliesTo is WS-Trust's name for the service a token
     // is being issued FOR, and this is where one is about to be. It is optional
     // in an RST — a token with no AppliesTo has no audience restriction, which
@@ -4617,10 +4812,11 @@ class WsTrust {
     // THE DELEGATION ACT, for /admin/delegation.
     //
     // Recorded here rather than in authenticate() for the reason the KDC
-    // records its own at the bottom of handleTgsReq(): this is the first line
-    // at which the token EXISTS, and an act recorded where the decision was
-    // made would name a credential nobody ever held. It is also the only place
-    // that knows the AppliesTo, which is the TARGET of the chain —
+    // records its own at the bottom of handleTgsReq(): the token exists and
+    // the response that carries it has been sealed. An act recorded where
+    // the decision was made would name a credential nobody ever held, and
+    // one recorded before the seal would name one that was not sent. It is
+    // also the only place that knows the AppliesTo, which is the TARGET —
     // authenticate() reads the security header and never sees it.
     //
     // Nothing about this is a check. This service accepts any delegation from
@@ -4747,128 +4943,14 @@ class WsTrust {
       });
     }
 
-    const appliesToOut = audience
-      ? '<wsp:AppliesTo xmlns:wsp="' + WSP_NS + '" xmlns:wsa="' + WSA_NS +
-        '">' + WsModel.children('wsp.AppliesTo', {
-          endpointReference: '<wsa:EndpointReference>' +
-            WsModel.children('wsa.EndpointReference', {
-              address: '<wsa:Address>' + xmlEscape(audience) +
-                '</wsa:Address>' }) + '</wsa:EndpointReference>' }) +
-        '</wsp:AppliesTo>'
-      : '';
-    // The RSTR's children, in the order the model says `/sts` writes them.
-    const rstrParts = {
-      tokenType: '<wst:TokenType>' + tok.tokenType + '</wst:TokenType>',
-      requestedSecurityToken: '<wst:RequestedSecurityToken>' + tok.xml +
-        '</wst:RequestedSecurityToken>',
-      // #658: a Kerberos token's session key, which the holder needs to use
-      // it (WS-Trust 1.4 section 4.4.2), over TLS only.
-      requestedProofToken: tok.proof || '',
-      appliesTo: appliesToOut,
-      // A Kerberos token's Lifetime is its Authenticator's window: it is
-      // good once, within the clock skew of when it was made.
-      lifetime: '<wst:Lifetime xmlns:wsu="' + WSU_NS + '">' +
-        WsModel.children('wst.Lifetime', {
-          created: '<wsu:Created>' + (tok.created || iso(0)) +
-            '</wsu:Created>',
-          expires: '<wsu:Expires>' + (tok.expires || iso(lifetimeMin)) +
-            '</wsu:Expires>' }) + '</wst:Lifetime>',
-      keyType: '<wst:KeyType>' + keyTypeIssued + '</wst:KeyType>',
-      // 2004/04 spells the reference RequestedTokenReference (#188), the
-      // model's `or`.
-      requestedAttachedReference: trustNs === WST_2004_04_NS
-        ? tok.ref.split('wst:' + WsModel.message(
-          'wst.RequestedAttachedReference').element)
-          .join('wst:RequestedTokenReference')
-        : tok.ref,
-      requestedUnattachedReference: tok.unattached || ''
-    };
-
-    // ---------------------------------------------------------------------
-    // WHAT THIS EXCHANGE SIGNED IN, for the caller to act on (2026-09-05).
-    //
-    // **AN ISSUED CREDENTIAL IMPLIES A SESSION THIS SERVICE TRACKS**, and until
-    // this day WS-Trust was the one family here that issued one and tracked
-    // nothing: `startSession()` was called zero times in this file. What that
-    // cost was not visible from inside this endpoint — it answered correctly
-    // and always had — but from `/admin/sessions` and from a global sign-out,
-    // where an assertion this service had minted for somebody five minutes ago
-    // belonged to nobody who was signed in. An identity provider that cannot
-    // say "this is live" cannot say "I have ended it" either, which is the
-    // whole of what a sign-out is.
-    //
-    // IT IS RETURNED RATHER THAN DONE HERE, and that is deliberate: this
-    // function has no `res` and must not acquire one. It is called by the route
-    // below AND directly by callers that hand it a body and read a body back,
-    // so a cookie written from inside it would be a side effect on an object
-    // half its callers do not have. The route starts the session; this says
-    // who.
-    //
-    // ONLY ON AN ISSUE THAT AUTHENTICATED. A Renew whose requester was
-    // anonymous is signing nobody in — its subject came off the RenewTarget,
-    // which the token said and nobody presented — and Validate and Cancel issue
-    // nothing at all. Each of those returns above this line.
-    //
-    // AND NEVER ON A DELEGATION (2026-09-12). `auth.subject` on an OnBehalfOf /
-    // ActAs request is the DELEGATED subject — the person who presented nothing
-    // — so this used to start a browser session in the name of somebody who was
-    // not there, with amr ["pwd"], on the response to whoever asked. That is
-    // wrong in every mode: the requester authenticated and the subject did not,
-    // and a session is a statement that its subject signed in. The requester is
-    // not signed in either — the token is about somebody else — so nothing is.
-    //
-    // THE AMR SAYS WHICH CREDENTIAL IT WAS. `pwd` for a UsernameToken, as
-    // before; nothing for a SAML assertion, which is evidence of an earlier
-    // sign-in elsewhere rather than of a password presented now.
-    //
-    // #1046: `swk` for a TLS client certificate (amrOf()), and no session for
-    // an APPLICATION's certificate — it is a client credential and not a
-    // sign-in, `/tls/sign-in`'s rule for the same certificate.
-    const signIn = auth.subject && auth.subject !== 'anonymous' &&
-                   auth.kind !== 'delegated' &&
-                   !((auth.kind === 'certificate' ||
-                      auth.kind === 'signature' ||
-                      auth.kind === 'kerberos') && auth.isClient)
-      ? { username: auth.subject, method: auth.method || 'WS-Trust',
-          via: 'WS-Trust ' + op,
-          amr: this.amrOf(auth) }
-      : null;
-
-    if (op === 'renew') {
-      const rstr = this.response(trustNs, rstrParts);
-      log.debug("Leaving WsTrust.finishIssue(). Renew answered with a fresh " +
-                "token.");
-      return { status: 200, version: version, signIn: signIn,
-               body: this.envelope(version,
-                 WsTrust.answerAction('renew', trustNs), rstr) };
-    }
-
-    // Issue -> RSTR Collection (WS-Trust 1.3+; pre-OASIS clients tolerate it
-    // too) — except in 2004/04, whose collection holds at least two
-    // responses, so an Issue there is answered with the one RSTR (#188).
-    // February 2005 too (the review of #958's WSDL against the published
-    // specifications): it defines Issue's answer as one RSTR with the action
-    // RSTR/Issue, and its collection only for several tokens at once.
-    if (WsTrust.preOasis(trustNs)) {
-      const rstr = this.response(trustNs, rstrParts);
-      log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
-                "(a pre-OASIS version).");
-      return { status: 200, version: version, signIn: signIn,
-               body: this.envelope(version, WsTrust.answerAction('issue',
-                 trustNs), rstr) };
-    }
-    const rstrc = '<wst:RequestSecurityTokenResponseCollection xmlns:wst="' +
-      trustNs + '">' + WsModel.children(
-      'wst.RequestSecurityTokenResponseCollection', {
-        response: '<wst:RequestSecurityTokenResponse>' +
-          WsModel.children('wst.RequestSecurityTokenResponse', rstrParts) +
-          '</wst:RequestSecurityTokenResponse>' }) +
-      '</wst:RequestSecurityTokenResponseCollection>';
-    log.debug("Leaving WsTrust.finishIssue(). Issue answered with an RSTR " +
-              "Collection.");
+    const leaving = op === 'renew'
+      ? 'Renew answered with a fresh token.'
+      : (WsTrust.preOasis(trustNs)
+        ? 'Issue answered with an RSTR (a pre-OASIS version).'
+        : 'Issue answered with an RSTR Collection.');
+    log.debug("Leaving WsTrust.finishIssue(). " + leaving);
     return { status: 200, version: version, signIn: signIn,
-             body: this.envelope(version,
-               WsTrust.answerAction('issue', trustNs), rstrc) };
+             body: held.xml };
   }
 
   // **`no-store`, LIKE EVERY OTHER DOCUMENT HERE THAT DESCRIBES A KEY.** In
@@ -4934,8 +5016,19 @@ class WsTrust {
     const self = this;
     let claimed = '';
     const read = validation.parseXml(req.body || '', 'request');
+    // WHAT THE DOOR READS IS THE OPENED REQUEST (#1668, on #1908's review).
+    // The WSDL lets a client encrypt any header or the Body, so a
+    // UsernameToken, an OnBehalfOf or an AppliesTo may arrive as
+    // ciphertext. The home cell, the claimed name and the door's
+    // assessment are read from an opened copy, or a request that encrypted
+    // its UsernameToken would be assessed as nobody's. The signature and
+    // the Kerberos tokens are read from the request as it arrived
+    // (signedReading() takes both orders).
+    const view = read.ok && WsEncryption.hasCiphertext(read.value)
+      ? (WsEncryption.openedCopy(read.value) || read.value)
+      : (read.ok ? read.value : null);
     if (read.ok) {
-      claimed = textByLocal(read.value, 'Username');
+      claimed = textByLocal(view, 'Username');
     }
     // THE PERSON'S HOME CELL (#98 D10), before anything is read, verified,
     // recorded or spent: see homeNameOf(). Single-cell mode goes straight
@@ -4946,11 +5039,11 @@ class WsTrust {
     // it on — so homeNameOf() is told not to fall back to the delegated
     // subject's home.
     const home = read.ok && cells.isMulti() && !req.stsCellRelay
-      ? this.homeNameOf(read.value, this.verifiedOnConnection(req)) : '';
+      ? this.homeNameOf(view, this.verifiedOnConnection(req)) : '';
     // THE DELEGATED SUBJECT, when it is somebody other than the person the
     // request is served for: see delegatedHere().
     const delegated = read.ok && cells.isMulti()
-      ? this.delegatedNameOf(read.value, home) : '';
+      ? this.delegatedNameOf(view, home) : '';
     if (home) {
       log.debug("Leaving WsTrust.stsEndpoint(). Finding the home cell.");
       return cellPlacement.relayToHome(req, res,
@@ -4958,12 +5051,12 @@ class WsTrust {
         'a WS-Trust request').then(function (relayed: boolean): unknown {
           return relayed ? undefined
             : self.stsEndpointHere(req, res, claimed, delegated,
-                                   read.value);
+                                   read.value, view);
         });
     }
     log.debug("Leaving WsTrust.stsEndpoint().");
     return this.stsEndpointHere(req, res, claimed, delegated,
-                                read.ok ? read.value : null);
+                                read.ok ? read.value : null, view);
   }
 
   // The subject of an OnBehalfOf / ActAs, when the request is served for
@@ -5188,16 +5281,20 @@ class WsTrust {
   // that assessment rather than on the standing an earlier one left —
   // which is what risk/CLAUDE.md's door table always said WS-Trust did.
   // ---------------------------------------------------------------------------
-  private stsEndpointHere(req, res, claimed, delegated?: string, doc?) {
+  private stsEndpointHere(req, res, claimed, delegated?: string, doc?,
+                          opened?) {
     const { log, subjectForName, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.stsEndpointHere().");
     const self = this;
+    // The opened request, for everything but the signature and the
+    // Kerberos tokens (stsEndpoint()).
+    const view = opened || doc;
     const names: string[] = [];
     if (claimed) {
       names.push(String(claimed));
     }
-    const obo = doc ? firstByLocal(doc, 'OnBehalfOf') ||
-                      firstByLocal(doc, 'ActAs') : null;
+    const obo = view ? firstByLocal(view, 'OnBehalfOf') ||
+                       firstByLocal(view, 'ActAs') : null;
     const oboNamed = obo ? firstByLocal(obo, 'NameID') ||
                            firstByLocal(obo, 'NameIdentifier') : null;
     const oboName = oboNamed ? String(oboNamed.textContent || '').trim() : '';
@@ -5221,7 +5318,7 @@ class WsTrust {
     const serve = function (door: any): unknown {
       log.debug("Entering serve().");
       log.debug("Leaving serve().");
-      return delegated ? self.delegatedHere(req, res, delegated, doc)
+      return delegated ? self.delegatedHere(req, res, delegated, view)
                        : self.stsEndpointNow(req, res, door);
     };
     log.debug("Leaving WsTrust.stsEndpointHere().");
@@ -5234,7 +5331,7 @@ class WsTrust {
       return self.prepareKerberosAt(req, doc);
     }).then(function (): Promise<unknown> {
       return delegated ? Promise.resolve(null)
-                       : self.doorAssessment(req, doc);
+                       : self.doorAssessment(req, view);
     }).then(serve, function (e: any): unknown {
       log.debug("Caught in WsTrust.stsEndpointHere(): " +
                 ((e && e.message) || e));
@@ -5339,11 +5436,10 @@ class WsTrust {
       if (settled && settled.error) {
         throw settled.error;
       }
-      const encrypt = req.query.encrypt === '1' || req.query.encrypt === 'true';
       let issuanceAnswer: any = settled ? settled.issuanceAnswer : null;
       const answered = settled ? settled.result :
         this.handleRst(req.body || '', contentType,
-        { encrypt: encrypt, base: helpers.baseUrlOf(req),
+        { base: helpers.baseUrlOf(req),
           connection: this.connectionOf(req),
           preAuthenticated: door ? door.auth : null,
           doorRisk: door && door.facts

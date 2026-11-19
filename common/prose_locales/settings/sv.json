@@ -5711,6 +5711,54 @@
     "en": "52a63db9be2c6460",
     "text": "Om en wst:TokenType som anger en av Kerberos Token Profile 1.1:s sex ValueType besvaras med en Kerberos-token: en AP-REQ med en tjänstebiljett som den här sfärens KDC utfärdade för subjektet till den Kerberos-tjänst som AppliesTo anger, med Authenticators undernyckel returnerad som bevistoken över TLS. En ActAs-biljett anger varje part som agerade i sin PAC:s S4U_DELEGATION_INFO. Av: en sådan begäran avvisas."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "Kräv att de namngivna elementen i en begäran är krypterade"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "a4747360d56b0948",
+    "text": "Om ett RequestSecurityToken vars AppliesTo inte namnger någon egen applikation måste anlända med elementen i wstrustEncryptRequestElements krypterade. En applikations wstrustEncryptRequest åsidosätter detta för en begäran vars AppliesTo namnger den. Vilken chiffertext som alls öppnas avgör wstrust.acceptEncryptedElements; AppliesTo läses från den öppnade begäran. På, och kartan är tom, eller ett uttryck matchar ett element som anlände i klartext eller inget som återställts, är begäran ett wsse:FailedCheck. En chiffertext som inte går att öppna är det felet i båda fallen."
+  },
+  "wstrust.acceptEncryptedElements|label": {
+    "en": "fdb0c37def2e9c0a",
+    "text": "Acceptera krypterade element som ingen karta namnger"
+  },
+  "wstrust.acceptEncryptedElements|description": {
+    "en": "91a62934f0ef031e",
+    "text": "Om ett RequestSecurityToken får bära XML-kryptering var som helst, i ett huvud eller i kroppen, utan att en begärankarta namnger den. På öppnas varje krypterat element. Av godtas chiffertext bara där applikationens wstrustEncryptRequestElements namnger den, och chiffertext utan karta är ett wst:InvalidRequest. I båda fallen måste en chiffertext gå att öppna med den här sfärens nycklar. En applikations wstrustAcceptEncryptedElements åsidosätter detta. WSDL:en erbjuder kryptering av begäran bara när detta är på."
+  },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "Annonsera krypteringscertifikatet som varje ports identitet"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Om varje port i WSDL:en på /sts/metadata bär en wsa:EndpointReference vars wsid:Identity innehåller denna sfärs XML Encryption-certifikat, certifikatet som en begäran krypteras till. Elementet kommer från WS-AddressingIdentity, en Microsoft-specifikation som aldrig standardiserades; WCF läser det, liksom de verktygslådor som efterliknar WCF. Av, namnger WSDL:en inget certifikat och en klient konfigureras med det utanför bandet: KeyDescriptor use=\"encryption\" i /saml2/metadata, som är samma certifikat. Vad en begäran får kryptera ändras inte i något fall."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "Kryptera de namngivna elementen i ett svar"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Om ett RequestSecurityTokenResponse får elementen i wstrustEncryptResponseElements ersatta av xenc:EncryptedData efter att det byggts, för vilken tokentyp som helst. En applikations wstrustEncryptResponse åsidosätter detta. Mottagaren är den applikationens wstrustEncryptionCertificate, annars det certifikatelement som wstrustResponseRecipientXPath väljer, annars det första signeringscertifikatelement som begärans WS-Security-signatur namnger. Ett fel skickas i klartext. På, och krypteringen inte kan slutföras, är begäran ett fel i båda lägena."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Svarets krypteringsalgoritm"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Blockchiffret som de krypterade elementen i ett WS-Trust-svar krypteras med. De två GCM är autentiserade: en ändrad chiffertext misslyckas med sin tagg och avvisas. De två CBC är det inte. En applikations wstrustEncryptionAlgorithm åsidosätter detta. Ett wst:EncryptionAlgorithm-element får namnge det här chiffret, med dess korta namn eller dess XML Encryption-URI, endast medan svarskryptering är på."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Svarets nyckeltransportalgoritm"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Hur engångsinnehållsnyckeln i ett WS-Trust-svar omsluts till mottagarens RSA-publika nyckel. `rsa-oaep` är XML Encryption 1.1:s RSA-OAEP med SHA-256 och MGF1-SHA-256; `rsa-oaep-mgf1p` är OAEP över SHA-1. En mottagare vars certifikat är EC krypteras till med ECDH-ES-nyckelöverenskommelse vad det här än säger. En applikations wstrustKeyTransportAlgorithm åsidosätter detta. `rsa-1_5` är RSAES-PKCS1-v1_5 och är brutet, och det erbjuds eftersom en driftsatt begärare kanske inte godtar något annat. VARNING: rsa-1_5 är endast utvecklingsläge — i produktläge ignoreras det där det läses, på den här inställningen och på en applikations wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p används, loggas en gång, STS-CORE-0106), och att ställa in det avvisas (STS-CORE-0103, STS-REG-0193). Ett wst:EncryptWith-element får namnge den här algoritmen endast medan svarskryptering är på."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"

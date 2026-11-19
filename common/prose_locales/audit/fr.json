@@ -1991,6 +1991,18 @@
     "en": "6e2d0aef72c7b82c",
     "text": "Un certificat a été retiré de l’entrée d’une personne ou d’une application"
   },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "Une paire de clés de déchiffrement WS-Trust a été émise à une application"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "Une paire de clés de déchiffrement WS-Trust a été téléversée pour une application"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "La paire de clés de déchiffrement WS-Trust d’une application a été retirée"
+  },
   "audit.actions.federation.link.add.label": {
     "en": "5e6953235158adac",
     "text": "Un administrateur a lié une personne à un sujet d’un partenaire"

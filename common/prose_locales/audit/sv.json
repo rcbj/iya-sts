@@ -1991,6 +1991,18 @@
     "en": "6e2d0aef72c7b82c",
     "text": "Ett certifikat togs bort från en persons eller ett programs post"
   },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "Ett nyckelpar för WS-Trust-dekryptering utfärdades till ett program"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "Ett nyckelpar för WS-Trust-dekryptering laddades upp för ett program"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "Ett programs nyckelpar för WS-Trust-dekryptering togs bort"
+  },
   "audit.actions.federation.link.add.label": {
     "en": "5e6953235158adac",
     "text": "En administratör länkade en person till en partners subjekt"

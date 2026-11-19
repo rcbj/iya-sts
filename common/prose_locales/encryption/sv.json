@@ -207,6 +207,14 @@
     "en": "7aa85457f3f98d8b",
     "text": "Den som har den kan autentisera sig mot den partnern som denna tjänst (`tls_client_auth`) och visa upp de åtkomsttoken som partnern bundit till certifikatet. Förseglad i vila överallt där nycklar sparas, och undanhållen — chiffertext inräknad — från varje LDAP-sökning, sida och `/admin-api`-svar, som bara bär certifikatet."
   },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "Ett programs egen privata nyckel för WS-Trust-dekryptering (#1668) — `wstrustDecryptionPrivateKey`: det som en WS-Trust-begäran för programmet, krypterad till dess certifikat, dekrypteras med"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Den som har den läser varje begäran som krypterats till programmet — de inloggningsuppgifter och claims som krypteringen håller borta från nätet. Förseglad i vila överallt där nycklar sparas varaktigt, och undanhållen — chiffertext inräknad — från varje LDAP-sökning, sida och `/admin-api`-svar, som bara bär certifikatet."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Vad den här tjänsten krypterar I VILA, med vilken nyckel, under vilken algoritm och hur mycket av det som har skett i den här processen."

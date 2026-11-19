@@ -40,7 +40,26 @@
 //   G. development: an altered Body is believed, and the note says so; a
 //      signed ActAs is a token about its subject with the signer acting;
 //   H. the endpoint: over HTTP a signed request is issued and the same
-//      request again is refused.
+//      request again is refused;
+//   I. response encryption (#1668): the recipient is the certificate
+//      element the signature names, the BinarySecurityToken it
+//      references. A thumbprint, an issuer and serial or a Subject Key
+//      Identifier is not a certificate element, in either mode
+//      (STS-WSTRUST-0076). Product refuses the message-signing leaf:
+//      digitalSignature only, and an encryption recipient needs
+//      keyEncipherment or keyAgreement (STS-WSTRUST-0077). A JWT the
+//      signature does not reference is not a recipient (0076);
+//   J. request encryption as a WS-SecurityPolicy sender writes it (#1668):
+//      the key in the security header, the Body's content, an
+//      EncryptedHeader, an encrypted UsernameToken, a signature made
+//      before or after the encryption, a signed header beyond the
+//      Timestamp, a ciphertext in an unsigned header held to the signed
+//      Body (STS-WSTRUST-0046), and one that will not open (0075); with
+//      arbitrary ciphertext off (the default), only what a map names
+//      (0080), and a map's prefix the service's own, never the request's
+//      (J9). I1 and I6: the answer announces its ciphertext in its
+//      security header, and a recipient expression selects only what the
+//      accepted signature covers (0081).
 //
 // IN A CHILD PROCESS, for `wstrust_client_certificate.js`'s reason: it loads
 // the stack and builds a certificate authority, both process state `run.js`
@@ -164,11 +183,15 @@ function keyInfoFor(form, certPem, pkiModule) {
 // KeyInfo is not signed, so the replacement changes nothing it covers).
 function signedRst(xmldsig, pkiModule, opts) {
   log.debug("Entering signedRst().");
-  const xml = envelope(Object.assign({}, opts,
+  const clear = envelope(Object.assign({}, opts,
     { certPem: opts.form === 'token' || !opts.form ? opts.certPem : '' }));
+  // `before` (#1668): what the sender does before it signs — an encryption,
+  // for EncryptBeforeSigning.
+  const xml = opts.before ? opts.before(clear) : clear;
   let signed = xmldsig.signWsSecurity(xml, {
     privateKeyPem: opts.signKeyPem || opts.keyPem, certPem: opts.certPem,
     signTimestamp: opts.signTimestamp !== false,
+    signIds: opts.signIds || undefined,
     sigAlg: opts.sigAlg || undefined });
   signed = signed.replace(/<ds:KeyInfo>[\s\S]*?<\/ds:KeyInfo>/,
                           keyInfoFor(opts.form || 'token', opts.certPem,
@@ -206,6 +229,7 @@ async function childBody() {
   const accountState = require(ROOT + '/common/account_state');
   const tlsClient = require(ROOT + '/common/tls_client_certificates');
   const xmldsig = require(ROOT + '/common/crypto_impl/xmldsig.js');
+  const stsCrypto = require(ROOT + '/common/crypto');
   const xmldom = require('@xmldom/xmldom');
   const wstrustModule = require(ROOT + '/ws-trust/wstrust');
   const wstrust = new wstrustModule.WsTrust(
@@ -536,6 +560,433 @@ async function childBody() {
           'in', brief(r));
 
   // -------------------------------------------------------------------------
+  // I. RESPONSE ENCRYPTION READS THE SIGNATURE'S CERTIFICATE ELEMENT
+  // (#1668)
+  //
+  // The X.509 Token Profile 1.1 names the certificate by a Reference to a
+  // BinarySecurityToken, or by a thumbprint, Subject Key Identifier or
+  // issuer and serial that need not embed it. Only the element is a
+  // recipient. Development encrypts the assertion to that key (paranoid
+  // PKI is off). Product finds the same issued leaf and refuses:
+  // digitalSignature does not encipher (STS-WSTRUST-0077). A reference
+  // that is not an element is 0076 in both modes. A JWT
+  // BinarySecurityToken the signature does not reference is not a
+  // recipient. No recipient XPath is set: these cases are the default,
+  // the signature's own element.
+  // -------------------------------------------------------------------------
+  const ASSERTION = "//*[local-name()='Assertion' and namespace-uri()=" +
+    "'urn:oasis:names:tc:SAML:2.0:assertion']";
+  const armEnc = function () {
+    log.debug("Entering armEnc().");
+    const on = applications.updateApplication('wmsback', { mode: 'set',
+      attribute: 'wstrustEncryptResponse', value: 'true' });
+    const map = applications.updateApplication('wmsback', { mode: 'add',
+      attribute: 'wstrustEncryptResponseElements', value: ASSERTION });
+    log.debug("Leaving armEnc().");
+    return on.ok && map.ok;
+  };
+  const disarmEnc = function () {
+    log.debug("Entering disarmEnc().");
+    applications.updateApplication('wmsback', { mode: 'set',
+      attribute: 'wstrustEncryptResponse', value: '' });
+    applications.updateApplication('wmsback', { mode: 'remove',
+      attribute: 'wstrustEncryptResponseElements', value: ASSERTION });
+    log.debug("Leaving disarmEnc().");
+  };
+  t.check(armEnc(), 'precondition: wmsback encrypts the issued assertion');
+  const openedFor = function (body, keyPem) {
+    log.debug("Entering openedFor().");
+    config.setOverride('global.mode', 'development');
+    let xml = '';
+    try {
+      const opened = stsCrypto.decryptElement(String(body), keyPem);
+      xml = opened && opened.ok ? String(opened.xml || '') : '';
+    } catch (e) {
+      log.debug("Caught in openedFor(): " + ((e && e.message) || e));
+      xml = '';
+    } finally {
+      config.clearOverride('global.mode');
+    }
+    log.debug("Leaving openedFor().");
+    return xml;
+  };
+  const encryptedTo = function (body, keyPem, name) {
+    log.debug("Entering encryptedTo().");
+    const plain = openedFor(body, keyPem);
+    log.debug("Leaving encryptedTo().");
+    return /EncryptedData/.test(String(body)) &&
+      !/EncryptedAssertion/.test(String(body)) &&
+      !/>wmsalice</.test(String(body)) && !/>wmsbob</.test(String(body)) &&
+      plain.indexOf('>' + name + '<') >= 0;
+  };
+  r = await ask('development', sign('alice'));
+  t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice'),
+          'I1. development encrypts to the BinarySecurityToken the ' +
+          'signature references, and that key opens it', brief(r));
+  // rcbj on #1908: the answer announces its ciphertext the way WS-Security
+  // 1.1 section 9 has a sender do — the EncryptedKey in the answer's
+  // security header, its ReferenceList naming the EncryptedData, whose
+  // KeyInfo is a SecurityTokenReference to the key.
+  const answer = String(r.body);
+  t.check(/<soap:Header><wsse:Security xmlns:wsse="[^"]+"><xenc:EncryptedKey[^>]*Id="iya-ek-1"/
+            .test(answer) &&
+          /<xenc:ReferenceList><xenc:DataReference URI="#iya-ed-1"\/><\/xenc:ReferenceList><\/xenc:EncryptedKey>/
+            .test(answer) &&
+          /<xenc:EncryptedData[^>]*Id="iya-ed-1"/.test(answer) &&
+          /#ThumbprintSHA1">[^<]+<\/wsse:KeyIdentifier>/.test(answer) &&
+          /<wsse:SecurityTokenReference[^>]*><wsse:Reference URI="#iya-ek-1"\/>/
+            .test(answer),
+          'I1. the answer\'s security header carries the EncryptedKey and ' +
+          'its ReferenceList, and the EncryptedData points at it',
+          answer.slice(0, 900));
+  // rcbj on #1908: the recipient expression selects only a certificate
+  // the accepted signature covers, or the signer's own token.
+  const RECIPIENT = 'wstrustResponseRecipientXPath';
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: RECIPIENT, value: '//wsse:Security/wsse:BinarySecurityToken' });
+  r = await ask('development', sign('alice'));
+  t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice'),
+          'I6. a recipient expression selecting the signer\'s own token is ' +
+          'the recipient', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: RECIPIENT, value: "//*[local-name()='Other']/" +
+      "*[local-name()='BinarySecurityToken']" });
+  r = await ask('development', sign('alice', { header: '<x:Other ' +
+    'xmlns:x="urn:x"><wsse:BinarySecurityToken wsu:Id="other" ValueType="' +
+    X509V3 + '" EncodingType="' + BASE64 + '">' + String(issued.bob.certPem)
+      .replace(/-----[^-]+-----/g, '').replace(/\s+/g, '') +
+    '</wsse:BinarySecurityToken></x:Other>' }));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0081' &&
+          /InvalidRequest/.test(String(r.body)) &&
+          !/EncryptedData/.test(String(r.body)),
+          'I6. a certificate in a header no signature covers is ' +
+          'STS-WSTRUST-0081', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: RECIPIENT, value: '' });
+  const bobB64 = String(issued.bob.certPem)
+    .replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  r = await ask('development', sign('alice', { after: function (xml) {
+    return xml.replace('</wsse:Security>',
+      '<ds:X509Data xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
+      '<ds:X509Certificate>' + bobB64 + '</ds:X509Certificate>' +
+      '</ds:X509Data></wsse:Security>');
+  } }));
+  t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice') &&
+          openedFor(r.body, issued.bob.keyPem) === '',
+          'I2. a second X509Certificate in the header is not the ' +
+          'recipient when the signature names the token', brief(r));
+  for (const form of ['thumbprint', 'issuer-serial', 'ski']) {
+    for (const m of ['development', 'product']) {
+      r = await ask(m, sign('alice', { form: form }));
+      t.check(r.status >= 400 && r.errorCode === 'STS-WSTRUST-0076' &&
+              /InvalidRequest/.test(String(r.body)) &&
+              !/EncryptedData/.test(String(r.body)),
+              'I3. ' + m + ': a signature that names the certificate by ' +
+              form + ' is STS-WSTRUST-0076', brief(r));
+    }
+  }
+  r = await ask('product', sign('alice'));
+  t.check(r.status >= 400 && r.errorCode === 'STS-WSTRUST-0077' &&
+          /RequestFailed/.test(String(r.body)) &&
+          !/EncryptedData/.test(String(r.body)),
+          'I4. product: the issued message-signing certificate is found ' +
+          'and refused for encryption (digitalSignature only), ' +
+          'STS-WSTRUST-0077', brief(r));
+  const jwtOnly = envelope({
+    security: '<wsse:BinarySecurityToken wsu:Id="jwt" ValueType="' +
+      JWT_TYPE + '" EncodingType="' + BASE64 + '">' +
+      Buffer.from('not-a-certificate').toString('base64') +
+      '</wsse:BinarySecurityToken>'
+  });
+  r = await ask('development', jwtOnly);
+  t.check(r.status >= 400 && r.errorCode === 'STS-WSTRUST-0076' &&
+          /InvalidRequest/.test(String(r.body)) &&
+          !/EncryptedData/.test(String(r.body)),
+          'I5. development: a JWT BinarySecurityToken the signature does ' +
+          'not reference is STS-WSTRUST-0076, not a clear assertion',
+          brief(r));
+  // Product never reaches the response map. The token is a JWT
+  // credential, and a JWT this realm did not issue is refused
+  // (STS-WSTRUST-0026) before the response is sealed.
+  r = await ask('product', jwtOnly);
+  t.check(r.status >= 400 && r.errorCode === 'STS-WSTRUST-0026' &&
+          /FailedAuthentication/.test(String(r.body)) &&
+          !/EncryptedData/.test(String(r.body)),
+          'I5. product: the same request is STS-WSTRUST-0026 before the ' +
+          'response is sealed', brief(r));
+  disarmEnc();
+
+  // -------------------------------------------------------------------------
+  // J. REQUEST ENCRYPTION, AS A WS-SECURITYPOLICY SENDER WRITES IT (#1668,
+  // on #1908's review)
+  //
+  // The WSDL lets a client encrypt any header or the Body and sign any
+  // header. WSS4J, WCF and Metro put one EncryptedKey in the security
+  // header, its ReferenceList naming the EncryptedData, whose KeyInfo is a
+  // SecurityTokenReference to it; the Body's CONTENT is encrypted (type
+  // Content); a whole header is a WS-Security 1.1 EncryptedHeader; and the
+  // default order is SignBeforeEncrypting, so the signature's digests are
+  // of the plaintext. Each shape is opened, a signature in either order
+  // verifies, and a ciphertext in an unsigned header is held to the signed
+  // Body once it is open.
+  // -------------------------------------------------------------------------
+  const XENC = 'http://www.w3.org/2001/04/xmlenc#';
+  const DSNS = 'http://www.w3.org/2000/09/xmldsig#';
+  const WSSE11 = 'http://docs.oasis-open.org/wss/' +
+    'oasis-wss-wssecurity-secext-1.1.xsd';
+  const WSA = 'http://www.w3.org/2005/08/addressing';
+  const SOAP12 = 'http://www.w3.org/2003/05/soap-envelope';
+  const servicePem = helpers.STS.xml.certPem;
+  const parseX = function (xml) {
+    log.debug("Entering parseX().");
+    log.debug("Leaving parseX().");
+    return new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  };
+  const serial = function (node) {
+    log.debug("Entering serial().");
+    log.debug("Leaving serial().");
+    return new xmldom.XMLSerializer().serializeToString(node);
+  };
+  // `plain` encrypted to this realm's certificate as an EncryptedData of
+  // `type` with Id `id`; its EncryptedKey in its own KeyInfo (`own`), or
+  // moved out for the security header, the way WSS4J writes it.
+  const sealed = function (plain, type, id, own) {
+    log.debug("Entering sealed().");
+    const data = parseX(stsCrypto.encryptElement(plain, servicePem,
+      { bare: true, algorithm: 'aes256-gcm', keyTransport: 'rsa-oaep' }))
+      .documentElement;
+    data.setAttribute('Type', XENC + type);
+    data.setAttribute('Id', id);
+    if (own) {
+      log.debug("Leaving sealed(). Its own key.");
+      return { data: serial(data), key: '' };
+    }
+    const owner = data.ownerDocument;
+    const keyInfo = data.getElementsByTagNameNS(DSNS, 'KeyInfo')[0];
+    const key = keyInfo.getElementsByTagNameNS(XENC, 'EncryptedKey')[0];
+    keyInfo.removeChild(key);
+    key.setAttribute('Id', 'EK-' + id);
+    const list = owner.createElementNS(XENC, 'xenc:ReferenceList');
+    const listed = owner.createElementNS(XENC, 'xenc:DataReference');
+    listed.setAttribute('URI', '#' + id);
+    list.appendChild(listed);
+    key.appendChild(list);
+    const str = owner.createElementNS(WSSE, 'wsse:SecurityTokenReference');
+    const points = owner.createElementNS(WSSE, 'wsse:Reference');
+    points.setAttribute('URI', '#EK-' + id);
+    str.appendChild(points);
+    keyInfo.appendChild(str);
+    log.debug("Leaving sealed(). The header's key.");
+    return { data: serial(data), key: serial(key) };
+  };
+  // The key, first in the security header: the step taken last is the
+  // one a receiver takes first (WS-Security 1.1 section 5.2).
+  const keyFirst = function (doc, key) {
+    log.debug("Entering keyFirst().");
+    if (key) {
+      const security = doc.getElementsByTagNameNS(WSSE, 'Security')[0];
+      security.insertBefore(doc.importNode(parseX(key).documentElement,
+                                           true), security.firstChild);
+    }
+    log.debug("Leaving keyFirst().");
+  };
+  const encryptBody = function (own) {
+    log.debug("Entering encryptBody().");
+    log.debug("Leaving encryptBody().");
+    return function (xml) {
+      log.debug("Entering encryptBody's sealer.");
+      const doc = parseX(xml);
+      const body = doc.getElementsByTagNameNS(SOAP12, 'Body')[0];
+      let plain = '';
+      for (let i = 0; i < body.childNodes.length; i++) {
+        plain += serial(body.childNodes[i]);
+      }
+      const s = sealed(plain, 'Content', 'ED-body', own);
+      while (body.firstChild) {
+        body.removeChild(body.firstChild);
+      }
+      body.appendChild(doc.importNode(parseX(s.data).documentElement, true));
+      keyFirst(doc, s.key);
+      log.debug("Leaving encryptBody's sealer.");
+      return serial(doc);
+    };
+  };
+  // The first element named `local` in `ns`, encrypted in place (type
+  // Element), or as an EncryptedHeader.
+  const encryptOne = function (xml, ns, local, asHeader) {
+    log.debug("Entering encryptOne(). " + local);
+    const doc = parseX(xml);
+    const node = doc.getElementsByTagNameNS(ns, local)[0];
+    const s = sealed(serial(node), 'Element', 'ED-' + local, false);
+    let replacement = doc.importNode(parseX(s.data).documentElement, true);
+    if (asHeader) {
+      const holder = doc.createElementNS(WSSE11, 'wsse11:EncryptedHeader');
+      holder.setAttributeNS(WSU, 'wsu:Id', 'EH-' + local);
+      holder.appendChild(replacement);
+      replacement = holder;
+    }
+    node.parentNode.replaceChild(replacement, node);
+    keyFirst(doc, s.key);
+    log.debug("Leaving encryptOne().");
+    return serial(doc);
+  };
+  const issuedTo = function (res, name) {
+    log.debug("Entering issuedTo().");
+    log.debug("Leaving issuedTo().");
+    return res.status === 200 && new RegExp('>' + name + '<')
+      .test(String(res.body));
+  };
+
+  // Arbitrary ciphertext is accepted for J1-J4 and J7: the setting is off
+  // by default, and J5 holds what it refuses.
+  const accept = function (value) {
+    log.debug("Entering accept(). " + value);
+    const done = applications.updateApplication('wmsback', { mode: 'set',
+      attribute: 'wstrustAcceptEncryptedElements', value: value });
+    log.debug("Leaving accept().");
+    return done && done.ok;
+  };
+  t.check(accept('true'), 'precondition: wmsback accepts any ciphertext');
+  r = await ask('product', encryptBody(false)(sign('alice')));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J1. product: signed, then the Body\'s content encrypted with ' +
+          'the key in the security header (SignBeforeEncrypting) is opened ' +
+          'and the signature verifies over the plaintext', brief(r));
+  r = await ask('product', sign('alice', { before: encryptBody(false) }));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J2. product: the Body encrypted, then signed ' +
+          '(EncryptBeforeSigning), verifies over the ciphertext and is ' +
+          'opened after', brief(r));
+  r = await ask('product', sign('alice', { before: encryptBody(true) }));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J2. product: the same with the EncryptedKey in the ' +
+          'EncryptedData\'s own KeyInfo', brief(r));
+  const smuggled = '<wst:RequestSecurityToken xmlns:wst="' + WST + '">' +
+    '<wst:RequestType>' + WST + '/Issue</wst:RequestType>' +
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+    'policy"><wsa:EndpointReference xmlns:wsa="' + WSA + '"><wsa:Address>' +
+    'https://wms-other.example</wsa:Address></wsa:EndpointReference>' +
+    '</wsp:AppliesTo></wst:RequestSecurityToken>';
+  const hidden = sealed(smuggled, 'Element', 'ED-smuggled', true);
+  r = await ask('product', sign('alice', { after: function (xml) {
+    return xml.replace('<s:Header>', '<s:Header><x:Smuggled xmlns:x=' +
+                       '"urn:x">' + hidden.data + '</x:Smuggled>');
+  } }));
+  t.check(failed(r, 'STS-WSTRUST-0046'),
+          'J3. product: an unsigned header that opens to a ' +
+          'RequestSecurityToken, beside a signed Body, is ' +
+          'STS-WSTRUST-0046', brief(r));
+  const tokenOf = function (name) {
+    log.debug("Entering tokenOf().");
+    log.debug("Leaving tokenOf().");
+    return '<wsse:UsernameToken><wsse:Username>' + name +
+      '</wsse:Username><wsse:Password>x</wsse:Password>' +
+      '</wsse:UsernameToken>';
+  };
+  r = await ask('development', encryptOne(envelope({
+    security: tokenOf('wmsbob') }), WSSE, 'UsernameToken', false));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J4. development: a UsernameToken encrypted in the security ' +
+          'header is opened and authenticates', brief(r));
+  const toHeader = '<wsa:To xmlns:wsa="' + WSA + '" wsu:Id="to">' + BASE +
+    '/sts</wsa:To>';
+  const map = [
+    applications.updateApplication('wmsback', { mode: 'set',
+      attribute: 'wstrustEncryptRequest', value: 'true' }),
+    applications.updateApplication('wmsback', { mode: 'add',
+      attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' })];
+  t.check(map.every(function (one) { return one && one.ok; }),
+          'precondition: wmsback requires wsa:To encrypted',
+          JSON.stringify(map));
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J5. development: a header encrypted as a WS-Security 1.1 ' +
+          'EncryptedHeader is opened and satisfies the application\'s map',
+          brief(r));
+  r = await ask('development', envelope({ header: toHeader,
+                                          security: tokenOf('wmsbob') }));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0075' &&
+          /FailedCheck/.test(String(r.body)),
+          'J5. the same header in the clear is STS-WSTRUST-0075 while the ' +
+          'application requires it', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: 'wstrustEncryptRequest', value: '' });
+  applications.updateApplication('wmsback', { mode: 'remove',
+    attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' });
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J5. with no map but arbitrary ciphertext accepted, an ' +
+          'encrypted header is opened', brief(r));
+  // rcbj on #1908: off, ciphertext is accepted only where a map names it.
+  t.check(accept(''), 'precondition: wmsback accepts only mapped ciphertext');
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0080' &&
+          /InvalidRequest/.test(String(r.body)),
+          'J8. arbitrary ciphertext off and no map: STS-WSTRUST-0080',
+          brief(r));
+  applications.updateApplication('wmsback', { mode: 'add',
+    attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' });
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J8. off, an encrypted header the map names is opened', brief(r));
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSSE, 'UsernameToken', false));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0080' &&
+          /UsernameToken/.test(String(r.body)),
+          'J8. off, an encrypted element the map does not name is ' +
+          'STS-WSTRUST-0080', brief(r));
+  // rcbj on #1908: a map's prefix is the service's binding, never the
+  // request's. The request binds `wsa` to a namespace of its own on the
+  // Header, sends the real wsa:To in the clear in the default namespace,
+  // and encrypts a decoy `wsa:To` in its own namespace.
+  t.check(accept('true') && applications.updateApplication('wmsback', {
+    mode: 'set', attribute: 'wstrustEncryptRequest', value: 'true' }).ok,
+          'precondition: wmsback requires wsa:To encrypted');
+  const decoy = encryptOne(envelope({
+    header: '<To xmlns="' + WSA + '">' + BASE + '/sts</To>' +
+      '<wsa:To>decoy</wsa:To>',
+    security: tokenOf('wmsbob') }).replace('<s:Header>',
+      '<s:Header xmlns:wsa="urn:decoy">'), 'urn:decoy', 'To', false);
+  r = await ask('development', decoy);
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0075',
+          'J9. a decoy in a namespace the request binds to `wsa` does not ' +
+          'satisfy //wsa:To, and the real header in the clear is ' +
+          'STS-WSTRUST-0075', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: 'wstrustEncryptRequest', value: '' });
+  applications.updateApplication('wmsback', { mode: 'remove',
+    attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' });
+  const messageId = '<wsa:MessageID xmlns:wsa="' + WSA + '" wsu:Id="mid">' +
+    'urn:uuid:' + nodeCrypto.randomUUID() + '</wsa:MessageID>';
+  r = await ask('product', sign('alice', { header: messageId,
+                                           signIds: ['mid'] }));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J6. product: a signature over a header beyond the Timestamp ' +
+          '(wsa:MessageID) verifies', brief(r));
+  r = await ask('product', sign('alice', { header: messageId,
+    signIds: ['mid'], after: function (xml) {
+      return xml.replace('urn:uuid:', 'urn:uuid:0');
+    } }));
+  t.check(failed(r, 'STS-WSTRUST-0045'),
+          'J6. that header altered after signing is STS-WSTRUST-0045',
+          brief(r));
+  const broken = sealed(tokenOf('wmsbob'), 'Element', 'ED-broken', true)
+    .data.replace(/(<xenc:CipherData><xenc:CipherValue>)([^<]{8})/g,
+                  function (all, open, head) {
+                    return open + head.split('').reverse().join('');
+                  });
+  r = await ask('development', envelope({ security: broken }));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0075' &&
+          /FailedCheck/.test(String(r.body)) && !r.signIn,
+          'J7. a ciphertext that will not open is STS-WSTRUST-0075',
+          brief(r));
+  accept('');
+
+  // -------------------------------------------------------------------------
   // H. THE ENDPOINT
   // -------------------------------------------------------------------------
   config.setOverride('global.mode', 'product');
@@ -638,6 +1089,7 @@ module.exports = {
   describe: 'WS-Trust: a WS-Security signature over the Body and Timestamp ' +
             'authenticates the requester its certificate maps to, and is ' +
             'refused when it does not verify, is wrapped, stale, replayed, ' +
-            'revoked or nobody\'s (#521)',
+            'revoked or nobody\'s (#521); response encryption uses the ' +
+            'signature\'s certificate element (#1668)',
   run: run
 };

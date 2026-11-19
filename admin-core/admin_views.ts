@@ -12953,7 +12953,11 @@ class AdminViews {
       // authenticates the application only while it is stored here and on
       // no other entry. Required when drawn, for `userPageData()`'s reason.
       stored: require('./admin_actions').applicationStoredCertificatesOf(
-        String(row.identifier || ''))
+        String(row.identifier || '')),
+      // THE APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668): the
+      // certificate a request for it is encrypted to, and never the private
+      // key. Required when drawn: a library, so the require moves no route.
+      wstrustDecryption: require('../ws-trust/ws_decryption_key').state(row)
     };
     state.json = {
       clientSecret: { held: state.clientSecret.held,
@@ -12977,7 +12981,8 @@ class AdminViews {
       sources: state.sources,
       mtls: state.mtls,
       signing: state.signing,
-      stored: state.stored
+      stored: state.stored,
+      wstrustDecryption: state.wstrustDecryption
     };
     log.debug("Leaving AdminViews.applicationCredentialsState().");
     return state;

@@ -1991,6 +1991,18 @@
     "en": "6e2d0aef72c7b82c",
     "text": "May certificate na inalis sa entry ng isang tao o ng isang application"
   },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "Inisyuhan ang isang application ng WS-Trust key pair na pang-decrypt"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "Nag-upload ng WS-Trust key pair na pang-decrypt para sa isang application"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "Inalis ang WS-Trust key pair na pang-decrypt ng isang application"
+  },
   "audit.actions.federation.link.add.label": {
     "en": "5e6953235158adac",
     "text": "Ini-link ng isang administrator ang isang tao sa isang subject ng partner"

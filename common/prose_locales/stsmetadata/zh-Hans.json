@@ -2524,8 +2524,8 @@
     "text": "非规范（#594）。使用 ?id= 时，钱包就该 notification_id 所指明的凭证告诉 Notification Endpoint 的内容：事件、其描述以及时间（对于此颁发者未签发的 id 返回 404）。Admin Read；在 #594 之前是仅限开发的 /oid4vci/notification/:id。"
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST 一个 SOAP RequestSecurityToken；按 wst:RequestType（Issue、Renew、Validate、Cancel）分派并返回 RSTR。GET 描述该端点。添加 ?encrypt=1 可使所颁发的断言以 EncryptedAssertion 形式返回。"
+    "en": "dd027a41936ae3af",
+    "text": "POST 一个 SOAP RequestSecurityToken；按 wst:RequestType（Issue、Renew、Validate、Cancel）分派并返回 RSTR。GET 描述该端点。应用可以要求请求和响应中被点名的元素是 XML Encryption（xenc:EncryptedData）。与该映射不匹配的消息是故障，处理立即停止。"
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

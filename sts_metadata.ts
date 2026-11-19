@@ -7826,8 +7826,10 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
     what: 'POST a SOAP RequestSecurityToken; dispatches on wst:RequestType ' +
           '(Issue, Renew, Validate, Cancel) and returns an RSTR. GET ' +
-          'describes the endpoint. Add ?encrypt=1 to have the issued ' +
-          'assertion returned as an EncryptedAssertion.' },
+          'describes the endpoint. An application may require named ' +
+          'elements of the request and of the response to be XML ' +
+          'Encryption (xenc:EncryptedData). A message that does not match ' +
+          'that map is a fault, and processing stops.' },
   { path: '/sts/metadata', group: 'WS-Trust', name: 'WS-Trust metadata',
     specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
     what: 'WSDL 1.1 with WS-SecurityPolicy. Each trust version (May 2004, ' +

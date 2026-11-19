@@ -586,31 +586,221 @@ protected subjects and the realm settings are on
 [Delegation and impersonation](delegation.md). The live policy is
 `GET /admin-api/delegation/policy`.
 
-## An encrypted SAML 2.0 assertion
+## An encrypted response
 
-`POST /sts?encrypt=1` encrypts a SAML 2.0 assertion. It is not part of
-WS-Trust. The key is the first `X509Certificate` in the request, which a
-WS-Security signature's `KeyInfo` carries. The algorithms are
-`saml2.encryptionAlgorithm` and `saml2.keyTransportAlgorithm`.
+XML Encryption of a WS-Trust response is per application, and it is off
+until that application turns it on. The algorithms are `wstrust.encryptionAlgorithm` and
+`wstrust.keyTransportAlgorithm`, overridable on the application. They are
+not the SAML assertion settings.
 
-`sts_xml_schema_validation.js` puts the certificate in the security header:
+Set the response switch and name the issued SAML 2.0 assertion. The same
+shape names any other element, including a SOAP header or the body. The
+expression is one value of `wstrustEncryptResponseElements`:
 
-```xml
-<wsse:Security xmlns:wsse="…">
-  <wsse:UsernameToken>…</wsse:UsernameToken>
-  <ds:X509Data xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
-    <ds:X509Certificate>MIIC…</ds:X509Certificate>
-  </ds:X509Data>
-</wsse:Security>
+```
+//*[local-name()='Assertion' and namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']
 ```
 
 ```bash
-curl -sk -X POST "$BASE/sts?encrypt=1" -H 'content-type: application/soap+xml' --data-binary @rst.xml
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustEncryptResponse","value":"true"}'
+api applications/add '{"application":"https://wsrp.example/","attribute":"wstrustEncryptResponseElements","value":"<the expression above>"}'
 ```
 
-The answer carries an `EncryptedAssertion`. With no certificate, or one that
-cannot be used, development mode returns the assertion unencrypted and logs
-it, and product mode refuses the request.
+A request or a response that does not match the configured map stops
+processing and returns a fault. Nothing is issued, and the clear response
+is not sent. The fault stays in the clear, in both modes.
+
+The recipient is one certificate, and a step that cannot be used does not
+fall through:
+
+1. `wstrustEncryptionCertificate` on the application, base64 DER or PEM,
+   when it is set. A value that is not a readable certificate is
+   `wst:RequestFailed` (`STS-WSTRUST-0077`).
+2. Otherwise `wstrustResponseRecipientXPath`: the first
+   `ds:X509Certificate` or `#X509v3` `BinarySecurityToken` that expression
+   selects. Nothing, or an element that is not one of those, is
+   `wst:InvalidRequest` (`STS-WSTRUST-0076`). A certificate element whose
+   text is not a certificate is `STS-WSTRUST-0077`.
+3. Otherwise the first signer certificate element the request's WS-Security
+   signature names: the `#X509v3` `BinarySecurityToken` the reference
+   points at, or a `ds:X509Certificate` in that signature's `KeyInfo`.
+
+A thumbprint, Subject Key Identifier or issuer and serial is not a
+recipient. A certificate inside an assertion is not one either. With the
+switch on and no recipient, the fault is `STS-WSTRUST-0076`. An empty map,
+an expression that matches nothing, or a cipher that fails is
+`STS-WSTRUST-0077`.
+
+`wstrustResponseRecipientXPath` may select only a certificate the
+request's accepted WS-Security signature vouches for: the signer's own
+`BinarySecurityToken`, or a certificate inside a part the signature
+references. Anything else, and anything in an unsigned request, is
+`wst:InvalidRequest` (`STS-WSTRUST-0081`). For a requester that does not
+sign, set `wstrustEncryptionCertificate` instead.
+
+```bash
+curl -sk -X POST "$BASE/sts" -H 'content-type: application/soap+xml' --data-binary @rst.xml
+```
+
+The answer carries `xenc:EncryptedData`, not an `EncryptedAssertion`. A
+message-signing certificate permits `digitalSignature` only, so under
+paranoid PKI mode (on in product) the request is refused once that
+certificate has been found: encryption needs `keyEncipherment` or
+`keyAgreement`. Set `wstrustEncryptionCertificate` to a certificate that
+may encrypt. A certificate with no `keyUsage` may encrypt (RFC 5280).
+
+## An encrypted request
+
+Encrypting a request is off until it is turned on. With
+`wstrust.acceptEncryptedElements` (the application's
+`wstrustAcceptEncryptedElements`) on, a client may encrypt any header or the
+Body to this realm's XML Encryption certificate. That includes the shapes WSS4J, WCF and
+Metro send under the WSDL's `sp:AsymmetricBinding`
+([the metadata document](ws-trust.md#the-metadata-document)): the Body's
+content, a WS-Security 1.1 `EncryptedHeader`, and one `EncryptedKey` in the
+security header listing them. The signature may be made before or after
+the encryption.
+
+```bash
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustAcceptEncryptedElements","value":"true"}'
+```
+
+Off, ciphertext is accepted only where the application's
+`wstrustEncryptRequestElements` names it, and anything else is
+`wst:InvalidRequest` (`STS-WSTRUST-0080`). The WSDL offers request
+encryption only while the service-wide setting is on: under
+`sp:Basic256Sha256` where AES-256-CBC is read (never in product), and on
+the `IyaSuite` ports, with AES-256-GCM and RSA-OAEP over SHA-256, in both
+modes.
+
+The request map makes encryption required.
+`wstrustEncryptRequest` and `wstrustEncryptRequestElements` require each
+named element to arrive encrypted. An empty map, a clear match or a miss is
+`wsse:FailedCheck` (`STS-WSTRUST-0075`) and processing stops, as is a
+ciphertext that will not open whether or not the switch is on. An expression outside the
+subset this service evaluates — `/`, `//`, `*`, an element name,
+`prefix:local`, `|`, and `local-name()`, `namespace-uri()` and `@attr`
+joined by `and` — is `wst:RequestFailed` (`STS-WSTRUST-0079`).
+
+### The certificate a client encrypts to
+
+The client needs this realm's XML Encryption certificate before it sends an
+encrypted request. Where it gets it depends on
+`wstrust.advertiseEndpointIdentity`:
+
+* **Off, the default.** The WSDL names no certificate. Fetch it and
+  configure the client with it:
+
+  ```bash
+  curl -sk "$BASE/saml2/metadata" > idp.xml   # the KeyDescriptor use="encryption"
+  curl -sk "$BASE/sts/cert" > sts.pem          # the same certificate while
+                                               # saml.signatureAlgorithm is RSA
+  ```
+
+  The first `md:KeyDescriptor use="encryption"` of `/saml2/metadata` is
+  always the right certificate. `/sts/cert` is the XML signing certificate, and is the
+  same one only while `saml.signatureAlgorithm` is an RSA algorithm (the
+  default).
+* **On.** Every port of `/sts/metadata` also carries the certificate as a
+  `wsa:EndpointReference/wsid:Identity`. WCF and the toolkits that copy it
+  read it from there. The element is from WS-AddressingIdentity, a
+  Microsoft specification that was never standardised, which is why it is
+  off by default.
+
+  ```bash
+  api config/set '{"key":"wstrust.advertiseEndpointIdentity","value":true}'
+  ```
+
+In development mode the key is regenerated on every start, so fetch the
+certificate again after a restart. In product mode it changes when the
+`xml` key rotates. The setting changes only what the WSDL says; which
+ciphertext is accepted is still the settings above.
+
+### An application's own decryption key pair
+
+An application may hold a decryption key pair of its own. A request for that
+application is then encrypted to the application's certificate and not to
+the realm's, so a client of one application never holds the certificate that
+opens another's requests, and a key that leaks exposes one application's
+traffic. Give it one in either of two ways.
+
+**Issue one from the realm's certificate authority.** The realm needs a
+certificate authority first (**Protocols → PKI**, or `api pki/build`). The
+certificate is issued with the `key-encipherment` profile: `keyEncipherment`
+for an RSA key, `keyAgreement` for an EC key, never `digitalSignature`. Its
+subject is the realm's standard name with `CN=<application>-encrypt`, for
+example `CN=esb1-encrypt, O=iya-sts`, and its subjectAltName is
+`urn:sts:application:<application>`.
+
+* **Console:** **Directory → Applications**, open the application, the
+  **Credentials** tab, **WS-Trust decryption key pair**. Choose `rsa-3072`
+  (the default) or `ec-p256` and press **Issue a key pair**.
+* **API:**
+  ```bash
+  api applications/issue-wstrust-decryption-key \
+    '{"application":"esb1","keyAlg":"rsa-3072"}'
+  ```
+
+**Or upload a key pair you made.** Paste one PEM certificate and its
+unencrypted PEM private key (PKCS#8, PKCS#1 or SEC 1; PKCS#12 is not taken).
+The key must be the certificate's, RSA of at least 2048 bits or EC on P-256,
+P-384 or P-521, and the certificate's key usage, if it has one, must include
+`keyEncipherment` (RSA) or `keyAgreement` (EC).
+
+```bash
+api applications/upload-wstrust-decryption-key "$(jq -n \
+  --arg c "$(cat esb1-encrypt.pem)" --arg k "$(cat esb1-encrypt.key)" \
+  '{application:"esb1",certificate:$c,privateKey:$k}')"
+```
+
+| Refused | Code |
+|---|---|
+| Not one PEM certificate, or a private key that is encrypted or does not parse | `STS-ADMIN-0946` |
+| A private key that is not the certificate's | `STS-ADMIN-0947` |
+| A key that is not RSA of 2048 bits or more, or EC on P-256, P-384 or P-521 | `STS-ADMIN-0948` |
+| A key usage without `keyEncipherment` (RSA) or `keyAgreement` (EC), or an expired certificate | `STS-ADMIN-0949` |
+| A certificate another application holds, or an application that does not exist | `STS-ADMIN-0950` |
+
+**Give the client the certificate.** The private key never leaves this
+service: no page, API answer or directory read carries it, and where keys
+persist it is sealed on the application's entry. The certificate is public.
+Download it from the same section of the console (**Download the
+certificate (PEM)**), or read it from the API:
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/admin-api/applications?application=esb1" \
+  | jq -r '.credentials.wstrustDecryption.certificatePem' > esb1-encrypt.pem
+```
+
+The section shows the subject, the issuer, the serial, the validity and two
+thumbprints: the SHA-256 one, and the `#ThumbprintSHA1` a WSS4J or WCF client
+names the certificate by. The realm's WSDL is one document for the whole
+realm, so it never names an application's certificate, even with
+`wstrust.advertiseEndpointIdentity` on: configure the client with the
+downloaded certificate out of band.
+
+**How a request is opened.** The key is chosen by the recipient the
+`EncryptedKey` names: the certificate itself, its `#ThumbprintSHA1` or
+`#X509SubjectKeyIdentifier` `KeyIdentifier`, or its `X509IssuerSerial`. So a
+request whose `AppliesTo` is itself inside the ciphertext still opens. The
+opened request is then held to the key that opened it:
+
+* ciphertext opened with an application's key in a request for any other
+  application is `wsse:FailedCheck` (`STS-WSTRUST-0082`);
+* a request for an application that holds its own key, encrypted to the
+  realm's certificate, is `wsse:FailedCheck` (`STS-WSTRUST-0083`).
+
+An application with no key pair of its own is unchanged: its requests are
+encrypted to the realm's certificate. What a request may encrypt is still the
+settings above, and the certificate a response is encrypted to is still the
+requester's (*An encrypted response*).
+
+**Remove it** with **Remove the key pair**, or
+`api applications/remove-wstrust-decryption-key '{"application":"esb1"}'`.
+Requests for the application are then opened with the realm's key again.
+Removing is not revocation: a certificate issued here stays valid until it
+expires, and is on no revocation list.
 
 ## Related
 

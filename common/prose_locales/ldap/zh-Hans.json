@@ -1287,6 +1287,58 @@
     "en": "86ac83dbe366a17b",
     "text": "为此应用签发的 WS-Trust JWT 所携带的 OAuth 2.0 scope，每个值一个 scope（#485）。WS-Trust 以此应用为 AppliesTo 签发的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）会在其 `scope` 声明中携带它们，以空格分隔（RFC 9068 第 2.2.3 节）；未设置时不携带 `scope`。SAML 令牌不受影响。\n\n**每个 scope 的判定方式与 OAuth 访问令牌相同**，以此应用作为客户端：`oauthAllowedScope` 声明它可以被签发什么（在产品模式下；本服务的受保护 scope 在任何模式下都是如此），并由签发策略的逐 scope 问题作出决定。被策略丢弃的值会被从令牌中去掉并记入审计（STS-OAUTH-0579），绝不会被签发。指明未声明 scope 的写入在这里会被接受，因为声明可能改变，而且开发模式会授予未声明的 scope：请同时在 oauthAllowedScope 上声明它。策略将会丢弃的值会在设置处给出警告（#488）：在此字段旁、在 Save 的回复中，以及在 /admin-api 写入回复和应用视图的 `warnings` 中。"
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE 或 FALSE：要求此应用的请求映射所点名的元素以加密形式到达，覆盖 wstrust.encryptRequest。开启时，若映射为空、某个表达式匹配到以明文到达的元素，或某个表达式未匹配到任何从密文还原的内容，则 AppliesTo 为此应用的请求即为 FailedCheck。哪些密文会被打开由 wstrustAcceptEncryptedElements 决定；AppliesTo 从打开后的请求中读取，无法打开的密文在任何情况下都是 FailedCheck。"
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE 或 FALSE：接受 AppliesTo 为此应用的请求中任何位置（头或正文）的 XML 加密，而无需请求映射点名，覆盖 wstrust.acceptEncryptedElements。关闭时，仅在 wstrustEncryptRequestElements 点名之处接受密文——每个被还原的元素必须是某个表达式选中的元素或位于其中——没有映射的密文为 InvalidRequest。无论哪种情况，密文都必须能用本领域的密钥打开。"
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "WS-TRUST 请求中必须以加密形式到达的元素，每个一条 XPath 1.0 表达式。子集为 `/`、`//`、`*`、元素名、`prefix:local`、用 `|` 的并集，以及谓词 `local-name()`、`namespace-uri()` 和 `@attr`，用 `and` 连接。每个表达式必须至少选中一个从密文还原的元素：类型为 Element 或 Content 的 xenc:EncryptedData，或 WS-Security 1.1 的 EncryptedHeader。超出该子集的表达式为 RequestFailed。可以点名 SOAP 头、SOAP 正文或任何元素，适用于任何令牌类型。"
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "TRUE 或 FALSE：将此应用的响应映射所点名的元素替换为 xenc:EncryptedData，覆盖 wstrust.encryptResponse。响应先以明文构建，然后再替换这些元素，适用于任何令牌类型。故障保持明文。开启时，若加密无法完成——没有接收方、映射什么都不匹配，或接收方证书不接受该密码——该请求在两种模式下都是故障。"
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "被加密的 WS-Trust 响应元素，每个一条 XPath 1.0 表达式，子集与 wstrustEncryptRequestElements 相同。可以点名 SOAP 标头、SOAP 正文或任何元素。在已构建的响应中什么都不匹配的表达式是故障。"
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "此应用的 WS-Trust 响应用的分组密码——aes256-gcm、aes128-gcm、aes256-cbc 或 aes128-cbc——覆盖 wstrust.encryptionAlgorithm。wst:EncryptionAlgorithm 元素可以以其短名或其 XML Encryption URI 点名此密码，仅在此应用的响应加密开启时。"
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "WS-Trust 响应加密所用的证书，base64 DER 或 PEM。设置之后它就是接收方，无法读取的证书是故障，而不会退到下一个来源。未设置时，接收方是 wstrustResponseRecipientXPath 选中的证书元素；该表达式也未设置时，则是请求的 WS-Security 签名所点名的第一个签名者证书元素。"
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "此应用的 WS-Trust 响应如何封装内容密钥——rsa-oaep-mgf1p、rsa-oaep（SHA-256、MGF1-SHA-256）或 rsa-1_5——覆盖 wstrust.keyTransportAlgorithm。证书为 EC 的接收方无论此项如何设置，都通过 ECDH-ES 加密。wst:EncryptWith 元素可以以其短名或其 XML Encryption URI 点名此算法，仅在此应用的响应加密开启时。"
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "选择 WS-Trust 响应加密所用证书元素的 XPath 表达式：一个 ds:X509Certificate，或 ValueType 以 #X509v3 结尾的 BinarySecurityToken。子集与元素映射相同。设置之后若什么都不选中，或选中的元素不是这两种之一，就没有接收方，并且不会尝试下一个来源。选中的证书元素其文本不是证书时，是一次已完成加密的故障，并且不会尝试下一个来源。未设置时，接收方是请求的 WS-Security 签名所点名的第一个签名者证书元素——该签名的引用所指向的 BinarySecurityToken，或该签名 KeyInfo 中的 ds:X509Certificate。指纹、Subject Key Identifier 或颁发者与序列号不是证书元素。"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "发给此应用的 WS-TRUST 请求所加密到的证书，PEM。设置后，发给此应用的请求用其私钥而非领域的私钥解密，而加密到领域密钥的发给它的请求是 FailedCheck。公开：应用页面和 GET /admin-api/applications 会提供它。"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "签发 wstrustDecryptionCertificate 的证书颁发机构的证书，PEM，签发 CA 在前，用于在此签发的密钥对。上传的密钥对为空。"
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "wstrustDecryptionCertificate 的私钥，PEM。在密钥持久保存的地方密封，不提供给任何页面、任何 /admin-api 应答和任何目录读取，且从不记录日志。"
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "解密密钥对的来源：issued（在此生成并由领域的 CA 认证）或 uploaded（上传）。"
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN，例如 HTTP/sts@EXAMPLE.COM——Kerberos v5 的标识符属性。Kerberos 服务与这里的其他应用一样是一个应用，并且是本服务可能按需创建其标识符的那一种（KRB5_SERVICE_DOMAINS）。它会累积，而在这里这是常见情况而非特例：一个服务通常响应多个 SPN——HTTP/host 和 HTTP/host.example.com——而真实的 KDC 会将它们全部关联到一个账户。"

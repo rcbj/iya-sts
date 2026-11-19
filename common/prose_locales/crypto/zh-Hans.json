@@ -1112,12 +1112,16 @@
     "text": "RequestSecurityTokenResponse 中的 SAML 断言（1.1 或 2.0），经过共享签名器。"
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "e1450965d276d357",
-    "text": "它“读取”请求方的 `<wsse:Security>` 凭据以及已签名请求中的 `<ds:X509Certificate>`——后者用于确定要“加密”给谁。在产品模式下，UsernameToken 的密码会对照该人员的 `userPassword` 或应用的客户端密钥验证；开发模式则照单全收，保留值 `invalid` 除外。"
+    "en": "b006491105a22a5c",
+    "text": "它“读取”请求方的 `<wsse:Security>` 凭据。响应加密使用应用的证书、其接收方表达式选中的证书元素，或签名者证书元素——不是断言内部的 `<ds:X509Certificate>`。在产品模式下，UsernameToken 的密码会对照该人员的 `userPassword` 或应用的客户端密钥验证；开发模式则照单全收，保留值 `invalid` 除外。"
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "fa359afa3450379c",
-    "text": "使用 `?encrypt=1` 时，加密所签发的 2.0 断言，加密到请求签名中找到的证书。与 SAML 2.0 使用同样的两张表，因为是同一套代码——由 `saml/saml2.ts` 重新导出。"
+    "en": "9b946662ee148582",
+    "text": "响应中被点名的元素，作为 xenc:EncryptedData，加密到应用的证书或签名者证书元素。密码是本系列的，经由 crypto.js；SAML 的 EncryptedAssertion 仍在 `saml/saml2.ts`。"
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "请求中任何加密的元素，加密到本领域的 XML Encryption 密钥：类型为 Element 或 Content 的 EncryptedData，或 EncryptedHeader，经由 crypto.js。"
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

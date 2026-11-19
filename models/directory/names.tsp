@@ -570,6 +570,9 @@ namespace IyaSts.Directory;
   // destination's and withheld from every directory read.
   "scimclientpassword", "scimclientoauthclientsecret",
   "scimclienttlsprivatekey",
+  // An application's WS-Trust decryption key (#1668): whoever holds it
+  // reads every request encrypted to that application.
+  "wstrustdecryptionprivatekey",
   "stsassertionprivatekey", "stssamlassertionprivatekey",
   "ststotpcredential", "stsbackupcodes", "stsactivationtoken",
   // A person's app passwords (#101): scrypt hashes, a verifier like

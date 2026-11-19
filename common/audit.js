@@ -1804,6 +1804,14 @@ const ACTIONS = [
   { action: 'certificate.unstored', category: 'authentication',
     label: 'A certificate was removed from a person\'s or an application\'s ' +
            'entry' },
+  // ws-trust/ws_decryption_key.ts (#1668): an application's own WS-Trust
+  // decryption key pair, issued from the realm's CA, uploaded or removed.
+  { action: 'wstrust.decryption-key.issue', category: 'admin',
+    label: 'A WS-Trust decryption key pair was issued to an application' },
+  { action: 'wstrust.decryption-key.upload', category: 'admin',
+    label: 'A WS-Trust decryption key pair was uploaded for an application' },
+  { action: 'wstrust.decryption-key.remove', category: 'admin',
+    label: 'An application\'s WS-Trust decryption key pair was removed' },
   { action: 'federation.link.add', category: 'admin',
     label: 'An administrator linked a person to a partner\'s subject' },
   { action: 'federation.link.remove', category: 'admin',

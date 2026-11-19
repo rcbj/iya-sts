@@ -5711,6 +5711,54 @@
     "en": "52a63db9be2c6460",
     "text": "Ob ein wst:TokenType, der einen der sechs ValueTypes des Kerberos Token Profile 1.1 nennt, mit einem Kerberos-Token beantwortet wird: ein AP-REQ mit einem Service-Ticket, das das KDC dieses Vertrauensbereichs für das Subjekt an den Kerberos-Dienst ausgestellt hat, den AppliesTo nennt, wobei der Subkey des Authenticators als Proof-Token über TLS zurückgegeben wird. Ein ActAs-Ticket nennt in der S4U_DELEGATION_INFO seiner PAC jede Partei, die gehandelt hat. Aus wird eine solche Anfrage abgelehnt."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "Die benannten Elemente einer Anfrage verschlüsselt verlangen"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "a4747360d56b0948",
+    "text": "Ob ein RequestSecurityToken, dessen AppliesTo keine eigene Anwendung nennt, mit den Elementen von wstrustEncryptRequestElements verschlüsselt eintreffen muss. Das wstrustEncryptRequest einer Anwendung ersetzt dies für eine Anfrage, deren AppliesTo sie nennt. Welcher Geheimtext überhaupt geöffnet wird, bestimmt wstrust.acceptEncryptedElements; das AppliesTo wird aus der geöffneten Anfrage gelesen. An, und die Zuordnung ist leer oder ein Ausdruck trifft ein im Klartext eingetroffenes Element oder nichts Wiederhergestelltes, ist die Anfrage ein wsse:FailedCheck. Ein Geheimtext, der sich nicht öffnen lässt, ist in jedem Fall dieser Fehler."
+  },
+  "wstrust.acceptEncryptedElements|label": {
+    "en": "fdb0c37def2e9c0a",
+    "text": "Verschlüsselte Elemente annehmen, die keine Zuordnung nennt"
+  },
+  "wstrust.acceptEncryptedElements|description": {
+    "en": "91a62934f0ef031e",
+    "text": "Ob ein RequestSecurityToken XML-Verschlüsselung an beliebiger Stelle tragen darf, in einem Header oder im Body, ohne dass eine Anfragezuordnung sie nennt. An, wird jedes verschlüsselte Element geöffnet. Aus, wird Geheimtext nur dort angenommen, wo wstrustEncryptRequestElements der Anwendung ihn nennt, und Geheimtext ohne Zuordnung ist ein wst:InvalidRequest. In jedem Fall muss sich ein Geheimtext mit den Schlüsseln dieses Bereichs öffnen lassen. Das wstrustAcceptEncryptedElements einer Anwendung ersetzt dies. Die WSDL bietet Anfrageverschlüsselung nur an, solange dies an ist."
+  },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "Das Verschlüsselungszertifikat als Identität jedes Ports ankündigen"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Ob jeder Port der WSDL unter /sts/metadata eine wsa:EndpointReference trägt, deren wsid:Identity das XML-Encryption-Zertifikat dieses Bereichs enthält, das Zertifikat, an das eine Anfrage verschlüsselt wird. Das Element stammt aus WS-AddressingIdentity, einer Microsoft-Spezifikation, die nie standardisiert wurde; WCF liest es, ebenso die Toolkits, die WCF nachahmen. Aus, nennt die WSDL kein Zertifikat, und ein Client wird außerhalb des Bandes damit konfiguriert: der KeyDescriptor use=\"encryption\" von /saml2/metadata, der dasselbe Zertifikat ist. Was eine Anfrage verschlüsseln darf, ändert sich in keinem Fall."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "Die benannten Elemente einer Antwort verschlüsseln"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Ob ein RequestSecurityTokenResponse nach dem Aufbau die Elemente von wstrustEncryptResponseElements durch xenc:EncryptedData ersetzt bekommt, für jeden Tokentyp. Das wstrustEncryptResponse einer Anwendung setzt dies außer Kraft. Der Empfänger ist das wstrustEncryptionCertificate dieser Anwendung, sonst das Zertifikatelement, das wstrustResponseRecipientXPath auswählt, sonst das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt. Ein Fehler wird im Klartext gesendet. Eingeschaltet, und die Verschlüsselung lässt sich nicht abschließen, ist die Anfrage in beiden Modi ein Fehler."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Verschlüsselungsalgorithmus der Antwort"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Die Blockchiffre, mit der die verschlüsselten Elemente einer WS-Trust-Antwort verschlüsselt werden. Die beiden GCM-Chiffren sind authentisiert: ein veränderter Geheimtext besteht seine Marke nicht und wird abgelehnt. Die beiden CBC-Chiffren sind es nicht. Das wstrustEncryptionAlgorithm einer Anwendung setzt dies außer Kraft. Ein Element wst:EncryptionAlgorithm darf diese Chiffre nennen, mit ihrem Kurznamen oder ihrem XML-Encryption-URI, nur solange die Antwortverschlüsselung eingeschaltet ist."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Schlüsseltransportalgorithmus der Antwort"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Wie der einmalige Inhaltsschlüssel einer WS-Trust-Antwort auf den öffentlichen RSA-Schlüssel des Empfängers gewickelt wird. `rsa-oaep` ist RSA-OAEP aus XML Encryption 1.1 mit SHA-256 und MGF1-SHA-256; `rsa-oaep-mgf1p` ist OAEP über SHA-1. Ein Empfänger, dessen Zertifikat EC ist, wird per ECDH-ES-Schlüsselvereinbarung verschlüsselt, was immer dies sagt. Das wstrustKeyTransportAlgorithm einer Anwendung setzt dies außer Kraft. `rsa-1_5` ist RSAES-PKCS1-v1_5 und ist gebrochen, und es wird angeboten, weil ein eingesetzter Anfragender nichts anderes annehmen kann. WARNUNG: rsa-1_5 gilt nur im Entwicklungsmodus — im Produktmodus wird es dort ignoriert, wo es gelesen wird, bei dieser Einstellung und beim wstrustKeyTransportAlgorithm einer Anwendung (verwendet wird rsa-oaep-mgf1p, einmal protokolliert, STS-CORE-0106), und das Setzen wird abgelehnt (STS-CORE-0103, STS-REG-0193). Ein Element wst:EncryptWith darf diesen Algorithmus nur nennen, solange die Antwortverschlüsselung eingeschaltet ist."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Vom Identitätsanbieter initiierte Anmeldung"

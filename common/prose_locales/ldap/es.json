@@ -1287,6 +1287,58 @@
     "en": "86ac83dbe366a17b",
     "text": "LOS ÁMBITOS DE OAUTH 2.0 QUE LLEVA UN JWT DE WS-TRUST PARA ESTA APLICACIÓN, un valor de ámbito por entrada (#485). Un JWT que WS-Trust emite con esta aplicación como AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) los lleva en su claim `scope`, delimitados por espacios (RFC 9068 sección 2.2.3); sin ninguno definido no lleva `scope`. Un token SAML no se ve afectado.\n\n**CADA UNO SE JUZGA COMO LOS DE UN TOKEN DE ACCESO OAUTH**, con esta aplicación como cliente: `oauthAllowedScope` declara lo que se le puede emitir (en producto; los ámbitos protegidos de este servicio en todos los modos), y decide la pregunta por ámbito de la política de emisión. Un valor que la política descarta se DEJA FUERA del token y se audita (STS-OAUTH-0579), nunca se emite. Una escritura que nombra un ámbito no declarado se acepta aquí, porque la declaración puede cambiar y el modo desarrollo concede ámbitos no declarados: declárelo también en oauthAllowedScope. Sobre un valor que la política descartará se ADVIERTE donde se define (#488): junto a este campo, en la respuesta de Guardar, y como `warnings` en las respuestas de escritura de /admin-api y en la vista de la aplicación."
   },
+  "applications.schema.attributes.wstrustEncryptRequest.what": {
+    "en": "1e6b032014941e7e",
+    "text": "TRUE o FALSE: exigir que los elementos que nombra el mapa de solicitud de esta aplicación lleguen cifrados, reemplazando wstrust.encryptRequest. Activado, una solicitud cuyo AppliesTo es esta aplicación es un FailedCheck si el mapa está vacío, una expresión coincide con un elemento que llegó en claro, o una expresión no coincide con nada restaurado de un texto cifrado. Qué texto cifrado se abre lo decide wstrustAcceptEncryptedElements; el AppliesTo se lee de la solicitud abierta, y un texto cifrado que no se abre es un FailedCheck en cualquier caso."
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE o FALSE: aceptar cifrado XML en cualquier lugar de una solicitud cuyo AppliesTo es esta aplicación, en una cabecera o en el cuerpo, sin que un mapa de solicitud lo nombre, reemplazando wstrust.acceptEncryptedElements. Desactivado, el texto cifrado solo se acepta donde lo nombra wstrustEncryptRequestElements —cada elemento restaurado debe ser uno que selecciona una expresión, o estar dentro de uno— y un texto cifrado sin mapa es un InvalidRequest. En cualquier caso, un texto cifrado debe abrirse con las claves de este dominio."
+  },
+  "applications.schema.attributes.wstrustEncryptRequestElements.what": {
+    "en": "d28549992db71c30",
+    "text": "LOS ELEMENTOS DE UNA SOLICITUD WS-TRUST QUE DEBEN LLEGAR CIFRADOS, una expresión XPath 1.0 cada uno. El subconjunto es `/`, `//`, `*`, un nombre de elemento, `prefix:local`, una unión con `|`, y los predicados `local-name()`, `namespace-uri()` y `@attr`, unidos por `and`. Cada expresión debe seleccionar al menos un elemento restaurado de un texto cifrado: un xenc:EncryptedData de tipo Element o Content, o un EncryptedHeader de WS-Security 1.1. Una expresión fuera de ese subconjunto es un RequestFailed. Se puede nombrar una cabecera SOAP, el cuerpo SOAP o cualquier elemento, para cualquier tipo de token."
+  },
+  "applications.schema.attributes.wstrustEncryptResponse.what": {
+    "en": "aafbbba9cd31d6c9",
+    "text": "VERDADERO o FALSO: sustituir los elementos que nombra el mapa de respuesta de esta aplicación por xenc:EncryptedData, prevaleciendo sobre wstrust.encryptResponse. La respuesta se construye en claro y después esos elementos se sustituyen, para cualquier tipo de token. Una falta permanece en claro. Activado, y si el cifrado no puede completarse — no hay destinatario, un mapa que no coincide con nada, o un cifrado que el certificado del destinatario no admite — la solicitud es una falta en ambos modos."
+  },
+  "applications.schema.attributes.wstrustEncryptResponseElements.what": {
+    "en": "0ee151df13c4663c",
+    "text": "LOS ELEMENTOS DE UNA RESPUESTA WS-TRUST QUE SE CIFRAN, una expresión XPath 1.0 cada uno, el mismo subconjunto que wstrustEncryptRequestElements. Se puede nombrar un encabezado SOAP, el cuerpo SOAP o cualquier elemento. Una expresión que no coincide con nada en la respuesta construida es una falta."
+  },
+  "applications.schema.attributes.wstrustEncryptionAlgorithm.what": {
+    "en": "2156045953402736",
+    "text": "El cifrado por bloques usado para las respuestas WS-Trust de esta aplicación — aes256-gcm, aes128-gcm, aes256-cbc o aes128-cbc — prevaleciendo sobre wstrust.encryptionAlgorithm. Un elemento wst:EncryptionAlgorithm puede nombrar este cifrado, por su nombre corto o su URI de XML Encryption, solo mientras el cifrado de la respuesta está activado para esta aplicación."
+  },
+  "applications.schema.attributes.wstrustEncryptionCertificate.what": {
+    "en": "1ccaa06830162696",
+    "text": "EL CERTIFICADO PARA EL QUE SE CIFRA UNA RESPUESTA WS-TRUST, en DER base64 o PEM. Cuando está definido es el destinatario, y un certificado que no se puede leer es una falta en lugar de bajar a la fuente siguiente. Cuando no está definido, el destinatario es el elemento de certificado que selecciona wstrustResponseRecipientXPath o, cuando esa expresión tampoco está definida, el primer elemento de certificado del firmante que nombra la firma WS-Security de la solicitud."
+  },
+  "applications.schema.attributes.wstrustKeyTransportAlgorithm.what": {
+    "en": "89c8e142baf59834",
+    "text": "Cómo se envuelve la clave de contenido para las respuestas WS-Trust de esta aplicación — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256) o rsa-1_5 — prevaleciendo sobre wstrust.keyTransportAlgorithm. Un destinatario cuyo certificado es EC se cifra mediante ECDH-ES diga lo que diga este ajuste. Un elemento wst:EncryptWith puede nombrar este algoritmo, por su nombre corto o su URI de XML Encryption, solo mientras el cifrado de la respuesta está activado para esta aplicación."
+  },
+  "applications.schema.attributes.wstrustResponseRecipientXPath.what": {
+    "en": "0462e40dda10b491",
+    "text": "UNA EXPRESIÓN XPATH QUE SELECCIONA EL ELEMENTO DE CERTIFICADO PARA EL QUE SE CIFRA UNA RESPUESTA WS-TRUST: un ds:X509Certificate o un BinarySecurityToken cuyo ValueType termina en #X509v3. El mismo subconjunto que los mapas de elementos. Cuando está definida y no selecciona nada, o selecciona un elemento que no es uno de esos dos, no hay destinatario y no se prueba la fuente siguiente. Un elemento de certificado seleccionado cuyo texto no es un certificado es una falta de cifrado completado, y no se prueba la fuente siguiente. Cuando no está definida, el destinatario es el primer elemento de certificado del firmante que nombra la firma WS-Security de la solicitud — el BinarySecurityToken al que apunta la referencia de esa firma, o un ds:X509Certificate en el KeyInfo de esa firma. Una huella, un Subject Key Identifier o un emisor y un número de serie no es un elemento de certificado."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "EL CERTIFICADO AL QUE SE CIFRA UNA SOLICITUD WS-TRUST PARA ESTA APLICACIÓN, PEM. Mientras está definido, una solicitud para esta aplicación se descifra con su clave privada y no con la del dominio, y una solicitud para ella cifrada a la clave del dominio es un FailedCheck. Público: la página de la aplicación y GET /admin-api/applications lo entregan."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Los certificados de la autoridad de certificación que emitió wstrustDecryptionCertificate, PEM, la CA emisora primero, para un par de claves emitido aquí. Vacío para uno subido."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "La clave privada de wstrustDecryptionCertificate, PEM. Sellada donde las claves persisten, retenida de toda página, toda respuesta de /admin-api y toda lectura del directorio, y nunca registrada."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "De dónde viene el par de claves de descifrado: issued (generado aquí y certificado por la CA del dominio) o uploaded (subido)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "EL SPN, p. ej. HTTP/sts@EXAMPLE.COM — el atributo identificador de Kerberos v5. Un servicio Kerberos es una aplicación como las demás de aquí, y es aquella cuyo identificador este servicio puede haber creado bajo demanda (KRB5_SERVICE_DOMAINS). Se acumula, y aquí ese es el caso habitual y no el inusual: un servicio suele responder a varios SPN — HTTP/host y HTTP/host.example.com — y un KDC real los guarda todos contra una sola cuenta."

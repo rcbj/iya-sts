@@ -1112,12 +1112,16 @@
     "text": "تأكيد SAML في RequestSecurityTokenResponse، بالإصدار 1.1 أو 2.0، عبر الموقِّع المشترك."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "e1450965d276d357",
-    "text": "يقرأ بيانات اعتماد مقدِّم الطلب في `<wsse:Security>` والشهادة `<ds:X509Certificate>` في طلب موقَّع — والأخيرة لمعرفة الجهة التي يُشفَّر إليها. في وضع المنتج تُتحقق كلمة مرور UsernameToken مقابل `userPassword` الخاص بالشخص، أو مقابل أسرار العميل الخاصة بالتطبيق؛ ويصدّق وضع التطوير ذلك، باستثناء المحجوز `invalid`."
+    "en": "b006491105a22a5c",
+    "text": "يقرأ بيانات اعتماد مقدِّم الطلب في `<wsse:Security>`. يستخدم تشفير الاستجابة شهادة التطبيق، أو عنصر شهادة يحدده تعبير المستلم، أو عنصر شهادة الموقِّع — وليس `<ds:X509Certificate>` داخل تأكيد. في وضع المنتج تُتحقق كلمة مرور UsernameToken مقابل `userPassword` الخاص بالشخص، أو مقابل أسرار العميل الخاصة بالتطبيق؛ ويصدّق وضع التطوير ذلك، باستثناء المحجوز `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "fa359afa3450379c",
-    "text": "مع `?encrypt=1`، التأكيد 2.0 المُصدَر، إلى الشهادة الموجودة في توقيع الطلب. الجدولان نفسهما كما في SAML 2.0، لأنه النص البرمجي نفسه — تعيد `saml/saml2.ts` تصديره."
+    "en": "9b946662ee148582",
+    "text": "عناصر مسماة من الاستجابة، على هيئة xenc:EncryptedData، إلى شهادة التطبيق أو عنصر شهادة الموقِّع. التشفير هو تشفير هذه العائلة، عبر crypto.js؛ ويبقى EncryptedAssertion الخاص بـ SAML في `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "أي عنصر مشفّر في الطلب، إلى مفتاح XML Encryption لهذا النطاق: EncryptedData من النوع Element أو Content، أو EncryptedHeader، عبر crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

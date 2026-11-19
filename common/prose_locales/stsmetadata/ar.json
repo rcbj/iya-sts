@@ -2524,8 +2524,8 @@
     "text": "NON-SPEC (#594). مع ?id=، ما أخبرت به محفظة الـ Notification Endpoint عن بيانات الاعتماد التي يسمّيها notification_id: الحدث ووصفه ومتى (404 لمعرّف لم يصدره هذا المُصدِر). Admin Read؛ وحتى #594 كان /oid4vci/notification/:id للتطوير فقط."
   },
   "stsmetadata.endpoints./sts.what": {
-    "en": "66812a407152a91b",
-    "text": "POST لطلب SOAP من نوع RequestSecurityToken؛ يوزّع على wst:RequestType (Issue, Renew, Validate, Cancel) ويعيد RSTR. يصف GET نقطة النهاية. أضف ?encrypt=1 ليُعاد التأكيد المُصدَر كـ EncryptedAssertion."
+    "en": "dd027a41936ae3af",
+    "text": "POST لطلب SOAP من نوع RequestSecurityToken؛ يوزّع على wst:RequestType (Issue وRenew وValidate وCancel) ويعيد RSTR. يصف GET نقطة النهاية. قد يطلب تطبيق أن تكون عناصر مسماة من الطلب ومن الاستجابة XML Encryption‏ (xenc:EncryptedData). الرسالة التي لا تطابق هذه الخريطة خطأ، وتتوقف المعالجة."
   },
   "stsmetadata.endpoints./sts/metadata.what": {
     "en": "8ffa0771ab14417f",

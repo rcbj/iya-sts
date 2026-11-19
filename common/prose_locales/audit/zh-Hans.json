@@ -1991,6 +1991,18 @@
     "en": "6e2d0aef72c7b82c",
     "text": "已从某人或某应用程序的条目中移除证书"
   },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "向应用签发了 WS-Trust 解密密钥对"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "为应用上传了 WS-Trust 解密密钥对"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "移除了应用的 WS-Trust 解密密钥对"
+  },
   "audit.actions.federation.link.add.label": {
     "en": "5e6953235158adac",
     "text": "管理员将某人关联到合作伙伴的某个主体"

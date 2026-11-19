@@ -1112,12 +1112,16 @@
     "text": "Ang SAML assertion sa RequestSecurityTokenResponse, 1.1 o 2.0, sa pamamagitan ng shared signer."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "e1450965d276d357",
-    "text": "BINABASA nito ang `<wsse:Security>` credential ng isang requester at ang `<ds:X509Certificate>` sa isang pinirmahang request — ang huli para malaman kung kanino mag-E-ENCRYPT. Sa product mode, vine-verify ang password ng isang UsernameToken laban sa `userPassword` ng tao, o sa mga client secret ng isang application; pinaniniwalaan ito ng development, maliban sa nakareserbang `invalid`."
+    "en": "b006491105a22a5c",
+    "text": "BINABASA nito ang `<wsse:Security>` credential ng isang requester. Ginagamit ng response encryption ang certificate ng application, ang elemento ng certificate na pinipili ng expression ng recipient nito, o ang elemento ng certificate ng signer — hindi ang `<ds:X509Certificate>` sa loob ng isang assertion. Sa product mode, vine-verify ang password ng isang UsernameToken laban sa `userPassword` ng tao, o sa mga client secret ng isang application; pinaniniwalaan ito ng development, maliban sa nakareserbang `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "fa359afa3450379c",
-    "text": "Kapag may `?encrypt=1`, ang in-issue na 2.0 assertion, para sa certificate na nakita sa request signature. Parehong dalawang table ng SAML 2.0, dahil iisang code ito — nire-re-export ito ng `saml/saml2.ts`."
+    "en": "9b946662ee148582",
+    "text": "Mga pinangalanang elemento ng isang response, bilang xenc:EncryptedData, para sa certificate ng application o sa elemento ng certificate ng signer. Ang cipher ay sa pamilyang ito, sa pamamagitan ng crypto.js; nananatili ang EncryptedAssertion ng SAML sa `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "Anumang naka-encrypt na elemento ng isang request, para sa XML Encryption key ng realm na ito: isang EncryptedData na may uring Element o Content, o isang EncryptedHeader, sa pamamagitan ng crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",
