@@ -2745,6 +2745,13 @@ const FIELD_EXAMPLES = {
   wsfedRealm: 'urn:example:my-app',
   wstrustAppliesTo: 'https://service.example.com/',
   wstrustJwtScope: 'api.read',
+  // XML Encryption of a WS-Trust exchange (#1668): an expression of the
+  // subset each map takes, and the response's recipient.
+  wstrustEncryptRequestElements: '//wsse:Security/wsse:UsernameToken',
+  wstrustEncryptResponseElements: "//*[local-name()='Assertion']",
+  wstrustEncryptionCertificate: '-----BEGIN CERTIFICATE----- MIIC… ' +
+    '-----END CERTIFICATE-----',
+  wstrustResponseRecipientXPath: '//wsse:Security/wsse:BinarySecurityToken',
   krb5ServicePrincipalName: 'HTTP/app.example.com@EXAMPLE.COM',
   oid4vpClientId: 'x509_san_dns:verifier.example.com',
   federationPartnerId: 'partner-idp',
@@ -4135,7 +4142,11 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        // sealed and withheld the same way; the reader is
                        // `scimClientCredentialOf()`.
                        'scimClientPassword', 'scimClientOAuthClientSecret',
-                       'scimClientTlsPrivateKey'];
+                       'scimClientTlsPrivateKey',
+                       // An application's own WS-Trust decryption key
+                       // (#1668), sealed and withheld the same way; the
+                       // reader is `wstrustDecryptionKeyOf()`.
+                       'wstrustDecryptionPrivateKey'];
 
 // The label each sealed field is sealed under, which is what
 // /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
@@ -4149,6 +4160,7 @@ const SEAL_LABELS = {
   scimClientPassword: 'scim-client-credential',
   scimClientOAuthClientSecret: 'scim-client-credential',
   scimClientTlsPrivateKey: 'scim-client-credential',
+  wstrustDecryptionPrivateKey: 'wstrust-decryption-key',
   // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
   // as a record — see sealClientSecretText().
   oauthClientSecret: 'client-secret',
@@ -4194,7 +4206,10 @@ const WITHHELD_FIELDS = ['krb5ServiceKeys',
                          // they leave only on the wire to its service
                          // provider and its token endpoint.
                          'scimClientPassword', 'scimClientOAuthClientSecret',
-                         'scimClientTlsPrivateKey'];
+                         'scimClientTlsPrivateKey',
+                         // An application's WS-Trust decryption key
+                         // (#1668): it never leaves this service.
+                         'wstrustDecryptionPrivateKey'];
 
 // ---------------------------------------------------------------------------
 // WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
@@ -4269,6 +4284,11 @@ function withheldSentence(value, name) {
     // Nor its length, for the reason above (#552).
     log.debug("Leaving withheldSentence(). A SCIM client credential.");
     return '(withheld: a SCIM client credential, set, never shown)';
+  }
+  if (name === 'wstrustDecryptionPrivateKey') {
+    // Nor its length (#1668): the length of a PEM says the key's size.
+    log.debug("Leaving withheldSentence(). A WS-Trust decryption key.");
+    return '(withheld: a WS-Trust decryption private key, set, never shown)';
   }
   log.debug("Leaving withheldSentence().");
   return '(withheld: Kerberos key material, ' + String(value || '').length +
@@ -14234,6 +14254,193 @@ function scimClientCredentialOf(identifier, attribute) {
 }
 
 // ---------------------------------------------------------------------------
+// AN APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668, rcbj's request
+// of 2026-11-19).
+//
+// Four attributes, written together by `setWstrustDecryptionKey()` and by
+// nothing else — none is editable, because a certificate set by hand beside
+// a private key it does not match would decrypt nothing and say so only at
+// the first request. `ws-trust/ws_decryption_key.ts` decides what is
+// written (issued from the realm's CA, or a pair uploaded and checked);
+// this module seals the private key, as it seals every private key on an
+// entry, and WITHHOLDS it as it withholds a SCIM client's: no view, page or
+// `/admin-api` answer carries it in any form, and the one reader is
+// `wstrustDecryptionKeyOf()`, for the request it opens. The certificate is
+// indexed by the handles a requester's EncryptedKey names it by
+// (`crypto.wssCertificateHandles()`), so `forDecryptionKey()` finds the
+// application without a walk of the registry.
+// ---------------------------------------------------------------------------
+/**
+ * The attributes of an application's WS-Trust decryption key pair.
+ */
+const DECRYPTION_KEY_ATTRIBUTES = Object.freeze({
+  certificate: 'wstrustDecryptionCertificate',
+  chain: 'wstrustDecryptionCertificateChain',
+  privateKey: 'wstrustDecryptionPrivateKey',
+  source: 'wstrustDecryptionKeySource'
+});
+
+/**
+ * Where a WS-Trust decryption key pair came from.
+ */
+const DECRYPTION_KEY_SOURCES = Object.freeze(['issued', 'uploaded']);
+
+/**
+ * Writes, or with no pair clears, an application's WS-Trust decryption key
+ * pair: the four attributes in one write, the private key sealed where keys
+ * persist.
+ *
+ * @param identifier - the application
+ * @param pair - `{ certificate, chain, privateKey, source }`, or null to
+ *   clear
+ * @param options - `actor`
+ * @returns `{ ok: true, changed }`, or `{ ok: false, errors }` with its code
+ *   marked: STS-REG-0370 for an unknown application, 0371 for a private key
+ *   that could not be sealed, 0372 for a write the directory refused
+ */
+function setWstrustDecryptionKey(identifier, pair, options) {
+  log.debug("Entering setWstrustDecryptionKey(). identifier=" + identifier);
+  const opts = options || {};
+  const loaded = load(String(identifier));
+  if (!loaded.known) {
+    log.debug("Leaving setWstrustDecryptionKey(). Unknown.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+      'called "' + identifier + '" in this realm.'] }, 'STS-REG-0370');
+  }
+  const record = loaded.record;
+  const names = DECRYPTION_KEY_ATTRIBUTES;
+  const had = !!valuesOf(record.fields[names.certificate])[0] ||
+              !!valuesOf(record.fields[names.privateKey])[0];
+  if (!pair) {
+    if (!had) {
+      log.debug("Leaving setWstrustDecryptionKey(). Nothing to clear.");
+      return { ok: true, changed: false };
+    }
+    Object.keys(names).forEach(function (key) {
+      delete record.fields[names[key]];
+    });
+  } else {
+    const sealed = sealFieldValue(names.privateKey, String(pair.privateKey));
+    if (sealed === null) {
+      log.debug("Leaving setWstrustDecryptionKey(). Not sealed.");
+      return errorCodes.mark({ ok: false, errors: ['The private key could ' +
+        'not be sealed under the key-encryption key, and a private key is ' +
+        'never written in the clear where keys persist.'] },
+        'STS-REG-0371');
+    }
+    record.fields[names.certificate] = String(pair.certificate);
+    record.fields[names.privateKey] = sealed;
+    record.fields[names.source] = String(pair.source);
+    if (pair.chain) {
+      record.fields[names.chain] = String(pair.chain);
+    } else {
+      delete record.fields[names.chain];
+    }
+  }
+  if (!save(record, { actor: opts.actor || '' })) {
+    log.debug("Leaving setWstrustDecryptionKey(). The directory refused it.");
+    return errorCodes.mark({ ok: false, errors: ['The directory would not ' +
+      'write the WS-Trust decryption key pair on "' + identifier + '".'] },
+      'STS-REG-0372');
+  }
+  log.debug("Leaving setWstrustDecryptionKey(). " +
+            (pair ? 'Written.' : 'Cleared.'));
+  return { ok: true, changed: true };
+}
+
+/**
+ * Returns an application's WS-Trust decryption key pair, the private key
+ * opened, for the request it decrypts. Never drawn and never returned by any
+ * view; the opened key is kept nowhere.
+ *
+ * @param identifier - the application
+ * @returns `{ certificate, privateKey }`, or null when it holds none or the
+ *   key will not open (logged under STS-REG-0023)
+ */
+function wstrustDecryptionKeyOf(identifier) {
+  log.debug("Entering wstrustDecryptionKeyOf().");
+  const loaded = load(String(identifier || ''));
+  const fields = loaded.known ? loaded.record.fields : {};
+  const certificate =
+    String(valuesOf(fields[DECRYPTION_KEY_ATTRIBUTES.certificate])[0] || '');
+  const stored =
+    String(valuesOf(fields[DECRYPTION_KEY_ATTRIBUTES.privateKey])[0] || '');
+  if (!certificate || !stored) {
+    log.debug("Leaving wstrustDecryptionKeyOf(). None.");
+    return null;
+  }
+  if (!isSealed(stored)) {
+    log.debug("Leaving wstrustDecryptionKeyOf(). Stored clear.");
+    return { certificate: certificate, privateKey: stored };
+  }
+  const opened = keystore.open(stored,
+                               sealLabelOf(DECRYPTION_KEY_ATTRIBUTES
+                                             .privateKey));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the WS-Trust decryption key on "' + identifier +
+             '" is sealed and will not open under this process\'s ' +
+             'key-encryption key. Issue or upload it again on the ' +
+             'application\'s page.');
+    log.debug("Leaving wstrustDecryptionKeyOf(). Will not open.");
+    return null;
+  }
+  log.debug("Leaving wstrustDecryptionKeyOf(). Opened.");
+  return { certificate: certificate, privateKey: String(opened) };
+}
+
+/**
+ * What an application's entry holds of its WS-Trust decryption key pair,
+ * without the key: whether the certificate and the private key are there,
+ * and whether the key is sealed.
+ *
+ * @param identifier - the application
+ * @returns `{ held, privateKeyHeld, sealed }`
+ */
+function wstrustDecryptionKeyFacts(identifier) {
+  log.debug("Entering wstrustDecryptionKeyFacts().");
+  const loaded = identifier ? load(String(identifier)) : { known: false };
+  const fields = loaded.known ? loaded.record.fields : {};
+  const stored =
+    String(valuesOf(fields[DECRYPTION_KEY_ATTRIBUTES.privateKey])[0] || '');
+  const out = {
+    held: !!valuesOf(fields[DECRYPTION_KEY_ATTRIBUTES.certificate])[0],
+    privateKeyHeld: !!stored,
+    sealed: isSealed(stored)
+  };
+  log.debug("Leaving wstrustDecryptionKeyFacts(). " + out.held);
+  return out;
+}
+
+/**
+ * Finds the application whose WS-Trust decryption certificate a handle
+ * names (`crypto.wssCertificateHandles()`'s forms), through the listing's
+ * index.
+ *
+ * @param handle - `sha1:`, `ski:` or `is:` handle
+ * @returns the identifier, or '' when none or more than one holds it
+ */
+function forDecryptionKey(handle) {
+  log.debug("Entering forDecryptionKey().");
+  const found = handle ? lookedUp('byDecryptionKey', String(handle)) : [];
+  if (found.length > 1) {
+    // Two entries holding one certificate: neither is chosen, because the
+    // key would then decide whose request it was.
+    log.warn(errorCodes.tag('STS-REG-0373') + 'applications: ' +
+             found.length + ' applications hold one WS-Trust decryption ' +
+             'certificate (' + found.map(function (row) {
+               return row.identifier;
+             }).join(', ') + '); a request encrypted to it is opened by ' +
+             'none of them.');
+    log.debug("Leaving forDecryptionKey(). Held twice.");
+    return '';
+  }
+  log.debug("Leaving forDecryptionKey(). " + (found.length ? 'Found.' :
+                                                'None.'));
+  return found.length ? String(found[0].identifier) : '';
+}
+
+// ---------------------------------------------------------------------------
 /**
  * The credential attributes an export may carry and an import may write:
  * the editable ones that hold a secret or a private key.
@@ -14994,6 +15201,9 @@ function buildListing(backing) {
     byAppliesTo: { wstrustAppliesTo: new Map(), samlEntityId: new Map() },
     // #493: the KDC finds the application a service ticket is for by SPN.
     byServicePrincipal: new Map(),
+    // #1668: a WS-Trust request's EncryptedKey names the application whose
+    // decryption key it was encrypted to, by a handle of its certificate.
+    byDecryptionKey: new Map(),
     byPermission: new Map(),
     byPermissionBase: new Map(),
     // #1235: the applications naming each policy, by reference attribute
@@ -15023,6 +15233,14 @@ function buildListing(backing) {
     valuesOf(fields.krb5ServicePrincipalName).forEach(function (value) {
       indexInto(listing.byServicePrincipal, String(value), item);
     });
+    const decryptionCertificate =
+      String(valuesOf(fields.wstrustDecryptionCertificate)[0] || '');
+    if (decryptionCertificate) {
+      stsCrypto.wssCertificateHandles(decryptionCertificate)
+        .forEach(function (handle) {
+          indexInto(listing.byDecryptionKey, handle, item);
+        });
+    }
     permissionsOf(item.record).forEach(function (one) {
       if (one.id && !listing.byPermission.has(one.id)) {
         listing.byPermission.set(one.id, { item: item, permission: one });
@@ -18927,6 +19145,12 @@ module.exports = {
   didValueProblem: didValueProblem,
   secretDestinationCredentialOf: secretDestinationCredentialOf,
   scimClientCredentialOf: scimClientCredentialOf,
+  DECRYPTION_KEY_ATTRIBUTES: DECRYPTION_KEY_ATTRIBUTES,
+  DECRYPTION_KEY_SOURCES: DECRYPTION_KEY_SOURCES,
+  setWstrustDecryptionKey: setWstrustDecryptionKey,
+  wstrustDecryptionKeyOf: wstrustDecryptionKeyOf,
+  wstrustDecryptionKeyFacts: wstrustDecryptionKeyFacts,
+  forDecryptionKey: forDecryptionKey,
   claimRowsProblem: claimRowsProblem,
   didDuplicateProblem: didDuplicateProblem,
   DID_SERVICE_TYPES: DID_SERVICE_TYPES,

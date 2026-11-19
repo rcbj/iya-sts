@@ -8401,6 +8401,223 @@ function wssThumbprintSha1(certificate) {
 }
 
 // ---------------------------------------------------------------------------
+// AN APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668, rcbj's request of
+// 2026-11-19): what a requester's EncryptedKey may name it by, and whether an
+// uploaded certificate and private key are one pair this service can decrypt
+// with.
+//
+// THE HANDLES are the four forms the X.509 Token Profile 1.1 (sections 3.2
+// and 3.3) and XML Signature's X509Data give a recipient: the certificate's
+// `#ThumbprintSHA1`, its Subject Key Identifier, its issuer and serial, or
+// the certificate itself (whose thumbprint is the first). Each is an
+// IDENTIFIER compared for equality and never trusted for anything: the key
+// it chooses still has to open the ciphertext. An issuer is compared with
+// its RDNs in any order, each `type=value` upper-cased, so `CN=a, O=b` and
+// `o=B,cn=A` are one name; the serial must match as well.
+//
+// THE PAIR CHECK reads both halves with node and asks node whether the
+// private key is the certificate's (`X509Certificate#checkPrivateKey`). The
+// key kinds are the ones `decryptElement()` unwraps a content key with:
+// RSA of at least 2048 bits (key transport), and EC on P-256, P-384 or P-521
+// (ECDH-ES agreement, `XML_EC_CURVES`). A certificate whose keyUsage leaves
+// out keyEncipherment (RSA) or keyAgreement (EC) is refused, as
+// `pki.pinSigner()` refuses one; a certificate with no keyUsage may
+// encrypt (RFC 5280 section 4.2.1.3).
+// ---------------------------------------------------------------------------
+const DECRYPTION_KEY_CURVES = { 'prime256v1': 'P-256',
+                                'secp384r1': 'P-384',
+                                'secp521r1': 'P-521' };
+const DECRYPTION_KEY_RSA_MIN_BITS = 2048;
+
+/**
+ * Normalises an X.509 issuer name for an issuer-and-serial comparison: its
+ * RDNs, each `TYPE=value` upper-cased with the space around the separator
+ * removed, sorted and joined with commas.
+ *
+ * @param name - the name, RFC 4514 or RFC 2253 text
+ * @returns the normalised name
+ */
+function wssIssuerName(name) {
+  log.debug("Entering wssIssuerName().");
+  const out = String(name == null ? '' : name)
+    .split(/,(?=\s*[A-Za-z0-9.]+\s*=)/)
+    .map(function (rdn) {
+      const at = rdn.indexOf('=');
+      return at < 0 ? rdn.trim().toUpperCase()
+        : rdn.slice(0, at).trim().toUpperCase() + '=' +
+          rdn.slice(at + 1).trim().toUpperCase();
+    })
+    .filter(function (rdn) {
+      return rdn !== '';
+    })
+    .sort()
+    .join(',');
+  log.debug("Leaving wssIssuerName().");
+  return out;
+}
+
+/**
+ * Returns the handles an EncryptedKey's KeyInfo may name a recipient
+ * certificate by: `sha1:<hex>` (its `#ThumbprintSHA1`, and the certificate
+ * itself), `ski:<hex>` where it has a Subject Key Identifier, and
+ * `is:<serialHex>:<issuer>`. Never throws.
+ *
+ * @param certificate - PEM, or base64 DER
+ * @returns the handles; empty for anything that is not a certificate
+ */
+function wssCertificateHandles(certificate) {
+  log.debug("Entering wssCertificateHandles().");
+  const out = [];
+  try {
+    const parsed = parseCertificate(String(certificate || '').indexOf(
+      '-----BEGIN') >= 0 ? String(certificate)
+      : Buffer.from(String(certificate || ''), 'base64'));
+    out.push('sha1:' + nodeCrypto.createHash('sha1').update(parsed.raw)
+      .digest('hex'));
+    const ids = pkinitCertificateIds(Buffer.from(parsed.raw));
+    if (ids.ski && ids.ski.length) {
+      out.push('ski:' + Buffer.from(ids.ski).toString('hex'));
+    }
+    const named = certificateIdentifiers(parsed.toString());
+    if (named.serial) {
+      out.push(wssIssuerSerialHandle(named.issuer, named.serial));
+    }
+  } catch (e) {
+    log.debug("Caught in wssCertificateHandles(): " +
+              ((e && e.message) || e));
+    // Not a certificate: it is named by nothing, and so chosen by nothing.
+    log.debug("Leaving wssCertificateHandles(). Not a certificate.");
+    return [];
+  }
+  log.debug("Leaving wssCertificateHandles(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Returns the issuer-and-serial handle `wssCertificateHandles()` gives a
+ * certificate, from an X509IssuerSerial's two values.
+ *
+ * @param issuer - the issuer name
+ * @param serialHex - the serial number, hex
+ * @returns `is:<serialHex>:<normalised issuer>`
+ */
+function wssIssuerSerialHandle(issuer, serialHex) {
+  log.debug("Entering wssIssuerSerialHandle().");
+  const serial = String(serialHex || '').toLowerCase()
+    .replace(/[^0-9a-f]/g, '').replace(/^0+(?=[0-9a-f])/, '');
+  log.debug("Leaving wssIssuerSerialHandle().");
+  return 'is:' + serial + ':' + wssIssuerName(issuer);
+}
+
+/**
+ * Checks that a certificate and a private key are one key pair this service
+ * can decrypt an XML Encryption key with: one PEM certificate, an
+ * unencrypted PEM private key that is its private half, RSA of at least 2048
+ * bits or EC on P-256, P-384 or P-521, a keyUsage that permits it, and a
+ * validity that has not ended. Never throws.
+ *
+ * @param certificatePem - the certificate
+ * @param privateKeyPem - the private key
+ * @returns `{ ok: true, keyType, keyDetail, certificatePem }`, or
+ *   `{ ok: false, problem, why }` where `problem` is `certificate`, `key`,
+ *   `mismatch`, `algorithm`, `usage` or `expired`
+ */
+function decryptionKeyPairProblem(certificatePem, privateKeyPem) {
+  log.debug("Entering decryptionKeyPairProblem().");
+  const refuse = function (problem, why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    log.debug("Leaving decryptionKeyPairProblem(). " + problem);
+    return { ok: false, problem: problem, why: why };
+  };
+  const blocks = String(certificatePem || '').match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  if (blocks.length !== 1) {
+    return refuse('certificate', 'the certificate must be exactly one PEM ' +
+      'CERTIFICATE block; ' + blocks.length + ' were given');
+  }
+  let cert;
+  try {
+    cert = parseCertificate(blocks[0]);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('certificate', 'the certificate does not parse as ' +
+      'X.509');
+  }
+  const keyText = String(privateKeyPem || '');
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(keyText) ||
+      /Proc-Type:\s*4,ENCRYPTED/.test(keyText)) {
+    return refuse('key', 'the private key is encrypted; give it as an ' +
+      'unencrypted PEM private key');
+  }
+  let key;
+  try {
+    key = privateKeyFrom(keyText);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('key', 'the private key does not parse as a PEM ' +
+      'private key');
+  }
+  const type = String(key.asymmetricKeyType || '');
+  const details = key.asymmetricKeyDetails || {};
+  let detail = '';
+  if (type === 'rsa') {
+    const bits = Number(details.modulusLength || 0);
+    if (bits < DECRYPTION_KEY_RSA_MIN_BITS) {
+      return refuse('algorithm', 'the RSA key has ' + bits + ' bits, and ' +
+        'this service decrypts with RSA keys of at least ' +
+        DECRYPTION_KEY_RSA_MIN_BITS + ' bits');
+    }
+    detail = 'RSA ' + bits;
+  } else if (type === 'ec' &&
+             DECRYPTION_KEY_CURVES[String(details.namedCurve || '')]) {
+    detail = 'EC ' + DECRYPTION_KEY_CURVES[String(details.namedCurve)];
+  } else {
+    return refuse('algorithm', 'the key is ' + (type || 'of no known type') +
+      (details.namedCurve ? ' on ' + details.namedCurve : '') + ', and ' +
+      'XML Encryption here unwraps a content key only with RSA (key ' +
+      'transport) or EC on P-256, P-384 or P-521 (ECDH-ES)');
+  }
+  let matches = false;
+  try {
+    matches = cert.checkPrivateKey(key);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    matches = false;
+  }
+  if (!matches) {
+    return refuse('mismatch', 'the private key is not the private half of ' +
+      'the certificate');
+  }
+  let facts = null;
+  try {
+    facts = certificateFacts(cert);
+  } catch (e) {
+    log.debug("Caught in decryptionKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('certificate', 'the certificate does not parse as ' +
+      'X.509');
+  }
+  const needed = type === 'rsa' ? 'keyEncipherment' : 'keyAgreement';
+  if (Array.isArray(facts.keyUsage) && facts.keyUsage.indexOf(needed) < 0) {
+    return refuse('usage', 'the certificate\'s keyUsage (' +
+      facts.keyUsage.join(', ') + ') does not include ' + needed + ', ' +
+      'which a key ' + (type === 'rsa' ? 'transporting' : 'agreeing') +
+      ' a content key needs');
+  }
+  if (!(facts.notAfter > Date.now())) {
+    return refuse('expired', 'the certificate\'s validity ended at ' +
+      cert.validTo);
+  }
+  log.debug("Leaving decryptionKeyPairProblem(). " + detail);
+  return { ok: true, keyType: type, keyDetail: detail,
+           certificatePem: blocks[0] + '\n' };
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE'S KEY, NOT THE CERTIFICATE: SHA-256 over the DER of its
 // SubjectPublicKeyInfo, base64url (#164, 2026-09-26).
 //
@@ -18616,6 +18833,10 @@ module.exports = {
   generateSigningJwkPair: generateSigningJwkPair,
   certificateThumbprint: certificateThumbprint,
   wssThumbprintSha1: wssThumbprintSha1,
+  wssIssuerName: wssIssuerName,
+  wssCertificateHandles: wssCertificateHandles,
+  wssIssuerSerialHandle: wssIssuerSerialHandle,
+  decryptionKeyPairProblem: decryptionKeyPairProblem,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
   publicKeySpkiThumbprint: publicKeySpkiThumbprint,
   constantTimeEquals: constantTimeEquals,

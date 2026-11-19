@@ -207,6 +207,14 @@
     "en": "7aa85457f3f98d8b",
     "text": "持有它的人可以以本服务的身份向该合作方认证（`tls_client_auth`），并出示合作方绑定到该证书的访问令牌。凡是密钥会持久保存的地方都以密封方式静态存储，且不出现在任何 LDAP 搜索、页面和 `/admin-api` 响应中（包括密文），它们只携带证书。"
   },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "应用自己的 WS-Trust 解密私钥（#1668）——`wstrustDecryptionPrivateKey`：发给该应用、加密到其证书的 WS-Trust 请求用它解密"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "持有它的人能读取加密到该应用的每一个请求——即加密使其不在线路上暴露的凭据和声明。在密钥持久保存的任何地方静态密封，并且（包括密文）不提供给任何 LDAP 搜索、页面和 `/admin-api` 应答，这些只携带证书。"
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "本服务对哪些内容进行静态加密、使用哪个密钥、采用哪种算法，以及在此进程中已发生了多少次。"

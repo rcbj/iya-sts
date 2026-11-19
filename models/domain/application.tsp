@@ -858,6 +858,18 @@ model WsTrustRelyingParty {
 
   @fromAttr(#{attr: "wstrustResponseRecipientXPath"})
   `responseRecipientXPath`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionCertificate"})
+  `decryptionCertificate`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionCertificateChain"})
+  `decryptionCertificateChain`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionPrivateKey", secret: true})
+  `decryptionPrivateKey`?: string;
+
+  @fromAttr(#{attr: "wstrustDecryptionKeySource"})
+  `decryptionKeySource`?: string;
 }
 
 @domain(#{

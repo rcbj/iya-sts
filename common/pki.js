@@ -3342,7 +3342,10 @@ const ENCRYPTION_KEY_ALGS = ['rsa-3072', 'ec-p256'];
  * Differs from a signing leaf in its key usage, `use: enc` and kid prefix.
  * @param realmId - the realm
  * @param opts - as `issueSigningKeyPair()`; `keyAlg` one of
- *   `ENCRYPTION_KEY_ALGS`
+ *   `ENCRYPTION_KEY_ALGS`; `encryptionHolder` `application` for an
+ *   application's WS-Trust decryption key (#1668), whose subjectAltName is
+ *   `urn:sts:application:<identifier>` — a federation relationship's
+ *   otherwise
  * @returns a promise of `issueSigningKeyPair()`'s answer
  */
 async function issueEncryptionKeyPair(realmId, opts) {
@@ -3542,9 +3545,15 @@ async function issueSigningKeyPair(realmId, opts) {
   // subject kind this service does not have wants a certificate that says
   // something, and handing back an `application` one would put the wrong URN
   // in the subjectAltName with nothing saying so.
+  // AN APPLICATION'S WS-TRUST DECRYPTION KEY (#1668) names the application
+  // it is for, as its signing leaves do, with a kid of its own prefix; a
+  // federation relationship's is the default, as it always was.
   const subjectKind = encryption
-    ? { id: 'federation', label: 'a federation relationship',
-        urnPrefix: SubjectUrn.FEDERATION, kidPrefix: 'fedenc-' }
+    ? (options.encryptionHolder === 'application'
+      ? { id: 'application', label: 'an application',
+          urnPrefix: SubjectUrn.APPLICATION, kidPrefix: 'appenc-' }
+      : { id: 'federation', label: 'a federation relationship',
+          urnPrefix: SubjectUrn.FEDERATION, kidPrefix: 'fedenc-' })
     : subjectKindFor(options.subjectKind);
   if (!subjectKind) {
     log.debug('Leaving issueSigningKeyPair(). Unknown subject kind.');

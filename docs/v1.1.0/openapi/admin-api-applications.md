@@ -524,6 +524,54 @@ Scope: `admin:read`.
 | `credentials.stored.errors[]` | string |  |  |
 | `credentials.stored.ok` | boolean |  |  |
 | `credentials.stored.rule` | string |  |  |
+| `credentials.wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `credentials.wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `credentials.wstrustDecryption.attributes.certificate` | string |  |  |
+| `credentials.wstrustDecryption.attributes.chain` | string |  |  |
+| `credentials.wstrustDecryption.attributes.privateKey` | string |  |  |
+| `credentials.wstrustDecryption.attributes.source` | string |  |  |
+| `credentials.wstrustDecryption.caAvailable` | boolean |  |  |
+| `credentials.wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `credentials.wstrustDecryption.certificate.expired` | boolean |  |  |
+| `credentials.wstrustDecryption.certificate.issuer` | string |  |  |
+| `credentials.wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `credentials.wstrustDecryption.certificate.keyType` | string |  |  |
+| `credentials.wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `credentials.wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `credentials.wstrustDecryption.certificate.notAfter` | string |  |  |
+| `credentials.wstrustDecryption.certificate.notBefore` | string |  |  |
+| `credentials.wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `credentials.wstrustDecryption.certificate.serialHex` | string |  |  |
+| `credentials.wstrustDecryption.certificate.subject` | string |  |  |
+| `credentials.wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `credentials.wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `credentials.wstrustDecryption.certificate.unreadable` | string |  |  |
+| `credentials.wstrustDecryption.certificatePem` | string |  |  |
+| `credentials.wstrustDecryption.chain` | list |  |  |
+| `credentials.wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `credentials.wstrustDecryption.chain[].expired` | boolean |  |  |
+| `credentials.wstrustDecryption.chain[].issuer` | string |  |  |
+| `credentials.wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `credentials.wstrustDecryption.chain[].keyType` | string |  |  |
+| `credentials.wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `credentials.wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `credentials.wstrustDecryption.chain[].notAfter` | string |  |  |
+| `credentials.wstrustDecryption.chain[].notBefore` | string |  |  |
+| `credentials.wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `credentials.wstrustDecryption.chain[].serialHex` | string |  |  |
+| `credentials.wstrustDecryption.chain[].subject` | string |  |  |
+| `credentials.wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `credentials.wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `credentials.wstrustDecryption.chain[].unreadable` | string |  |  |
+| `credentials.wstrustDecryption.commonName` | string |  |  |
+| `credentials.wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `credentials.wstrustDecryption.held` | boolean |  |  |
+| `credentials.wstrustDecryption.keyAlgorithms` | list |  |  |
+| `credentials.wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `credentials.wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `credentials.wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `credentials.wstrustDecryption.source` | string |  |  |
+| `credentials.wstrustDecryption.wstrustDeclared` | boolean |  |  |
 | `customClaims` | list |  |  |
 | `customClaims[].attribute` | string |  |  |
 | `customClaims[].effective` | list |  |  |
@@ -1118,6 +1166,54 @@ Scope: `admin:read`.
 | `page.credentials.stored.errors[]` | string |  |  |
 | `page.credentials.stored.ok` | boolean |  |  |
 | `page.credentials.stored.rule` | string |  |  |
+| `page.credentials.wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `page.credentials.wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `page.credentials.wstrustDecryption.attributes.certificate` | string |  |  |
+| `page.credentials.wstrustDecryption.attributes.chain` | string |  |  |
+| `page.credentials.wstrustDecryption.attributes.privateKey` | string |  |  |
+| `page.credentials.wstrustDecryption.attributes.source` | string |  |  |
+| `page.credentials.wstrustDecryption.caAvailable` | boolean |  |  |
+| `page.credentials.wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `page.credentials.wstrustDecryption.certificate.expired` | boolean |  |  |
+| `page.credentials.wstrustDecryption.certificate.issuer` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyType` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `page.credentials.wstrustDecryption.certificate.keyUsage[]` | object |  | Nested deeper than this page draws. |
+| `page.credentials.wstrustDecryption.certificate.notAfter` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.notBefore` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `page.credentials.wstrustDecryption.certificate.serialHex` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.subject` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `page.credentials.wstrustDecryption.certificate.unreadable` | string |  |  |
+| `page.credentials.wstrustDecryption.certificatePem` | string |  |  |
+| `page.credentials.wstrustDecryption.chain` | list |  |  |
+| `page.credentials.wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `page.credentials.wstrustDecryption.chain[].expired` | boolean |  |  |
+| `page.credentials.wstrustDecryption.chain[].issuer` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyType` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `page.credentials.wstrustDecryption.chain[].keyUsage[]` | object |  | Nested deeper than this page draws. |
+| `page.credentials.wstrustDecryption.chain[].notAfter` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].notBefore` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `page.credentials.wstrustDecryption.chain[].serialHex` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].subject` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `page.credentials.wstrustDecryption.chain[].unreadable` | string |  |  |
+| `page.credentials.wstrustDecryption.commonName` | string |  |  |
+| `page.credentials.wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `page.credentials.wstrustDecryption.held` | boolean |  |  |
+| `page.credentials.wstrustDecryption.keyAlgorithms` | list |  |  |
+| `page.credentials.wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `page.credentials.wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `page.credentials.wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `page.credentials.wstrustDecryption.source` | string |  |  |
+| `page.credentials.wstrustDecryption.wstrustDeclared` | boolean |  |  |
 | `page.did` | object |  |  |
 | `page.did.did` | string, or null |  |  |
 | `page.did.methods` | list |  |  |
@@ -5324,6 +5420,149 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `purpose` | string |  |  |
 
+## POST /admin-api/applications/issue-wstrust-decryption-key
+
+`issueApplicationWsTrustDecryptionKey`
+
+**Issue an application its own WS-Trust decryption key pair from this realm's CA**
+
+Generates a key pair and certifies it from the realm's certificate authority with the `key-encipherment` profile (keyUsage keyEncipherment for RSA, keyAgreement for EC, never digitalSignature), subject `CN=<application>-encrypt` with the realm's organisation and country, subjectAltName `urn:sts:application:<application>` (#1668). It replaces the pair the application held. The private key is sealed where keys persist and is in no answer, page or directory read; the certificate is in the answer and in `credentials.wstrustDecryption` of GET /admin-api/applications?application=, which is how a requester gets it. From then on a WS-Trust request for this application is decrypted with this key (chosen by the recipient its EncryptedKey names), and a request for it encrypted to the realm's key is refused (STS-WSTRUST-0083). Refused when the realm has no certificate authority or the key type is not rsa-3072 or ec-p256 (STS-ADMIN-0945), and for an application the registry does not hold (STS-ADMIN-0950).
+
+**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string | yes | The application's identifier, exactly as this registry holds it. |
+| `days` | integer |  | The certificate's lifetime in days; pki.leafLifetimeDays when absent. Clamped to the Issuing CA's own expiry. |
+| `keyAlg` | one of `rsa-3072`, `ec-p256` |  | The key type: `rsa-3072` (the default) or `ec-p256`. |
+
+**200**: The key pair issued, as it now stands.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
 ## POST /admin-api/applications/load-resource-metadata
 
 `loadProtectedResourceMetadata`
@@ -7021,6 +7260,147 @@ Scope: `admin:write`.
 | `overlapUntil` | number |  |  |
 | `replaced` | boolean |  |  |
 | `secretId` | string |  |  |
+
+## POST /admin-api/applications/remove-wstrust-decryption-key
+
+`removeApplicationWsTrustDecryptionKey`
+
+**Take an application's WS-Trust decryption key pair off its entry**
+
+Removes the application's WS-Trust decryption key pair: the certificate, its chain, the private key and its source (#1668). A request for the application is decrypted with the realm's key again. This is not revocation: a certificate issued here stays valid and is on no revocation list. Refused when the application holds none or the registry holds no such application (STS-ADMIN-0950).
+
+**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string | yes | The application's identifier, exactly as this registry holds it. |
+
+**200**: The application, with no key pair.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
 
 ## POST /admin-api/applications/reveal-secret
 
@@ -9217,4 +9597,147 @@ Scope: `admin:write`.
 | `warnings[].reason` | string |  |  |
 | `warnings[].text` | string |  |  |
 | `warnings[].value` | string |  |  |
+
+## POST /admin-api/applications/upload-wstrust-decryption-key
+
+`uploadApplicationWsTrustDecryptionKey`
+
+**Store a certificate and private key as an application's WS-Trust decryption key pair**
+
+Stores an uploaded certificate and its private key as the application's WS-Trust decryption key pair, in place of the one it held (#1668). Both are PEM; PKCS#12 is not taken. Refused when the certificate is not exactly one certificate or the key is not an unencrypted PEM private key (STS-ADMIN-0946), when the key is not the certificate's private half (STS-ADMIN-0947), when the key is not RSA of at least 2048 bits or EC on P-256, P-384 or P-521 — what XML Encryption here unwraps a content key with (STS-ADMIN-0948) — when the certificate's keyUsage leaves out keyEncipherment (RSA) or keyAgreement (EC) or it has expired (STS-ADMIN-0949), and when the certificate is already another application's or the registry holds no such application (STS-ADMIN-0950). The private key is sealed where keys persist and is in no answer.
+
+**Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string | yes | The application's identifier, exactly as this registry holds it. |
+| `certificate` | string | yes | The certificate, one PEM block. |
+| `privateKey` | string | yes | Its private key, an unencrypted PEM private key (PKCS#8, PKCS#1 or SEC 1). |
+
+**200**: The key pair stored, as it now stands.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `wstrustDecryption` | object |  | An application's own WS-Trust decryption key pair (#1668): whether it holds one, where it came from (`issued` or `uploaded`), the certificate (PEM, to give a requester) and its chain, whether the private key is held and sealed at rest — never the key — and what an issue would make: whether the realm has a certificate authority, the key types, the default, and the common name. |
+| `wstrustDecryption.attributes` | object |  | The four attributes that hold the key pair. |
+| `wstrustDecryption.attributes.certificate` | string |  |  |
+| `wstrustDecryption.attributes.chain` | string |  |  |
+| `wstrustDecryption.attributes.privateKey` | string |  |  |
+| `wstrustDecryption.attributes.source` | string |  |  |
+| `wstrustDecryption.caAvailable` | boolean |  |  |
+| `wstrustDecryption.certificate` | object, or null |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.certificate.expired` | boolean |  |  |
+| `wstrustDecryption.certificate.issuer` | string |  |  |
+| `wstrustDecryption.certificate.keyDetail` | string |  |  |
+| `wstrustDecryption.certificate.keyType` | string |  |  |
+| `wstrustDecryption.certificate.keyUsage` | list, or null |  |  |
+| `wstrustDecryption.certificate.keyUsage[]` | string |  |  |
+| `wstrustDecryption.certificate.notAfter` | string |  |  |
+| `wstrustDecryption.certificate.notBefore` | string |  |  |
+| `wstrustDecryption.certificate.selfSigned` | boolean |  |  |
+| `wstrustDecryption.certificate.serialHex` | string |  |  |
+| `wstrustDecryption.certificate.subject` | string |  |  |
+| `wstrustDecryption.certificate.thumbprint` | string |  |  |
+| `wstrustDecryption.certificate.thumbprintSha1` | string |  |  |
+| `wstrustDecryption.certificate.unreadable` | string |  |  |
+| `wstrustDecryption.certificatePem` | string |  |  |
+| `wstrustDecryption.chain` | list |  |  |
+| `wstrustDecryption.chain[]` | object |  | A certificate as the WS-Trust decryption key pair section draws it (#1668): subject, issuer, serial, validity, key type and size, keyUsage (null where the extension is absent), the SHA-256 thumbprint (base64url) and the X.509 Token Profile `#ThumbprintSHA1` (base64) a requester's EncryptedKey may name it by; `unreadable` instead when it does not parse. |
+| `wstrustDecryption.chain[].expired` | boolean |  |  |
+| `wstrustDecryption.chain[].issuer` | string |  |  |
+| `wstrustDecryption.chain[].keyDetail` | string |  |  |
+| `wstrustDecryption.chain[].keyType` | string |  |  |
+| `wstrustDecryption.chain[].keyUsage` | list, or null |  |  |
+| `wstrustDecryption.chain[].keyUsage[]` | string |  |  |
+| `wstrustDecryption.chain[].notAfter` | string |  |  |
+| `wstrustDecryption.chain[].notBefore` | string |  |  |
+| `wstrustDecryption.chain[].selfSigned` | boolean |  |  |
+| `wstrustDecryption.chain[].serialHex` | string |  |  |
+| `wstrustDecryption.chain[].subject` | string |  |  |
+| `wstrustDecryption.chain[].thumbprint` | string |  |  |
+| `wstrustDecryption.chain[].thumbprintSha1` | string |  |  |
+| `wstrustDecryption.chain[].unreadable` | string |  |  |
+| `wstrustDecryption.commonName` | string |  |  |
+| `wstrustDecryption.defaultKeyAlg` | string |  |  |
+| `wstrustDecryption.held` | boolean |  |  |
+| `wstrustDecryption.keyAlgorithms` | list |  |  |
+| `wstrustDecryption.keyAlgorithms[]` | string |  |  |
+| `wstrustDecryption.privateKeyHeld` | boolean |  |  |
+| `wstrustDecryption.sealedAtRest` | boolean |  |  |
+| `wstrustDecryption.source` | string |  |  |
+| `wstrustDecryption.wstrustDeclared` | boolean |  |  |
 {% endraw %}

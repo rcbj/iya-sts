@@ -1315,6 +1315,12 @@ class ApplicationsPage {
         // as an identity, whatever it is declared for.
         ApplicationsPage.applicationStoredCertificatesSection(
           (json.page.credentials || {}).stored, row.identifier,
+          carryBack, !!ctx.write, t) +
+        // THE WS-TRUST DECRYPTION KEY PAIR (#1668), for a WS-Trust relying
+        // party, and for any application already holding one, which still
+        // decides how its requests are opened.
+        ApplicationsPage.applicationDecryptionKeySection(
+          (json.page.credentials || {}).wstrustDecryption, row.identifier,
           carryBack, !!ctx.write, t);
       const panels = [
         { id: 'tab-overview',
@@ -2964,6 +2970,156 @@ class ApplicationsPage {
       t.html('consoleApplications.a2.storedHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a2.storedLead')) +
       rows + addForm);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668, rcbj's request
+  // of 2026-11-19), modelled on the key pair sections above and on
+  // /admin/pki's issue and upload controls: the certificate a request for
+  // this application is encrypted to, with its subject, issuer, serial,
+  // validity and both thumbprints and a download of the PEM; an Issue form
+  // (the realm's CA, the key-encipherment profile), an Upload form (a PEM
+  // certificate and its private key), and a Remove. `credentials
+  // .wstrustDecryption` of `GET /admin-api/applications?application=`, and
+  // `POST /admin-api/applications/issue-wstrust-decryption-key`,
+  // `upload-wstrust-decryption-key` and `remove-wstrust-decryption-key`, are
+  // the same four (rule 7). The private key is never in the state, so it is
+  // never on the page. Admin Write for the forms. No script: plain forms.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's WS-Trust decryption key pair subsection: the
+   * certificate it holds, and the issue, upload and remove forms.
+   *
+   * @param state - `credentials.wstrustDecryption`, from
+   *   `WsDecryptionKey.state()`
+   * @param id - the application's identifier
+   * @param carryBack - the hidden `back` field every form carries
+   * @param write - whether the reader holds Admin Write
+   * @param t - the page's translator (#539)
+   * @returns the subsection as HTML, or '' for an application that is not
+   *   a WS-Trust relying party and holds no key pair
+   */
+  static applicationDecryptionKeySection(state, id, carryBack, write, t) {
+    if (!state || !(state.wstrustDeclared || state.held)) {
+      return '';
+    }
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + name + '" value="' +
+             kit.esc(value) + '">';
+    };
+    const anchor = 'credentials-wstrust-decryption';
+    const cert = state.certificate || {};
+    const sourceText = state.source === 'issued'
+      ? t.html('consoleApplications.a2.decryptSourceIssued')
+      : (state.source === 'uploaded'
+        ? t.html('consoleApplications.a2.decryptSourceUploaded')
+        : kit.esc(state.source || '—'));
+    const download = state.certificatePem
+      ? '<a class="btn" download="' +
+        kit.esc(String(id).replace(/[^A-Za-z0-9._-]+/g, '_')) +
+        '-encrypt.pem" href="' +
+        kit.esc('data:application/x-pem-file;base64,' +
+                kit.base64Utf8(state.certificatePem)) + '">' +
+        t.html('consoleApplications.a2.decryptDownload') + '</a>'
+      : '';
+    const chainCells = (state.chain || []).length
+      ? '<ol>' + state.chain.map(function (link) {
+          return '<li>' + ApplicationsPage.certificateCells(link, t) +
+            '</li>';
+        }).join('') + '</ol>'
+      : '&mdash;';
+    const held = state.held
+      ? '<table><tr><th>' + t.html('consoleApplications.a2.colFact') +
+        '</th><th>' + t.html('consoleApplications.a2.colValue') +
+        '</th></tr><tr><td>' + t.html('consoleApplications.a2.source') +
+        '<div class="sub"><code>' + kit.esc(state.attributes.source) +
+        '</code></div></td><td>' + sourceText + '</td></tr><tr><td>' +
+        t.html('consoleApplications.a2.certificate') +
+        '<div class="sub"><code>' + kit.esc(state.attributes.certificate) +
+        '</code></div></td><td>' +
+        ApplicationsPage.certificateCells(state.certificate, t) +
+        (cert.thumbprint
+          ? '<div class="sub">' +
+            t.html('consoleApplications.a2.decryptThumbprints') +
+            ' SHA-256 <code>' + kit.esc(cert.thumbprint) + '</code> &middot; ' +
+            '#ThumbprintSHA1 <code>' + kit.esc(cert.thumbprintSha1) +
+            '</code>' + (cert.keyDetail ? ' &middot; ' +
+              kit.esc(cert.keyDetail) : '') + '</div>'
+          : '') +
+        '<p>' + download + '</p></td></tr><tr><td>' +
+        t.html('consoleApplications.a2.chain') + '<div class="sub"><code>' +
+        kit.esc(state.attributes.chain) + '</code></div></td><td>' +
+        chainCells + '</td></tr><tr><td>' +
+        t.html('consoleApplications.a2.privateKey') +
+        '<div class="sub"><code>' + kit.esc(state.attributes.privateKey) +
+        '</code></div></td><td><span class="state-valid">' +
+        (state.sealedAtRest
+          ? t.html('consoleApplications.a2.decryptKeySealed')
+          : t.html('consoleApplications.a2.decryptKeyClear')) +
+        '</span></td></tr></table>'
+      : kit.note(t.html('consoleApplications.a2.decryptNone'));
+    if (!write) {
+      return kit.frame('<h3 id="' + anchor + '">' +
+        t.html('consoleApplications.a2.decryptHeading') + '</h3>' +
+        kit.note(t.html('consoleApplications.a2.decryptLead')) + held +
+        kit.note(t.html('consoleApplications.a2.decryptNeedsWrite')));
+    }
+    const issueForm = state.caAvailable
+      ? '<form method="post" action="/admin/applications">' + carryBack +
+        hidden('action', 'issue-wstrust-decryption-key') +
+        hidden('application', id) +
+        '<div class="formrow"><label for="' + anchor + '-alg">' +
+        t.html('consoleApplications.a2.keyAlgorithm') + '</label>' +
+        '<select id="' + anchor + '-alg" name="keyAlg">' +
+        (state.keyAlgorithms || []).map(function (alg) {
+          return '<option value="' + kit.esc(alg) + '"' +
+                 (alg === state.defaultKeyAlg ? ' selected' : '') + '>' +
+                 kit.esc(alg) + '</option>';
+        }).join('') + '</select><button type="submit">' +
+        (state.held
+          ? t.html('consoleApplications.a2.decryptReplaceIssue')
+          : t.html('consoleApplications.a2.decryptIssue')) +
+        '</button></div></form>'
+      : kit.note(t.html('consoleApplications.a2.decryptNoCa') + '<a ' +
+                 'href="/admin/pki">' +
+                 t.html('consoleApplications.a2.buildOnPki') + '</a>.');
+    const uploadForm = '<form method="post" action="/admin/applications">' +
+      carryBack + hidden('action', 'upload-wstrust-decryption-key') +
+      hidden('application', id) +
+      '<div class="formrow"><label for="' + anchor + '-cert">' +
+      t.html('consoleApplications.a2.decryptCertificate') +
+      '</label><textarea id="' + anchor + '-cert" name="certificate" ' +
+      'rows="6" required spellcheck="false" placeholder="-----BEGIN ' +
+      'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
+      'for="' + anchor + '-key">' +
+      t.html('consoleApplications.a2.decryptPrivateKey') +
+      '</label><textarea id="' + anchor + '-key" name="privateKey" ' +
+      'rows="6" required spellcheck="false" autocomplete="off" ' +
+      'placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>' +
+      '<div class="formrow"><button type="submit">' +
+      (state.held
+        ? t.html('consoleApplications.a2.decryptReplaceUpload')
+        : t.html('consoleApplications.a2.decryptUpload')) +
+      '</button></div></form>';
+    const removeForm = state.held
+      ? '<form method="post" action="/admin/applications">' + carryBack +
+        hidden('action', 'remove-wstrust-decryption-key') +
+        hidden('application', id) +
+        '<div class="formrow"><button type="submit" class="danger">' +
+        t.html('consoleApplications.a2.decryptRemove') + '</button><span ' +
+        'class="sub">' + t.html('consoleApplications.a2.decryptRemoveNote') +
+        '</span></div></form>'
+      : '';
+    return kit.frame('<h3 id="' + anchor + '">' +
+      t.html('consoleApplications.a2.decryptHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.a2.decryptLead')) + held +
+      kit.frame('<h4>' + t.html('consoleApplications.a2.decryptIssueHeading') +
+        '</h4>' + kit.note(t.html('consoleApplications.a2.decryptIssueNote',
+                                  { cn: state.commonName })) + issueForm) +
+      kit.frame('<h4>' +
+        t.html('consoleApplications.a2.decryptUploadHeading') + '</h4>' +
+        kit.note(t.html('consoleApplications.a2.decryptUploadNote')) +
+        uploadForm) + removeForm);
   }
 
   // ---------------------------------------------------------------------------

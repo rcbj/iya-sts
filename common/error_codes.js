@@ -13041,6 +13041,23 @@ const CODES = [
       'such certificate. Nothing is issued.',
     spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
+  { code: 'STS-WSTRUST-0082',
+    summary: 'A WS-Trust request carried ciphertext encrypted to an ' +
+      'application\'s own decryption key, and the request is not for that ' +
+      'application: the AppliesTo the opened request names is another ' +
+      'application, or none, or its ciphertexts were encrypted to the keys ' +
+      'of more than one application. A key that opens a request does not ' +
+      'choose whose it is. Nothing is issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0083',
+    summary: 'A WS-Trust request for an application that holds its own ' +
+      'decryption key pair carried ciphertext encrypted to the realm\'s ' +
+      'XML Encryption key. While the application holds one, a request for ' +
+      'it is encrypted to its certificate and to nothing else. Nothing is ' +
+      'issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -27246,6 +27263,50 @@ const CODES = [
       'Security Administrator, and nobody would be left to grant it.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  // #1668: an application's own WS-Trust decryption key pair, issued,
+  // uploaded and removed on its page and through /admin-api.
+  { code: 'STS-ADMIN-0945',
+    summary: 'A WS-Trust decryption key pair could not be issued to an ' +
+      'application from the realm\'s certificate authority: the realm has ' +
+      'none yet, the key type is not rsa-3072 or ec-p256, or the issue ' +
+      'failed. Nothing was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0946',
+    summary: 'An uploaded WS-Trust decryption key pair was refused because ' +
+      'the certificate is not exactly one PEM certificate, or the private ' +
+      'key is not an unencrypted PEM private key. Nothing was written ' +
+      '(#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0947',
+    summary: 'An uploaded WS-Trust decryption key pair was refused because ' +
+      'the private key is not the private half of the certificate. Nothing ' +
+      'was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0948',
+    summary: 'An uploaded WS-Trust decryption key pair was refused for its ' +
+      'key type: XML Encryption here unwraps a content key with RSA of at ' +
+      'least 2048 bits or EC on P-256, P-384 or P-521 and nothing else. ' +
+      'Nothing was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0949',
+    summary: 'An uploaded WS-Trust decryption certificate was refused ' +
+      'because its keyUsage leaves out keyEncipherment (an RSA key) or ' +
+      'keyAgreement (an EC key), or its validity has ended. Nothing was ' +
+      'written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0950',
+    summary: 'An application\'s WS-Trust decryption key pair was asked to ' +
+      'be issued, uploaded or removed and the realm\'s registry holds no ' +
+      'such application, or a remove found no key pair on it, or an ' +
+      'uploaded certificate is already another application\'s. Nothing ' +
+      'was written (#1668).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -29417,6 +29478,31 @@ const CODES = [
       'attribute removed outside this door is restored at the next start ' +
       '(#825).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  // #1668: an application's own WS-Trust decryption key pair.
+  { code: 'STS-REG-0370',
+    summary: 'A WS-Trust decryption key pair was written to, or cleared ' +
+      'from, an application the realm\'s registry does not hold. Nothing ' +
+      'was written (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0371',
+    summary: 'An application\'s WS-Trust decryption private key could not ' +
+      'be sealed under the key-encryption key where keys persist, so the ' +
+      'key pair was not written: a private key is never stored in the ' +
+      'clear there (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0372',
+    summary: 'The directory refused the write of an application\'s ' +
+      'WS-Trust decryption key pair (the certificate, its chain, the ' +
+      'sealed private key and its source, written together). Nothing ' +
+      'changed (#1668).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0373',
+    summary: 'More than one application holds the same WS-Trust decryption ' +
+      'certificate, so a request whose EncryptedKey names it is opened by ' +
+      'none of them: the key would otherwise decide whose request it was. ' +
+      'Logged at the request; remove the certificate from all but one ' +
+      '(#1668).',
+    spec: 'none (logged; the request is then refused STS-WSTRUST-0075)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger was refused to a subject that is not a person, ' +
       'is not named, or did not authenticate.',

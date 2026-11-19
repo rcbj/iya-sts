@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "UNE EXPRESSION XPATH SÉLECTIONNANT L’ÉLÉMENT DE CERTIFICAT À DESTINATION DUQUEL UNE RÉPONSE WS-TRUST EST CHIFFRÉE : un ds:X509Certificate ou un BinarySecurityToken dont le ValueType se termine par #X509v3. Le même sous-ensemble que les cartes d’éléments. Lorsqu’elle est définie et qu’elle ne sélectionne rien, ou qu’elle sélectionne un élément qui n’est pas l’un de ces deux-là, il n’y a pas de destinataire et la source suivante n’est pas essayée. Un élément de certificat sélectionné dont le texte n’est pas un certificat est une faute de chiffrement achevé, et la source suivante n’est pas essayée. Lorsqu’elle n’est pas définie, le destinataire est le premier élément de certificat du signataire que nomme la signature WS-Security de la requête — le BinarySecurityToken que vise la référence de cette signature, ou un ds:X509Certificate dans le KeyInfo de cette signature. Une empreinte, un Subject Key Identifier ou un émetteur et un numéro de série n’est pas un élément de certificat."
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "LE CERTIFICAT VERS LEQUEL UNE REQUÊTE WS-TRUST POUR CETTE APPLICATION EST CHIFFRÉE, PEM. Tant qu’il est défini, une requête pour cette application est déchiffrée avec sa clé privée et non avec celle du domaine, et une requête pour elle chiffrée vers la clé du domaine est un FailedCheck. Public : la page de l’application et GET /admin-api/applications le donnent."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Les certificats de l’autorité de certification qui a émis wstrustDecryptionCertificate, PEM, l’autorité émettrice en premier, pour une paire de clés émise ici. Vide pour une paire téléversée."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "La clé privée de wstrustDecryptionCertificate, PEM. Scellée là où les clés persistent, retenue de toute page, de toute réponse de /admin-api et de toute lecture de l’annuaire, et jamais journalisée."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "D’où vient la paire de clés de déchiffrement : issued (générée ici et certifiée par l’autorité du domaine) ou uploaded (téléversée)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "LE SPN, par exemple HTTP/sts@EXAMPLE.COM — l’attribut identifiant de Kerberos v5. Un service Kerberos est une application comme les autres ici, et c’est celle dont ce service peut avoir créé l’identifiant à la demande (KRB5_SERVICE_DOMAINS). Les valeurs s’accumulent, et c’est ici le cas ordinaire plutôt que l’exception : un même service répond couramment à plusieurs SPN — HTTP/host et HTTP/host.example.com — et un vrai KDC les rattache tous à un seul compte."

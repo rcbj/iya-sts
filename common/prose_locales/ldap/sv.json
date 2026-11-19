@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "ETT XPATH-UTTRYCK SOM VÄLJER DET CERTIFIKATELEMENT SOM ETT WS-TRUST-SVAR KRYPTERAS TILL: ett ds:X509Certificate eller en BinarySecurityToken vars ValueType slutar på #X509v3. Samma delmängd som elementkartorna. När det är satt och inte väljer något, eller väljer ett element som inte är ett av de två, finns ingen mottagare och nästa källa prövas inte. Ett valt certifikatelement vars text inte är ett certifikat är ett fel för slutförd kryptering, och nästa källa prövas inte. När det inte är satt är mottagaren det första signeringscertifikatelement som begärans WS-Security-signatur namnger — den BinarySecurityToken som den signaturens referens pekar på, eller ett ds:X509Certificate i den signaturens KeyInfo. Ett tumavtryck, en Subject Key Identifier eller en utfärdare och ett serienummer är inte ett certifikatelement."
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "CERTIFIKATET SOM EN WS-TRUST-BEGÄRAN FÖR DET HÄR PROGRAMMET KRYPTERAS TILL, PEM. Så länge det är satt dekrypteras en begäran för programmet med dess privata nyckel och inte sfärens, och en begäran för det som krypterats till sfärens nyckel är en FailedCheck. Offentligt: programsidan och GET /admin-api/applications lämnar ut det."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Certifikaten för den certifikatutfärdare som utfärdade wstrustDecryptionCertificate, PEM, den utfärdande CA:n först, för ett nyckelpar som utfärdats här. Tomt för ett uppladdat."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "Den privata nyckeln till wstrustDecryptionCertificate, PEM. Förseglad där nycklar sparas varaktigt, undanhållen från varje sida, varje /admin-api-svar och varje katalogläsning, och loggas aldrig."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "Var nyckelparet för dekryptering kom ifrån: issued (genererat här och certifierat av sfärens CA) eller uploaded (uppladdat)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN:EN, t.ex. HTTP/sts@EXAMPLE.COM — Kerberos v5:s identifierarattribut. En Kerberos-tjänst är en applikation som de andra här, och den är den vars identifierare den här tjänsten kan ha skapat på begäran (KRB5_SERVICE_DOMAINS). Den ackumuleras, och här är det det vanliga fallet snarare än det ovanliga: en tjänst svarar ofta på flera SPN:er — HTTP/host och HTTP/host.example.com — och en verklig KDC håller dem alla mot ett konto."

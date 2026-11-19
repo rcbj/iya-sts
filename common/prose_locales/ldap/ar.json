@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "تعبير XPATH يحدّد عنصر الشهادة الذي تُشفَّر إليه استجابة WS-TRUST: ds:X509Certificate أو BinarySecurityToken ينتهي ValueType الخاص به بـ #X509v3. المجموعة الجزئية نفسها كما في خرائط العناصر. عندما يُعيَّن ولا يحدّد شيئًا، أو يحدّد عنصرًا ليس أحد هذين، لا يوجد مستلم ولا يُجرَّب المصدر التالي. عنصر الشهادة المحدَّد الذي ليس نصه شهادة هو خطأ تشفير مكتمل، ولا يُجرَّب المصدر التالي. عندما لا يُعيَّن يكون المستلم أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب — BinarySecurityToken الذي تشير إليه مرجعية ذلك التوقيع، أو ds:X509Certificate في KeyInfo ذلك التوقيع. البصمة أو Subject Key Identifier أو المُصدِر والرقم التسلسلي ليس عنصر شهادة."
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "الشهادة التي يُشفَّر إليها طلب WS-TRUST لهذا التطبيق، بصيغة PEM. ما دامت معيَّنة، يُفك تشفير الطلب الموجَّه إلى هذا التطبيق بمفتاحها الخاص لا بمفتاح النطاق، والطلب الموجَّه إليه المشفَّر إلى مفتاح النطاق هو FailedCheck. عامة: تقدمها صفحة التطبيق و GET /admin-api/applications."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "شهادات سلطة الشهادات التي أصدرت wstrustDecryptionCertificate، بصيغة PEM، والسلطة المُصدِرة أولًا، لزوج مفاتيح صادر هنا. فارغة لزوج مرفوع."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "المفتاح الخاص لـ wstrustDecryptionCertificate، بصيغة PEM. مختوم حيث تبقى المفاتيح، ومحجوب عن كل صفحة وكل إجابة من /admin-api وكل قراءة من الدليل، ولا يُسجَّل أبدًا."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "مصدر زوج مفاتيح فك التشفير: issued (أُنشئ هنا وصادقت عليه سلطة شهادات النطاق) أو uploaded (مرفوع)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN، مثل HTTP/sts@EXAMPLE.COM — سمة المعرّف في Kerberos v5. وخدمة Kerberos تطبيق كسائر التطبيقات هنا، وهي التي ربما أنشأت هذه الخدمة معرّفها عند الطلب (KRB5_SERVICE_DOMAINS). وهو يتراكم، وهنا تلك هي الحالة العادية لا النادرة: فالخدمة الواحدة تجيب عادة عن عدة SPN — HTTP/host وHTTP/host.example.com — ويحفظ KDC حقيقي بها كلها مقابل حساب واحد."

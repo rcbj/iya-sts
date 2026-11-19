@@ -513,6 +513,21 @@ const DATA_CLASSES = [
          'persist, and withheld — ciphertext included — from every LDAP ' +
          'search, page and `/admin-api` reply, which carry the certificate ' +
          'only.'
+  },
+  // Last, for the reason the row above is (#1668).
+  {
+    label: 'wstrust-decryption-key',
+    what: 'An application’s own WS-Trust decryption private key (#1668) — ' +
+          '`wstrustDecryptionPrivateKey`: what a WS-Trust request for that ' +
+          'application, encrypted to its certificate, is decrypted with',
+    where: 'an attribute on the application’s own entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds it reads every request encrypted to that ' +
+         'application — the credentials and claims the encryption keeps ' +
+         'off the wire. Sealed at rest wherever keys persist, and withheld ' +
+         '— ciphertext included — from every LDAP search, page and ' +
+         '`/admin-api` reply, which carry the certificate only.'
   }
 ];
 

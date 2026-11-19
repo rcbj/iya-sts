@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5740** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5752** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 81
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -91,13 +91,13 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 293
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 299
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 187
+* [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 59
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
@@ -2788,6 +2788,8 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0079` | An XPath expression on a WS-Trust encryption map or recipient is outside the subset this service evaluates, or uses a prefix the element does not declare and this service does not know. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0080` | A WS-Trust request carries XML Encryption the application does not accept: arbitrary encrypted elements are off (wstrust.acceptEncryptedElements, the application's wstrustAcceptEncryptedElements, the default), and either no request map is configured or an element restored from the ciphertext is not one an expression of the map selects or inside one. Nothing is issued. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0081` | Response encryption is on and the certificate wstrustResponseRecipientXPath selects is neither the BinarySecurityToken the request's accepted WS-Security signature names nor inside a part that signature references, so it is a certificate a party on the path could have put there. An unsigned request has no such certificate. Nothing is issued. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0082` | A WS-Trust request carried ciphertext encrypted to an application's own decryption key, and the request is not for that application: the AppliesTo the opened request names is another application, or none, or its ciphertexts were encrypted to the keys of more than one application. A key that opens a request does not choose whose it is. Nothing is issued (#1668). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
+| `STS-WSTRUST-0083` | A WS-Trust request for an application that holds its own decryption key pair carried ciphertext encrypted to the realm's XML Encryption key. While the application holds one, a request for it is encrypted to its certificate and to nothing else. Nothing is issued (#1668). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
 
 ## STS-WSFED
 
@@ -5887,6 +5889,12 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0942` | A person's TLS client certificate was not revoked. The certificate module's own code names the specific refusal when it has one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0943` | An administrator asked to delete their own directory entry (POST /admin-api/users/delete, the Delete control on a person's console page). Another administrator has to. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0944` | A person delete was refused because the person is the last one the realm's console roster lists for Admin Write or the Security Administrator, and nobody would be left to grant it. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0945` | A WS-Trust decryption key pair could not be issued to an application from the realm's certificate authority: the realm has none yet, the key type is not rsa-3072 or ec-p256, or the issue failed. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0946` | An uploaded WS-Trust decryption key pair was refused because the certificate is not exactly one PEM certificate, or the private key is not an unencrypted PEM private key. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0947` | An uploaded WS-Trust decryption key pair was refused because the private key is not the private half of the certificate. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0948` | An uploaded WS-Trust decryption key pair was refused for its key type: XML Encryption here unwraps a content key with RSA of at least 2048 bits or EC on P-256, P-384 or P-521 and nothing else. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0949` | An uploaded WS-Trust decryption certificate was refused because its keyUsage leaves out keyEncipherment (an RSA key) or keyAgreement (an EC key), or its validity has ended. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0950` | An application's WS-Trust decryption key pair was asked to be issued, uploaded or removed and the realm's registry holds no such application, or a remove found no key pair on it, or an uploaded certificate is already another application's. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 
@@ -6392,6 +6400,10 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0367` | An oauthPermission name or description contains an operator error code. Both are returned on every page that lists the permission, and a code is recorded rather than sent. At a create and at an attribute add (#1426). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0368` | A change to the admin console, the user portal or the reports application's own session bound (oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds) was not confirmed. The save is refused and nothing is written (#825). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0369` | The admin console, the user portal or the reports application's own session bound was cleared, or set to 0 or to a value the setting does not accept. Those three keep a positive number, so a longer realm setting cannot lengthen them. An attribute removed outside this door is restored at the next start (#825). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0370` | A WS-Trust decryption key pair was written to, or cleared from, an application the realm's registry does not hold. Nothing was written (#1668). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0371` | An application's WS-Trust decryption private key could not be sealed under the key-encryption key where keys persist, so the key pair was not written: a private key is never stored in the clear there (#1668). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0372` | The directory refused the write of an application's WS-Trust decryption key pair (the certificate, its chain, the sealed private key and its source, written together). Nothing changed (#1668). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0373` | More than one application holds the same WS-Trust decryption certificate, so a request whose EncryptedKey names it is opened by none of them: the key would otherwise decide whose request it was. Logged at the request; remove the certificate from all but one (#1668). | none (logged; the request is then refused STS-WSTRUST-0075) |
 
 ## STS-DBG
 

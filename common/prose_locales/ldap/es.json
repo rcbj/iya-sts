@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "UNA EXPRESIÓN XPATH QUE SELECCIONA EL ELEMENTO DE CERTIFICADO PARA EL QUE SE CIFRA UNA RESPUESTA WS-TRUST: un ds:X509Certificate o un BinarySecurityToken cuyo ValueType termina en #X509v3. El mismo subconjunto que los mapas de elementos. Cuando está definida y no selecciona nada, o selecciona un elemento que no es uno de esos dos, no hay destinatario y no se prueba la fuente siguiente. Un elemento de certificado seleccionado cuyo texto no es un certificado es una falta de cifrado completado, y no se prueba la fuente siguiente. Cuando no está definida, el destinatario es el primer elemento de certificado del firmante que nombra la firma WS-Security de la solicitud — el BinarySecurityToken al que apunta la referencia de esa firma, o un ds:X509Certificate en el KeyInfo de esa firma. Una huella, un Subject Key Identifier o un emisor y un número de serie no es un elemento de certificado."
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "EL CERTIFICADO AL QUE SE CIFRA UNA SOLICITUD WS-TRUST PARA ESTA APLICACIÓN, PEM. Mientras está definido, una solicitud para esta aplicación se descifra con su clave privada y no con la del dominio, y una solicitud para ella cifrada a la clave del dominio es un FailedCheck. Público: la página de la aplicación y GET /admin-api/applications lo entregan."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Los certificados de la autoridad de certificación que emitió wstrustDecryptionCertificate, PEM, la CA emisora primero, para un par de claves emitido aquí. Vacío para uno subido."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "La clave privada de wstrustDecryptionCertificate, PEM. Sellada donde las claves persisten, retenida de toda página, toda respuesta de /admin-api y toda lectura del directorio, y nunca registrada."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "De dónde viene el par de claves de descifrado: issued (generado aquí y certificado por la CA del dominio) o uploaded (subido)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "EL SPN, p. ej. HTTP/sts@EXAMPLE.COM — el atributo identificador de Kerberos v5. Un servicio Kerberos es una aplicación como las demás de aquí, y es aquella cuyo identificador este servicio puede haber creado bajo demanda (KRB5_SERVICE_DOMAINS). Se acumula, y aquí ese es el caso habitual y no el inusual: un servicio suele responder a varios SPN — HTTP/host y HTTP/host.example.com — y un KDC real los guarda todos contra una sola cuenta."

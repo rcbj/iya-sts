@@ -2575,6 +2575,43 @@ model Application {
     what: "AN XPATH EXPRESSION SELECTING THE CERTIFICATE ELEMENT A WS-TRUST RESPONSE IS ENCRYPTED TO: a ds:X509Certificate or a BinarySecurityToken whose ValueType ends in #X509v3. The same subset as the element maps. When it is set and it selects nothing, or it selects an element that is not one of those two, there is no recipient and the next source is not tried. A selected certificate element whose text is not a certificate is a completed-encryption fault, and the next source is not tried. When it is unset the recipient is the first signer certificate element the request's WS-Security signature names — the BinarySecurityToken that signature's reference points at, or a ds:X509Certificate in that signature's KeyInfo. A thumbprint, a Subject Key Identifier or an issuer and serial is not a certificate element."
   })
   wstrustResponseRecipientXPath?: string;
+  // THE APPLICATION'S OWN DECRYPTION KEY PAIR (#1668, rcbj's request of
+  // 2026-11-19): what a request for this application may be encrypted TO,
+  // in place of the realm's XML Encryption certificate. Written only by
+  // `ws-trust/ws_decryption_key.ts` — issued from the realm's CA, or a
+  // certificate and private key uploaded — so none is editable by hand: a
+  // certificate set beside a private key it does not match would decrypt
+  // nothing. The private key is sealed where keys persist and withheld from
+  // every reader; the other three are public.
+  @attr(#{
+    kind: "single",
+    from: "Directory → Applications → the application → Credentials, or POST /admin-api/applications/issue-wstrust-decryption-key and upload-wstrust-decryption-key",
+    families: #["wstrust"],
+    what: "THE CERTIFICATE A WS-TRUST REQUEST FOR THIS APPLICATION IS ENCRYPTED TO, PEM. While it is set, a request for this application is decrypted with its private key and not the realm's, and a request for it encrypted to the realm's key is a FailedCheck. Public: the application page and GET /admin-api/applications give it out."
+  })
+  wstrustDecryptionCertificate?: string;
+  @attr(#{
+    kind: "single",
+    from: "Directory → Applications → the application → Credentials",
+    families: #["wstrust"],
+    what: "The certificates of the certificate authority that issued wstrustDecryptionCertificate, PEM, the Issuing CA first, for a key pair issued here. Empty for an uploaded one."
+  })
+  wstrustDecryptionCertificateChain?: string;
+  @attr(#{
+    kind: "single",
+    from: "Directory → Applications → the application → Credentials",
+    families: #["wstrust"],
+    secret: true,
+    what: "The private key of wstrustDecryptionCertificate, PEM. Sealed where keys persist, withheld from every page, every /admin-api answer and every directory read, and never logged."
+  })
+  wstrustDecryptionPrivateKey?: string;
+  @attr(#{
+    kind: "single",
+    from: "Directory → Applications → the application → Credentials",
+    families: #["wstrust"],
+    what: "Where the decryption key pair came from: issued (generated here and certified by the realm's CA) or uploaded."
+  })
+  wstrustDecryptionKeySource?: string;
   // --- Kerberos and OID4VP ----------------------------------------------
   @attr(#{
     editable: "multi",

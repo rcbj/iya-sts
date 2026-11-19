@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "EIN XPATH-AUSDRUCK, DER DAS ZERTIFIKATELEMENT AUSWÄHLT, AN DAS EINE WS-TRUST-ANTWORT VERSCHLÜSSELT WIRD: ein ds:X509Certificate oder ein BinarySecurityToken, dessen ValueType auf #X509v3 endet. Dieselbe Teilmenge wie die Elementzuordnungen. Ist er gesetzt und wählt nichts aus, oder wählt er ein Element, das keines dieser beiden ist, gibt es keinen Empfänger, und die nächste Quelle wird nicht versucht. Ein ausgewähltes Zertifikatelement, dessen Text kein Zertifikat ist, ist ein Fehler der abgeschlossenen Verschlüsselung, und die nächste Quelle wird nicht versucht. Ist er nicht gesetzt, ist der Empfänger das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt — das BinarySecurityToken, auf das die Referenz dieser Signatur zeigt, oder ein ds:X509Certificate im KeyInfo dieser Signatur. Ein Thumbprint, ein Subject Key Identifier oder ein Aussteller und eine Seriennummer ist kein Zertifikatelement."
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "DAS ZERTIFIKAT, AN DAS EINE WS-TRUST-ANFRAGE FÜR DIESE ANWENDUNG VERSCHLÜSSELT WIRD, PEM. Solange es gesetzt ist, wird eine Anfrage für diese Anwendung mit seinem privaten Schlüssel entschlüsselt und nicht mit dem des Realms, und eine an den Schlüssel des Realms verschlüsselte Anfrage für sie ist ein FailedCheck. Öffentlich: Die Anwendungsseite und GET /admin-api/applications geben es heraus."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Die Zertifikate der Zertifizierungsstelle, die wstrustDecryptionCertificate ausgestellt hat, PEM, die ausstellende CA zuerst, für ein hier ausgestelltes Schlüsselpaar. Leer für ein hochgeladenes."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "Der private Schlüssel von wstrustDecryptionCertificate, PEM. Versiegelt, wo Schlüssel dauerhaft gespeichert werden, zurückgehalten von jeder Seite, jeder /admin-api-Antwort und jedem Verzeichnislesezugriff, und nie protokolliert."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "Woher das Entschlüsselungsschlüsselpaar stammt: issued (hier erzeugt und von der CA des Realms zertifiziert) oder uploaded (hochgeladen)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "DER SPN, z. B. HTTP/sts@EXAMPLE.COM — das Bezeichnerattribut von Kerberos v5. Ein Kerberos-Dienst ist eine Anwendung wie die anderen hier, und er ist derjenige, dessen Bezeichner dieser Dienst bei Bedarf erzeugt haben kann (KRB5_SERVICE_DOMAINS). Er wird angesammelt, und hier ist das der gewöhnliche Fall und nicht der ungewöhnliche: ein Dienst antwortet häufig auf mehrere SPNs — HTTP/host und HTTP/host.example.com — und ein echter KDC hält sie alle an einem Konto."

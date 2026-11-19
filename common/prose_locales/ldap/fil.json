@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "ISANG XPATH EXPRESSION NA PUMIPILI SA ELEMENTO NG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG ISANG WS-TRUST RESPONSE: isang ds:X509Certificate o isang BinarySecurityToken na ang ValueType ay nagtatapos sa #X509v3. Kapareho ng subset ng mga element map. Kapag nakatakda ito at walang pinipili, o pumipili ito ng elementong hindi isa sa dalawang iyon, walang recipient at hindi sinusubukan ang susunod na pinagmulan. Ang napiling elemento ng certificate na ang teksto ay hindi certificate ay fault ng natapos na encryption, at hindi sinusubukan ang susunod na pinagmulan. Kapag hindi nakatakda, ang recipient ay ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request — ang BinarySecurityToken na tinutukoy ng reference ng signature na iyon, o isang ds:X509Certificate sa KeyInfo ng signature na iyon. Ang thumbprint, ang Subject Key Identifier o ang issuer at serial ay hindi elemento ng certificate."
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "ANG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG WS-TRUST REQUEST PARA SA APPLICATION NA ITO, PEM. Habang nakatakda ito, dine-decrypt ang request para sa application na ito gamit ang private key nito at hindi ang sa realm, at FailedCheck ang request para rito na naka-encrypt sa key ng realm. Pampubliko: ibinibigay ito ng pahina ng application at ng GET /admin-api/applications."
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "Ang mga certificate ng certificate authority na nag-isyu ng wstrustDecryptionCertificate, PEM, una ang Issuing CA, para sa key pair na inisyu dito. Walang laman para sa in-upload."
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "Ang private key ng wstrustDecryptionCertificate, PEM. Naka-seal kung saan nananatili ang mga key, hindi ibinibigay sa anumang pahina, sagot ng /admin-api o pagbasa ng directory, at hindi kailanman nilo-log."
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "Kung saan nagmula ang key pair na pang-decrypt: issued (ginawa dito at sinertipikahan ng CA ng realm) o uploaded (in-upload)."
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "ANG SPN, hal. HTTP/sts@EXAMPLE.COM — ang identifier attribute ng Kerberos v5. Ang Kerberos service ay isang application tulad ng iba rito, at ito ang may identifier na maaaring ginawa ng serbisyong ito kapag kailangan (KRB5_SERVICE_DOMAINS). Nag-iipon ito, at dito iyon ang karaniwang kaso at hindi ang hindi pangkaraniwan: karaniwang sumasagot ang isang serbisyo sa ilang SPN — HTTP/host at HTTP/host.example.com — at hawak ng isang tunay na KDC ang lahat ng ito laban sa iisang account."

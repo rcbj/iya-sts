@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "選取 WS-Trust 回應加密所用憑證元素的 XPath 運算式：一個 ds:X509Certificate，或 ValueType 以 #X509v3 結尾的 BinarySecurityToken。子集與元素對應相同。設定之後若什麼都不選中，或選中的元素不是這兩種之一，就沒有接收方，並且不會嘗試下一個來源。選中的憑證元素其文字不是憑證時，是一次已完成加密的故障，並且不會嘗試下一個來源。未設定時，接收方是請求的 WS-Security 簽章所點名的第一個簽章者憑證元素——該簽章的參照所指向的 BinarySecurityToken，或該簽章 KeyInfo 中的 ds:X509Certificate。指紋、Subject Key Identifier 或簽發者與序號不是憑證元素。"
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "發給此應用程式的 WS-TRUST 請求所加密到的憑證，PEM。設定後，發給此應用程式的請求以其私密金鑰而非領域的私密金鑰解密，而加密到領域金鑰的發給它的請求是 FailedCheck。公開：應用程式頁面和 GET /admin-api/applications 會提供它。"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "簽發 wstrustDecryptionCertificate 的憑證授權單位的憑證，PEM，簽發 CA 在前，用於在此簽發的金鑰對。上傳的金鑰對為空。"
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "wstrustDecryptionCertificate 的私密金鑰，PEM。在金鑰持久保存的地方密封，不提供給任何頁面、任何 /admin-api 回應和任何目錄讀取，且從不記錄。"
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "解密金鑰對的來源：issued（在此產生並由領域的 CA 認證）或 uploaded（上傳）。"
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN，例如 HTTP/sts@EXAMPLE.COM——Kerberos v5 的識別碼屬性。Kerberos 服務與此處其他應用程式一樣是一個應用程式，而且是唯一其識別碼可能由本服務隨需建立的應用程式（KRB5_SERVICE_DOMAINS）。它可累積，而且在這裡這是常態而非特例：一個服務通常回應多個 SPN——HTTP/host 與 HTTP/host.example.com——而實際的 KDC 會將它們全部保存在同一個帳戶下。"

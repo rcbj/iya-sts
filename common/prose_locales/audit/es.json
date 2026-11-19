@@ -1991,6 +1991,18 @@
     "en": "6e2d0aef72c7b82c",
     "text": "Se quitó un certificado de la entrada de una persona o de una aplicación"
   },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "Se emitió un par de claves de descifrado WS-Trust a una aplicación"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "Se subió un par de claves de descifrado WS-Trust para una aplicación"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "Se quitó el par de claves de descifrado WS-Trust de una aplicación"
+  },
   "audit.actions.federation.link.add.label": {
     "en": "5e6953235158adac",
     "text": "Un administrador vinculó a una persona con un sujeto de un socio"

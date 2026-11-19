@@ -638,6 +638,9 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'issue-signing-certificate',
                              'revoke-signing-certificate',
                              'add-certificate', 'remove-certificate',
+                             'issue-wstrust-decryption-key',
+                             'upload-wstrust-decryption-key',
+                             'remove-wstrust-decryption-key',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
@@ -7443,6 +7446,9 @@ class AdminActions {
                       'issue-signing-certificate',
                       'revoke-signing-certificate',
                       'add-certificate', 'remove-certificate',
+                      'issue-wstrust-decryption-key',
+                      'upload-wstrust-decryption-key',
+                      'remove-wstrust-decryption-key',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
@@ -8612,6 +8618,31 @@ class AdminActions {
                 "message-signing certificate.");
       return this.signingCertificateAction(action, 'application',
         String(target.identifier), body);
+    }
+
+    // THE APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668, rcbj's
+    // request of 2026-11-19), from the Credentials section of its page:
+    // issued from the realm's CA, uploaded as a certificate and private key,
+    // or removed. `ws-trust/ws_decryption_key.ts` decides all of it, and the
+    // private key is in no answer. Required when asked: a library, so the
+    // require moves no route.
+    if (action === 'issue-wstrust-decryption-key' ||
+        action === 'upload-wstrust-decryption-key' ||
+        action === 'remove-wstrust-decryption-key') {
+      const keys = require('../ws-trust/ws_decryption_key');
+      const how = { actor: actor,
+                    via: String((context || {}).via || 'console') };
+      log.debug("Leaving AdminActions.applicationsAction(). A WS-Trust " +
+                "decryption key pair.");
+      if (action === 'issue-wstrust-decryption-key') {
+        return keys.issue(identifier, body, how).then(function (done) {
+          return self.refusedBy('STS-ADMIN-0945', done);
+        });
+      }
+      return this.refusedBy('STS-ADMIN-0950',
+        action === 'upload-wstrust-decryption-key'
+          ? keys.upload(identifier, body, how)
+          : keys.remove(identifier, how));
     }
 
     // A STORED CERTIFICATE ON THE APPLICATION'S ENTRY (#1227): the person's

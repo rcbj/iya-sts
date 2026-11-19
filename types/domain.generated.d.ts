@@ -1140,6 +1140,10 @@ declare namespace IyaDomain {
     encryptionCertificate?: string;
     keyTransportAlgorithm?: string;
     responseRecipientXPath?: string;
+    decryptionCertificate?: string;
+    decryptionCertificateChain?: string;
+    decryptionPrivateKey?: string;
+    decryptionKeySource?: string;
   }
 
   /**

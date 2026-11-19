@@ -1991,6 +1991,18 @@
     "en": "6e2d0aef72c7b82c",
     "text": "एक प्रमाणपत्र किसी व्यक्ति या अनुप्रयोग की प्रविष्टि से हटाया गया"
   },
+  "audit.actions.wstrust.decryption-key.issue.label": {
+    "en": "852f10d64b4ff6b8",
+    "text": "किसी एप्लिकेशन को WS-Trust डिक्रिप्शन कुंजी युग्म जारी किया गया"
+  },
+  "audit.actions.wstrust.decryption-key.upload.label": {
+    "en": "2ee5026151a98054",
+    "text": "किसी एप्लिकेशन के लिए WS-Trust डिक्रिप्शन कुंजी युग्म अपलोड किया गया"
+  },
+  "audit.actions.wstrust.decryption-key.remove.label": {
+    "en": "213e9a56f6e8e48b",
+    "text": "किसी एप्लिकेशन का WS-Trust डिक्रिप्शन कुंजी युग्म हटाया गया"
+  },
   "audit.actions.federation.link.add.label": {
     "en": "5e6953235158adac",
     "text": "एक व्यवस्थापक ने किसी व्यक्ति को भागीदार के विषय से जोड़ा"

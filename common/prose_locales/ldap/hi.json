@@ -1323,6 +1323,22 @@
     "en": "0462e40dda10b491",
     "text": "एक XPATH व्यंजक जो उस प्रमाणपत्र तत्व को चुनता है जिस पर WS-TRUST प्रतिक्रिया एन्क्रिप्ट होती है: एक ds:X509Certificate या एक BinarySecurityToken जिसका ValueType #X509v3 पर समाप्त होता है। वही उपसमुच्चय जो तत्व मानचित्रों का है। सेट होने पर और कुछ न चुनने पर, या इन दोनों में से नहीं होने वाला तत्व चुनने पर, कोई प्राप्तकर्ता नहीं है और अगला स्रोत आज़माया नहीं जाता। चुना हुआ प्रमाणपत्र तत्व जिसका पाठ प्रमाणपत्र नहीं है वह पूर्ण एन्क्रिप्शन का दोष है, और अगला स्रोत आज़माया नहीं जाता। अनसेट होने पर प्राप्तकर्ता अनुरोध के WS-Security हस्ताक्षर द्वारा नामित पहला हस्ताक्षरकर्ता प्रमाणपत्र तत्व है — वह BinarySecurityToken जिस पर उस हस्ताक्षर का संदर्भ इंगित करता है, या उस हस्ताक्षर के KeyInfo में एक ds:X509Certificate। थंबप्रिंट, Subject Key Identifier, या जारीकर्ता और क्रमांक कोई प्रमाणपत्र तत्व नहीं है।"
   },
+  "applications.schema.attributes.wstrustDecryptionCertificate.what": {
+    "en": "b00a63a9bafc49ad",
+    "text": "वह प्रमाणपत्र जिस पर इस एप्लिकेशन के लिए WS-TRUST अनुरोध एन्क्रिप्ट किया जाता है, PEM। जब तक यह सेट है, इस एप्लिकेशन के लिए अनुरोध इसकी निजी कुंजी से डिक्रिप्ट होता है, रियल्म की कुंजी से नहीं, और रियल्म की कुंजी पर एन्क्रिप्ट किया गया उसके लिए अनुरोध FailedCheck है। सार्वजनिक: एप्लिकेशन पृष्ठ और GET /admin-api/applications इसे देते हैं।"
+  },
+  "applications.schema.attributes.wstrustDecryptionCertificateChain.what": {
+    "en": "618cc20d5635f6b9",
+    "text": "wstrustDecryptionCertificate जारी करने वाले प्रमाणपत्र प्राधिकरण के प्रमाणपत्र, PEM, जारीकर्ता CA पहले, यहाँ जारी कुंजी युग्म के लिए। अपलोड किए गए के लिए खाली।"
+  },
+  "applications.schema.attributes.wstrustDecryptionPrivateKey.what": {
+    "en": "96bb5bc025291cfa",
+    "text": "wstrustDecryptionCertificate की निजी कुंजी, PEM। जहाँ कुंजियाँ स्थायी रहती हैं वहाँ सील, हर पृष्ठ, हर /admin-api उत्तर और हर निर्देशिका पठन से रोकी गई, और कभी लॉग नहीं की जाती।"
+  },
+  "applications.schema.attributes.wstrustDecryptionKeySource.what": {
+    "en": "d4894d5258b54b7d",
+    "text": "डिक्रिप्शन कुंजी युग्म कहाँ से आया: issued (यहाँ बनाया गया और रियल्म के CA द्वारा प्रमाणित) या uploaded (अपलोड किया गया)।"
+  },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
     "text": "SPN, उदाहरण के लिए HTTP/sts@EXAMPLE.COM — Kerberos v5 की पहचानकर्ता विशेषता। Kerberos सेवा यहाँ की अन्य सेवाओं की तरह एक अनुप्रयोग है, और यही वह है जिसका पहचानकर्ता यह सेवा माँग पर बना सकती है (KRB5_SERVICE_DOMAINS)। यह संचित होता है, और यहाँ वह असामान्य नहीं बल्कि सामान्य मामला है: एक सेवा प्रायः कई SPN का उत्तर देती है — HTTP/host और HTTP/host.example.com — और वास्तविक KDC उन सब को एक खाते के विरुद्ध रखता है।"

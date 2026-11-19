@@ -207,6 +207,14 @@
     "en": "7aa85457f3f98d8b",
     "text": "Wer ihn besitzt, kann sich bei diesem Partner als dieser Dienst authentifizieren (`tls_client_auth`) und die Access Tokens vorlegen, die der Partner an das Zertifikat gebunden hat. Im Ruhezustand versiegelt, wo immer Schlüssel fortbestehen, und vorenthalten — einschließlich des Chiffrats — jeder LDAP-Suche, jeder Seite und jeder `/admin-api`-Antwort, die nur das Zertifikat tragen."
   },
+  "encryption.classes.26.what": {
+    "en": "6b9f0476194b0ed3",
+    "text": "Der eigene private WS-Trust-Entschlüsselungsschlüssel einer Anwendung (#1668) — `wstrustDecryptionPrivateKey`: womit eine WS-Trust-Anfrage für diese Anwendung, an ihr Zertifikat verschlüsselt, entschlüsselt wird"
+  },
+  "encryption.classes.26.why": {
+    "en": "d1b5cf75485762fa",
+    "text": "Wer ihn besitzt, liest jede an diese Anwendung verschlüsselte Anfrage — die Anmeldedaten und Claims, die die Verschlüsselung von der Leitung fernhält. Im Ruhezustand versiegelt, wo immer Schlüssel dauerhaft gespeichert werden, und — einschließlich Chiffretext — jeder LDAP-Suche, jeder Seite und jeder `/admin-api`-Antwort vorenthalten, die nur das Zertifikat tragen."
+  },
   "encryption.notes.what": {
     "en": "69ba4b884ae9c0f6",
     "text": "Was dieser Dienst IM RUHEZUSTAND verschlüsselt, mit welchem Schlüssel, unter welchem Algorithmus und wie viel davon in diesem Prozess geschehen ist."
