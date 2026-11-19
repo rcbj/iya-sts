@@ -182,6 +182,12 @@ interface DeliveryKind {
   // service deployed as cells, `scimClient.concurrency` split across the
   // cells pushing to that client. null, or no hook, is no lane.
   laneOf?(row: Json): { key: string; limit: number } | null;
+  // BEFORE A SWEEP ATTEMPTS THE ROWS IT FOUND DUE in a realm, awaited: the
+  // outbound SCIM client's read barrier (run #500), because its rows carry
+  // no data and the send reads the entry a row was queued for, which must
+  // have arrived in this process first. A failure here never stops the
+  // sweep.
+  beforeAttempts?(realmId: string, due: number): Promise<void> | void;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
   onRetry?(row: Json): { problem?: string; patch?: Json };
@@ -969,6 +975,14 @@ class OutboundDelivery {
         removed++;
       }
     });
+    if (due.length && kind.beforeAttempts) {
+      try {
+        await kind.beforeAttempts(realmId, due.length);
+      } catch (e) {
+        log.debug("Caught in OutboundDelivery.sweepRealm(): " +
+                  ((e && e.message) || e));
+      }
+    }
     const limit = Math.max(1, this.setting(kind.settings.concurrency));
     let attempted = 0;
     // The next due row whose lane has room; a row whose lane is full waits

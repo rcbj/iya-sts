@@ -982,6 +982,26 @@ own retry and dead-letter queue** — its rows of the one store, by
 `clientId`: a store is per realm at its declaration and a client is a runtime
 entry, so a store per client cannot be declared.
 
+**AND SO A ROW MAY NEVER REACH A PROCESS AHEAD OF ITS ENTRY (run #500,
+2026-11-18).** A data-free row is only right if whoever sees it can read the
+change it was queued for, and against a shared store that did not hold: the
+directory flush and the minted flush the row rides are two transactions, the
+minted one could commit first, and a change-log pull applies a page row by
+row with turns between. In run #500's `cluster` mode a title set through
+node A was queued there; node B's deliver-now saw the row ~200 ms later, read
+the person from a replica without the title, PUT the old one and marked the
+row sent — `changedAt` was before the attempt, so nothing requeued it. A LOST
+UPDATE, every queue reading empty (`sts_scim_client` section 3). Two halves
+close it, and each needs the other: the WRITER writes a change's rows only
+once the directory has committed what was dirty (`queueAfterCommit()`,
+batched per flush, and at once where nothing commits later — memory, a
+stub), so the row's change-log row follows the entry's; and the SENDER's
+sweep takes a read barrier (`persistence.syncNow()`, through the queue's
+`beforeAttempts` hook) before attempting what it found due, so everything
+committed before it — that entry included — is applied first.
+`tests/scim_client.js` T holds both in one process; the cross-node race
+itself is held only by the `cluster` mode's run of `sts_scim_client`.
+
 **TWO THINGS ABOUT THAT KEY WERE WRONG UNTIL 2026-10-13**, both because every
 other kind of the queue keys its rows by a RANDOM id and this one keys by a
 NAME that is written again:

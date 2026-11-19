@@ -287,6 +287,13 @@ interface ScimClientsDeps {
   // Members laid over the delivery queue's own dependencies (a test's
   // claims).
   deliveryDeps?: Json;
+  // THE ORDER OF A ROW AND ITS ENTRY ACROSS PROCESSES (run #500): whether
+  // this process's writes commit after they are made (a database store),
+  // a wait for the directory writes made so far to commit, and the read
+  // barrier a sweep takes before it sends. See `queueAfterCommit()`.
+  writesCommitLater?(): boolean;
+  directoryCommitted?(): Promise<Json[] | null>;
+  catchUp?(): Promise<Json | null>;
 }
 
 /**
@@ -324,6 +331,11 @@ class ScimClients {
   // rows of `list()`, kept by the applications listing's clock
   // (`applications.listingVersion()`). See `observedClients()`.
   private readonly observing: Json;
+  // The changes observed and not yet queued, waiting for the directory
+  // write they are for to commit (`queueAfterCommit()`), and whether the
+  // drain that writes them is running.
+  private readonly afterCommit: Json[] = [];
+  private draining = false;
 
   /**
    * Builds the client from its dependencies, and its delivery queue.
@@ -390,6 +402,9 @@ class ScimClients {
       },
       holdUntil: function (row: Json, at: number): number {
         return self.holdUntil(row, at);
+      },
+      beforeAttempts: function (): Promise<void> {
+        return self.catchUp();
       },
       laneOf: function (row: Json): Json {
         return self.laneOf(row);
@@ -473,6 +488,22 @@ class ScimClients {
       projected: function (realmId: string, uuid: string): boolean {
         return require('../common/cell_sessions')
           .isProjected(realmId, 'uuid', uuid);
+      },
+      writesCommitLater: function (): boolean {
+        const persistence = require('../persistence/persistence');
+        return typeof persistence.answersAfterCommit === 'function' &&
+          !!persistence.answersAfterCommit();
+      },
+      directoryCommitted: function (): Promise<Json[] | null> {
+        const persistence = require('../persistence/persistence');
+        const at = persistence.writeGeneration();
+        return persistence.commitThrough({ directory: at.directory,
+                                           minted: 0 });
+      },
+      catchUp: function (): Promise<Json | null> {
+        const persistence = require('../persistence/persistence');
+        return typeof persistence.syncNow === 'function'
+          ? persistence.syncNow() : Promise.resolve(null);
       }
     };
   }
@@ -1622,26 +1653,148 @@ class ScimClients {
     // A PROJECTION IS NOT A RESIDENT (#553 section 1): a person whose
     // session this cell holds is pushed by their home cell, never here.
     const projection = UUID_SHAPED.test(uuid) && this.projectedHere(uuid);
-    clients.forEach((c: Json) => {
-      if (UUID_SHAPED.test(uuid) && !projection &&
-          this.wantsDelivery(c, uuid)) {
+    // What is queued is decided NOW, against the directory as this write
+    // left it; the rows are WRITTEN once the write has committed
+    // (`queueAfterCommit()`, below).
+    const users = clients.filter((c: Json) => {
+      return UUID_SHAPED.test(uuid) && !projection &&
+        this.wantsDelivery(c, uuid);
+    });
+    const grouped = clients.filter((c: Json) => {
+      return c.groupMode !== 'none';
+    });
+    // The person's groups: a person entering or leaving the scope changes
+    // who those groups' members are there.
+    const groupDns = grouped.length
+      ? (dir.groupsOfUser(event.dn).groups || []).map((group: Json) => {
+        return String(group.dn);
+      }) : [];
+    if (kind === 'membership' && event.group) {
+      groupDns.unshift(String(event.group));
+    }
+    this.queueAfterCommit(() => {
+      users.forEach((c: Json) => {
         this.enqueue(c, 'User', uuid, name);
-      }
-      if (c.groupMode === 'none') {
-        return;
-      }
-      if (kind === 'membership' && event.group) {
-        this.enqueueGroupByDn(c, String(event.group));
-      }
-      // The person's groups: a person entering or leaving the scope changes
-      // who those groups' members are there.
-      const groups = (dir.groupsOfUser(event.dn).groups || []);
-      groups.forEach((group: Json) => {
-        this.enqueueGroupByDn(c, String(group.dn));
+      });
+      grouped.forEach((c: Json) => {
+        groupDns.forEach((dn: string) => {
+          this.enqueueGroupByDn(c, dn);
+        });
       });
     });
     log.debug("Leaving ScimClients.observeInRealm(). " + clients.length +
               " client(s).");
+  }
+
+  // -------------------------------------------------------------------------
+  // A ROW IS WRITTEN ONLY ONCE THE DIRECTORY WRITE IT IS FOR HAS COMMITTED
+  // (run #500, 2026-11-18).
+  //
+  // The row carries no data — the send reads the entry as it is THEN — so
+  // the whole design rests on one thing: a process that sees the row can
+  // read the change it was queued for. Against a shared store that was not
+  // true. The directory flush and the minted flush the row rides are two
+  // transactions (`persistence/CLAUDE.md`, the pool's floor of four), and
+  // the minted one could commit first; and a change-log pull applies a page
+  // row by row, asynchronously, so a sweep could run between the row and
+  // the entry. In the `cluster` mode of run #500 a title set through node A
+  // was queued there, node B's deliver-now saw the row 200 ms later, read
+  // the person from a replica that did not yet hold the title, PUT the old
+  // one and marked the row sent — and nothing queued it again, because the
+  // change had landed before the attempt began. A LOST UPDATE: the service
+  // provider kept the old title for good, every queue reading empty.
+  //
+  // Two halves close it, and each needs the other:
+  // * HERE, the writer: where this process's writes are answered after
+  //   they commit (a database store), the rows a change queues are written
+  //   once the directory has committed everything dirty when they are
+  //   written — so the row's own change-log row comes after the entry's;
+  // * at the SENDER, the sweep: before it attempts anything it catches up
+  //   with everything committed before it (`catchUp()`, the queue's
+  //   `beforeAttempts` hook), which then includes the entry.
+  // Where nothing commits later (memory, a test's stub) the rows are
+  // written at once, as they always were. The changes are batched: one
+  // wait for every change observed while the previous one ran, so a bulk
+  // load waits once per directory flush rather than once per entry.
+  // -------------------------------------------------------------------------
+  private queueAfterCommit(work: () => void): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering ScimClients.queueAfterCommit().");
+    if (!this.deps.writesCommitLater || !this.deps.writesCommitLater()) {
+      work();
+      log.debug("Leaving ScimClients.queueAfterCommit(). Written now.");
+      return;
+    }
+    this.afterCommit.push({ realm: realms.current(), work: work });
+    if (!this.draining) {
+      this.draining = true;
+      // A MICROTASK LATER, so the generation read covers the whole write:
+      // some doors tell the observers before they mark the entry dirty.
+      Promise.resolve().then(() => this.drainAfterCommit());
+    }
+    log.debug("Leaving ScimClients.queueAfterCommit(). " +
+              this.afterCommit.length + " waiting for the commit.");
+  }
+
+  private async drainAfterCommit(): Promise<void> {
+    const { log, realms } = this.deps;
+    log.debug("Entering ScimClients.drainAfterCommit().");
+    let batches = 0;
+    while (this.afterCommit.length) {
+      const batch = this.afterCommit.splice(0);
+      batches++;
+      try {
+        const committed = this.deps.directoryCommitted
+          ? await this.deps.directoryCommitted() : null;
+        if ((committed || []).some((one: Json) => one && one.error)) {
+          // The write is the store's to retry and report; the change is
+          // queued anyway, because a row queued too early is a send
+          // repeated, and a row never queued is a change lost.
+          log.debug("ScimClients.drainAfterCommit(): the directory flush " +
+                    "failed; the change is queued regardless.");
+        }
+      } catch (e) {
+        log.debug("Caught in ScimClients.drainAfterCommit(): " +
+                  ((e && e.message) || e));
+      }
+      batch.forEach((one: Json) => {
+        try {
+          realms.run(one.realm, one.work);
+        } catch (e) {
+          log.debug("Caught in ScimClients.drainAfterCommit(): " +
+                    ((e && e.message) || e));
+          log.error(errorCodes.tag('STS-SCIMC-0023') + 'scim client: a ' +
+                    'directory change could not be queued: ' +
+                    ((e && e.message) || e));
+        }
+      });
+    }
+    this.draining = false;
+    log.debug("Leaving ScimClients.drainAfterCommit(). " + batches +
+              " batch(es).");
+  }
+
+  /**
+   * The sender's half of the ordering above: before a sweep attempts
+   * anything, everything committed before it is applied in this process —
+   * the entry a due row was queued for included. Never rejects.
+   *
+   * @returns a promise that settles once caught up, or at once where this
+   *   process shares no store
+   */
+  async catchUp(): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.catchUp().");
+    try {
+      const state = this.deps.catchUp ? await this.deps.catchUp() : null;
+      log.debug("Leaving ScimClients.catchUp(). " +
+                (state && state.caughtUp === false ? "Not caught up."
+                                                   : "Caught up."));
+    } catch (e) {
+      log.debug("Caught in ScimClients.catchUp(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ScimClients.catchUp(). The barrier failed.");
+    }
   }
 
   // -------------------------------------------------------------------------
