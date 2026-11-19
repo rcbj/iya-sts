@@ -1390,14 +1390,25 @@ pull, a GET, a request the cluster barrier holds.
   proxy, settings and listener definitions, the sync token and policy count
   the PEP holds (being current is a fact an operator acts on, and it moves
   only when the repository does), the settings in force without their
-  arrival stamp, and each listener's state, reason, address, port, renewal
-  and certificate. `PepRegistry.durableOf()` is the comparison; it is made
+  arrival stamp, and each listener's state, reason, address, port, renewal,
+  certificate and POOL BOUNDS (`stats.pool.min` and `max`: the
+  `threadPoolMin` and `threadPoolMax` in force, which move only when a
+  tuning is applied). `PepRegistry.durableOf()` is the comparison; it is made
   against the ENTRY as stored, never the joined row.
+* **The pool bounds were volatile until run #500 (2026-11-18)**, with the
+  rest of the pool. A PEP reports a pulled settings token on a heartbeat
+  that can come before its listeners are re-tuned; that heartbeat wrote the
+  entry with the old pool and the next carried the new bounds as volatile,
+  held in the receiving process for up to a journal interval. In a cluster
+  the other node drew the old bounds for a minute, and
+  `sts_xacml_pep_proxy_cluster` gave up on `api-http.threadPoolMax` after
+  60 s, about a second before the record was due.
 * **VOLATILE, in the minted store `xacml_pep_registry.liveness`**
   (`VOLATILE_ATTRIBUTES`): `lastSeen`, the four counters, the signal-stream
   health (counts and ages), the in-use reports' stamps, per-listener pool
-  and connection figures, memory and path counts, and the last nudge's
-  outcome — `recordNotify()` writes the store, never the entry, since a nudge
+  figures but its bounds and the connection figures, memory and path
+  counts, and the last nudge's outcome — `recordNotify()` writes the store,
+  never the entry, since a nudge
   goes to every PEP on every policy change. These move on every heartbeat
   of a PEP serving traffic, and none of them is a change to what the PEP is.
 * **EVERY READER IS UNCHANGED**: `all()` and `read()` join the entry with
