@@ -64,12 +64,37 @@ function childMain() {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
   }
-  function freePort() {
-    return new Promise(function (resolve) {
-      const s = net.createServer();
-      s.listen(0, '127.0.0.1', function () {
-        const port = s.address().port;
-        s.close(function () { resolve(port); });
+  // N ports nothing is on, DISTINCT FROM ONE ANOTHER: every probe socket is
+  // held open until the last has its port, and only then are they closed.
+  // One probe opened and closed at a time hands its port straight back to
+  // the kernel, which may give it to the next probe: three probes in a row
+  // repeat a port about once in 2,500 tries on Linux. None of these
+  // listeners is bound until D, so nothing else kept them apart, and a
+  // repeat is a port taken (STS-CORE-0147). In the unit job of PR #1926's
+  // CI (run 44614318395) the write defining `p2`, the second service
+  // listener, was refused — the one input of it that differs from run to
+  // run is its port — and the two cookie findings after it, whose mapping
+  // names `p2`, failed with it.
+  function freePorts(count) {
+    const probes = [];
+    for (let i = 0; i < count; i += 1) {
+      probes.push(new Promise(function (resolve) {
+        const s = net.createServer();
+        s.listen(0, '127.0.0.1', function () {
+          resolve(s);
+        });
+      }));
+    }
+    return Promise.all(probes).then(function (servers) {
+      const ports = servers.map(function (s) {
+        return s.address().port;
+      });
+      return Promise.all(servers.map(function (s) {
+        return new Promise(function (resolve) {
+          s.close(resolve);
+        });
+      })).then(function () {
+        return ports;
       });
     });
   }
@@ -124,6 +149,12 @@ function childMain() {
     const json = function (v) {
       return JSON.stringify(v);
     };
+    // What a write answered, as a finding's detail: its code and, for a
+    // refusal, the sentence, so a failure in CI says which rule refused.
+    const told = function (r) {
+      return codeOf(r) + (r && r.ok === false
+        ? ' ' + json(r.errors || r).slice(0, 400) : '');
+    };
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'custom-listeners-'));
     const made = stsCrypto.selfSignedRsaCertificate({
       commonName: 'admin.example.test' });
@@ -131,8 +162,15 @@ function childMain() {
     const keyFile = path.join(dir, 'key.pem');
     fs.writeFileSync(certFile, made.certPem);
     fs.writeFileSync(keyFile, made.privateKeyPem);
-    const admPort = await freePort();
-    const realmPort = await freePort();
+    // Every port this file names, picked at once (`freePorts()`): the
+    // second service listener's, the port `ra` moves to in E and the one
+    // E's blocker holds, as well.
+    const picked = await freePorts(5);
+    const admPort = picked[0];
+    const realmPort = picked[1];
+    const p2Port = picked[2];
+    const port2 = picked[3];
+    const port3 = picked[4];
     const admBase = 'https://admin.example.test:' + admPort;
     const realmBase = 'https://' + A + '.example.test:' + realmPort;
     const adm = { id: 'adm', port: admPort, publicBaseUrl: admBase,
@@ -183,24 +221,27 @@ function childMain() {
       portal: { listeners: ['ra'] } }))) === 'STS-CORE-0154',
          'another realm\'s listener is refused in a realm\'s mapping');
     // The sign-on session's applications on two host names.
-    const p2Port = await freePort();
     const twoHosts = json([adm, { id: 'p2', port: p2Port,
       publicBaseUrl: 'https://portal.other.test:' + p2Port,
       certificateFile: certFile, privateKeyFile: keyFile }]);
-    note(codeOf(config.setOverride('listeners.custom', twoHosts)) ===
-         'accepted', 'a second listener is accepted while nothing is on it');
+    const second = config.setOverride('listeners.custom', twoHosts);
+    note(codeOf(second) === 'accepted',
+         'a second listener is accepted while nothing is on it',
+         told(second) + ' ports ' + json([admPort, realmPort, p2Port]));
     const split = json({ 'admin-console': { listeners: ['adm'] },
                          'management-api': { listeners: ['adm'] },
                          authn: { listeners: ['adm'] },
                          portal: { listeners: ['p2'] } });
-    note(codeOf(config.setOverride('listeners.applications', split)) ===
-         'STS-CORE-0155', 'authn and the portal on two host names with a ' +
-         'host-only cookie are refused (STS-CORE-0155)');
-    note(codeOf(config.setOverride('authn.cookieDomain', 'example.test')) ===
-         'accepted', 'a cookie domain is accepted');
-    note(codeOf(config.setOverride('listeners.applications', split)) ===
-         'STS-CORE-0155', 'a host name not under the cookie domain is ' +
-         'still refused');
+    const hostOnly = config.setOverride('listeners.applications', split);
+    note(codeOf(hostOnly) === 'STS-CORE-0155', 'authn and the portal on ' +
+         'two host names with a host-only cookie are refused (STS-CORE-0155)',
+         told(hostOnly));
+    const domain = config.setOverride('authn.cookieDomain', 'example.test');
+    note(codeOf(domain) === 'accepted', 'a cookie domain is accepted',
+         told(domain));
+    const outside = config.setOverride('listeners.applications', split);
+    note(codeOf(outside) === 'STS-CORE-0155', 'a host name not under the ' +
+         'cookie domain is still refused', told(outside));
     config.setOverride('authn.cookieDomain', '');
     config.setOverride('listeners.applications', json({
       'admin-console': { listeners: ['adm'] },
@@ -317,7 +358,6 @@ function childMain() {
          '(STS-TLS-0041)', dflt.status + ' ' + dflt.body.slice(0, 120));
 
     // --- E. the definitions drive the sockets -----------------------------
-    const port2 = await freePort();
     const realmDef = function (over) {
       return json([Object.assign({ id: 'ra', port: realmPort,
         publicBaseUrl: realmBase, certificateFile: certFile,
@@ -343,7 +383,6 @@ function childMain() {
          'a certificate file that cannot be read is a failed listener ' +
          '(STS-TLS-0040), not a stopped service', json(bad));
     const blocker = net.createServer();
-    const port3 = await freePort();
     await new Promise(function (r) { blocker.listen(port3, r); });
     realms.setOverride(A, 'listeners.realm', realmDef({ port: port3 }));
     await settle(50);
