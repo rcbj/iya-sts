@@ -179,7 +179,9 @@ async function run(t) {
     fakeApi.listen(socketFile, resolve);
   });
   const saved = { ready: apiProcess.ready, socketPath: apiProcess.socketPath,
-                  status: apiProcess.status };
+                  status: apiProcess.status, transient: apiProcess.transient,
+                  whenListening: apiProcess.whenListening,
+                  retryAfterS: apiProcess.retryAfterS };
   let granted = false;
   try {
     config.setOverride('admin.openWhenEmpty', 'false');
@@ -407,10 +409,79 @@ async function run(t) {
     t.equal(back.headers.location, 'http://' + host + '/saml.html',
             'a Location naming the child\'s configured origin is rewritten ' +
             'to the one the browser is using');
+
+    // -----------------------------------------------------------------------
+    // CI run #510: the first /api call after a sign-in found the child being
+    // replaced for a new trust anchor and was answered 502, half a second
+    // before the successor listened.
+    t.log.info('=== F. a child on its way is waited for ===');
+    let up = false;
+    let waitedFor = 0;
+    apiProcess.ready = function () {
+      return up;
+    };
+    apiProcess.transient = function () {
+      return !up;
+    };
+    apiProcess.status = function () {
+      return { state: up ? 'running' : 'replacing',
+               uiUrl: 'http://child.invalid:1', allowList: false,
+               allowedRanges: [] };
+    };
+    apiProcess.whenListening = function (timeoutMs) {
+      waitedFor = timeoutMs;
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          up = true;
+          resolve(true);
+        }, 300);
+      });
+    };
+    const before = seen.length;
+    const waited = await request(port, { method: 'GET',
+      path: '/api/healthcheck', headers: { host: host, cookie: aliceCookie } });
+    t.equal(waited.status, 200,
+            'a call that finds the child being replaced is held until the ' +
+            'successor listens, and then forwarded', waited.body.slice(0, 200));
+    t.equal(seen.length - before, 1, 'reaching the api exactly once');
+    t.equal(waitedFor,
+            Number(config.value('debugger.proxyTimeoutS')) * 1000,
+            'having waited within the call\'s own debugger.proxyTimeoutS');
+    up = false;
+    apiProcess.whenListening = function () {
+      return Promise.resolve(false);
+    };
+    apiProcess.retryAfterS = function () {
+      return 7;
+    };
+    const late = await request(port, { method: 'GET',
+      path: '/api/healthcheck', headers: { host: host, cookie: aliceCookie } });
+    t.equal(late.status, 503,
+            'one still on its way at the end of that bound is a handled 503',
+            late.body.slice(0, 200));
+    t.equal(late.headers['retry-after'], '7',
+            'with Retry-After from the api process');
+    t.check(late.body.indexOf('STS-DBG') < 0,
+            'and no error code in what the client reads');
+    apiProcess.transient = function () {
+      return false;
+    };
+    apiProcess.status = function () {
+      return { state: 'given-up', lastError: 'boom',
+               uiUrl: 'http://child.invalid:1', allowList: false,
+               allowedRanges: [] };
+    };
+    const gone = await request(port, { method: 'GET',
+      path: '/api/healthcheck', headers: { host: host, cookie: aliceCookie } });
+    t.equal(gone.status, 502,
+            'while one that is not coming — given up — is still 502 at once');
   } finally {
     apiProcess.ready = saved.ready;
     apiProcess.socketPath = saved.socketPath;
     apiProcess.status = saved.status;
+    apiProcess.transient = saved.transient;
+    apiProcess.whenListening = saved.whenListening;
+    apiProcess.retryAfterS = saved.retryAfterS;
     config.clearOverride('admin.openWhenEmpty');
     if (granted) {
       inDefault(function () {

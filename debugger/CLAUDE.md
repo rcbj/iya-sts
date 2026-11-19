@@ -253,18 +253,29 @@ the session was minted in a worker and arrives by replication; see *Not done*.
 The api trusts this service's main port through `NODE_EXTRA_CA_CERTS`, which node
 reads once at start — so `build-root` on `/admin/pki` left a running child trusting
 a Root that is gone, and every call it made to this service failed. Nothing inside
-the child can be told, so `debugger_server.ts`'s `checkAnchor()` compares, at most
-every five seconds and only on a forwarded call, the anchor `tls_server.js`
-publishes now with the one the child was started with, and
-`debugger_api_process.ts`'s `updateAnchor()` writes the new PEM and replaces the
-child. **A replacement is a hand-over, not a failure**: it is not counted toward
+the child can be told, so `debugger_server.ts`'s `checkAnchor()` compares the
+anchor `tls_server.js` publishes now with the one the child was started with,
+and `debugger_api_process.ts`'s `updateAnchor()` writes the new PEM and replaces
+the child. **It asks when the listener certificate is re-issued**
+(`tlsServer.onServerCertificateChange()`, registered by `listen()`), and still at
+most every five seconds on a forwarded call for a change no observer reports.
+**A replacement is a hand-over, not a failure**: it is not counted toward
 `debugger.restartLimit`, the successor is forked at once, and the child is
-not-ready from the moment it is told to exit, so the call that noticed gets the
-ordinary 502 rather than being sent to a dying process. Verified against an
-isolated instance: a token call from the api to the main port worked, `build-root`
-was posted, the next `/api` call answered 502, and the same token call worked
-within seconds. `tests/debugger_api_process.js` holds it with a stand-in child
-(four mutants, all caught).
+not-ready from the moment it is told to exit.
+
+**A call that finds the child ON ITS WAY is waited for, not refused (CI run
+#510).** Starting, `replacing` and `restarting` are `transient()`; the forwarder
+holds such a call on `whenListening()` within the call's own
+`debugger.proxyTimeoutS`, relays it when the child reports listening, and
+answers a handled **503 with `Retry-After`** (`STS-DBG-0034`) if it has not come
+by then. Only a child that is not coming — `given-up`, `stopped` — is 502
+(`STS-DBG-0010`). Until then the check ran only on a forwarded call and that call
+got the 502: `tests/protocol/sts_debugger_signin.js`'s first run signed in, and
+its first `/api` call noticed a Root an earlier job had rebuilt sixteen minutes
+before, replaced the child and was answered 502 half a second before the
+successor listened. `tests/debugger_api_process.js` holds the replacement and the
+wait with a stand-in child; `tests/debugger_server.js` (F) the forwarder's three
+answers.
 
 ## Front process only
 

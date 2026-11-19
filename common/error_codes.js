@@ -29468,6 +29468,13 @@ const CODES = [
       'password; until it has, its roles are honoured at the console ' +
       'alone, from a password sign-in (#103).',
     spec: 'HTTP 403 at the debugger' },
+  // CI run #510: a child on its way is waited for, then answered 503.
+  { code: 'STS-DBG-0034',
+    summary: 'The debugger\'s api process was starting, being replaced for ' +
+      'a new trust anchor or due to restart, and did not report listening ' +
+      'within the /api call\'s debugger.proxyTimeoutS, so the call was not ' +
+      'forwarded.',
+    spec: 'HTTP 503 with Retry-After' },
   // #956. Recorded, never sent. The public token is named in `spec`.
   { code: 'STS-REPORT-0001',
     summary: 'A report query named a source the catalog does not publish.',
