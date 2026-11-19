@@ -1132,6 +1132,7 @@ declare namespace IyaDomain {
     appliesTo?: string[];
     jwtScope?: string[];
     encryptRequest?: string;
+    acceptEncryptedElements?: string;
     requestElements?: string[];
     encryptResponse?: string;
     responseElements?: string[];

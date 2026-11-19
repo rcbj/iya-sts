@@ -33,23 +33,40 @@ const WSSE11 = 'http://docs.oasis-open.org/wss/' +
 const FRAGMENT = 'urn:iya-sts:ws-encryption:fragment';
 const HOLDER = 'iyaWsEncryptionHolder';
 
-// Prefixes a WS-Trust message uses, applied only when the element does not
-// declare them. An unprefixed name still matches the null namespace only,
-// which is what XPath 1.0 does with a name test.
+// THE ONLY PREFIXES AN EXPRESSION MAY USE (#1668, rcbj on #1908,
+// 2026-11-18). XPath 1.0 resolves a prefix from the expression's context,
+// never from the document: an expression is the service's, and the
+// request is the requester's. Until then a prefix was read from the
+// element's own declarations first, so a request that bound `wst:` to a
+// namespace of its own could offer a decoy the map then matched. An
+// unprefixed name matches the null namespace only, as XPath 1.0 says.
 const PREFIXES = {
   soap: 'http://schemas.xmlsoap.org/soap/envelope/',
+  soap11: 'http://schemas.xmlsoap.org/soap/envelope/',
   soap12: 'http://www.w3.org/2003/05/soap-envelope',
   wsse: 'http://docs.oasis-open.org/wss/2004/01/' +
     'oasis-200401-wss-wssecurity-secext-1.0.xsd',
+  wsse11: 'http://docs.oasis-open.org/wss/' +
+    'oasis-wss-wssecurity-secext-1.1.xsd',
   wsu: 'http://docs.oasis-open.org/wss/2004/01/' +
     'oasis-200401-wss-wssecurity-utility-1.0.xsd',
   wst: 'http://docs.oasis-open.org/ws-sx/ws-trust/200512',
+  wst14: 'http://docs.oasis-open.org/ws-sx/ws-trust/200802',
+  wst2005: 'http://schemas.xmlsoap.org/ws/2005/02/trust',
+  wst2004: 'http://schemas.xmlsoap.org/ws/2004/04/trust',
   wsa: 'http://www.w3.org/2005/08/addressing',
+  wsa2004: 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
   saml: 'urn:oasis:names:tc:SAML:2.0:assertion',
+  saml11: 'urn:oasis:names:tc:SAML:1.0:assertion',
   ds: DS,
   xenc: XENC,
   wsp: 'http://schemas.xmlsoap.org/ws/2004/09/policy'
 };
+
+// The requests whose signature was accepted (handleRst()), for the
+// recipient expression: a certificate it selects must be one that signature
+// covers (recipientOf()).
+const SIGNED = new WeakSet();
 
 const NOT_AN_ELEMENT = {
   thumbprint: true, ski: true, 'issuer-serial': true,
@@ -62,42 +79,145 @@ const NOT_AN_ELEMENT = {
  */
 export = class WsEncryption {
   /**
-   * Opens every encrypted element of a request, then holds it to the
-   * application's map where the application's request switch is on.
+   * Opens a request's encrypted elements and holds them to the
+   * application's settings.
    *
-   * ENCRYPTION IS OPTIONAL ON THE WIRE (rcbj on #1908, 2026-11-18): the
-   * WSDL's policy tells a WS-SecurityPolicy client that any header or the
-   * Body may be encrypted, so whatever arrives encrypted to this realm is
-   * opened whether or not a switch is on. The switch makes it REQUIRED:
-   * each expression of the application's map must match an element that
-   * arrived encrypted. Until then a wholly encrypted request was opened
-   * only under the service-wide switch, and one for an application whose
-   * switch was off was a fault, so a client following the policy was
-   * refused by default.
+   * WHICH CIPHERTEXT IS ACCEPTED (rcbj on #1908, 2026-11-18) is
+   * `wstrust.acceptEncryptedElements` (an application's
+   * `wstrustAcceptEncryptedElements`). On, ciphertext anywhere is opened
+   * without a map. Off, the default, ciphertext is accepted only where the
+   * application's request map names it: every element restored from it must
+   * be one an expression selects, or inside one, and ciphertext with no map
+   * is `STS-WSTRUST-0080`. `wstrust.encryptRequest` is the other direction:
+   * every expression must match an element that arrived encrypted
+   * (`0075`). In every case a ciphertext that will not open with this
+   * realm's keys is `0075`.
+   *
+   * Where the AppliesTo is in the clear its application decides before
+   * anything is opened. Where it is inside the ciphertext the request is
+   * opened and then held to the application that opening reveals, which
+   * the service-wide settings stand for until then.
    *
    * @param doc - the request document, modified in place
+   * @param opened - asked once the ciphertext is open and before any
+   *   setting is read: the caller's check that what opened is where the
+   *   accepted signature allows (`0046`), so a smuggled AppliesTo never
+   *   chooses whose settings apply. A fault it answers is returned as it is.
    * @returns ok, or the fault
    */
-  static openRequest(doc): any {
+  static openRequest(doc, opened?: () => any): any {
     log.debug("Entering WsEncryption.openRequest().");
-    if (WsEncryption.hasCiphertext(doc)) {
-      const opened = WsEncryption.decryptAll(doc);
-      if (!opened.ok) {
+    const hadCiphertext = WsEncryption.hasCiphertext(doc);
+    const visible = WsEncryption.applicationId(doc);
+    if (hadCiphertext && helpers.firstByLocal(doc, 'AppliesTo') &&
+        !WsEncryption.on(visible, 'wstrust.acceptEncryptedElements') &&
+        !WsEncryption.stringsOf(visible, 'requestElements').length) {
+      log.debug("Leaving WsEncryption.openRequest(). No map names it.");
+      return WsEncryption.fail('STS-WSTRUST-0080', 'InvalidRequest',
+        'the request carries ciphertext, and no request map names an ' +
+        'element it may stand for');
+    }
+    if (hadCiphertext) {
+      const done = WsEncryption.decryptAll(doc);
+      if (!done.ok) {
         log.debug("Leaving WsEncryption.openRequest(). It would not open.");
-        return opened;
+        return done;
+      }
+      const placed = opened ? opened() : null;
+      if (placed) {
+        log.debug("Leaving WsEncryption.openRequest(). Outside the Body.");
+        return placed;
       }
     }
     // The application is read from the opened request: an AppliesTo inside
     // the ciphertext names it only now.
     const appId = WsEncryption.applicationId(doc);
+    const paths = WsEncryption.stringsOf(appId, 'requestElements');
+    if (hadCiphertext &&
+        !WsEncryption.on(appId, 'wstrust.acceptEncryptedElements')) {
+      const named = WsEncryption.namedByMap(doc, paths);
+      if (!named.ok) {
+        log.debug("Leaving WsEncryption.openRequest(). Not named.");
+        return named;
+      }
+    }
     if (!WsEncryption.on(appId, 'wstrust.encryptRequest')) {
       log.debug("Leaving WsEncryption.openRequest(). Not required.");
       return { ok: true };
     }
-    const held = WsEncryption.enforce(doc,
-      WsEncryption.stringsOf(appId, 'requestElements'));
+    const held = WsEncryption.enforce(doc, paths);
     log.debug("Leaving WsEncryption.openRequest(). " + held.ok);
     return held;
+  }
+
+  /**
+   * Records that a request's WS-Security signature was accepted, so a
+   * certificate the recipient expression selects may be one it covers.
+   *
+   * @param doc - the request
+   */
+  static markSigned(doc): void {
+    log.debug("Entering WsEncryption.markSigned().");
+    if (doc) {
+      SIGNED.add(doc);
+    }
+    log.debug("Leaving WsEncryption.markSigned().");
+  }
+
+  // Every element restored from ciphertext must be one the map selects, or
+  // inside one: off, ciphertext is accepted only where the map names it.
+  private static namedByMap(doc, paths): any {
+    log.debug("Entering WsEncryption.namedByMap().");
+    if (!paths.length) {
+      log.debug("Leaving WsEncryption.namedByMap(). No map.");
+      return WsEncryption.fail('STS-WSTRUST-0080', 'InvalidRequest',
+        'the request carries ciphertext, and no request map names an ' +
+        'element it may stand for');
+    }
+    const selected = new Set();
+    for (let i = 0; i < paths.length; i++) {
+      const found = WsEncryption.select(doc, paths[i]);
+      if (!found.ok) {
+        log.debug("Leaving WsEncryption.namedByMap(). The expression.");
+        return found;
+      }
+      found.nodes.forEach(function (one) {
+        selected.add(one);
+      });
+    }
+    const restored = [];
+    const walk = function (node): void {
+      const kids = node.childNodes || [];
+      for (let i = 0; i < kids.length; i++) {
+        if (kids[i].nodeType !== 1) {
+          continue;
+        }
+        if (kids[i]._stsRestored) {
+          restored.push(kids[i]);
+        } else {
+          walk(kids[i]);
+        }
+      }
+    };
+    walk(doc);
+    for (let i = 0; i < restored.length; i++) {
+      let cur = restored[i];
+      let named = false;
+      while (cur && !named) {
+        named = selected.has(cur);
+        cur = cur.parentNode;
+      }
+      if (!named) {
+        log.debug("Leaving WsEncryption.namedByMap(). " +
+                  restored[i].localName + " is not named.");
+        return WsEncryption.fail('STS-WSTRUST-0080', 'InvalidRequest',
+          'the request carries ciphertext that stands for ' +
+          restored[i].localName + ', which no request map expression ' +
+          'selects');
+      }
+    }
+    log.debug("Leaving WsEncryption.namedByMap(). " + restored.length);
+    return { ok: true };
   }
 
   /**
@@ -652,6 +772,13 @@ export = class WsEncryption {
         return WsEncryption.fail('STS-WSTRUST-0076', 'InvalidRequest',
           'the recipient expression did not select a certificate element');
       }
+      if (!WsEncryption.coveredBySignature(doc, found.nodes[0])) {
+        log.debug("Leaving WsEncryption.recipientOf(). Not signed for.");
+        return WsEncryption.fail('STS-WSTRUST-0081', 'InvalidRequest',
+          'the certificate the recipient expression selects is neither ' +
+          'the signer\'s token nor inside a part the request\'s accepted ' +
+          'signature covers');
+      }
       // The element is a certificate element. Text that is not a certificate
       // is a completed-encryption fault, and the next source is not tried.
       return shaped.pem ? { ok: true, pem: shaped.pem }
@@ -663,6 +790,51 @@ export = class WsEncryption {
     return named ? { ok: true, pem: named }
       : WsEncryption.fail('STS-WSTRUST-0076', 'InvalidRequest',
           'the request\'s signature names no certificate element');
+  }
+
+  // THE RECIPIENT A SIGNATURE VOUCHES FOR (rcbj on #1908, 2026-11-18). An
+  // answer is encrypted to the certificate the expression selects, so that
+  // certificate must be the requester's: the BinarySecurityToken the
+  // accepted signature's key reference names, or an element inside a part
+  // that signature references by id. One anywhere else is a certificate a
+  // party on the path could have put there.
+  private static coveredBySignature(doc, node): boolean {
+    log.debug("Entering WsEncryption.coveredBySignature().");
+    if (!SIGNED.has(doc)) {
+      log.debug("Leaving WsEncryption.coveredBySignature(). Unsigned.");
+      return false;
+    }
+    let reading: any = null;
+    try {
+      reading = stsCrypto.readWsSecuritySignature(
+        new XMLSerializer().serializeToString(doc));
+    } catch (e) {
+      log.debug("Caught in WsEncryption.coveredBySignature(): " +
+                ((e && e.message) || e));
+      // Unreadable is not covered.
+      reading = null;
+    }
+    if (!reading || !reading.ok) {
+      log.debug("Leaving WsEncryption.coveredBySignature(). No reading.");
+      return false;
+    }
+    const ids = (reading.references || []).map(function (one) {
+      return String(one).replace(/^#/, '');
+    });
+    const own = reading.keyReference && reading.keyReference.kind === 'token'
+      ? String(reading.keyReference.id || '').replace(/^#/, '') : '';
+    let cur = node;
+    while (cur && cur.nodeType === 1) {
+      const id = String(cur.getAttributeNS(PREFIXES.wsu, 'Id') ||
+                        cur.getAttribute('Id') || '');
+      if (id && (ids.indexOf(id) >= 0 || (cur === node && id === own))) {
+        log.debug("Leaving WsEncryption.coveredBySignature(). Covered.");
+        return true;
+      }
+      cur = cur.parentNode;
+    }
+    log.debug("Leaving WsEncryption.coveredBySignature(). Not covered.");
+    return false;
   }
 
   private static signerCertificate(doc): string {
@@ -814,7 +986,9 @@ export = class WsEncryption {
           return WsEncryption.fail('STS-WSTRUST-0077', 'RequestFailed',
             'encryption did not produce an element');
         }
-        node.parentNode.replaceChild(doc.importNode(fresh, true), node);
+        const imported = doc.importNode(fresh, true);
+        node.parentNode.replaceChild(imported, node);
+        WsEncryption.announce(doc, imported, i + 1, pem);
       } catch (e) {
         log.debug("Caught in WsEncryption.seal(): " +
                   ((e && e.message) || e));
@@ -828,6 +1002,111 @@ export = class WsEncryption {
     }
     log.debug("Leaving WsEncryption.seal(). Sealed.");
     return { ok: true };
+  }
+
+  // THE ANSWER ANNOUNCES ITS CIPHERTEXT (rcbj on #1908, 2026-11-18), as
+  // WS-Security 1.1 section 9 has a sender do, so WSS4J, WCF and Metro
+  // decrypt it in their security processing. The EncryptedKey leaves the
+  // EncryptedData for the answer's wsse:Security header, given an Id and a
+  // ReferenceList naming the EncryptedData, whose KeyInfo becomes a
+  // SecurityTokenReference to it: the shape `headerKeyFor()` reads in a
+  // request. A key agreed with ECDH-ES and no EncryptedKey stays where it
+  // is, and a ReferenceList alone names the EncryptedData. A SOAP header is
+  // wrapped in an EncryptedHeader (section 9.3). Each new entry goes first,
+  // so a receiver taking the header in order opens an outer ciphertext
+  // before the one inside it.
+  private static announce(doc, data, n, pem): void {
+    log.debug("Entering WsEncryption.announce(). " + n);
+    const dataId = 'iya-ed-' + n;
+    data.setAttribute('Id', dataId);
+    const security = WsEncryption.answerSecurity(doc);
+    const keyInfo = WsEncryption.childNamed(data, DS, 'KeyInfo');
+    const key = keyInfo
+      ? WsEncryption.childNamed(keyInfo, XENC, 'EncryptedKey') : null;
+    const listed = doc.createElementNS(XENC, 'xenc:ReferenceList');
+    const ref = doc.createElementNS(XENC, 'xenc:DataReference');
+    ref.setAttribute('URI', '#' + dataId);
+    listed.appendChild(ref);
+    if (key) {
+      const keyId = 'iya-ek-' + n;
+      keyInfo.removeChild(key);
+      key.setAttribute('Id', keyId);
+      WsEncryption.recipientReference(doc, key, pem);
+      key.appendChild(listed);
+      while (keyInfo.firstChild) {
+        keyInfo.removeChild(keyInfo.firstChild);
+      }
+      const str = doc.createElementNS(PREFIXES.wsse,
+                                      'wsse:SecurityTokenReference');
+      const points = doc.createElementNS(PREFIXES.wsse, 'wsse:Reference');
+      points.setAttribute('URI', '#' + keyId);
+      str.appendChild(points);
+      keyInfo.appendChild(str);
+      security.insertBefore(key, security.firstChild);
+    } else {
+      security.insertBefore(listed, security.firstChild);
+    }
+    const parent = data.parentNode;
+    if (parent && parent.localName === 'Header' && parent !== security &&
+        parent.parentNode === doc.documentElement) {
+      const holder = doc.createElementNS(WSSE11, 'wsse11:EncryptedHeader');
+      holder.setAttributeNS(PREFIXES.wsu, 'wsu:Id', 'iya-eh-' + n);
+      parent.replaceChild(holder, data);
+      holder.appendChild(data);
+    }
+    log.debug("Leaving WsEncryption.announce().");
+  }
+
+  // THE RECIPIENT, AS THE BASIC SECURITY PROFILE NAMES IT (R5426): an
+  // EncryptedKey's KeyInfo is a SecurityTokenReference, which WSS4J refuses
+  // the answer without. A `#ThumbprintSHA1` KeyIdentifier of the
+  // certificate the key was transported to (X.509 Token Profile 1.1 section
+  // 3.2), in place of the certificate `crypto.encryptElement()` writes. A
+  // key agreed with ECDH-ES keeps its AgreementMethod.
+  private static recipientReference(doc, key, pem): void {
+    log.debug("Entering WsEncryption.recipientReference().");
+    const info = WsEncryption.childNamed(key, DS, 'KeyInfo');
+    const agreed = info && info.getElementsByTagNameNS('*',
+      'AgreementMethod').length > 0;
+    if (!info || agreed) {
+      log.debug("Leaving WsEncryption.recipientReference(). Left as is.");
+      return;
+    }
+    while (info.firstChild) {
+      info.removeChild(info.firstChild);
+    }
+    const str = doc.createElementNS(PREFIXES.wsse,
+                                    'wsse:SecurityTokenReference');
+    const id = doc.createElementNS(PREFIXES.wsse, 'wsse:KeyIdentifier');
+    id.setAttribute('EncodingType', 'http://docs.oasis-open.org/wss/2004/' +
+      '01/oasis-200401-wss-soap-message-security-1.0#Base64Binary');
+    id.setAttribute('ValueType', 'http://docs.oasis-open.org/wss/' +
+      'oasis-wss-soap-message-security-1.1#ThumbprintSHA1');
+    id.appendChild(doc.createTextNode(stsCrypto.wssThumbprintSha1(pem)));
+    str.appendChild(id);
+    info.appendChild(str);
+    log.debug("Leaving WsEncryption.recipientReference().");
+  }
+
+  // The answer's wsse:Security header, made the first header the first
+  // time it is wanted.
+  private static answerSecurity(doc): any {
+    log.debug("Entering WsEncryption.answerSecurity().");
+    const envelope = doc.documentElement;
+    const soapNs = envelope.namespaceURI;
+    let header = WsEncryption.childNamed(envelope, soapNs, 'Header');
+    if (!header) {
+      header = doc.createElementNS(soapNs, envelope.prefix
+        ? envelope.prefix + ':Header' : 'Header');
+      envelope.insertBefore(header, envelope.firstChild);
+    }
+    let security = WsEncryption.childNamed(header, PREFIXES.wsse, 'Security');
+    if (!security) {
+      security = doc.createElementNS(PREFIXES.wsse, 'wsse:Security');
+      header.insertBefore(security, header.firstChild);
+    }
+    log.debug("Leaving WsEncryption.answerSecurity().");
+    return security;
   }
 
   private static withNamespaces(node): string {
@@ -1147,7 +1426,8 @@ export = class WsEncryption {
       if (step.prefix) {
         const want = WsEncryption.prefixOf(node, step.prefix);
         if (want == null) {
-          throw new Error('the prefix ' + step.prefix + ' is not declared');
+          throw new Error('the prefix ' + step.prefix + ' is not one this ' +
+                          'service binds');
         }
         if (node.localName !== step.local || ns !== want) {
           return false;
@@ -1178,6 +1458,10 @@ export = class WsEncryption {
       const local = attr.localName || attr.name;
       if (pred.prefix) {
         const want = WsEncryption.prefixOf(node, pred.prefix);
+        if (want == null) {
+          throw new Error('the prefix ' + pred.prefix + ' is not one this ' +
+                          'service binds');
+        }
         if ((attr.namespaceURI || null) !== want || local !== pred.local) {
           continue;
         }
@@ -1189,16 +1473,11 @@ export = class WsEncryption {
     return false;
   }
 
-  // Once per name test. The comment on expand() is the reason.
+  // Once per name test. The comment on expand() is the reason. The node is
+  // not asked: see PREFIXES.
   private static prefixOf(node, prefix): string | null {
-    let declared = null;
-    if (node && typeof node.lookupNamespaceURI === 'function') {
-      declared = node.lookupNamespaceURI(prefix);
-    }
-    if (declared) {
-      return String(declared);
-    }
-    return PREFIXES[prefix] || null;
+    return Object.prototype.hasOwnProperty.call(PREFIXES, prefix)
+      ? PREFIXES[prefix] : null;
   }
 
   private static inOrder(nodes): any[] {

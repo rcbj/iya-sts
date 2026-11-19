@@ -719,7 +719,7 @@ class WsTrust {
   }
 
   // Every encryption refusal, as one SOAP Fault. The code that happened
-  // is one of the five literals beside the call.
+  // is one of the seven literals beside the call.
   private encryptionFault(version, fault, trustNs): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.encryptionFault().");
@@ -729,6 +729,8 @@ class WsTrust {
       : fault.code === 'STS-WSTRUST-0076' ? 'STS-WSTRUST-0076'
       : fault.code === 'STS-WSTRUST-0078' ? 'STS-WSTRUST-0078'
       : fault.code === 'STS-WSTRUST-0079' ? 'STS-WSTRUST-0079'
+      : fault.code === 'STS-WSTRUST-0080' ? 'STS-WSTRUST-0080'
+      : fault.code === 'STS-WSTRUST-0081' ? 'STS-WSTRUST-0081'
       : 'STS-WSTRUST-0077';
     log.debug("Leaving WsTrust.encryptionFault().");
     return { status: 500, version: version, errorCode: code,
@@ -4136,38 +4138,50 @@ class WsTrust {
     }
     if (signed && signed.ok === true && !signed.prepared) {
       options.connection.acceptedSignature = signed;
+      // The recipient expression may select only what this signature
+      // covers (WsEncryption.coveredBySignature()).
+      WsEncryption.markSigned(doc);
     }
-    const hadCiphertext = WsEncryption.hasCiphertext(doc);
-    const opened = WsEncryption.openRequest(doc);
+    // WHAT WAS OPENED IS HELD TO THE SIGNED BODY TOO (#521's step 5, on
+    // #1908's review), before any encryption setting is read. A signature
+    // over ciphertext covers only where the ciphertext stood: anybody can
+    // encrypt to this realm's certificate, so an unsigned header that opens
+    // to a RequestSecurityToken or an AppliesTo would be read first in
+    // document order, beside a genuinely signed Body — and would choose
+    // whose settings apply. Product checks the parts once more on the
+    // opened document; development believes the signature and never
+    // checked them.
+    const outsideBody = (): any => {
+      if (!options.connection.acceptedSignature ||
+          !mode.verifiesCredentials()) {
+        return null;
+      }
+      const outside = this.partsOutsideSignedBody(doc);
+      if (!outside.length) {
+        return null;
+      }
+      log.info(errorCodes.tag('STS-WSTRUST-0046') + 'wstrust: the request ' +
+               'opened to ' + outside.join(', ') + ' outside the signed ' +
+               'SOAP Body.');
+      return { ok: false, code: 'STS-WSTRUST-0046',
+               trustFault: 'FailedAuthentication',
+               reason: 'The WS-Security signature on this request was ' +
+                 'refused: the request carries ' + outside.join(', ') +
+                 ' outside the signed SOAP Body once it is decrypted.' };
+    };
+    const opened = WsEncryption.openRequest(doc, outsideBody);
+    if (!opened.ok && opened.code === 'STS-WSTRUST-0046') {
+      log.debug("Leaving WsTrust.handleRst(). Opened outside the Body.");
+      return { status: 500, version: earlyVersion,
+               errorCode: 'STS-WSTRUST-0046',
+               body: this.soapFault(earlyVersion, opened.reason,
+                                    opened.trustFault, earlyNs) };
+    }
     if (!opened.ok) {
       const openedRst = firstByLocal(doc, 'RequestSecurityToken');
       const openedNs = (openedRst && openedRst.namespaceURI) || earlyNs;
       log.debug("Leaving WsTrust.handleRst(). The request would not open.");
       return this.encryptionFault(earlyVersion, opened, openedNs);
-    }
-    // WHAT WAS OPENED IS HELD TO THE SIGNED BODY TOO (#521's step 5, on
-    // #1908's review). A signature over ciphertext covers only where the
-    // ciphertext stood: anybody can encrypt to this realm's published
-    // certificate, so an unsigned header that opens to a
-    // RequestSecurityToken or an AppliesTo would be read first in document
-    // order, beside a genuinely signed Body. Product checks the parts once
-    // more on the opened document; development believes the signature and
-    // never checked them.
-    if (hadCiphertext && options.connection.acceptedSignature &&
-        mode.verifiesCredentials()) {
-      const outside = this.partsOutsideSignedBody(doc);
-      if (outside.length) {
-        const code = 'STS-WSTRUST-0046';
-        log.info(errorCodes.tag(code) + 'wstrust: the request opened to ' +
-                 outside.join(', ') + ' outside the signed SOAP Body.');
-        log.debug("Leaving WsTrust.handleRst(). Opened outside the Body.");
-        return { status: 500, version: earlyVersion, errorCode: code,
-                 body: this.soapFault(earlyVersion,
-                   'The WS-Security signature on this request was ' +
-                   'refused: the request carries ' + outside.join(', ') +
-                   ' outside the signed SOAP Body once it is decrypted.',
-                   'FailedAuthentication', earlyNs) };
-      }
     }
     const version = this.detectSoapVersion(doc, contentType);
     const requestType = textByLocal(doc, 'RequestType');

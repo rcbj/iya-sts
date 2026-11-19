@@ -360,10 +360,12 @@ function everyRefusal(t) {
                   body: actAs(signed('wf-alice', 'wf-front')),
                   appliesTo: BACK },
      'STS-WSTRUST-0076', 'InvalidRequest'],
-    ['response encryption to a certificate element that is not one',
+    // rcbj on #1908: the expression may select only a certificate an
+    // accepted signature covers, and this request carries none.
+    ['response encryption to a certificate element no signature covers',
      'product',
      { security: badCertificate + signed('wf-alice'), appliesTo: BACK },
-     'STS-WSTRUST-0077', 'RequestFailed'],
+     'STS-WSTRUST-0081', 'InvalidRequest'],
     ['a JWT about somebody the directory does not hold', 'development',
      { security: usernameToken('wf-ghost-' + process.pid, 'x'),
        tokenType: JWT },
@@ -466,21 +468,23 @@ function everyRefusal(t) {
           String(asked.body).slice(0, 400));
   // The cipher is the application's wstrustEncryptionAlgorithm. The
   // AppliesTo is not the application's identifier. The recipient is the
-  // certificate in the requester's own Security/Signature, not a SAML
-  // encryption certificate.
+  // application's wstrustEncryptionCertificate, not a SAML encryption
+  // certificate.
   const certificate = (/<ds:X509Certificate>([^<]+)</.exec(
     signed('wf-alice')) || [])[1] || '';
   t.check(!!certificate, 'E. precondition: a real certificate to encrypt to');
-  const perApp = armResponse('aes128-gcm');
+  // The recipient is the application's own certificate: an unsigned
+  // request's certificate element is no recipient (STS-WSTRUST-0081).
+  const perApp = armResponse('aes128-gcm').concat([
+    writeBack('set', 'wstrustResponseRecipientXPath', ''),
+    writeBack('set', 'wstrustEncryptionCertificate', certificate)]);
   const encrypted = inMode('development', function () {
     return wstrust.handleRst(rst({ appliesTo: BACK,
-      security: usernameToken('wf-alice', 'x') +
-        '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
-        '<ds:KeyInfo><ds:X509Data><ds:X509Certificate>' + certificate +
-        '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>' }),
+      security: usernameToken('wf-alice', 'x') }),
     'application/soap+xml');
   });
-  const dropped = disarmResponse('aes128-gcm');
+  const dropped = disarmResponse('aes128-gcm').concat([
+    writeBack('set', 'wstrustEncryptionCertificate', '')]);
   t.check(perApp.every(function (one) { return one && one.ok; }) &&
           dropped.every(function (one) { return one && one.ok; }) &&
           /EncryptedData/.test(String(encrypted.body)) &&

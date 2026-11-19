@@ -715,6 +715,7 @@
   "wsfedSignOutUri": 703,
   "wsfedSpInitiatedSso": 704,
   "wsfedSsoConsent": 745,
+  "wstrustAcceptEncryptedElements": 772,
   "wstrustAppliesTo": 705,
   "wstrustEncryptRequest": 764,
   "wstrustEncryptRequestElements": 765,

@@ -919,6 +919,7 @@ var config = {
     acceptKerberos: true,                    // Accept a Kerberos token
     issueKerberos: false,                    // Issue Kerberos tokens
     encryptRequest: false,                   // Require the named elements of a request encrypted
+    acceptEncryptedElements: false,          // Accept encrypted elements no map names
     encryptResponse: false,                  // Encrypt the named elements of a response
     encryptionAlgorithm: "aes256-gcm",       // Response encryption algorithm
     keyTransportAlgorithm: "rsa-oaep-mgf1p"  // Response key transport algorithm

@@ -54,7 +54,12 @@
 //      EncryptedHeader, an encrypted UsernameToken, a signature made
 //      before or after the encryption, a signed header beyond the
 //      Timestamp, a ciphertext in an unsigned header held to the signed
-//      Body (STS-WSTRUST-0046), and one that will not open (0075).
+//      Body (STS-WSTRUST-0046), and one that will not open (0075); with
+//      arbitrary ciphertext off (the default), only what a map names
+//      (0080), and a map's prefix the service's own, never the request's
+//      (J9). I1 and I6: the answer announces its ciphertext in its
+//      security header, and a recipient expression selects only what the
+//      accepted signature covers (0081).
 //
 // IN A CHILD PROCESS, for `wstrust_client_certificate.js`'s reason: it loads
 // the stack and builds a certificate authority, both process state `run.js`
@@ -618,6 +623,46 @@ async function childBody() {
   t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice'),
           'I1. development encrypts to the BinarySecurityToken the ' +
           'signature references, and that key opens it', brief(r));
+  // rcbj on #1908: the answer announces its ciphertext the way WS-Security
+  // 1.1 section 9 has a sender do — the EncryptedKey in the answer's
+  // security header, its ReferenceList naming the EncryptedData, whose
+  // KeyInfo is a SecurityTokenReference to the key.
+  const answer = String(r.body);
+  t.check(/<soap:Header><wsse:Security xmlns:wsse="[^"]+"><xenc:EncryptedKey[^>]*Id="iya-ek-1"/
+            .test(answer) &&
+          /<xenc:ReferenceList><xenc:DataReference URI="#iya-ed-1"\/><\/xenc:ReferenceList><\/xenc:EncryptedKey>/
+            .test(answer) &&
+          /<xenc:EncryptedData[^>]*Id="iya-ed-1"/.test(answer) &&
+          /#ThumbprintSHA1">[^<]+<\/wsse:KeyIdentifier>/.test(answer) &&
+          /<wsse:SecurityTokenReference[^>]*><wsse:Reference URI="#iya-ek-1"\/>/
+            .test(answer),
+          'I1. the answer\'s security header carries the EncryptedKey and ' +
+          'its ReferenceList, and the EncryptedData points at it',
+          answer.slice(0, 900));
+  // rcbj on #1908: the recipient expression selects only a certificate
+  // the accepted signature covers, or the signer's own token.
+  const RECIPIENT = 'wstrustResponseRecipientXPath';
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: RECIPIENT, value: '//wsse:Security/wsse:BinarySecurityToken' });
+  r = await ask('development', sign('alice'));
+  t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice'),
+          'I6. a recipient expression selecting the signer\'s own token is ' +
+          'the recipient', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: RECIPIENT, value: "//*[local-name()='Other']/" +
+      "*[local-name()='BinarySecurityToken']" });
+  r = await ask('development', sign('alice', { header: '<x:Other ' +
+    'xmlns:x="urn:x"><wsse:BinarySecurityToken wsu:Id="other" ValueType="' +
+    X509V3 + '" EncodingType="' + BASE64 + '">' + String(issued.bob.certPem)
+      .replace(/-----[^-]+-----/g, '').replace(/\s+/g, '') +
+    '</wsse:BinarySecurityToken></x:Other>' }));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0081' &&
+          /InvalidRequest/.test(String(r.body)) &&
+          !/EncryptedData/.test(String(r.body)),
+          'I6. a certificate in a header no signature covers is ' +
+          'STS-WSTRUST-0081', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: RECIPIENT, value: '' });
   const bobB64 = String(issued.bob.certPem)
     .replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   r = await ask('development', sign('alice', { after: function (xml) {
@@ -792,6 +837,16 @@ async function childBody() {
       .test(String(res.body));
   };
 
+  // Arbitrary ciphertext is accepted for J1-J4 and J7: the setting is off
+  // by default, and J5 holds what it refuses.
+  const accept = function (value) {
+    log.debug("Entering accept(). " + value);
+    const done = applications.updateApplication('wmsback', { mode: 'set',
+      attribute: 'wstrustAcceptEncryptedElements', value: value });
+    log.debug("Leaving accept().");
+    return done && done.ok;
+  };
+  t.check(accept('true'), 'precondition: wmsback accepts any ciphertext');
   r = await ask('product', encryptBody(false)(sign('alice')));
   t.check(issuedTo(r, 'wmsalice'),
           'J1. product: signed, then the Body\'s content encrypted with ' +
@@ -862,8 +917,49 @@ async function childBody() {
   r = await ask('development', encryptOne(envelope({ header: toHeader,
     security: tokenOf('wmsbob') }), WSA, 'To', true));
   t.check(issuedTo(r, 'wmsbob'),
-          'J5. with no application requiring it, an encrypted header is ' +
-          'still opened (encryption is optional on the wire)', brief(r));
+          'J5. with no map but arbitrary ciphertext accepted, an ' +
+          'encrypted header is opened', brief(r));
+  // rcbj on #1908: off, ciphertext is accepted only where a map names it.
+  t.check(accept(''), 'precondition: wmsback accepts only mapped ciphertext');
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0080' &&
+          /InvalidRequest/.test(String(r.body)),
+          'J8. arbitrary ciphertext off and no map: STS-WSTRUST-0080',
+          brief(r));
+  applications.updateApplication('wmsback', { mode: 'add',
+    attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' });
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J8. off, an encrypted header the map names is opened', brief(r));
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSSE, 'UsernameToken', false));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0080' &&
+          /UsernameToken/.test(String(r.body)),
+          'J8. off, an encrypted element the map does not name is ' +
+          'STS-WSTRUST-0080', brief(r));
+  // rcbj on #1908: a map's prefix is the service's binding, never the
+  // request's. The request binds `wsa` to a namespace of its own on the
+  // Header, sends the real wsa:To in the clear in the default namespace,
+  // and encrypts a decoy `wsa:To` in its own namespace.
+  t.check(accept('true') && applications.updateApplication('wmsback', {
+    mode: 'set', attribute: 'wstrustEncryptRequest', value: 'true' }).ok,
+          'precondition: wmsback requires wsa:To encrypted');
+  const decoy = encryptOne(envelope({
+    header: '<To xmlns="' + WSA + '">' + BASE + '/sts</To>' +
+      '<wsa:To>decoy</wsa:To>',
+    security: tokenOf('wmsbob') }).replace('<s:Header>',
+      '<s:Header xmlns:wsa="urn:decoy">'), 'urn:decoy', 'To', false);
+  r = await ask('development', decoy);
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0075',
+          'J9. a decoy in a namespace the request binds to `wsa` does not ' +
+          'satisfy //wsa:To, and the real header in the clear is ' +
+          'STS-WSTRUST-0075', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: 'wstrustEncryptRequest', value: '' });
+  applications.updateApplication('wmsback', { mode: 'remove',
+    attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' });
   const messageId = '<wsa:MessageID xmlns:wsa="' + WSA + '" wsu:Id="mid">' +
     'urn:uuid:' + nodeCrypto.randomUUID() + '</wsa:MessageID>';
   r = await ask('product', sign('alice', { header: messageId,
@@ -888,6 +984,7 @@ async function childBody() {
           /FailedCheck/.test(String(r.body)) && !r.signIn,
           'J7. a ciphertext that will not open is STS-WSTRUST-0075',
           brief(r));
+  accept('');
 
   // -------------------------------------------------------------------------
   // H. THE ENDPOINT

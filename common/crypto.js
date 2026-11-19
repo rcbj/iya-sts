@@ -8374,6 +8374,33 @@ function certificateThumbprint(certificate, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// THE X.509 TOKEN PROFILE'S THUMBPRINT REFERENCE (#1668). WS-Security 1.1's
+// `#ThumbprintSHA1` KeyIdentifier names a certificate by the base64 SHA-1 of
+// its DER, and the Basic Security Profile (R5426) has an EncryptedKey's
+// KeyInfo be a SecurityTokenReference, so an encrypted WS-Trust answer names
+// the requester's certificate this way for WSS4J and WCF to find their key.
+// It is an IDENTIFIER the profile fixes, compared for equality and never
+// trusted for integrity, as the Kerberos Token Profile's below is, so
+// `digest()`'s list, which refuses SHA-1 to anything new, is not widened.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the X.509 Token Profile 1.1 `#ThumbprintSHA1` of a certificate:
+ * the base64 SHA-1 of its DER.
+ *
+ * @param certificate - PEM, or base64 DER
+ * @returns the base64 identifier
+ */
+function wssThumbprintSha1(certificate) {
+  log.debug("Entering wssThumbprintSha1().");
+  const first = String(certificate == null ? '' : certificate).match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  const der = Buffer.from(stripPem(first ? first[0] : certificate), 'base64');
+  const out = nodeCrypto.createHash('sha1').update(der).digest('base64');
+  log.debug("Leaving wssThumbprintSha1().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE'S KEY, NOT THE CERTIFICATE: SHA-256 over the DER of its
 // SubjectPublicKeyInfo, base64url (#164, 2026-09-26).
 //
@@ -18588,6 +18615,7 @@ module.exports = {
   SIGNING_JWK_PAIR_ALGS: SIGNING_JWK_PAIR_ALGS,
   generateSigningJwkPair: generateSigningJwkPair,
   certificateThumbprint: certificateThumbprint,
+  wssThumbprintSha1: wssThumbprintSha1,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
   publicKeySpkiThumbprint: publicKeySpkiThumbprint,
   constantTimeEquals: constantTimeEquals,

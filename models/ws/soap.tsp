@@ -153,6 +153,16 @@ model Envelope11 {
             xmlns: "http://schemas.xmlsoap.org/soap/envelope/",
             direction: "write", cite: "SOAP 1.1 section 4.2" })
 model Header11 {
+  /**
+   * An encrypted answer's announcement (#1668): each EncryptedKey, with its
+   * ReferenceList, or a ReferenceList alone, that `ws_encryption.ts` moves
+   * here after the answer is held, so a WS-Security receiver decrypts it.
+   */
+  @element(#{ xml: "Security", occurs: "optional",
+              xmlns: "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+              cite: "WSS SOAP Message Security 1.1 section 9.3 (an encrypted answer, #1668)" })
+  security?: string;
+
   /** The answer's action, WS-Trust 1.3 section 3.3's `.../RSTR/...`. */
   @element(#{ xml: "Action", occurs: "optional",
               xmlns: "http://www.w3.org/2005/08/addressing",
@@ -226,6 +236,16 @@ model Envelope12 {
             xmlns: "http://www.w3.org/2003/05/soap-envelope",
             direction: "write", cite: "SOAP 1.2 Part 1 section 5.2" })
 model Header12 {
+  /**
+   * An encrypted answer's announcement (#1668): each EncryptedKey, with its
+   * ReferenceList, or a ReferenceList alone, that `ws_encryption.ts` moves
+   * here after the answer is held, so a WS-Security receiver decrypts it.
+   */
+  @element(#{ xml: "Security", occurs: "optional",
+              xmlns: "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+              cite: "WSS SOAP Message Security 1.1 section 9.3 (an encrypted answer, #1668)" })
+  security?: string;
+
   @element(#{ xml: "Action", occurs: "optional",
               xmlns: "http://www.w3.org/2005/08/addressing",
               cite: "WS-Addressing 1.0 SOAP Binding section 2.2; WS-Trust 1.3 section 3.3" })

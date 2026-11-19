@@ -835,6 +835,9 @@ model WsTrustRelyingParty {
   @fromAttr(#{attr: "wstrustEncryptRequest"})
   `encryptRequest`?: string;
 
+  @fromAttr(#{attr: "wstrustAcceptEncryptedElements"})
+  `acceptEncryptedElements`?: string;
+
   @fromAttr(#{attr: "wstrustEncryptRequestElements"})
   `requestElements`?: string[];
 

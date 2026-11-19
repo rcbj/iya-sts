@@ -2504,9 +2504,18 @@ model Application {
     from: "by hand",
     families: #["wstrust"],
     overrides: "wstrust.encryptRequest",
-    what: "TRUE or FALSE: require the elements this application's request map names to arrive encrypted, overriding wstrust.encryptRequest. On, a request whose AppliesTo is this application is a FailedCheck when the map is empty, an expression matches an element that arrived in the clear, or an expression matches nothing that was restored from ciphertext. Whatever arrives encrypted to this realm is opened whether this is on or off, and the AppliesTo is read from the opened request; a ciphertext that will not open is a FailedCheck either way."
+    what: "TRUE or FALSE: require the elements this application's request map names to arrive encrypted, overriding wstrust.encryptRequest. On, a request whose AppliesTo is this application is a FailedCheck when the map is empty, an expression matches an element that arrived in the clear, or an expression matches nothing that was restored from ciphertext. Which ciphertext is opened at all is wstrustAcceptEncryptedElements; the AppliesTo is read from the opened request, and a ciphertext that will not open is a FailedCheck either way."
   })
   wstrustEncryptRequest?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.acceptEncryptedElements",
+    what: "TRUE or FALSE: accept XML Encryption anywhere in a request whose AppliesTo is this application, a header or the body, with no request map naming it, overriding wstrust.acceptEncryptedElements. Off, ciphertext is accepted only where wstrustEncryptRequestElements names it — each element restored from it must be one an expression selects, or inside one — and ciphertext with no map is an InvalidRequest. Either way a ciphertext must open with this realm's keys."
+  })
+  wstrustAcceptEncryptedElements?: string;
   @attr(#{
     editable: "multi",
     kind: "multi",
