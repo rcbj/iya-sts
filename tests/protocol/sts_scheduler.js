@@ -337,11 +337,26 @@ async function thePageAndTheApiAgree(consoleClient) {
     // big enough to hold them: without this it failed on `signing.rotate`,
     // which sorts onto the second page, about a page that was drawing exactly
     // what it should. The JSON fetch above already asks the same way.
+    // THE DRAWN PAGE IS A THIRD READ, AND IT JOINS THE AGREEMENT (run #551,
+    // memory, 2026-11-19). It is not the page JSON above drawn: the console
+    // client asks the operation again for each page and draws that answer.
+    // In run #551 the API and the page's JSON agreed, and then
+    // `svcd-mwo2zegimq15i` was removed (21:47:30.223) while this walk was
+    // under way — every row behind it moved up by that realm's rows, so the
+    // ones at the head of the next page landed on a page already read, and
+    // `report.retention.here@<realm>` "had no row" on a page that drew
+    // exactly what it was answered. So the rows the drawn pages were drawn
+    // FROM are compared with the API's like the JSON's, and read again on
+    // the same terms; the check below still asks for a row per job.
     html = await consoleClient.get("/admin/scheduler?per=200");
-    for (let page = 2; page <= pagesOf; page++) {
-      const more = await consoleClient.get("/admin/scheduler?per=200&jobsPage=" +
-                                    page);
+    let htmlJobs = (html.body || {}).jobs || [];
+    const htmlPagesOf = Number(((html.body || {}).jobsPaging || {}).pages) ||
+                        1;
+    for (let page = 2; page <= htmlPagesOf; page++) {
+      const more = await consoleClient.get(
+        "/admin/scheduler?per=200&jobsPage=" + page);
       html.text += more.text;
+      htmlJobs = htmlJobs.concat((more.body || {}).jobs || []);
     }
     ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
       .sort();
@@ -349,7 +364,11 @@ async function thePageAndTheApiAgree(consoleClient) {
     pageIds = unique((pageJson.body.jobs || []).map(function (j) {
       return j.id + "@" + j.realm;
     }));
-    if (JSON.stringify(ids) === JSON.stringify(pageIds)) {
+    const htmlIds = unique(htmlJobs.map(function (j) {
+      return j.id + "@" + j.realm;
+    }));
+    if (JSON.stringify(ids) === JSON.stringify(pageIds) &&
+        JSON.stringify(ids) === JSON.stringify(htmlIds)) {
       break;
     }
     // A REALM CREATED DURING THE WALK LOSES THE ROWS THAT LAND BEHIND IT
@@ -362,19 +381,33 @@ async function thePageAndTheApiAgree(consoleClient) {
     // five readings need not find a quiet moment. Such a row is set aside
     // ONLY where its realm is on both sides and its job is listed for some
     // other realm on both sides: a job a process never registered is missing
-    // for every realm or is a service-wide row, and still fails below.
+    // for every realm or is a service-wide row, and still fails below. The
+    // drawn pages' walk is held to the same rule, against the API's.
     const settled = settleRealmWalk(ids, pageIds);
-    if (settled.agree) {
-      log.info("the API and the page agree but for " + settled.setAside.length +
+    const settledDrawn = settleRealmWalk(ids, htmlIds);
+    if (settled.agree && settledDrawn.agree) {
+      const aside = unique(settled.setAside.concat(settledDrawn.setAside));
+      const kept = function (row) {
+        log.debug("Entering kept().");
+        log.debug("Leaving kept().");
+        return aside.indexOf(row) < 0;
+      };
+      log.info("the API and the page agree but for " + aside.length +
                " row(s) of realms created during the walk, set aside: " +
-               settled.setAside.join(", "));
-      walkSetAside = settled.setAside;
-      ids = settled.ids;
-      pageIds = settled.pageIds;
+               aside.join(", "));
+      walkSetAside = aside;
+      ids = ids.filter(kept);
+      pageIds = pageIds.filter(kept);
       break;
     }
+    // Which read moved is named, so a log shows whether it was the JSON or
+    // the drawn pages' walk that a reread was for.
     log.info("the API and the page were read while the job list moved " +
-             "(attempt " + attempt + "); reading both again");
+             "(attempt " + attempt + "; " +
+             (settled.agree ? "" : "the page's JSON differs") +
+             (settled.agree || settledDrawn.agree ? "" : ", ") +
+             (settledDrawn.agree ? "" : "the drawn pages differ") +
+             "); reading both again");
     await new Promise(function (resolve) { setTimeout(resolve, 2000); });
   }
   check("the API lists the two jobs P1 moved and the scheduler's own",
