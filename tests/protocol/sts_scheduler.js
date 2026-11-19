@@ -400,8 +400,14 @@ async function thePageAndTheApiAgree(consoleClient) {
       pageIds = pageIds.filter(kept);
       break;
     }
+    // Which read moved is named, so a log shows whether it was the JSON or
+    // the drawn pages' walk that a reread was for.
     log.info("the API and the page were read while the job list moved " +
-             "(attempt " + attempt + "); reading both again");
+             "(attempt " + attempt + "; " +
+             (settled.agree ? "" : "the page's JSON differs") +
+             (settled.agree || settledDrawn.agree ? "" : ", ") +
+             (settledDrawn.agree ? "" : "the drawn pages differ") +
+             "); reading both again");
     await new Promise(function (resolve) { setTimeout(resolve, 2000); });
   }
   check("the API lists the two jobs P1 moved and the scheduler's own",
