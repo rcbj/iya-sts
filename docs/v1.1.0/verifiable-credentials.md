@@ -45,11 +45,15 @@ against it.
 
 ### As an issuer
 
-The issuer offers **five fixed credential configurations** in three formats:
-SD-JWT VC (`dc+sd-jwt`), `jwt_vc_json`, and `ldp_vc` secured with `bbs-2023`.
-`mso_mdoc` is not issued. The configurations are not configurable; what you
-choose is which **claims** they carry, taken from the person's directory
-entry. The issuer metadata is the live list:
+The issuer offers **six fixed credential configurations**. Five are SD-JWT VC
+(`dc+sd-jwt`), `jwt_vc_json`, and `ldp_vc` secured with `bbs-2023`, each also
+named by `did:web` where the table says so. The sixth is an ISO/IEC 18013-5
+mdoc (`mso_mdoc`). The configurations are not configurable. For the five,
+what you choose is which **claims** they carry, taken from the person's
+directory entry. An mdoc carries a fixed map of that entry: given name,
+family name, birth date, document number, and `age_over_NN` where a birth
+date is held, plus the issue date, expiry, country and issuing authority.
+The issuer metadata is the live list:
 
 | Configuration | Format | Scope |
 |---|---|---|
@@ -58,6 +62,7 @@ entry. The issuer metadata is the live list:
 | `IdentityCredentialLdpVc` | `ldp_vc` | `identity_credential_ldp` |
 | `IdentityCredentialDid` | `dc+sd-jwt`, issuer named by `did:web` | `identity_credential_did` |
 | `IdentityCredentialLdpVcDid` | `ldp_vc`, issuer named by `did:web` | `identity_credential_ldp_did` |
+| `IdentityCredentialMdoc` | `mso_mdoc` | `identity_credential_mdoc` |
 
 A wallet collects a credential in one of three ways:
 
@@ -222,8 +227,8 @@ Nothing needs configuring: **Add to your wallet** is on in every realm and in
 both modes.
 
 1. Optionally, choose the claims: on the **Credential claims** tab, tick the
-   attributes and click **Save this selection**. One selection applies to all
-   five configurations.
+   attributes and click **Save this selection**. One selection applies to the
+   five configurations other than the mdoc.
 2. The person signs in to `/portal`, opens **Add to your wallet**, picks a
    credential (*Identity Credential*, `dc+sd-jwt`, is the one most wallets
    hold) and clicks **Make an offer**.
@@ -882,9 +887,10 @@ The OpenID Foundation's HAIP issuer test plan runs against a realm with
 ISO mdoc, `x509_hash`, `direct_post.jwt`, `haip-vp` and a `redirect_uri`
 (see [Conformance suites](conformance.md)).
 
-**Not covered:** `mso_mdoc` is verified and not issued, and the Digital
-Credentials API's unsigned and multi-signed request forms and
-`transaction_data` are not implemented.
+**Not covered:** an mdoc is not carried by the Digital Credentials API, and
+that API's unsigned and multi-signed request forms and `transaction_data`
+are not implemented. An mdoc's Mobile Security Object is not signed with a
+post-quantum COSE algorithm.
 
 ### The credential-signing certificate
 
@@ -1086,8 +1092,8 @@ and the wallet sees the specification's error (`invalid_proof`,
 
 ## Limits and what is not supported
 
-* **`mso_mdoc`** is verified (from a trusted issuer) and not issued, and
-  an mdoc does not sign anybody in.
+* **An mdoc through the Digital Credentials API** is not implemented, and a
+  foreign mdoc does not sign anybody in. One this realm issued does.
 * **DIF Presentation Exchange** is not supported; requests are DCQL.
 * **The five credential configurations are fixed.** Only their claims, signing
   algorithm and binding are configurable.

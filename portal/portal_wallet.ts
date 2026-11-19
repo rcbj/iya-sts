@@ -198,7 +198,10 @@ const ALG_NOTES: Json = {
   'ML-DSA-87-Ed448': ['composite post-quantum',
                       'draft-ietf-jose-pq-composite-sigs'],
   'bbs-2023': ['BBS, selective disclosure',
-               'W3C Data Integrity BBS Cryptosuites v1.0']
+               'W3C Data Integrity BBS Cryptosuites v1.0'],
+  // COSE identifiers an mdoc offer names (#1862).
+  '-7': ['COSE ES256', 'RFC 9053'],
+  '-9': ['COSE ESP256', 'RFC 9864']
 };
 
 const OFFER_FORM = ModelZod.body('account', 'createCredentialOffer');

@@ -44,9 +44,10 @@ The API equivalents of the settings tab are `POST /admin-api/config/set`,
 **The live list of what this issuer offers** is its metadata,
 `/.well-known/openid-credential-issuer` (in a trust realm,
 `/.well-known/openid-credential-issuer/realm/<id>`). Read it rather than a
-copy. It names five configurations in three formats: `dc+sd-jwt`,
-`jwt_vc_json` and `ldp_vc` (with `bbs-2023`). The configurations themselves
-are fixed and are not set anywhere. `mso_mdoc` is not issued.
+copy. It names six configurations: `dc+sd-jwt`, `jwt_vc_json`, `ldp_vc`
+(with `bbs-2023`) and `mso_mdoc`. The configurations themselves are fixed
+and are not set anywhere. An `mso_mdoc` is `IdentityCredentialMdoc`, signed
+with COSE ES256 (`-7`) or ESP256 (`-9`).
 
 ## What development and product mode change
 
@@ -77,7 +78,7 @@ are fixed and are not set anywhere. `mso_mdoc` is not issued.
 
 A credential carries claims chosen from a catalogue of **LDAP attribute
 types**. Each value is read from the person's own directory entry. One
-selection applies to all five configurations, and the issuer metadata is
+selection applies to the five configurations other than the mdoc, and the issuer metadata is
 built from it too. Taken from `admin_api.js`.
 
 **Console:**

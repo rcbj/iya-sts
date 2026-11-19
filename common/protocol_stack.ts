@@ -879,6 +879,12 @@ class ProtocolStack {
     // The register of credentials issued for a directory entry (#38): a
     // library both the issuer and the verifier read, built before either.
     this.build('oid4vc/vc_issued', require('../oid4vc/vc_issued'), 'VcIssued');
+    // #1862: the mdoc issuing authority and the issuer. Libraries, no
+    // routes. Built before the issuer, which reaches both lazily.
+    this.build('oid4vc/mdoc_authority', require('../oid4vc/mdoc_authority'),
+               'MdocAuthority');
+    this.build('oid4vc/vc_mdoc_issue', require('../oid4vc/vc_mdoc_issue'),
+               'VcMdocIssue');
     require('../oid4vc/vc_issuer');
     this.build('oid4vc/vc_issuer', require('../oid4vc/vc_issuer'), 'VcIssuer');
     this.register(app, require('../oid4vc/vc_issuer'), 'oid4vc/vc_issuer');

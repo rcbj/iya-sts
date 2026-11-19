@@ -8458,6 +8458,50 @@ class AdminApi {
       // and `pki.js` is a LIBRARY (rule 3), so there is no route this could
       // move and no cycle it could close.
       // -----------------------------------------------------------------------
+      // THE mdoc ISSUING AUTHORITY (#1862). The certificate
+      // `GET /oid4vci/mdoc-iaca` publishes, and nothing else: no private
+      // key. Minted on the first call, the same way that public read
+      // mints it. Not a field of `GET /admin-api/pki`, whose model is
+      // closed. It sits with the other PKI routes so the served OpenAPI
+      // tag order stays the order the specification declares.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/mdoc-iaca', tag: 'PKI',
+        operationId: 'getMdocIaca',
+        mirrors: 'GET /oid4vci/mdoc-iaca',
+        handler: function (req, res) {
+          log.debug("Entering the management API mdoc IACA endpoint.");
+          const authority = require('../oid4vc/mdoc_authority');
+          const issuer = String(baseUrlOf(req) || '').replace(/\/+$/, '');
+          authority.ensure(helpers.stsKeysFor(), issuer).then(
+            function (held) {
+              const crypto = require('crypto');
+              const cert = new crypto.X509Certificate(held.iacaPem);
+              const subject = String(cert.subject || '')
+                .replace(/\n/g, ', ');
+              self.sendJson(res, 200, {
+                certificatePem: String(held.iacaPem)
+                  .replace(/\s*$/, '') + '\n',
+                subject: subject,
+                notBefore: cert.validFromDate.toISOString(),
+                notAfter: cert.validToDate.toISOString()
+              });
+              log.debug("Leaving the management API mdoc IACA endpoint.");
+            }, function (e) {
+              // ensure() throws only STS-PKI-0288. The code stays off
+              // the body; the public read answers the same sentence.
+              log.debug("Caught in the management API mdoc IACA " +
+                        "endpoint: " + ((e && e.message) || e));
+              log.error(errorCodes.tag('STS-PKI-0288') +
+                        'the mdoc authority could not be minted: ' +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-PKI-0288');
+              res.status(500).type('text/plain')
+                .send('The mdoc authority could not be minted.\n');
+              log.debug("Leaving the management API mdoc IACA " +
+                        "endpoint. Not minted.");
+            });
+        } },
+
       { method: 'GET', path: BASE + '/pki', tag: 'PKI',
         operationId: 'getPki',
         mirrors: 'GET /admin/pki',

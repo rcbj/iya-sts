@@ -181,6 +181,9 @@ interface CwtInput {
   key: any;
   alg: string;
   kid?: string;
+  // The document signer's DER (COSE header 33). When it is set, `kid`
+  // is not: an mdoc's list is found by the chain, not by a JOSE kid.
+  x5chain?: Buffer;
 }
 
 /**
@@ -1037,7 +1040,9 @@ class VcStatusCodec {
     }
     claims.set(65533, this.tslCborMap(input));
     const unprotectedHeader = new Map<number, unknown>();
-    if (input.kid) {
+    if (Buffer.isBuffer(input.x5chain)) {
+      unprotectedHeader.set(33, input.x5chain);
+    } else if (input.kid) {
       unprotectedHeader.set(4, Buffer.from(String(input.kid), 'utf8'));
     }
     log.debug("Leaving VcStatusCodec.cwtInput().");

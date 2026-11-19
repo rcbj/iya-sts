@@ -282,6 +282,34 @@ Scope: `admin:read`.
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 
+## GET /admin-api/mdoc-iaca
+
+`getMdocIaca`
+
+**This realm's mdoc Issuing Authority CA**
+
+`certificatePem` is the Issuing Authority CA only. No private key is returned. The authority is minted on the first call, and the certificate is the one `GET /oid4vci/mdoc-iaca` publishes.
+
+**Mirrors** `GET /oid4vci/mdoc-iaca`.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The Issuing Authority CA.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificatePem` | string | yes |  |
+| `notAfter` | string | yes |  |
+| `notBefore` | string | yes |  |
+| `subject` | string | yes |  |
+
 ## GET /admin-api/pki
 
 `getPki`

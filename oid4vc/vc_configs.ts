@@ -146,6 +146,16 @@ VCI_CONFIGS[VCI_LDP_DID_CONFIG_ID] =
   { format: 'ldp_vc', scope: VCI_LDP_DID_SCOPE, issuerDid: true,
     basedOn: VCI_LDP_CONFIG_ID };
 
+// An ISO mdoc (#1862). No `basedOn`: it is not a clone of a JOSE
+// configuration, and a DID binding would replace the cose_key the
+// format requires. Holder binding stays `key` even if this id is named
+// in oid4vci.didHolderBinding.
+const VCI_MDOC_CONFIG_ID = 'IdentityCredentialMdoc';
+
+const VCI_MDOC_SCOPE = 'identity_credential_mdoc';
+VCI_CONFIGS[VCI_MDOC_CONFIG_ID] =
+  { format: 'mso_mdoc', scope: VCI_MDOC_SCOPE };
+
 /**
  * Every credential this issuer offers, by `credential_configuration_id`: the
  * one list the credential endpoint, `authorization_details`, the offer builder,
@@ -207,6 +217,14 @@ class VcConfigs {
    * The scope that requests the `did:web` `ldp_vc` credential.
    */
   static readonly VCI_LDP_DID_SCOPE = VCI_LDP_DID_SCOPE;
+  /**
+   * The `mso_mdoc` configuration's id (#1862).
+   */
+  static readonly VCI_MDOC_CONFIG_ID = VCI_MDOC_CONFIG_ID;
+  /**
+   * The scope that requests the `mso_mdoc` credential.
+   */
+  static readonly VCI_MDOC_SCOPE = VCI_MDOC_SCOPE;
   /**
    * The W3C Verifiable Credentials v1 `@context`.
    */
@@ -348,9 +366,17 @@ class VcConfigs {
   vciHolderBindingOf(configId: string): string {
     const { log, config } = this.deps;
     log.debug("Entering VcConfigs.vciHolderBindingOf().");
+    const c = VCI_CONFIGS[configId];
+    // An mdoc is bound to the COSE key in the Mobile Security Object
+    // (#1862). Naming the configuration in oid4vci.didHolderBinding
+    // does not replace that with a DID.
+    if (c && c.format === 'mso_mdoc') {
+      log.debug("Leaving VcConfigs.vciHolderBindingOf(). key (mdoc).");
+      return HOLDER_BINDING_KEY;
+    }
     const named = [].concat(config.value('oid4vci.didHolderBinding') || [])
       .map(String);
-    const out = VCI_CONFIGS[configId] && named.indexOf(configId) >= 0
+    const out = c && named.indexOf(configId) >= 0
       ? HOLDER_BINDING_DID : HOLDER_BINDING_KEY;
     log.debug("Leaving VcConfigs.vciHolderBindingOf(). " + out);
     return out;
@@ -389,6 +415,13 @@ class VcConfigs {
     if (!c) {
       log.debug("Leaving VcConfigs.vciSigningAlgsFor(). Unknown.");
       return [];
+    }
+    if (c.format === 'mso_mdoc') {
+      // COSE algorithm identifiers, as strings (#1862). The metadata
+      // publishes them as numbers. Proof of the holder stays a JWT,
+      // ES256 only, so the wallet sends a P-256 key.
+      log.debug("Leaving VcConfigs.vciSigningAlgsFor(). COSE -7 and -9.");
+      return ['-7', '-9'];
     }
     if (c.format === 'ldp_vc') {
       // A realm on the pre-1.1 format (`oid4vc.bbs2023LegacyFormat`, #1878)
@@ -497,6 +530,8 @@ export = {
   VCI_DID_SCOPE: VcConfigs.VCI_DID_SCOPE,
   VCI_LDP_DID_CONFIG_ID: VcConfigs.VCI_LDP_DID_CONFIG_ID,
   VCI_LDP_DID_SCOPE: VcConfigs.VCI_LDP_DID_SCOPE,
+  VCI_MDOC_CONFIG_ID: VcConfigs.VCI_MDOC_CONFIG_ID,
+  VCI_MDOC_SCOPE: VcConfigs.VCI_MDOC_SCOPE,
   VC_CONTEXT: VcConfigs.VC_CONTEXT,
   VCI_CONFIGS: VcConfigs.VCI_CONFIGS,
   vciConfigIds: slot.forward('vciConfigIds'),
