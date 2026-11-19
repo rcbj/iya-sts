@@ -6188,8 +6188,56 @@
     "text": "Algorithm na ipinipirma sa mga credential"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito. Tinatanggihan dito ng oid4vc.walletCompatibility ang post-quantum o composite."
+    "en": "3ed3ccddb91c589b",
+    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito. Tinatanggihan dito ng oid4vc.walletCompatibility ang post-quantum o composite. Ang mso_mdoc ay pinipirmahan gamit ang COSE ES256 (-7) o ESP256 (-9), hindi gamit ang algorithm na ito."
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "Uri ng mdoc document"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "Ang docType ng mso_mdoc na ini-issue ng realm na ito (ISO/IEC 18013-5). Ang parehong uri ang hinihingi ng wallet sign-in. Gumagamit ang standalone endpoint ng verifier ng oid4vp.expectedDoctype, na pareho ang default."
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "Namespace ng data ng mdoc"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "Ang namespace kung saan pinangangalanan ang mga element ng na-issue na mdoc. Humihingi ang sign-in ng issuing_authority sa namespace na ito. Gumagamit ang standalone endpoint ng verifier ng oid4vp.mdocNamespace, na pareho ang default."
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "Bisa ng mdoc (mga araw)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "Ilang araw ang saklaw ng validityInfo ng na-issue na mdoc, mula sa sandaling pinirmahan ito. Mas maikli ang certificate ng document signer kaysa sa Issuing Authority CA at maaaring matapos bago ang window na ito; sinusuri ng verifier ang oras ng pirma laban sa certificate, hindi sa expiry ng dokumento."
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "Mga age-over threshold ng mdoc"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "Ang mga age_over_NN boolean na dala ng mdoc kapag may petsa ng kapanganakan ang tao, bilang buong taon. Kinakalkula mula sa petsa ng kapanganakan. Hindi nag-iimbento ng portrait at driving privileges."
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "Bansang nag-issue ng mdoc"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "Ang ISO 3166-1 alpha-2 na bansang pinangangalanan ng subject ng Issuing Authority CA, at ang issuing_country element ng bawat mdoc. Dalawang titik."
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "Issuing authority ng mdoc"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "Ang pangalan sa common name ng Issuing Authority CA at ang issuing_authority element ng bawat mdoc. Hinihingi ng wallet sign-in ang element na ito, na laging naroon."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6716,24 +6764,24 @@
     "text": "Mga pinagkakatiwalaang mdoc issuing authority (mga IACA certificate, PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "Mga PEM certificate, pinagdugtong: ang mga Issuing Authority CA certificate (ISO/IEC 18013-5 Annex B) na dapat pag-chain-an ng document signer certificate ng ipinakitang mdoc. Binubuo at sinusuri ang chain ayon sa RFC 5280, kinokonsulta ang revocation ng document signer (pki.revocationCheck), at tinatanggihan ang mdoc na ang signer ay hindi naka-chain sa alinman sa mga ito. Walang laman — ang default — ay walang pinagkakatiwalaang mdoc issuer, kaya tinatanggihan ang mso_mdoc presentation hanggang may mapangalanan."
+    "en": "725416403bc17a75",
+    "text": "Mga PEM certificate, pinagdugtong: ang mga Issuing Authority CA certificate (ISO/IEC 18013-5 Annex B) na dapat pag-chain-an ng document signer certificate ng ipinakitang mdoc. Binubuo at sinusuri ang chain ayon sa RFC 5280, kinokonsulta ang revocation ng document signer (pki.revocationCheck), at tinatanggihan ang mdoc na ang signer ay hindi naka-chain sa alinman sa mga ito. Walang laman — ang default — ay walang pinagkakatiwalaang mdoc issuer maliban sa sariling Issuing Authority CA ng realm na ito, kapag na-mint na ito (GET /oid4vci/mdoc-iaca)."
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "Inaasahang mdoc document type (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "Ang `docType` na hinihingi ng mso_mdoc request (`meta.doctype_value`) at kinakailangan ng Verifier sa ipinakitang dokumento at sa Mobile Security Object nito. Ang default ay ang mobile driving licence ng ISO/IEC 18013-5."
+    "en": "dcb6e8f85158b0a1",
+    "text": "Ang `docType` na hinihingi ng mso_mdoc request (`meta.doctype_value`) at kinakailangan ng Verifier sa ipinakitang dokumento at sa Mobile Security Object nito. Ang default ay ang uri na ini-issue ng realm na ito (oid4vci.mdocDoctype). Ang ISO mobile driving licence ay org.iso.18013.5.1.mDL, itinatakda rito at sa issuer."
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "mdoc namespace na pinagbabasahan ng mga hinihinging claim"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "Ang namespace na pinangangalanan ng mga claim path ng mso_mdoc request (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). Hinihingi ang bawat claim bilang data element na may parehong pangalan, maliban sa birthdate (birth_date) at address (resident_address), na iba ang pangalan sa ISO/IEC 18013-5. Ang default ay sa mobile driving licence."
+    "en": "0ad347251f9b7a85",
+    "text": "Ang namespace na pinangangalanan ng mga claim path ng mso_mdoc request (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). Hinihingi ang bawat claim bilang data element na may parehong pangalan, maliban sa birthdate (birth_date) at address (resident_address), na iba ang pangalan sa ISO/IEC 18013-5. Ang default ay ang namespace kung saan nag-i-issue ang realm na ito (oid4vci.mdocNamespace)."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6796,8 +6844,8 @@
     "text": "Mga credential format ng wallet sign-in"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "Ang mga credential format na hinihingi ng wallet sign-in, ayon sa pagkakasunod ng kagustuhan: isang DCQL credential query bawat isa, at isang credential set na nagsasabing puwede ang alinman. Ang bawat isa ay nagsa-sign in lang kapag may sariwang holder proof — isang Key Binding JWT, VP JWT, o Data Integrity proof — para sa request na ito. Hindi pinapansin ang mga hindi kilalang pangalan; kung wala talaga, lahat ng tatlo. Ang wallet na sumasagot lang sa unang query na nababasa nito ay sasagot sa unang format dito."
+    "en": "53a49b652b8fa682",
+    "text": "Ang mga credential format na hinihingi ng wallet sign-in, ayon sa pagkakasunod ng kagustuhan: isang DCQL credential query bawat isa, at isang credential set na nagsasabing puwede ang alinman. Ang bawat isa ay nagsa-sign in lang kapag may sariwang holder proof — isang Key Binding JWT, VP JWT, Data Integrity proof, o mdoc device signature — para sa request na ito. Hindi pinapansin ang mga hindi kilalang pangalan; kung wala talaga, lahat ng apat. Ang wallet na sumasagot lang sa unang query na nababasa nito ay sasagot sa unang format dito. Nagsa-sign in lang ang mso_mdoc kapag in-issue ito ng realm na ito."
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",

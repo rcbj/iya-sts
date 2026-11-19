@@ -332,8 +332,8 @@
     "text": "full（#124，併入了 #115，2026-09-23）：end_session_endpoint 回應 GET 與 POST；請求在工作階段結束前驗證；id_token_hint 會被驗證為此授權伺服器所簽發的 ID Token（如第 2 節所允許，接受已過期者），其對象為該客戶端，指名不是它所簽發對象的 client_id 會被拒絕；會請終端用戶確認——一個具備真正按鈕且不含腳本的頁面——除非提示指名的是此工作階段，且任何 logout_hint 也指名該用戶；post_logout_redirect_uri 只有在與客戶端已註冊清單精確相符時才會跟隨，在每種模式下皆然（開發模式對未註冊任何 URI 的客戶端仍會跟隨；產品模式與 OAuth 2.1 模式則不會），並傳回 state。接受 ui_locales，而每個頁面都是英文，這是本服務唯一的語言。前端通道與後端通道登出各有其專屬列。作為「依賴方」（#167）：/logout 的登出會提供聯盟夥伴的 end_session_endpoint，附 id_token_hint、client_id、post_logout_redirect_uri 與 state，返回則在 /federation/slo/{id} 比對。"
   },
   "stsmetadata.specs.oid4vci.coverage": {
-    "en": "9ec03ba02c69a7ce",
-    "text": "partial 但範圍廣泛：簽發者元數據、nonce、持有證明、批次簽發、延遲簽發、Credential Offer（附錄 H.1/H.2/H.3）、帶有 tx_code 的預先授權碼授權類型、credential_identifiers、請求與回應加密（第 10 節），以及通知端點（第 11 節）。jwt 證明標頭中的金鑰證明（附錄 D），以及作為 attestation 證明類型的金鑰證明，依已設定的憑證驗證；每個認證都有狀態清單；以後量子演算法簽署的認證。沒有錢包證明（附錄 E）。"
+    "en": "15dc78bbb604ec84",
+    "text": "partial 但範圍廣泛：簽發者元數據、nonce、持有證明、批次簽發、延遲簽發、Credential Offer（附錄 H.1/H.2/H.3）、帶有 tx_code 的預先授權碼授權類型、credential_identifiers、請求與回應加密（第 10 節），以及通知端點（第 11 節）。jwt 證明標頭中的金鑰證明（附錄 D），以及作為 attestation 證明類型的金鑰證明，依已設定的憑證驗證；每個認證都有狀態清單；以後量子演算法簽署的認證。簽發 mso_mdoc（IdentityCredentialMdoc，#1862）：COSE ES256（-7）或 ESP256（-9），證明仍為 ES256 的 jwt。沒有錢包證明（附錄 E）。"
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -364,8 +364,8 @@
     "text": "full：針對 P-256（第 3.5.8 節規定衍生證明使用的曲線）：含強制指標的基礎證明、由任意選擇性指標產生的衍生證明，以及它們的驗證（#196）——由規格本身的基礎證明所衍生的證明與其測試向量逐位元組相同，而由 Digital Bazaar 程式庫衍生的證明可在此驗證，反之亦然。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "b7932392e5841ca6",
-    "text": "partial：每個領域一份清單，每個憑證兩個位元（VALID、INVALID、SUSPENDED），依 Accept 以 JWT 與 CWT 形式的 Status List Token 提供，含 ttl 與 exp、一個彙總端點，以及每個 SD-JWT VC 與 jwt_vc_json 憑證中的 status 宣告；Verifier 會解析受信任外部簽發者的清單，無法做出陳述時即拒絕。另外每個領域還有第二份針對存取權杖的清單（#432）：每個權杖一個位元，每個 OAuth RFC 9068 存取權杖以及每個 GNAP jwt-signed 與 jwt-encrypted 權杖都攜帶其 status 宣告，並在授權伺服器元數據中以 status_list_aggregation_endpoint（第 9.1 節）公告。不支援歷史解析（501）、不追隨重新導向。未簽發任何 mdoc；Verifier 會解析出示之 mdoc 的 Mobile Security Object 所指名的 CWT 清單，該清單由其 x5chain 中鏈結至 oid4vp.mdocTrustAnchors 的憑證簽署（#935）。"
+    "en": "1159352758ad21d3",
+    "text": "partial：每個領域一份清單，每個憑證兩個位元（VALID、INVALID、SUSPENDED），依 Accept 以 JWT 與 CWT 形式的 Status List Token 提供，含 ttl 與 exp、一個彙總端點，以及每個 SD-JWT VC 與 jwt_vc_json 憑證中的 status 宣告；Verifier 會解析受信任外部簽發者的清單，無法做出陳述時即拒絕。另外每個領域還有第二份針對存取權杖的清單（#432）：每個權杖一個位元，每個 OAuth RFC 9068 存取權杖以及每個 GNAP jwt-signed 與 jwt-encrypted 權杖都攜帶其 status 宣告，並在授權伺服器元數據中以 status_list_aggregation_endpoint（第 9.1 節）公告。不支援歷史解析（501）、不追隨重新導向。已簽發的 mdoc 指名位於 /oid4vci/status-lists/mdoc 的 CWT，由文件簽署者以 x5chain 簽署（#1862）。Verifier 依據 oid4vp.mdocTrustAnchors 以及此領域已產生的 IACA 解析出示之 mdoc 的 CWT（#935）。"
   },
   "stsmetadata.specs.rdf-c14n.coverage": {
     "en": "8d11604b164ce238",

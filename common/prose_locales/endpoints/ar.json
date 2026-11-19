@@ -819,6 +819,10 @@
     "en": "02bd417f55c9790f",
     "text": "تصدير زوج مفاتيح، أو تدوير مفاتيح التوقيع"
   },
+  "endpoints.route./admin-api/mdoc-iaca.name": {
+    "en": "2a0f7fa3f4260418",
+    "text": "CA السلطة المُصدِرة لـ mdoc الخاصة بنطاق الثقة هذا"
+  },
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "سلطة الشهادات التي يحتفظ بها نطاق الثقة هذا"
@@ -2210,6 +2214,14 @@
   "endpoints.route./oid4vci/status-lists/1.name": {
     "en": "6bc2372d3bb214c3",
     "text": "قائمة حالة الرمز"
+  },
+  "endpoints.route./oid4vci/status-lists/mdoc.name": {
+    "en": "0f85cae8f7648bb1",
+    "text": "قائمة حالة الرمز لـ mdoc"
+  },
+  "endpoints.route./oid4vci/mdoc-iaca.name": {
+    "en": "005a19a028c1adc0",
+    "text": "CA السلطة المُصدِرة لـ mdoc"
   },
   "endpoints.route./oid4vci/status-lists.name": {
     "en": "b7c39aa8efc43f99",

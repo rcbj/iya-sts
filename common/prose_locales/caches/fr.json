@@ -1020,8 +1020,8 @@
     "text": "Registre des connexions par portefeuille"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "Les justificatifs que ce domaine a émis pour une personne sur la base d’un jeton d’accès qu’il a vérifié, qui sont les seuls avec lesquels un portefeuille peut se connecter — indexés par un condensé du JWT signé par l’émetteur, ou pour ldp_vc par la clé du détenteur et la personne."
+    "en": "979c99c562007a1c",
+    "text": "Les justificatifs que ce domaine a émis pour une personne sur la base d’un jeton d’accès qu’il a vérifié, qui sont les seuls avec lesquels un portefeuille peut se connecter — indexés par un condensé du JWT signé par l’émetteur (pour un mdoc, de la charge utile d’issuerAuth), ou pour ldp_vc par la clé du détenteur et la personne."
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",
@@ -1607,6 +1607,22 @@
     "en": "6ba64c6240c222a0",
     "text": "Aucune expiration : indexé par contenu, une politique modifiée est donc une nouvelle entrée et son ancienne analyse part lorsqu’elle devient la moins récemment utilisée."
   },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "Tickets Basic des PEP distants"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "Les tickets qu’un POST /xacml/pep/basic valide a remis à un PEP distant, rangés sous le SHA-256 de chacun ; le ticket lui-même n’est pas stocké."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "Appliqué : 10000 par royaume, le plus ancien abandonné ; le PEP valide de nouveau l’identifiant Basic."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "un ticket a été trouvé par son condensé"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Un cache borné dans l’ordre du moins récemment utilisé."
@@ -1694,21 +1710,5 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "périmé : le justificatif a été désavoué"
-  },
-  "caches.store.xacml.pep-tickets.title": {
-    "en": "d8dab9277ae943e0",
-    "text": "Tickets Basic des PEP distants"
-  },
-  "caches.store.xacml.pep-tickets.description": {
-    "en": "1cdd4ca49053b643",
-    "text": "Les tickets qu’un POST /xacml/pep/basic valide a remis à un PEP distant, rangés sous le SHA-256 de chacun ; le ticket lui-même n’est pas stocké."
-  },
-  "caches.store.xacml.pep-tickets.bound": {
-    "en": "4dead9c8be3539ac",
-    "text": "Appliqué : 10000 par royaume, le plus ancien abandonné ; le PEP valide de nouveau l’identifiant Basic."
-  },
-  "caches.store.xacml.pep-tickets.hitMeaning": {
-    "en": "484401484f6f539d",
-    "text": "un ticket a été trouvé par son condensé"
   }
 }

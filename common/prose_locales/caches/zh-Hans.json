@@ -1020,8 +1020,8 @@
     "text": "钱包登录注册表"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "本领域基于其验证过的访问令牌为某人签发的凭据，只有这些凭据可以用于钱包登录——以颁发者签名的 JWT 的摘要为键，对于 ldp_vc 则以持有者密钥和该人为键。"
+    "en": "979c99c562007a1c",
+    "text": "本领域基于其验证过的访问令牌为某人签发的凭据，只有这些凭据可以用于钱包登录——以颁发者签名的 JWT 的摘要（对于 mdoc，则为 issuerAuth 载荷的摘要）为键，对于 ldp_vc 则以持有者密钥和该人为键。"
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",
@@ -1607,6 +1607,22 @@
     "en": "6ba64c6240c222a0",
     "text": "不过期：以内容为键，因此编辑过的策略是新条目，其旧的解析结果在成为最近最少使用者时被移除。"
   },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "远程 PEP 的 Basic 票据"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "有效的 POST /xacml/pep/basic 交给远程 PEP 的票据，按各自的 SHA-256 保存；票据本身不存储。"
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "强制执行：每个领域 10000 个，丢弃最旧的；PEP 会再次验证 Basic 凭据。"
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "按摘要找到了一个票据"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "按最近最少使用顺序排列的有界缓存。"
@@ -1694,21 +1710,5 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已过时：该凭据已被否认"
-  },
-  "caches.store.xacml.pep-tickets.title": {
-    "en": "d8dab9277ae943e0",
-    "text": "远程 PEP 的 Basic 票据"
-  },
-  "caches.store.xacml.pep-tickets.description": {
-    "en": "1cdd4ca49053b643",
-    "text": "有效的 POST /xacml/pep/basic 交给远程 PEP 的票据，按各自的 SHA-256 保存；票据本身不存储。"
-  },
-  "caches.store.xacml.pep-tickets.bound": {
-    "en": "4dead9c8be3539ac",
-    "text": "强制执行：每个领域 10000 个，丢弃最旧的；PEP 会再次验证 Basic 凭据。"
-  },
-  "caches.store.xacml.pep-tickets.hitMeaning": {
-    "en": "484401484f6f539d",
-    "text": "按摘要找到了一个票据"
   }
 }

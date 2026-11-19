@@ -227,7 +227,7 @@ async function run(t) {
     t.check(one.translatorFor(undefined) === null &&
             one.translatorFor('') === null &&
             one.translatorFor('en-GB') === null &&
-            one.translatorFor('de') === null,
+            one.translatorFor('ja') === null,
             'D. no language named, or only English answering, translates ' +
             'nothing');
     const fr = one.translatorFor('fr-FR, en;q=0.5');

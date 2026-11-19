@@ -1020,8 +1020,8 @@
     "text": "Register för plånboksinloggning"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "De verifierbara intyg som den här sfären utfärdade för en person på en åtkomsttoken som den verifierade, vilka är de enda en plånbok får logga in med — med en sammanfattning av den utfärdarsignerade JWT:n som nyckel, eller för ldp_vc innehavarnyckeln och personen."
+    "en": "979c99c562007a1c",
+    "text": "De verifierbara intyg som den här sfären utfärdade för en person på en åtkomsttoken som den verifierade, vilka är de enda en plånbok får logga in med — med en sammanfattning av den utfärdarsignerade JWT:n (för ett mdoc, av issuerAuth:s nyttolast) som nyckel, eller för ldp_vc innehavarnyckeln och personen."
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",
@@ -1607,6 +1607,22 @@
     "en": "6ba64c6240c222a0",
     "text": "Ingen utgång: nyckeln är innehållet, så en redigerad policy är en ny post och dess gamla tolkning försvinner när den är den minst nyligen använda."
   },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "Basic-biljetter för fjärr-PEP"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "Biljetterna som ett giltigt POST /xacml/pep/basic gav en fjärr-PEP, lagrade under SHA-256 för var och en; själva biljetten lagras inte."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "Tillämpas: 10000 per realm, den äldsta tas bort; PEP:en validerar Basic-uppgifterna igen."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "en biljett hittades via sitt kontrollvärde"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Ett begränsat cacheminne i ordningen minst nyligen använd."
@@ -1694,21 +1710,5 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "inaktuell: credentialet har frånsagts"
-  },
-  "caches.store.xacml.pep-tickets.title": {
-    "en": "d8dab9277ae943e0",
-    "text": "Basic-biljetter för fjärr-PEP"
-  },
-  "caches.store.xacml.pep-tickets.description": {
-    "en": "1cdd4ca49053b643",
-    "text": "Biljetterna som ett giltigt POST /xacml/pep/basic gav en fjärr-PEP, lagrade under SHA-256 för var och en; själva biljetten lagras inte."
-  },
-  "caches.store.xacml.pep-tickets.bound": {
-    "en": "4dead9c8be3539ac",
-    "text": "Tillämpas: 10000 per realm, den äldsta tas bort; PEP:en validerar Basic-uppgifterna igen."
-  },
-  "caches.store.xacml.pep-tickets.hitMeaning": {
-    "en": "484401484f6f539d",
-    "text": "en biljett hittades via sitt kontrollvärde"
   }
 }

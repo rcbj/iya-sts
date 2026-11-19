@@ -1020,8 +1020,8 @@
     "text": "錢包登入登錄"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "此領域根據其已驗證的存取權杖為某人簽發的憑證，這些是錢包唯一可用來登入的憑證——以簽發者簽署之 JWT 的摘要為鍵，若為 ldp_vc 則以持有者金鑰與該人為鍵。"
+    "en": "979c99c562007a1c",
+    "text": "此領域根據其已驗證的存取權杖為某人簽發的憑證，這些是錢包唯一可用來登入的憑證——以簽發者簽署之 JWT 的摘要（若為 mdoc，則為 issuerAuth 酬載的摘要）為鍵，若為 ldp_vc 則以持有者金鑰與該人為鍵。"
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",
@@ -1607,6 +1607,22 @@
     "en": "6ba64c6240c222a0",
     "text": "不會過期：以內容為鍵，因此編輯過的原則是新項目，其舊的剖析結果在成為最久未使用者時移除。"
   },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "遠端 PEP 的 Basic 票證"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "有效的 POST /xacml/pep/basic 交給遠端 PEP 的票證，依各自的 SHA-256 保存；票證本身不儲存。"
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "強制執行：每個領域 10000 個，捨棄最舊的；PEP 會再次驗證 Basic 認證。"
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "依摘要找到了一個票證"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "依最近最少使用順序排列的有上限快取。"
@@ -1694,21 +1710,5 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已失效：該認證資料已被否認"
-  },
-  "caches.store.xacml.pep-tickets.title": {
-    "en": "d8dab9277ae943e0",
-    "text": "遠端 PEP 的 Basic 票證"
-  },
-  "caches.store.xacml.pep-tickets.description": {
-    "en": "1cdd4ca49053b643",
-    "text": "有效的 POST /xacml/pep/basic 交給遠端 PEP 的票證，依各自的 SHA-256 保存；票證本身不儲存。"
-  },
-  "caches.store.xacml.pep-tickets.bound": {
-    "en": "4dead9c8be3539ac",
-    "text": "強制執行：每個領域 10000 個，捨棄最舊的；PEP 會再次驗證 Basic 認證。"
-  },
-  "caches.store.xacml.pep-tickets.hitMeaning": {
-    "en": "484401484f6f539d",
-    "text": "依摘要找到了一個票證"
   }
 }
