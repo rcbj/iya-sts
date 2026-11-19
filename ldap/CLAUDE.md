@@ -1705,6 +1705,18 @@ fills attributes that are ABSENT and never replaces one, and `uid` is among the
 attributes it can fill. Any other shape of write must still leave the version
 behind. Flat at 0.05ms after.
 
+**`applyEntry()` broke that precondition until CI run #532 (2026-11-19).** It
+called `noteUsernameIndexRefresh()` for a row from another process, and such
+a row can REMOVE a name — a pseudonym taken off, a `uid` changed. The old name
+stayed in the index pointing at the entry, the index was stamped current, and
+that worker signed the address in as its former owner for as long as nothing
+else made it rebuild (`sts_pseudonyms` step 9, product mode). It shows only
+where a process holds the directory whole and resolves names through this
+index — every MariaDB process, since a window needs PostgreSQL's bridge; a
+windowed worker asks the store (`byName`). `applyEntry()` now reads the names
+of the entry it replaces and calls `noteUsernameIndexPut()`, as a local
+overwrite and `commitPseudonymChange()` do. `tests/pseudonym_index.js` 6.
+
 ### And under it was a third one, in the GROUP index, on the same door
 
 With the create flat at 0.05ms the SCIM door was still growing — 11.1ms at the
