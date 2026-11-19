@@ -631,19 +631,12 @@ switch on and no recipient, the fault is `STS-WSTRUST-0076`. An empty map,
 an expression that matches nothing, or a cipher that fails is
 `STS-WSTRUST-0077`.
 
-A `UsernameToken` with the certificate beside the signature is the shape
-`sts_xml_schema_validation.js` sends. Point
-`wstrustResponseRecipientXPath` at that element when the header is not a
-signature this service accepts:
-
-```xml
-<wsse:Security xmlns:wsse="…">
-  <wsse:UsernameToken>…</wsse:UsernameToken>
-  <ds:X509Data xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
-    <ds:X509Certificate>MIIC…</ds:X509Certificate>
-  </ds:X509Data>
-</wsse:Security>
-```
+`wstrustResponseRecipientXPath` may select only a certificate the
+request's accepted WS-Security signature vouches for: the signer's own
+`BinarySecurityToken`, or a certificate inside a part the signature
+references. Anything else, and anything in an unsigned request, is
+`wst:InvalidRequest` (`STS-WSTRUST-0081`). For a requester that does not
+sign, set `wstrustEncryptionCertificate` instead.
 
 ```bash
 curl -sk -X POST "$BASE/sts" -H 'content-type: application/soap+xml' --data-binary @rst.xml
@@ -658,15 +651,28 @@ may encrypt. A certificate with no `keyUsage` may encrypt (RFC 5280).
 
 ## An encrypted request
 
-A client may encrypt any header or the Body, and needs no switch for it:
-whatever arrives encrypted to this realm's certificate (`GET /sts/cert`) is
-opened. That includes the shapes WSS4J, WCF and Metro send under the WSDL's
-`sp:AsymmetricBinding` ([the metadata document](ws-trust.md#the-metadata-document)):
-the Body's content, a WS-Security 1.1 `EncryptedHeader`, and one
-`EncryptedKey` in the security header listing them. The signature may be
-made before or after the encryption. The WSDL offers request encryption only
-in a realm that reads AES-256-CBC, so not in product mode, where a client
-encrypts with AES-GCM by configuration rather than from the policy.
+Encrypting a request is off until it is turned on. With
+`wstrust.acceptEncryptedElements` (the application's
+`wstrustAcceptEncryptedElements`) on, a client may encrypt any header or the
+Body to this realm's XML Encryption certificate, which the WSDL carries as
+each port's endpoint identity. That includes the shapes WSS4J, WCF and
+Metro send under the WSDL's `sp:AsymmetricBinding`
+([the metadata document](ws-trust.md#the-metadata-document)): the Body's
+content, a WS-Security 1.1 `EncryptedHeader`, and one `EncryptedKey` in the
+security header listing them. The signature may be made before or after
+the encryption.
+
+```bash
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustAcceptEncryptedElements","value":"true"}'
+```
+
+Off, ciphertext is accepted only where the application's
+`wstrustEncryptRequestElements` names it, and anything else is
+`wst:InvalidRequest` (`STS-WSTRUST-0080`). The WSDL offers request
+encryption only while the service-wide setting is on: under
+`sp:Basic256Sha256` where AES-256-CBC is read (never in product), and on
+the `IyaSuite` ports, with AES-256-GCM and RSA-OAEP over SHA-256, in both
+modes.
 
 The request map makes encryption required.
 `wstrustEncryptRequest` and `wstrustEncryptRequestElements` require each

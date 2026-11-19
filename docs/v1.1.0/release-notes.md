@@ -442,23 +442,39 @@ own attributes.
   or inside one. A clear match, a miss, or a decrypt that fails is
   `wsse:FailedCheck` (`STS-WSTRUST-0075`), WS-Security 1.1's code. Development mode no longer
   answers in clear when encryption was required and could not be done.
-* **Request encryption is optional on the wire.** Whatever arrives
-  encrypted to this realm is opened, with or without a switch: an
-  `EncryptedData` of type Element or Content, a WS-Security 1.1
-  `EncryptedHeader`, its key in its own `KeyInfo` or in an `EncryptedKey`
-  in the security header that lists it. The `AppliesTo` is read from the
-  opened request. A signature is verified in the order the security
-  header gives, so a request signed before it was encrypted verifies, and
-  what opens outside the signed Body is `STS-WSTRUST-0046` in product.
+* **Arbitrary ciphertext is a setting, off by default.** With
+  `wstrust.acceptEncryptedElements` (an application's
+  `wstrustAcceptEncryptedElements`) on, an encrypted element anywhere in a
+  request is opened: an `EncryptedData` of type Element or Content, a
+  WS-Security 1.1 `EncryptedHeader`, its key in its own `KeyInfo` or in an
+  `EncryptedKey` in the security header that lists it. Off, ciphertext is
+  accepted only where the request map names it, and anything else is
+  `STS-WSTRUST-0080`. A ciphertext must open with this realm's keys either
+  way. A signature is verified in the order the security header gives, so
+  a request signed before it was encrypted verifies, and what opens outside
+  the signed Body is `STS-WSTRUST-0046` in product.
+* **A map's prefixes are the service's.** `wst`, `wsa`, `saml` and the
+  rest mean what [WS-Trust](ws-trust.md#xml-encryption) lists, whatever the
+  request declares.
+* **An encrypted answer announces itself.** Its `EncryptedKey` and
+  `ReferenceList` are in a `wsse:Security` header, so WSS4J and WCF decrypt
+  it in their own security processing.
+* **A recipient expression selects only what the signature covers.** The
+  certificate `wstrustResponseRecipientXPath` selects must be the signer's
+  own token or inside a part the accepted signature references, or the
+  request is `STS-WSTRUST-0081`.
 * **The WSDL describes it** ([the metadata document](ws-trust.md#the-metadata-document)).
-  The message signature is an `sp:AsymmetricBinding` with
-  `sp:Basic256Sha256`, its `RecipientToken` the certificate at
-  `/sts/cert`. Every input may sign every header and the Body, and, in a
-  realm that reads AES-256-CBC, encrypt the Body and any header. An output
-  may be encrypted only where the service-wide cipher is that suite's.
-  Each choice is optional. An `sp:IssuedToken` now carries the nested
-  `wsp:Policy` WS-SecurityPolicy requires; without it Apache CXF would not
-  load the WSDL.
+  The message signature is an `sp:AsymmetricBinding` under
+  `sp:Basic256Sha256` on the eight ports, and under this service's own
+  suite, `urn:iya-sts:ws-securitypolicy:algorithm-suite:1`
+  `Basic256GcmRsaOaepSha256` (AES-256-GCM, RSA-OAEP over SHA-256,
+  RSA-SHA256), on eight more `IyaSuite` ports. Every port carries the
+  realm's encryption certificate as its endpoint identity. A request may
+  sign every header and the Body, and may be encrypted where the realm
+  accepts it under the port's suite; an answer may be encrypted where the
+  service-wide cipher is that suite's. Each choice is optional. An
+  `sp:IssuedToken` now carries the nested `wsp:Policy` WS-SecurityPolicy
+  requires; without it Apache CXF would not load the WSDL.
 * **An RST may name a cipher only inside the application's policy.**
   Absent `wst:EncryptionAlgorithm` and `wst:EncryptWith`, the
   application's settings are used as they stand. Either element may name

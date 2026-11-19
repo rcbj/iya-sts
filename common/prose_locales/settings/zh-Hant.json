@@ -5716,8 +5716,16 @@
     "text": "要求請求中被點名的元素已加密"
   },
   "wstrust.encryptRequest|description": {
-    "en": "c969f465f8a7e1bf",
-    "text": "AppliesTo 未點名自身應用程式的 RequestSecurityToken 是否必須帶著已加密的 wstrustEncryptRequestElements 元素到達。對於 AppliesTo 點名某應用程式的請求，該應用程式的 wstrustEncryptRequest 會覆寫此設定。無論此設定開啟與否，凡是加密給本領域的內容都會被開啟，AppliesTo 從開啟後的請求中讀取。開啟時，若對應為空，或某個運算式符合以明文到達的元素或未符合任何被還原的內容，該請求即為 wsse:FailedCheck。無法開啟的密文在任何情況下都是該錯誤。"
+    "en": "a4747360d56b0948",
+    "text": "AppliesTo 未點名自身應用程式的 RequestSecurityToken 是否必須帶著已加密的 wstrustEncryptRequestElements 元素到達。對於 AppliesTo 點名某應用程式的請求，該應用程式的 wstrustEncryptRequest 會覆寫此設定。哪些密文會被開啟由 wstrust.acceptEncryptedElements 決定；AppliesTo 從開啟後的請求中讀取。開啟時，若對應為空，或某個運算式符合以明文到達的元素或未符合任何被還原的內容，該請求即為 wsse:FailedCheck。無法開啟的密文在任何情況下都是該錯誤。"
+  },
+  "wstrust.acceptEncryptedElements|label": {
+    "en": "fdb0c37def2e9c0a",
+    "text": "接受沒有對應點名的加密元素"
+  },
+  "wstrust.acceptEncryptedElements|description": {
+    "en": "91a62934f0ef031e",
+    "text": "RequestSecurityToken 是否可以在任何位置（標頭或本文）攜帶 XML 加密，而無需請求對應點名。開啟時，開啟每個加密元素。關閉時，僅在應用程式的 wstrustEncryptRequestElements 點名之處接受密文，沒有對應的密文為 wst:InvalidRequest。無論哪種情況，密文都必須能以本領域的金鑰開啟。應用程式的 wstrustAcceptEncryptedElements 會覆寫此設定。僅在此設定開啟時，WSDL 才提供請求加密。"
   },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",

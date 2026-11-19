@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5738** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5740** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 79
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 81
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2786,6 +2786,8 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0077` | Response encryption is on and could not be completed: the response map is empty or matches nothing, a selected certificate element or the application's encryption certificate is not a certificate this process can read, the recipient is refused as an encryption recipient, or the cipher failed. The fault is sent in the clear. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0078` | The request carries wst:EncryptionAlgorithm or wst:EncryptWith while response encryption is off, or names a block cipher or a key transport other than the one configured for this application. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0079` | An XPath expression on a WS-Trust encryption map or recipient is outside the subset this service evaluates, or uses a prefix the element does not declare and this service does not know. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0080` | A WS-Trust request carries XML Encryption the application does not accept: arbitrary encrypted elements are off (wstrust.acceptEncryptedElements, the application's wstrustAcceptEncryptedElements, the default), and either no request map is configured or an element restored from the ciphertext is not one an expression of the map selects or inside one. Nothing is issued. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0081` | Response encryption is on and the certificate wstrustResponseRecipientXPath selects is neither the BinarySecurityToken the request's accepted WS-Security signature names nor inside a part that signature references, so it is a certificate a party on the path could have put there. An unsigned request has no such certificate. Nothing is issued. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 

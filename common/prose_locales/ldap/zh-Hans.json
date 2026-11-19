@@ -1288,8 +1288,12 @@
     "text": "为此应用签发的 WS-Trust JWT 所携带的 OAuth 2.0 scope，每个值一个 scope（#485）。WS-Trust 以此应用为 AppliesTo 签发的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）会在其 `scope` 声明中携带它们，以空格分隔（RFC 9068 第 2.2.3 节）；未设置时不携带 `scope`。SAML 令牌不受影响。\n\n**每个 scope 的判定方式与 OAuth 访问令牌相同**，以此应用作为客户端：`oauthAllowedScope` 声明它可以被签发什么（在产品模式下；本服务的受保护 scope 在任何模式下都是如此），并由签发策略的逐 scope 问题作出决定。被策略丢弃的值会被从令牌中去掉并记入审计（STS-OAUTH-0579），绝不会被签发。指明未声明 scope 的写入在这里会被接受，因为声明可能改变，而且开发模式会授予未声明的 scope：请同时在 oauthAllowedScope 上声明它。策略将会丢弃的值会在设置处给出警告（#488）：在此字段旁、在 Save 的回复中，以及在 /admin-api 写入回复和应用视图的 `warnings` 中。"
   },
   "applications.schema.attributes.wstrustEncryptRequest.what": {
-    "en": "ebd5efe4a3d97cec",
-    "text": "TRUE 或 FALSE：要求此应用的请求映射所点名的元素以加密形式到达，覆盖 wstrust.encryptRequest。开启时，若映射为空、某个表达式匹配到以明文到达的元素，或某个表达式未匹配到任何从密文还原的内容，则 AppliesTo 为此应用的请求即为 FailedCheck。无论开启与否，凡是加密给本领域的内容都会被打开，AppliesTo 从打开后的请求中读取；无法打开的密文在任何情况下都是 FailedCheck。"
+    "en": "1e6b032014941e7e",
+    "text": "TRUE 或 FALSE：要求此应用的请求映射所点名的元素以加密形式到达，覆盖 wstrust.encryptRequest。开启时，若映射为空、某个表达式匹配到以明文到达的元素，或某个表达式未匹配到任何从密文还原的内容，则 AppliesTo 为此应用的请求即为 FailedCheck。哪些密文会被打开由 wstrustAcceptEncryptedElements 决定；AppliesTo 从打开后的请求中读取，无法打开的密文在任何情况下都是 FailedCheck。"
+  },
+  "applications.schema.attributes.wstrustAcceptEncryptedElements.what": {
+    "en": "474d9ee5b02559e9",
+    "text": "TRUE 或 FALSE：接受 AppliesTo 为此应用的请求中任何位置（头或正文）的 XML 加密，而无需请求映射点名，覆盖 wstrust.acceptEncryptedElements。关闭时，仅在 wstrustEncryptRequestElements 点名之处接受密文——每个被还原的元素必须是某个表达式选中的元素或位于其中——没有映射的密文为 InvalidRequest。无论哪种情况，密文都必须能用本领域的密钥打开。"
   },
   "applications.schema.attributes.wstrustEncryptRequestElements.what": {
     "en": "d28549992db71c30",

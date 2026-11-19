@@ -41,14 +41,23 @@ advertised moves with what is accepted:
   `/sts/cert`'s (never included: the file's header keeps the certificate out
   of the WSDL), `sp:Basic256Sha256` (the one suite whose signature half
   product verifies), `sp:Lax`, `sp:OnlySignEntireHeadersAndBody`, and
-  `sp:Wss11` naming the key references `messageSignature()` resolves. **No
+  `sp:Wss11` naming the key references `messageSignature()` resolves; the
+  RecipientToken is the realm's XML Encryption certificate, which every port
+  carries as its endpoint identity (`wsa:EndpointReference/wsid:Identity`,
+  where WCF reads it; drawn per request, no-store, so a rotation shows).
+  **The IYA-STS suite** (`SUITE_NS`, AES-256-GCM, RSA-OAEP-SHA256,
+  RSA-SHA256), product's, is in a policy of its own on eight `IyaSuite`
+  ports: CXF refuses a policy whose suite it has no loader for, and one
+  unbuildable alternative took the whole RequesterAuthentication with it.
+  **No
   `sp:IncludeTimestamp`**: WS-SP 1.3 section 6.2 applies it to the answer
   too and requires that Timestamp signed, and this STS signs no answer.
   `RequestProtection` on every input offers signing every header and the
-  Body, and encryption only where `decryptsRequests` (product reads no
-  AES-CBC, and the suite names it); `ResponseProtection` on every output
-  exists only where the service-wide cipher is the suite's and offers no
-  signing. Each choice is an ExactlyOne whose FIRST alternative is empty,
+  Body, and encryption only where the realm would accept it under the
+  port's suite (`offers()`: `wstrust.acceptEncryptedElements` on, an RSA
+  key, the suite's ciphers read); `ResponseProtection` on every output
+  exists only where the service-wide cipher is the port's suite's and
+  offers no signing. Each has an `IyaSuite` twin. Each choice is an ExactlyOne whose FIRST alternative is empty,
   not `wsp:Optional`: WCF and Metro take the first alternative they
   support and CXF the smallest, so all of them keep sending today's
   message. **An `sp:IssuedToken` carries an empty nested `wsp:Policy`**: WS-SP
@@ -942,29 +951,39 @@ element. It is not `saml:EncryptedAssertion`, and it does not read
 checkboxes default off. `STS-WSTRUST-0012` and `0013` are retired with the
 query parameter they named.
 
-**A REQUEST'S CIPHERTEXT IS OPENED WHEREVER IT IS, WITH OR WITHOUT A SWITCH
-(rcbj on #1908, 2026-11-18)**, because the WSDL tells a client any header or
-the Body may be encrypted. `openRequest()` opens an `EncryptedData` of type
+**WHICH CIPHERTEXT A REQUEST MAY CARRY IS `wstrust.acceptEncryptedElements`
+(rcbj on #1908, 2026-11-18; an application's `wstrustAcceptEncryptedElements`),
+OFF BY DEFAULT IN BOTH MODES.** On, ciphertext anywhere is opened without a
+map. Off, every element restored from ciphertext must be one the request map
+selects or inside one (`namedByMap()`), and ciphertext with no map is
+`STS-WSTRUST-0080`; with the AppliesTo in the clear that application decides
+before anything is decrypted. `openRequest()` opens an `EncryptedData` of type
 Element or Content, or a WS-Security 1.1 `EncryptedHeader` (which the header
 replaces), its key in its own KeyInfo or in an `EncryptedKey` in a
 `wsse:Security` header whose ReferenceList lists it or whose Id its
 SecurityTokenReference names (`headerKeyFor()`, WSS4J's and WCF's shape),
 the fragment parsed in the namespaces in scope where it stood
 (`crypto.decryptElement()`'s `namespaces`). At most 64 ciphertexts and eight
-rounds (`0075`). The switch only makes the map REQUIRED. Until then the
-whole RST was opened only under the service-wide switch, and ciphertext for
-an application whose switch was off was refused.
+rounds (`0075`). `wstrust.encryptRequest` makes the map REQUIRED (`0075`).
+Development does not differ: the WSDL offers request encryption only where
+the setting is on, and a development realm offering what product refuses
+would teach a client the wrong contract. **A map's prefixes are the
+service's** (`PREFIXES`), never the request's declarations: a request that
+bound `wsa` to a namespace of its own could offer a decoy the map matched
+(`tests/wstrust_message_signature.js` J9).
 
 **THE SIGNATURE IS READ IN WS-SECURITY'S ORDER** (`signedReading()`, also
 `prepareMessageSignature()`'s): an EncryptedKey, ReferenceList or
 EncryptedData ahead of the `ds:Signature`, or no signature in the clear,
 reads it over an opened copy first (SignBeforeEncrypting, WS-SP's default);
 otherwise over the message as it arrived, and the other order when the first
-does not verify. The accepted reading is kept on the connection. **What
-opens is held to the signed Body once more** (`partsOutsideSignedBody()`,
-product): anybody can encrypt to `/sts/cert`, and an unsigned header that
-opened to an RST or an AppliesTo was read first in document order beside a
-genuinely signed Body — `0046`. The endpoint's door (the claimed name, the
+does not verify. The accepted reading is kept on the connection, and the
+document marked (`WsEncryption.markSigned()`). **What opens is held to the
+signed Body once more** (`partsOutsideSignedBody()`, product), inside
+`openRequest()` before any setting is read: anybody can encrypt to the
+realm's certificate, and an unsigned header that opened to an RST or an
+AppliesTo was read first in document order beside a genuinely signed Body,
+and would have chosen whose settings applied — `0046`. The endpoint's door (the claimed name, the
 home cell, the risk assessment) reads an opened copy too, or an encrypted
 UsernameToken was assessed as nobody's.
 
@@ -1028,12 +1047,20 @@ key, the Body's content, an EncryptedHeader, an encrypted UsernameToken,
 both orders, a signed header beyond the Timestamp, the smuggled header
 (`0046`) and a ciphertext that will not open (`0075`).
 
-**NOT YET, AND OWED A DECISION**: an answer carries no `wsse:Security`
-header, so a WS-SP client's binding is not told of its EncryptedData (no
-ReferenceList) and decrypts it, if at all, itself; and the answer is never
-signed, so no output policy offers signing and the binding has no
-`sp:IncludeTimestamp`. Product's AES-GCM and RSA-OAEP-SHA256 have no
-WS-SP 1.2 or 1.3 algorithm suite, so a product WSDL offers no encryption.
+**THE ANSWER ANNOUNCES ITS CIPHERTEXT** (`announce()`, rcbj on #1908): each
+EncryptedKey moves to the answer's `wsse:Security` header (`soap*.Header`'s
+`security` in `models/ws/soap.tsp`, added after the hold) with an Id, a
+ReferenceList and a `#ThumbprintSHA1` SecurityTokenReference to the
+recipient (Basic Security Profile R5426, which WSS4J enforces;
+`crypto.wssThumbprintSha1()`), the EncryptedData pointing at it; a header is
+wrapped in an EncryptedHeader. WSS4J 3.0.3 decrypted a real answer this way
+on #1908's review. **A recipient expression selects only what the accepted
+signature covers** (`coveredBySignature()`): the signer's own token or an
+element inside a referenced part, else `0081`.
+
+**NOT YET**: the answer is never signed (a follow-up ticket of rcbj's), so
+no output policy offers signing and the binding has no
+`sp:IncludeTimestamp`.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

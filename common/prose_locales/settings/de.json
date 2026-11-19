@@ -5716,8 +5716,16 @@
     "text": "Die benannten Elemente einer Anfrage verschlüsselt verlangen"
   },
   "wstrust.encryptRequest|description": {
-    "en": "c969f465f8a7e1bf",
-    "text": "Ob ein RequestSecurityToken, dessen AppliesTo keine eigene Anwendung nennt, mit den Elementen von wstrustEncryptRequestElements verschlüsselt eintreffen muss. Das wstrustEncryptRequest einer Anwendung ersetzt dies für eine Anfrage, deren AppliesTo sie nennt. Was für diesen Bereich verschlüsselt eintrifft, wird geöffnet, ob dies an oder aus ist, und das AppliesTo wird aus der geöffneten Anfrage gelesen. An, und die Zuordnung ist leer oder ein Ausdruck trifft ein im Klartext eingetroffenes Element oder nichts Wiederhergestelltes, ist die Anfrage ein wsse:FailedCheck. Ein Geheimtext, der sich nicht öffnen lässt, ist in jedem Fall dieser Fehler."
+    "en": "a4747360d56b0948",
+    "text": "Ob ein RequestSecurityToken, dessen AppliesTo keine eigene Anwendung nennt, mit den Elementen von wstrustEncryptRequestElements verschlüsselt eintreffen muss. Das wstrustEncryptRequest einer Anwendung ersetzt dies für eine Anfrage, deren AppliesTo sie nennt. Welcher Geheimtext überhaupt geöffnet wird, bestimmt wstrust.acceptEncryptedElements; das AppliesTo wird aus der geöffneten Anfrage gelesen. An, und die Zuordnung ist leer oder ein Ausdruck trifft ein im Klartext eingetroffenes Element oder nichts Wiederhergestelltes, ist die Anfrage ein wsse:FailedCheck. Ein Geheimtext, der sich nicht öffnen lässt, ist in jedem Fall dieser Fehler."
+  },
+  "wstrust.acceptEncryptedElements|label": {
+    "en": "fdb0c37def2e9c0a",
+    "text": "Verschlüsselte Elemente annehmen, die keine Zuordnung nennt"
+  },
+  "wstrust.acceptEncryptedElements|description": {
+    "en": "91a62934f0ef031e",
+    "text": "Ob ein RequestSecurityToken XML-Verschlüsselung an beliebiger Stelle tragen darf, in einem Header oder im Body, ohne dass eine Anfragezuordnung sie nennt. An, wird jedes verschlüsselte Element geöffnet. Aus, wird Geheimtext nur dort angenommen, wo wstrustEncryptRequestElements der Anwendung ihn nennt, und Geheimtext ohne Zuordnung ist ein wst:InvalidRequest. In jedem Fall muss sich ein Geheimtext mit den Schlüsseln dieses Bereichs öffnen lassen. Das wstrustAcceptEncryptedElements einer Anwendung ersetzt dies. Die WSDL bietet Anfrageverschlüsselung nur an, solange dies an ist."
   },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
