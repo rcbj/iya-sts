@@ -17,7 +17,6 @@ import config = require('../common/config');
 import mode = require('../common/mode');
 import DomainMap = require('../common/domain_map');
 import CertificateTrust = require('../common/certificate_trust');
-import nodeCrypto = require('crypto');
 import xmldom = require('../common/xml_parser');
 
 const { DOMParser, XMLSerializer } = xmldom;
@@ -26,6 +25,13 @@ const log = helpers.log;
 const DS = 'http://www.w3.org/2000/09/xmldsig#';
 const XENC = 'http://www.w3.org/2001/04/xmlenc#';
 const ELEMENT = XENC + 'Element';
+const CONTENT = XENC + 'Content';
+// WS-Security 1.1's own namespace, where EncryptedHeader is.
+const WSSE11 = 'http://docs.oasis-open.org/wss/' +
+  'oasis-wss-wssecurity-secext-1.1.xsd';
+// The holder a decrypted fragment is parsed in, never sent.
+const FRAGMENT = 'urn:iya-sts:ws-encryption:fragment';
+const HOLDER = 'iyaWsEncryptionHolder';
 
 // Prefixes a WS-Trust message uses, applied only when the element does not
 // declare them. An unprefixed name still matches the null namespace only,
@@ -56,65 +62,127 @@ const NOT_AN_ELEMENT = {
  */
 export = class WsEncryption {
   /**
-   * Opens the encrypted elements of a request and holds them to the
-   * application's map. `{ ok: true }` when request encryption is off. A
-   * map that does not match — empty, a miss, or an element still in the
-   * clear — is a fault. The caller returns it and issues nothing.
+   * Opens every encrypted element of a request, then holds it to the
+   * application's map where the application's request switch is on.
+   *
+   * ENCRYPTION IS OPTIONAL ON THE WIRE (rcbj on #1908, 2026-11-18): the
+   * WSDL's policy tells a WS-SecurityPolicy client that any header or the
+   * Body may be encrypted, so whatever arrives encrypted to this realm is
+   * opened whether or not a switch is on. The switch makes it REQUIRED:
+   * each expression of the application's map must match an element that
+   * arrived encrypted. Until then a wholly encrypted request was opened
+   * only under the service-wide switch, and one for an application whose
+   * switch was off was a fault, so a client following the policy was
+   * refused by default.
    *
    * @param doc - the request document, modified in place
    * @returns ok, or the fault
    */
   static openRequest(doc): any {
     log.debug("Entering WsEncryption.openRequest().");
-    const visible = helpers.firstByLocal(doc, 'AppliesTo');
-    if (!visible) {
-      if (!WsEncryption.on('', 'wstrust.encryptRequest')) {
-        log.debug("Leaving WsEncryption.openRequest(). Hidden, and " +
-                  "the service switch is off.");
-        return { ok: true };
-      }
+    if (WsEncryption.hasCiphertext(doc)) {
       const opened = WsEncryption.decryptAll(doc);
       if (!opened.ok) {
         log.debug("Leaving WsEncryption.openRequest(). It would not open.");
         return opened;
       }
-      const appId = WsEncryption.applicationId(doc);
-      if (!appId) {
-        log.debug("Leaving WsEncryption.openRequest(). Opened, and no " +
-                  "application.");
-        return { ok: true };
-      }
-      if (!WsEncryption.on(appId, 'wstrust.encryptRequest')) {
-        log.debug("Leaving WsEncryption.openRequest(). The application " +
-                  "switch is off.");
-        return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
-          'the request was encrypted and ' + appId +
-          ' does not accept an encrypted request');
-      }
-      const held = WsEncryption.enforce(doc,
-        WsEncryption.stringsOf(appId, 'requestElements'));
-      log.debug("Leaving WsEncryption.openRequest(). " + held.ok);
-      return held;
     }
+    // The application is read from the opened request: an AppliesTo inside
+    // the ciphertext names it only now.
     const appId = WsEncryption.applicationId(doc);
     if (!WsEncryption.on(appId, 'wstrust.encryptRequest')) {
-      log.debug("Leaving WsEncryption.openRequest(). The switch is off.");
+      log.debug("Leaving WsEncryption.openRequest(). Not required.");
       return { ok: true };
     }
-    const paths = WsEncryption.stringsOf(appId, 'requestElements');
-    if (!paths.length) {
-      log.debug("Leaving WsEncryption.openRequest(). No expressions.");
-      return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
-        'request encryption is on and no element is named');
-    }
-    const opened = WsEncryption.decryptAll(doc);
-    if (!opened.ok) {
-      log.debug("Leaving WsEncryption.openRequest(). It would not open.");
-      return opened;
-    }
-    const held = WsEncryption.enforce(doc, paths);
+    const held = WsEncryption.enforce(doc,
+      WsEncryption.stringsOf(appId, 'requestElements'));
     log.debug("Leaving WsEncryption.openRequest(). " + held.ok);
     return held;
+  }
+
+  /**
+   * Tells whether a document carries an element encrypted the ways this
+   * service opens: an `xenc:EncryptedData` of type Element or Content, on
+   * its own or inside a WS-Security 1.1 `EncryptedHeader`.
+   *
+   * @param doc - the document
+   * @returns true when there is something to open
+   */
+  static hasCiphertext(doc): boolean {
+    log.debug("Entering WsEncryption.hasCiphertext().");
+    const found = !!doc && WsEncryption.ciphertexts(doc).length > 0;
+    log.debug("Leaving WsEncryption.hasCiphertext(). " + found);
+    return found;
+  }
+
+  /**
+   * A copy of the request with every encrypted element opened, for reading
+   * a signature that was made before the encryption (WS-SecurityPolicy's
+   * default protection order, SignBeforeEncrypting), or that was itself
+   * encrypted. The request is not changed and no map is applied.
+   *
+   * @param doc - the request as it arrived
+   * @returns the opened copy, or null when it would not open
+   */
+  static openedCopy(doc): any {
+    log.debug("Entering WsEncryption.openedCopy().");
+    let copy;
+    try {
+      copy = new DOMParser().parseFromString(
+        new XMLSerializer().serializeToString(doc), 'text/xml');
+    } catch (e) {
+      log.debug("Caught in WsEncryption.openedCopy(): " +
+                ((e && e.message) || e));
+      // A document that will not round-trip has no other reading.
+      log.debug("Leaving WsEncryption.openedCopy(). Unreadable.");
+      return null;
+    }
+    const opened = WsEncryption.decryptAll(copy);
+    log.debug("Leaving WsEncryption.openedCopy(). " + opened.ok);
+    return opened.ok ? copy : null;
+  }
+
+  /**
+   * Which document a request's WS-Security signature is read from first.
+   * WS-Security 1.1 section 5.2 and WS-SecurityPolicy 1.3 section 6.5: the
+   * security header's elements are prepended as each step is taken, so a
+   * receiver takes them in order. An EncryptedKey, a ReferenceList or an
+   * EncryptedData ahead of the ds:Signature, or no ds:Signature to be seen,
+   * means the signature was made before the encryption and is read from
+   * the opened copy. Otherwise it is read as the message arrived. The
+   * caller tries the other reading when the first does not verify, because
+   * an EncryptedData carrying its own key sits in no header at all.
+   *
+   * @param doc - the request as it arrived
+   * @returns true when the opened copy is read first
+   */
+  static decryptsBeforeVerifying(doc): boolean {
+    log.debug("Entering WsEncryption.decryptsBeforeVerifying().");
+    if (!WsEncryption.hasCiphertext(doc)) {
+      log.debug("Leaving WsEncryption.decryptsBeforeVerifying(). Clear.");
+      return false;
+    }
+    const security = helpers.firstByLocal(doc, 'Security');
+    const kids = (security && security.childNodes) || [];
+    for (let i = 0; i < kids.length; i++) {
+      const kid = kids[i];
+      if (kid.nodeType !== 1) {
+        continue;
+      }
+      if (kid.localName === 'Signature' && kid.namespaceURI === DS) {
+        log.debug("Leaving WsEncryption.decryptsBeforeVerifying(). The " +
+                  "signature comes first.");
+        return false;
+      }
+      if (kid.namespaceURI === XENC || kid.localName === 'EncryptedHeader') {
+        log.debug("Leaving WsEncryption.decryptsBeforeVerifying(). " +
+                  kid.localName + " comes first.");
+        return true;
+      }
+    }
+    log.debug("Leaving WsEncryption.decryptsBeforeVerifying(). No " +
+              "signature in the clear.");
+    return true;
   }
 
   /**
@@ -280,13 +348,25 @@ export = class WsEncryption {
     return out;
   }
 
+  // At most this many ciphertexts in one request, each a private-key
+  // operation taken before the requester is authenticated.
+  private static readonly MOST = 64;
+
   private static decryptAll(doc): any {
     log.debug("Entering WsEncryption.decryptAll().");
+    let count = 0;
     for (let round = 0; round < 8; round++) {
       const nodes = WsEncryption.ciphertexts(doc);
       if (!nodes.length) {
         log.debug("Leaving WsEncryption.decryptAll(). Open.");
         return { ok: true };
+      }
+      count += nodes.length;
+      if (count > WsEncryption.MOST) {
+        log.debug("Leaving WsEncryption.decryptAll(). Too many.");
+        return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
+          'the request carries more than ' + WsEncryption.MOST +
+          ' ciphertexts');
       }
       for (let i = 0; i < nodes.length; i++) {
         const replaced = WsEncryption.decryptOne(doc, nodes[i]);
@@ -301,13 +381,15 @@ export = class WsEncryption {
       'the ciphertext is nested more than eight deep');
   }
 
+  // XML Encryption 1.0 section 3.5.1's two types. An EncryptedData of no
+  // other type is not an element this service can put back.
   private static ciphertexts(doc): any[] {
     log.debug("Entering WsEncryption.ciphertexts().");
     const all = doc.getElementsByTagNameNS(XENC, 'EncryptedData');
     const out = [];
     for (let i = 0; i < all.length; i++) {
       const type = String(all[i].getAttribute('Type') || '');
-      if (type !== ELEMENT) {
+      if (type !== ELEMENT && type !== CONTENT) {
         continue;
       }
       if (!WsEncryption.insideEncrypted(all[i])) {
@@ -332,20 +414,129 @@ export = class WsEncryption {
     return false;
   }
 
+  // THE KEY, WHERE WS-SECURITY PUTS IT (WS-Security 1.1 section 9). An
+  // EncryptedData may carry its own EncryptedKey in its KeyInfo, which is
+  // what this service writes. A WS-SecurityPolicy sender (Apache WSS4J,
+  // WCF, Metro) puts ONE EncryptedKey in the security header instead, its
+  // ReferenceList naming every EncryptedData it opens, and the
+  // EncryptedData's KeyInfo a SecurityTokenReference to it, or nothing.
+  // Only an EncryptedKey in a wsse:Security header is looked for: one
+  // anywhere else is somebody's content.
+  private static headerKeyFor(doc, node): any {
+    log.debug("Entering WsEncryption.headerKeyFor().");
+    const keyInfo = WsEncryption.childNamed(node, DS, 'KeyInfo');
+    if (keyInfo && WsEncryption.childNamed(keyInfo, XENC, 'EncryptedKey')) {
+      log.debug("Leaving WsEncryption.headerKeyFor(). Its own.");
+      return null;
+    }
+    const id = String(node.getAttribute('Id') ||
+      node.getAttributeNS(PREFIXES.wsu, 'Id') || '');
+    const str = keyInfo
+      ? keyInfo.getElementsByTagNameNS(PREFIXES.wsse, 'Reference')[0] : null;
+    const named = str ? String(str.getAttribute('URI') || '') : '';
+    const keys = doc.getElementsByTagNameNS(XENC, 'EncryptedKey');
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const parent = key.parentNode;
+      if (!parent || parent.localName !== 'Security' ||
+          parent.namespaceURI !== PREFIXES.wsse) {
+        continue;
+      }
+      const keyId = String(key.getAttribute('Id') ||
+        key.getAttributeNS(PREFIXES.wsu, 'Id') || '');
+      if (named && keyId && named === '#' + keyId) {
+        log.debug("Leaving WsEncryption.headerKeyFor(). By reference.");
+        return key;
+      }
+      const refs = key.getElementsByTagNameNS(XENC, 'DataReference');
+      for (let r = 0; r < refs.length; r++) {
+        if (id && String(refs[r].getAttribute('URI') || '') === '#' + id) {
+          log.debug("Leaving WsEncryption.headerKeyFor(). Listed.");
+          return key;
+        }
+      }
+    }
+    log.debug("Leaving WsEncryption.headerKeyFor(). None.");
+    return null;
+  }
+
+  private static childNamed(node, ns, local): any {
+    log.debug("Entering WsEncryption.childNamed().");
+    const kids = (node && node.childNodes) || [];
+    for (let i = 0; i < kids.length; i++) {
+      if (kids[i].nodeType === 1 && kids[i].localName === local &&
+          kids[i].namespaceURI === ns) {
+        log.debug("Leaving WsEncryption.childNamed(). Found.");
+        return kids[i];
+      }
+    }
+    log.debug("Leaving WsEncryption.childNamed(). None.");
+    return null;
+  }
+
+  // The namespace declarations in scope at a node, nearest first, as
+  // `{ 'xmlns:p': uri }`: what a decrypted fragment inherits where it is
+  // put back (XML Encryption 1.0 section 4.5, "in the context of").
+  private static inScope(node): any {
+    log.debug("Entering WsEncryption.inScope().");
+    const declared = {};
+    let cur = node;
+    while (cur && cur.nodeType === 1) {
+      const attrs = cur.attributes || [];
+      for (let i = 0; i < attrs.length; i++) {
+        const name = String(attrs[i].name || attrs[i].nodeName || '');
+        if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
+            !Object.prototype.hasOwnProperty.call(declared, name)) {
+          declared[name] = String(attrs[i].value || '');
+        }
+      }
+      cur = cur.parentNode;
+    }
+    log.debug("Leaving WsEncryption.inScope().");
+    return declared;
+  }
+
   private static decryptOne(doc, node): any {
     log.debug("Entering WsEncryption.decryptOne().");
-    const xml = new XMLSerializer().serializeToString(node);
-    const opened = helpers.decryptOwnElement(xml);
+    const parent = node.parentNode;
+    // WS-Security 1.1 section 9.3: a header encrypted as a whole is an
+    // EncryptedHeader holding the EncryptedData, and the header it opens to
+    // takes the EncryptedHeader's place.
+    const target = parent && parent.localName === 'EncryptedHeader' &&
+      parent.namespaceURI === WSSE11 ? parent : node;
+    const context = target.parentNode;
+    const type = String(node.getAttribute('Type') || '');
+    const key = WsEncryption.headerKeyFor(doc, node);
+    const serializer = new XMLSerializer();
+    // The header's EncryptedKey travels beside the EncryptedData, which is
+    // the shape `crypto.decryptElement()` reads a separate key from (SAML
+    // 2.0 core section 2.3.4's, for an EncryptedAssertion).
+    const xml = key
+      ? '<' + HOLDER + ':Ciphertext xmlns:' + HOLDER + '="' + FRAGMENT +
+        '">' + serializer.serializeToString(key) +
+        serializer.serializeToString(node) + '</' + HOLDER + ':Ciphertext>'
+      : serializer.serializeToString(node);
+    const namespaces = WsEncryption.inScope(context);
+    const opened = helpers.decryptOwnElement(xml,
+                                             { namespaces: namespaces });
     if (!opened || !opened.ok || !opened.xml) {
       log.debug("Leaving WsEncryption.decryptOne(). It did not open.");
       return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
         'a ciphertext would not open with this realm\'s keys' +
         (opened && opened.why ? ': ' + opened.why : ''));
     }
+    const declared = Object.keys(namespaces).filter(function (name) {
+      return name !== 'xmlns:' + HOLDER;
+    }).map(function (name) {
+      return ' ' + name + '="' + String(namespaces[name])
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;') + '"';
+    }).join('');
     let parsed;
     try {
-      parsed = new DOMParser().parseFromString(String(opened.xml),
-                                               'text/xml');
+      parsed = new DOMParser().parseFromString('<' + HOLDER + ':Fragment ' +
+        'xmlns:' + HOLDER + '="' + FRAGMENT + '"' + declared + '>' +
+        String(opened.xml) + '</' + HOLDER + ':Fragment>', 'text/xml');
     } catch (e) {
       log.debug("Caught in WsEncryption.decryptOne(): " +
                 ((e && e.message) || e));
@@ -355,16 +546,41 @@ export = class WsEncryption {
       return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
         'a ciphertext opened to something that is not XML');
     }
-    const fresh = parsed && parsed.documentElement;
-    if (!fresh || fresh.localName === 'parsererror') {
+    const holder = parsed && parsed.documentElement;
+    if (!holder || holder.localName !== 'Fragment') {
+      log.debug("Leaving WsEncryption.decryptOne(). Not a fragment.");
+      return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
+        'a ciphertext opened to something that is not XML');
+    }
+    const kids = [];
+    for (let i = 0; i < holder.childNodes.length; i++) {
+      kids.push(holder.childNodes[i]);
+    }
+    const elements = kids.filter(function (one) {
+      return one.nodeType === 1;
+    });
+    const loose = kids.filter(function (one) {
+      return one.nodeType !== 1 &&
+        !(one.nodeType === 3 && !String(one.nodeValue || '').trim());
+    });
+    // Type Element is one element and nothing else (section 3.5.1); an
+    // EncryptedHeader opens to one header.
+    if ((type === ELEMENT || target !== node) &&
+        (elements.length !== 1 || loose.length)) {
       log.debug("Leaving WsEncryption.decryptOne(). Not an element.");
       return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
         'a ciphertext opened to something that is not an element');
     }
-    const imported = doc.importNode(fresh, true);
-    imported._stsRestored = true;
-    node.parentNode.replaceChild(imported, node);
-    log.debug("Leaving WsEncryption.decryptOne(). Restored.");
+    for (let i = 0; i < kids.length; i++) {
+      const imported = doc.importNode(kids[i], true);
+      if (imported.nodeType === 1) {
+        imported._stsRestored = true;
+      }
+      context.insertBefore(imported, target);
+    }
+    context.removeChild(target);
+    log.debug("Leaving WsEncryption.decryptOne(). Restored " +
+              elements.length + ".");
     return { ok: true };
   }
 
@@ -537,7 +753,9 @@ export = class WsEncryption {
          (raw.replace(/\s+/g, '').match(/.{1,64}/g) || []).join('\n') +
          '\n-----END CERTIFICATE-----\n');
     try {
-      const cert = new nodeCrypto.X509Certificate(body);
+      // Parsed by crypto.js, the one module that touches node's crypto
+      // (tests/crypto_centralised.js).
+      const cert = stsCrypto.parseCertificate(body);
       if (!cert.publicKey) {
         log.debug("Leaving WsEncryption.pemOf(). No key.");
         return '';
@@ -660,7 +878,7 @@ export = class WsEncryption {
     return out;
   }
 
-  private static effectiveCipher(appId): string {
+  static effectiveCipher(appId): string {
     log.debug("Entering WsEncryption.effectiveCipher().");
     const named = String(applications.settingFor(appId,
       'wstrust.encryptionAlgorithm', config) || 'aes256-gcm');
@@ -668,7 +886,7 @@ export = class WsEncryption {
     return named;
   }
 
-  private static effectiveTransport(appId): string {
+  static effectiveTransport(appId): string {
     log.debug("Entering WsEncryption.effectiveTransport().");
     let named = String(applications.settingFor(appId,
       'wstrust.keyTransportAlgorithm', config) || 'rsa-oaep-mgf1p');

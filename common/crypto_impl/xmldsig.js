@@ -771,7 +771,7 @@ function encryptXml(xml, opts) {
 // element ids): the caller passes the SOAP string and the signing material, so
 // this is unit-testable against an external verifier (xml-crypto).
 //
-// opts: { privateKeyPem, certPem, sigAlg, signTimestamp }
+// opts: { privateKeyPem, certPem, sigAlg, signTimestamp, signIds }
 var WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd';
 function firstByLocal(root, name) {
   log.debug("Entering firstByLocal().");
@@ -820,6 +820,19 @@ function signWsSecurity(soapXml, opts) {
     var ts = firstByLocal(doc, 'Timestamp');
     if (ts) targets.push(ts);
   }
+  // #1668: further parts by wsu:Id, as a WS-SecurityPolicy sender signs
+  // every header (an empty sp:SignedParts). Each id names one element.
+  (opts.signIds || []).forEach(function (wanted) {
+    var all = doc.getElementsByTagNameNS('*', '*');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getAttributeNS(WSU_NS, 'Id') === wanted) {
+        targets.push(all[i]);
+        return;
+      }
+    }
+    throw new Error('signWsSecurity: no element carries wsu:Id "' +
+                    wanted + '".');
+  });
 
   var refs = targets.map(function (t) {
     var id = t.getAttributeNS(WSU_NS, 'Id') || t.getAttribute('wsu:Id') || '';

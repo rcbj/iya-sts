@@ -48,7 +48,13 @@
 //      (STS-WSTRUST-0076). Product refuses the message-signing leaf:
 //      digitalSignature only, and an encryption recipient needs
 //      keyEncipherment or keyAgreement (STS-WSTRUST-0077). A JWT the
-//      signature does not reference is not a recipient (0076).
+//      signature does not reference is not a recipient (0076);
+//   J. request encryption as a WS-SecurityPolicy sender writes it (#1668):
+//      the key in the security header, the Body's content, an
+//      EncryptedHeader, an encrypted UsernameToken, a signature made
+//      before or after the encryption, a signed header beyond the
+//      Timestamp, a ciphertext in an unsigned header held to the signed
+//      Body (STS-WSTRUST-0046), and one that will not open (0075).
 //
 // IN A CHILD PROCESS, for `wstrust_client_certificate.js`'s reason: it loads
 // the stack and builds a certificate authority, both process state `run.js`
@@ -172,11 +178,15 @@ function keyInfoFor(form, certPem, pkiModule) {
 // KeyInfo is not signed, so the replacement changes nothing it covers).
 function signedRst(xmldsig, pkiModule, opts) {
   log.debug("Entering signedRst().");
-  const xml = envelope(Object.assign({}, opts,
+  const clear = envelope(Object.assign({}, opts,
     { certPem: opts.form === 'token' || !opts.form ? opts.certPem : '' }));
+  // `before` (#1668): what the sender does before it signs — an encryption,
+  // for EncryptBeforeSigning.
+  const xml = opts.before ? opts.before(clear) : clear;
   let signed = xmldsig.signWsSecurity(xml, {
     privateKeyPem: opts.signKeyPem || opts.keyPem, certPem: opts.certPem,
     signTimestamp: opts.signTimestamp !== false,
+    signIds: opts.signIds || undefined,
     sigAlg: opts.sigAlg || undefined });
   signed = signed.replace(/<ds:KeyInfo>[\s\S]*?<\/ds:KeyInfo>/,
                           keyInfoFor(opts.form || 'token', opts.certPem,
@@ -660,6 +670,224 @@ async function childBody() {
           'I5. product: the same request is STS-WSTRUST-0026 before the ' +
           'response is sealed', brief(r));
   disarmEnc();
+
+  // -------------------------------------------------------------------------
+  // J. REQUEST ENCRYPTION, AS A WS-SECURITYPOLICY SENDER WRITES IT (#1668,
+  // on #1908's review)
+  //
+  // The WSDL lets a client encrypt any header or the Body and sign any
+  // header. WSS4J, WCF and Metro put one EncryptedKey in the security
+  // header, its ReferenceList naming the EncryptedData, whose KeyInfo is a
+  // SecurityTokenReference to it; the Body's CONTENT is encrypted (type
+  // Content); a whole header is a WS-Security 1.1 EncryptedHeader; and the
+  // default order is SignBeforeEncrypting, so the signature's digests are
+  // of the plaintext. Each shape is opened, a signature in either order
+  // verifies, and a ciphertext in an unsigned header is held to the signed
+  // Body once it is open.
+  // -------------------------------------------------------------------------
+  const XENC = 'http://www.w3.org/2001/04/xmlenc#';
+  const DSNS = 'http://www.w3.org/2000/09/xmldsig#';
+  const WSSE11 = 'http://docs.oasis-open.org/wss/' +
+    'oasis-wss-wssecurity-secext-1.1.xsd';
+  const WSA = 'http://www.w3.org/2005/08/addressing';
+  const SOAP12 = 'http://www.w3.org/2003/05/soap-envelope';
+  const servicePem = helpers.STS.xml.certPem;
+  const parseX = function (xml) {
+    log.debug("Entering parseX().");
+    log.debug("Leaving parseX().");
+    return new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  };
+  const serial = function (node) {
+    log.debug("Entering serial().");
+    log.debug("Leaving serial().");
+    return new xmldom.XMLSerializer().serializeToString(node);
+  };
+  // `plain` encrypted to this realm's certificate as an EncryptedData of
+  // `type` with Id `id`; its EncryptedKey in its own KeyInfo (`own`), or
+  // moved out for the security header, the way WSS4J writes it.
+  const sealed = function (plain, type, id, own) {
+    log.debug("Entering sealed().");
+    const data = parseX(stsCrypto.encryptElement(plain, servicePem,
+      { bare: true, algorithm: 'aes256-gcm', keyTransport: 'rsa-oaep' }))
+      .documentElement;
+    data.setAttribute('Type', XENC + type);
+    data.setAttribute('Id', id);
+    if (own) {
+      log.debug("Leaving sealed(). Its own key.");
+      return { data: serial(data), key: '' };
+    }
+    const owner = data.ownerDocument;
+    const keyInfo = data.getElementsByTagNameNS(DSNS, 'KeyInfo')[0];
+    const key = keyInfo.getElementsByTagNameNS(XENC, 'EncryptedKey')[0];
+    keyInfo.removeChild(key);
+    key.setAttribute('Id', 'EK-' + id);
+    const list = owner.createElementNS(XENC, 'xenc:ReferenceList');
+    const listed = owner.createElementNS(XENC, 'xenc:DataReference');
+    listed.setAttribute('URI', '#' + id);
+    list.appendChild(listed);
+    key.appendChild(list);
+    const str = owner.createElementNS(WSSE, 'wsse:SecurityTokenReference');
+    const points = owner.createElementNS(WSSE, 'wsse:Reference');
+    points.setAttribute('URI', '#EK-' + id);
+    str.appendChild(points);
+    keyInfo.appendChild(str);
+    log.debug("Leaving sealed(). The header's key.");
+    return { data: serial(data), key: serial(key) };
+  };
+  // The key, first in the security header: the step taken last is the
+  // one a receiver takes first (WS-Security 1.1 section 5.2).
+  const keyFirst = function (doc, key) {
+    log.debug("Entering keyFirst().");
+    if (key) {
+      const security = doc.getElementsByTagNameNS(WSSE, 'Security')[0];
+      security.insertBefore(doc.importNode(parseX(key).documentElement,
+                                           true), security.firstChild);
+    }
+    log.debug("Leaving keyFirst().");
+  };
+  const encryptBody = function (own) {
+    log.debug("Entering encryptBody().");
+    log.debug("Leaving encryptBody().");
+    return function (xml) {
+      log.debug("Entering encryptBody's sealer.");
+      const doc = parseX(xml);
+      const body = doc.getElementsByTagNameNS(SOAP12, 'Body')[0];
+      let plain = '';
+      for (let i = 0; i < body.childNodes.length; i++) {
+        plain += serial(body.childNodes[i]);
+      }
+      const s = sealed(plain, 'Content', 'ED-body', own);
+      while (body.firstChild) {
+        body.removeChild(body.firstChild);
+      }
+      body.appendChild(doc.importNode(parseX(s.data).documentElement, true));
+      keyFirst(doc, s.key);
+      log.debug("Leaving encryptBody's sealer.");
+      return serial(doc);
+    };
+  };
+  // The first element named `local` in `ns`, encrypted in place (type
+  // Element), or as an EncryptedHeader.
+  const encryptOne = function (xml, ns, local, asHeader) {
+    log.debug("Entering encryptOne(). " + local);
+    const doc = parseX(xml);
+    const node = doc.getElementsByTagNameNS(ns, local)[0];
+    const s = sealed(serial(node), 'Element', 'ED-' + local, false);
+    let replacement = doc.importNode(parseX(s.data).documentElement, true);
+    if (asHeader) {
+      const holder = doc.createElementNS(WSSE11, 'wsse11:EncryptedHeader');
+      holder.setAttributeNS(WSU, 'wsu:Id', 'EH-' + local);
+      holder.appendChild(replacement);
+      replacement = holder;
+    }
+    node.parentNode.replaceChild(replacement, node);
+    keyFirst(doc, s.key);
+    log.debug("Leaving encryptOne().");
+    return serial(doc);
+  };
+  const issuedTo = function (res, name) {
+    log.debug("Entering issuedTo().");
+    log.debug("Leaving issuedTo().");
+    return res.status === 200 && new RegExp('>' + name + '<')
+      .test(String(res.body));
+  };
+
+  r = await ask('product', encryptBody(false)(sign('alice')));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J1. product: signed, then the Body\'s content encrypted with ' +
+          'the key in the security header (SignBeforeEncrypting) is opened ' +
+          'and the signature verifies over the plaintext', brief(r));
+  r = await ask('product', sign('alice', { before: encryptBody(false) }));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J2. product: the Body encrypted, then signed ' +
+          '(EncryptBeforeSigning), verifies over the ciphertext and is ' +
+          'opened after', brief(r));
+  r = await ask('product', sign('alice', { before: encryptBody(true) }));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J2. product: the same with the EncryptedKey in the ' +
+          'EncryptedData\'s own KeyInfo', brief(r));
+  const smuggled = '<wst:RequestSecurityToken xmlns:wst="' + WST + '">' +
+    '<wst:RequestType>' + WST + '/Issue</wst:RequestType>' +
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+    'policy"><wsa:EndpointReference xmlns:wsa="' + WSA + '"><wsa:Address>' +
+    'https://wms-other.example</wsa:Address></wsa:EndpointReference>' +
+    '</wsp:AppliesTo></wst:RequestSecurityToken>';
+  const hidden = sealed(smuggled, 'Element', 'ED-smuggled', true);
+  r = await ask('product', sign('alice', { after: function (xml) {
+    return xml.replace('<s:Header>', '<s:Header><x:Smuggled xmlns:x=' +
+                       '"urn:x">' + hidden.data + '</x:Smuggled>');
+  } }));
+  t.check(failed(r, 'STS-WSTRUST-0046'),
+          'J3. product: an unsigned header that opens to a ' +
+          'RequestSecurityToken, beside a signed Body, is ' +
+          'STS-WSTRUST-0046', brief(r));
+  const tokenOf = function (name) {
+    log.debug("Entering tokenOf().");
+    log.debug("Leaving tokenOf().");
+    return '<wsse:UsernameToken><wsse:Username>' + name +
+      '</wsse:Username><wsse:Password>x</wsse:Password>' +
+      '</wsse:UsernameToken>';
+  };
+  r = await ask('development', encryptOne(envelope({
+    security: tokenOf('wmsbob') }), WSSE, 'UsernameToken', false));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J4. development: a UsernameToken encrypted in the security ' +
+          'header is opened and authenticates', brief(r));
+  const toHeader = '<wsa:To xmlns:wsa="' + WSA + '" wsu:Id="to">' + BASE +
+    '/sts</wsa:To>';
+  const map = [
+    applications.updateApplication('wmsback', { mode: 'set',
+      attribute: 'wstrustEncryptRequest', value: 'true' }),
+    applications.updateApplication('wmsback', { mode: 'add',
+      attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' })];
+  t.check(map.every(function (one) { return one && one.ok; }),
+          'precondition: wmsback requires wsa:To encrypted',
+          JSON.stringify(map));
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J5. development: a header encrypted as a WS-Security 1.1 ' +
+          'EncryptedHeader is opened and satisfies the application\'s map',
+          brief(r));
+  r = await ask('development', envelope({ header: toHeader,
+                                          security: tokenOf('wmsbob') }));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0075' &&
+          /FailedCheck/.test(String(r.body)),
+          'J5. the same header in the clear is STS-WSTRUST-0075 while the ' +
+          'application requires it', brief(r));
+  applications.updateApplication('wmsback', { mode: 'set',
+    attribute: 'wstrustEncryptRequest', value: '' });
+  applications.updateApplication('wmsback', { mode: 'remove',
+    attribute: 'wstrustEncryptRequestElements', value: '//wsa:To' });
+  r = await ask('development', encryptOne(envelope({ header: toHeader,
+    security: tokenOf('wmsbob') }), WSA, 'To', true));
+  t.check(issuedTo(r, 'wmsbob'),
+          'J5. with no application requiring it, an encrypted header is ' +
+          'still opened (encryption is optional on the wire)', brief(r));
+  const messageId = '<wsa:MessageID xmlns:wsa="' + WSA + '" wsu:Id="mid">' +
+    'urn:uuid:' + nodeCrypto.randomUUID() + '</wsa:MessageID>';
+  r = await ask('product', sign('alice', { header: messageId,
+                                           signIds: ['mid'] }));
+  t.check(issuedTo(r, 'wmsalice'),
+          'J6. product: a signature over a header beyond the Timestamp ' +
+          '(wsa:MessageID) verifies', brief(r));
+  r = await ask('product', sign('alice', { header: messageId,
+    signIds: ['mid'], after: function (xml) {
+      return xml.replace('urn:uuid:', 'urn:uuid:0');
+    } }));
+  t.check(failed(r, 'STS-WSTRUST-0045'),
+          'J6. that header altered after signing is STS-WSTRUST-0045',
+          brief(r));
+  const broken = sealed(tokenOf('wmsbob'), 'Element', 'ED-broken', true)
+    .data.replace(/(<xenc:CipherData><xenc:CipherValue>)([^<]{8})/g,
+                  function (all, open, head) {
+                    return open + head.split('').reverse().join('');
+                  });
+  r = await ask('development', envelope({ security: broken }));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0075' &&
+          /FailedCheck/.test(String(r.body)) && !r.signIn,
+          'J7. a ciphertext that will not open is STS-WSTRUST-0075',
+          brief(r));
 
   // -------------------------------------------------------------------------
   // H. THE ENDPOINT

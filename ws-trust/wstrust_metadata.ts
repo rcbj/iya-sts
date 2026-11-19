@@ -28,13 +28,36 @@
 // namespace and its assertion names — is written here, because a WSDL is
 // those names.
 //
-// NO BINDING ASSERTION THAT NAMES AN ALGORITHM SUITE. An AsymmetricBinding or
-// a TransportBinding requires one, and naming Basic256 (or any other suite)
-// would claim a listener and a signature algorithm this STS does not promise.
-// Each credential is its own alternative in one wsp:ExactlyOne. An alternative
-// is present only while the runtime flag that accepts it is on, including the
-// empty alternative, which is development's missing credential and is absent
-// whenever `mode.verifiesCredentials()` is true.
+// EACH CREDENTIAL IS ITS OWN ALTERNATIVE in one wsp:ExactlyOne. An
+// alternative is present only while the runtime flag that accepts it is on,
+// including the empty alternative, which is development's missing credential
+// and is absent whenever `mode.verifiesCredentials()` is true.
+//
+// THE MESSAGE SIGNATURE IS AN sp:AsymmetricBinding (#1668, rcbj on #1908,
+// 2026-11-18). Until then its alternative was a bare sp:X509Token beside
+// sp:SignedParts, which WS-SecurityPolicy 1.3 section 4 gives no meaning: a
+// protection assertion says what is protected, and only a binding says with
+// what. The binding is what the endpoint verifies (`crypto.js`'s
+// readWsSecuritySignature()): the requester's X.509 v3 certificate as the
+// InitiatorToken, always sent to the recipient, named by a Reference, a
+// KeyIdentifier (thumbprint or Subject Key Identifier) or an issuer and
+// serial (sp:Wss11); this realm's certificate, `GET /sts/cert`, as the
+// RecipientToken, never included, which a request is encrypted to; any
+// header order (sp:Lax); whole elements only, by wsu:Id
+// (sp:OnlySignEntireHeadersAndBody). Its sp:AlgorithmSuite is
+// sp:Basic256Sha256, the one WS-SecurityPolicy suite whose signature half,
+// RSA-SHA256 over SHA-256 under exclusive c14n, product verifies; the
+// endpoint also verifies stronger ones that no suite names.
+//
+// NO sp:IncludeTimestamp. Section 6.2 makes it a property of every message
+// under the binding, and requires the Timestamp to be integrity protected:
+// the answer would have to carry a signed wsu:Timestamp, and this STS does
+// not sign its answers. The request's Timestamp is still required, by the
+// alternative's sp:SignedParts, as before.
+//
+// THE MESSAGE POLICIES (RequestProtection on every wsdl:input,
+// ResponseProtection on every wsdl:output) say what MAY be protected
+// beyond that: see messagePolicy().
 //
 // EACH TRUST VERSION IS A CONTRACT OF ITS OWN. A port type per version
 // (TrustMay2004, TrustFeb2005, Trust13, Trust14), its messages that
@@ -63,6 +86,8 @@ import Krb5Tokens = require('../kerberos/krb5_tokens');
 import SamlModel = require('../saml/saml_model');
 import WsModel = require('./ws_model');
 import WsTrustCapabilities = require('./wstrust_capabilities');
+import WsEncryption = require('./ws_encryption');
+import stsCrypto = require('../common/crypto');
 
 const { log } = helpers;
 
@@ -82,6 +107,13 @@ const TNS = 'urn:iya-sts:ws-trust:metadata';
 // processor knows (tests/wstrust_metadata.js W, against the published XSDs).
 const SP_NS = 'http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702';
 const INCLUDE = SP_NS + '/IncludeToken/AlwaysToRecipient';
+const NEVER = SP_NS + '/IncludeToken/Never';
+// XPath 1.0, the version an sp:XPath is in when no attribute says (WS-SP 1.3
+// section 4.1.2), written out because WCF and Metro read it.
+const XPATH10 = 'http://www.w3.org/TR/1999/REC-xpath-19991116';
+// WS-Addressing's two header namespaces a request is sent with: the W3C
+// recommendation and the 2004/08 member submission.
+const WSA_SUBMISSION = 'http://schemas.xmlsoap.org/ws/2004/08/addressing';
 const TRANSPORT = 'http://schemas.xmlsoap.org/soap/http';
 // WS-Addressing 1.0 Metadata: the wsam:Action on a WSDL input or output.
 const WSAM_NS = 'http://www.w3.org/2007/05/addressing/metadata';
@@ -93,6 +125,14 @@ type Flags = {
   issueKerberos: boolean;
   acceptClientCertificate: boolean;
   verifiesCredentials: boolean;
+  // #1668: this realm decrypts what sp:Basic256Sha256 encrypts with —
+  // AES-256-CBC and RSA-OAEP with MGF1-SHA-1 — to the RSA key of its
+  // certificate. Product never reads CBC (#1455), so product says
+  // nothing about encrypting a request.
+  decryptsRequests?: boolean;
+  // #1668: the service-wide response cipher is that suite's: AES-256-CBC,
+  // the key carried by RSA-OAEP with MGF1-SHA-1.
+  encryptsResponses?: boolean;
 };
 
 type TrustVersion = {
@@ -169,10 +209,16 @@ class WsTrustMetadata {
       this.policy('RequesterAuthentication',
                   this.requester(flags, terms)) +
       this.policy('IssuedTokenTypes', this.issued(flags, terms)) +
+      this.policy('RequestProtection', this.messagePolicy(true, flags,
+                                                           terms)) +
+      (flags.encryptsResponses
+        ? this.policy('ResponseProtection', this.messagePolicy(false, flags,
+                                                               terms))
+        : '') +
       this.types(terms) +
       this.messages(terms) +
       this.portTypes(terms) +
-      this.bindings(terms) +
+      this.bindings(terms, !!flags.encryptsResponses) +
       this.service(root, terms) +
       '</wsdl:definitions>\n';
     log.debug("Leaving WsTrustMetadata.document().");
@@ -249,9 +295,59 @@ class WsTrustMetadata {
       issueKerberos: Krb5Tokens.settingOn('wstrust.issueKerberos'),
       acceptClientCertificate:
         config.value('wstrust.acceptClientCertificate') !== false,
-      verifiesCredentials: !!mode.verifiesCredentials()
+      verifiesCredentials: !!mode.verifiesCredentials(),
+      decryptsRequests: this.decryptsSuite(),
+      encryptsResponses: this.encryptsSuite()
     };
     log.debug("Leaving WsTrustMetadata.liveFlags().");
+    return out;
+  }
+
+  /**
+   * Whether a request encrypted under sp:Basic256Sha256 opens here:
+   * `crypto.decryptElement()` reads AES-256-CBC only where
+   * `mode.usesBrokenAlgorithms()`, RSA-OAEP with MGF1-SHA-1 only where
+   * `mode.allowsLegacyHashes()`, and an RSA key transport needs the
+   * certificate `GET /sts/cert` serves to hold an RSA key.
+   *
+   * @returns true when all three hold
+   */
+  static decryptsSuite(): boolean {
+    log.debug("Entering WsTrustMetadata.decryptsSuite().");
+    let rsa = false;
+    try {
+      const signer = helpers.STS.xmlSigner;
+      const pem = signer && signer.pinned ? signer.certPem
+        : helpers.STS.xml.certPem;
+      const cert = stsCrypto.parseCertificate(String(pem));
+      rsa = !!cert && cert.publicKey.asymmetricKeyType === 'rsa';
+    } catch (e) {
+      log.debug("Caught in WsTrustMetadata.decryptsSuite(): " +
+                ((e && e.message) || e));
+      // No certificate in this process yet: nothing could be encrypted to
+      // it, so nothing is offered.
+      rsa = false;
+    }
+    const out = rsa && !!mode.usesBrokenAlgorithms() &&
+      !!mode.allowsLegacyHashes();
+    log.debug("Leaving WsTrustMetadata.decryptsSuite(). " + out);
+    return out;
+  }
+
+  /**
+   * Whether the service-wide response cipher is sp:Basic256Sha256's:
+   * `wstrust.encryptionAlgorithm` aes256-cbc, and
+   * `wstrust.keyTransportAlgorithm` rsa-oaep-mgf1p kept as it is
+   * (`WsEncryption.effectiveTransport()`). An application's own cipher is
+   * not the document's: it is one document for every application.
+   *
+   * @returns true when the answer may be encrypted under that suite
+   */
+  static encryptsSuite(): boolean {
+    log.debug("Entering WsTrustMetadata.encryptsSuite().");
+    const out = WsEncryption.effectiveCipher('') === 'aes256-cbc' &&
+      WsEncryption.effectiveTransport('') === 'rsa-oaep-mgf1p';
+    log.debug("Leaving WsTrustMetadata.encryptsSuite(). " + out);
     return out;
   }
 
@@ -496,7 +592,7 @@ class WsTrustMetadata {
   private static requester(flags: Flags, terms: Terms): string {
     log.debug("Entering WsTrustMetadata.requester().");
     const parts = [
-      this.all(this.nested('X509Token', '<sp:WssX509V3Token11/>') +
+      this.all(this.asymmetricBinding() + this.wss11() +
                this.signedParts(terms.utility)),
       this.all(this.nested('UsernameToken', '<sp:WssUsernameToken11/>')),
       this.all(this.nested('SamlToken', '<sp:WssSamlV20Token11/>')),
@@ -559,7 +655,11 @@ class WsTrustMetadata {
   /**
    * An issued token named by wst:TokenType. JWT has no token assertion of
    * its own, and neither does a Kerberos ValueType beyond the one profile
-   * assertion, so both are named this way.
+   * assertion, so both are named this way. Its nested wsp:Policy is
+   * required (WS-SecurityPolicy 1.2 section 5.4.2's syntax has no `?` on
+   * it), empty here: without it Apache CXF refused to load the WSDL at all
+   * ("sp:IssuedToken must have an inner wsp:Policy element"), found on
+   * #1908's review.
    *
    * @param tokenType - the token type URI
    * @returns the element
@@ -569,8 +669,131 @@ class WsTrustMetadata {
     const out = '<sp:IssuedToken sp:IncludeToken="' + INCLUDE + '">' +
       '<sp:RequestSecurityTokenTemplate><wst:TokenType>' +
       Html.esc(tokenType) + '</wst:TokenType>' +
-      '</sp:RequestSecurityTokenTemplate></sp:IssuedToken>';
+      '</sp:RequestSecurityTokenTemplate><wsp:Policy/></sp:IssuedToken>';
     log.debug("Leaving WsTrustMetadata.issuedToken().");
+    return out;
+  }
+
+  /**
+   * The message signature's binding (the file's header says why each
+   * property is there, and why sp:IncludeTimestamp is not).
+   *
+   * @returns the sp:AsymmetricBinding
+   */
+  private static asymmetricBinding(): string {
+    log.debug("Entering WsTrustMetadata.asymmetricBinding().");
+    const out = '<sp:AsymmetricBinding><wsp:Policy>' +
+      '<sp:InitiatorToken><wsp:Policy>' +
+      this.nested('X509Token', '<sp:WssX509V3Token11/>') +
+      '</wsp:Policy></sp:InitiatorToken>' +
+      '<sp:RecipientToken><wsp:Policy>' +
+      '<sp:X509Token sp:IncludeToken="' + NEVER + '"><wsp:Policy>' +
+      '<sp:WssX509V3Token11/></wsp:Policy></sp:X509Token>' +
+      '</wsp:Policy></sp:RecipientToken>' +
+      '<sp:AlgorithmSuite><wsp:Policy><sp:Basic256Sha256/></wsp:Policy>' +
+      '</sp:AlgorithmSuite>' +
+      '<sp:Layout><wsp:Policy><sp:Lax/></wsp:Policy></sp:Layout>' +
+      '<sp:OnlySignEntireHeadersAndBody/>' +
+      '</wsp:Policy></sp:AsymmetricBinding>';
+    log.debug("Leaving WsTrustMetadata.asymmetricBinding().");
+    return out;
+  }
+
+  /**
+   * The WS-Security 1.1 key references the endpoint resolves a signer's
+   * certificate by, beside a direct Reference to a BinarySecurityToken:
+   * a KeyIdentifier (a Subject Key Identifier), an issuer and serial, and
+   * a SHA-1 thumbprint.
+   *
+   * @returns the sp:Wss11
+   */
+  private static wss11(): string {
+    log.debug("Entering WsTrustMetadata.wss11().");
+    const out = '<sp:Wss11><wsp:Policy><sp:MustSupportRefKeyIdentifier/>' +
+      '<sp:MustSupportRefIssuerSerial/><sp:MustSupportRefThumbprint/>' +
+      '</wsp:Policy></sp:Wss11>';
+    log.debug("Leaving WsTrustMetadata.wss11().");
+    return out;
+  }
+
+  /**
+   * WHAT A MESSAGE MAY PROTECT BEYOND WHAT IS REQUIRED (#1668, rcbj on
+   * #1908, 2026-11-18): every header and the Body may be signed, and may
+   * be encrypted, and need not be. The required half is the binding
+   * alternative's sp:SignedParts, the Body and the Timestamp.
+   *
+   * OPTIONAL AS AN EXPLICIT wsp:ExactlyOne WHOSE FIRST ALTERNATIVE IS
+   * EMPTY, not wsp:Optional="true". The two are the same policy once
+   * normalized (WS-Policy 1.5 section 4.3.1), but the order of the
+   * alternatives Optional normalizes to is each processor's own, and the
+   * order is what a client acts on: WCF and Metro take the first
+   * alternative they support, Apache CXF the one with the fewest
+   * assertions. Written out, every one of them chooses the message as it
+   * is sent today, and a client protects more only when it is configured
+   * to. Two ExactlyOnes in the policy's wsp:All make four alternatives,
+   * not one per combination written out.
+   *
+   * SIGNING. An empty sp:SignedParts is the Body and every header block
+   * (WS-SecurityPolicy 1.3 section 4.1.1); a sender leaves out its own
+   * wsse:Security header. The endpoint accepts a signature with any
+   * further Reference by wsu:Id under exclusive c14n, and verifies each.
+   * An answer is never signed, so ResponseProtection offers no signing.
+   *
+   * ENCRYPTION, a request's only where `decryptsRequests` (product reads no
+   * AES-CBC, and sp:Basic256Sha256 names it), an answer's only where
+   * `encryptsResponses`. sp:EncryptedParts names the Body's content and
+   * WS-Addressing's two header namespaces, which WCF reads;
+   * sp:EncryptedElements names every other header block and a
+   * UsernameToken in the security header by XPath 1.0, which WCF does not
+   * read, so it is an alternative of its own. A request's ciphertext is
+   * opened wherever it is — an EncryptedData of type Element or Content,
+   * a WS-Security 1.1 EncryptedHeader, its key in its own KeyInfo or in an
+   * EncryptedKey in the security header that lists it — and is held to an
+   * application's map only where that application requires it
+   * (`ws_encryption.ts`). An answer's elements are encrypted to the
+   * InitiatorToken (the signer's certificate) unless the application names
+   * another recipient, each EncryptedData carrying its EncryptedKey.
+   *
+   * @param input - the request's policy, else the answer's
+   * @param flags - which encryption the realm reads and writes
+   * @param terms - the model's values
+   * @returns the policy's content
+   */
+  private static messagePolicy(input: boolean, flags: Flags,
+                               terms: Terms): string {
+    log.debug("Entering WsTrustMetadata.messagePolicy().");
+    const envelopeHeader = "/*[local-name()='Envelope']" +
+      "/*[local-name()='Header']";
+    const xpaths = (paths: string[]): string => {
+      return paths.map((one) => {
+        return '<sp:XPath>' + Html.esc(one) + '</sp:XPath>';
+      }).join('');
+    };
+    const headers = '<sp:Header Namespace="' + Html.esc(terms.addressing) +
+      '"/>' + (input ? '<sp:Header Namespace="' + WSA_SUBMISSION + '"/>'
+                     : '');
+    let out = '';
+    if (input) {
+      out += this.exactlyOne(['<wsp:All/>',
+                              this.all('<sp:SignedParts/>')]);
+    }
+    const encrypts = input ? flags.decryptsRequests : flags.encryptsResponses;
+    if (encrypts) {
+      const others = [envelopeHeader + "/*[not(local-name()='Security' and " +
+        "namespace-uri()='" + terms.secext + "')]"];
+      if (input) {
+        others.push(envelopeHeader + "/*[local-name()='Security' and " +
+          "namespace-uri()='" + terms.secext + "']/*[local-name()=" +
+          "'UsernameToken']");
+      }
+      out += this.exactlyOne(['<wsp:All/>',
+        this.all('<sp:EncryptedParts><sp:Body/>' + headers +
+                 '</sp:EncryptedParts>'),
+        this.all('<sp:EncryptedParts><sp:Body/></sp:EncryptedParts>' +
+                 '<sp:EncryptedElements XPathVersion="' + XPATH10 + '">' +
+                 xpaths(others) + '</sp:EncryptedElements>')]);
+    }
+    log.debug("Leaving WsTrustMetadata.messagePolicy().");
     return out;
   }
 
@@ -810,11 +1033,15 @@ class WsTrustMetadata {
   /**
    * Two SOAP bindings per version. SOAP 1.1's soapAction and SOAP 1.2's
    * action parameter carry the input action; the service reads neither.
+   * Each input names RequestProtection, and each output ResponseProtection
+   * while there is one (WS-Policy 1.5 Attachment section 4.1.1, a message
+   * policy subject).
    *
    * @param terms - the model's values
+   * @param encryptsResponses - an answer may be encrypted
    * @returns the binding elements
    */
-  private static bindings(terms: Terms): string {
+  private static bindings(terms: Terms, encryptsResponses?: boolean): string {
     log.debug("Entering WsTrustMetadata.bindings().");
     let out = '';
     this.versions(terms).forEach((version) => {
@@ -826,9 +1053,12 @@ class WsTrustMetadata {
             '<' + prefix + ':operation soapAction="' +
             Html.esc(this.inputAction(version, name)) + '" ' +
             'style="document"/>' +
-            '<wsdl:input><' + prefix + ':body use="literal"/>' +
-            '</wsdl:input>' +
+            '<wsdl:input>' +
+            '<wsp:PolicyReference URI="#RequestProtection"/>' +
+            '<' + prefix + ':body use="literal"/></wsdl:input>' +
             '<wsdl:output><wsp:PolicyReference URI="#IssuedTokenTypes"/>' +
+            (encryptsResponses
+              ? '<wsp:PolicyReference URI="#ResponseProtection"/>' : '') +
             '<' + prefix + ':body use="literal"/></wsdl:output>' +
             '</wsdl:operation>';
         });

@@ -97,6 +97,18 @@ model Security {
 }
 
 /**
+ * WS-Security's own fault codes, qualified with `wsse:` where WS-Trust 1.4
+ * section 11 has none for the failure (#1668): an encrypted request that
+ * does not open, or does not match the application's map.
+ */
+@vocabulary(#{ id: "wsse.fault",
+               cite: "Web Services Security: SOAP Message Security 1.1 section 12" })
+model SecurityFaults {
+  @term(#{ cite: "WSS SOAP Message Security 1.1 section 12 (\"The signature or decryption was invalid\")" })
+  FailedCheck: "FailedCheck";
+}
+
+/**
  * What a KeyIdentifier or a BinarySecurityToken says it is. The Kerberos
  * Token Profile's ValueTypes and EncodingType are `kerberos/krb5_tokens.ts`'s,
  * which owns that profile (kerberos/CLAUDE.md).

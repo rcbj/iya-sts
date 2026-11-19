@@ -1299,11 +1299,18 @@ class WsTrust {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.soapFault(). version=" + version + ", " +
         "reason=" + reason);
+    // WS-Security's FailedCheck (#1668) is `wsse:`, not section 11's: a
+    // decryption, or a map an encrypted request does not match.
+    // `wst:FailedCheck` is no code, and asking the model for it threw, so
+    // every such refusal became STS-WSTRUST-0015 (#1908's review).
+    const security = trustFault === 'FailedCheck';
+    const prefix = security ? 'wsse' : 'wst';
     const wstDecl = trustFault
-      ? ' xmlns:wst="' + xmlEscape(trustNs || WST_NS) + '"' : '';
+      ? ' xmlns:' + prefix + '="' + xmlEscape(security ? WSSE_NS
+          : (trustNs || WST_NS)) + '"' : '';
     // Section 11's code, a term of the model's `wst.fault`.
-    const code = trustFault ? 'wst:' + WsModel.term('wst.fault', trustFault)
-                            : '';
+    const code = trustFault ? prefix + ':' + WsModel.term(security
+      ? 'wsse.fault' : 'wst.fault', trustFault) : '';
     const body = version === '1.1'
       ? '<soap:Fault>' + WsModel.children('soap11.Fault', {
         faultcode: '<faultcode' + wstDecl + '>' +
@@ -2093,9 +2100,10 @@ class WsTrust {
   // (`0046`) and a Timestamp that is fresh (`0047`, `0048`). Answers
   // `{ refusal }` or `{ skewMs, expires }`.
   // ---------------------------------------------------------------------------
-  private signedPartsProblem(doc, reading, refused): any {
-    const { config, log } = this.deps;
-    log.debug("Entering WsTrust.signedPartsProblem().");
+  // The RST_PARTS a document carries outside its SOAP Body, by name.
+  private partsOutsideSignedBody(doc): string[] {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.partsOutsideSignedBody().");
     const body = this.signedBodyOf(doc);
     const outside = RST_PARTS.filter((name: string): boolean => {
       const all = doc.getElementsByTagNameNS('*', name);
@@ -2106,6 +2114,50 @@ class WsTrust {
       }
       return false;
     });
+    log.debug("Leaving WsTrust.partsOutsideSignedBody(). " + outside.length);
+    return outside;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGNATURE, READ IN WS-SECURITY'S ORDER (#1668, on #1908's review).
+  // WS-SecurityPolicy's default protection order is SignBeforeEncrypting,
+  // which WCF and Apache WSS4J both send: the signature's digests are of
+  // the plaintext, so read over the ciphertext it does not verify. The
+  // reading the header's order names is taken first
+  // (WsEncryption.decryptsBeforeVerifying()), and the other only when the
+  // first is not a signature that verifies and there is ciphertext to open.
+  // `prepare` is prepareMessageSignature()'s reading, which has to find the
+  // same signature the request is answered on.
+  // ---------------------------------------------------------------------------
+  private signedReading(doc, connection, prepare: boolean): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.signedReading().");
+    if (!doc || !WsEncryption.hasCiphertext(doc)) {
+      log.debug("Leaving WsTrust.signedReading(). In the clear.");
+      return this.messageSignature(doc, connection, prepare);
+    }
+    const opened = WsEncryption.openedCopy(doc);
+    const order = WsEncryption.decryptsBeforeVerifying(doc) && opened
+      ? [opened, doc] : (opened ? [doc, opened] : [doc]);
+    let first: any = undefined;
+    for (let i = 0; i < order.length; i++) {
+      const reading = this.messageSignature(order[i], connection, prepare);
+      if (reading && reading.ok) {
+        log.debug("Leaving WsTrust.signedReading(). Reading " + i + ".");
+        return reading;
+      }
+      if (first === undefined || (first === null && reading)) {
+        first = reading;
+      }
+    }
+    log.debug("Leaving WsTrust.signedReading(). Neither verified.");
+    return first === undefined ? null : first;
+  }
+
+  private signedPartsProblem(doc, reading, refused): any {
+    const { config, log } = this.deps;
+    log.debug("Entering WsTrust.signedPartsProblem().");
+    const outside = this.partsOutsideSignedBody(doc);
     if (outside.length) {
       log.debug("Leaving WsTrust.signedPartsProblem(). Outside the Body.");
       return { refusal: refused('STS-WSTRUST-0046', 'the request carries ' +
@@ -2323,7 +2375,7 @@ class WsTrust {
       log.debug("Leaving WsTrust.prepareMessageSignature(). Nothing to do.");
       return;
     }
-    const first = this.messageSignature(doc, null, true);
+    const first = this.signedReading(doc, null, true);
     if (!first || !first.ok || !first.prepared) {
       log.debug("Leaving WsTrust.prepareMessageSignature(). Not to be " +
                 "prepared.");
@@ -4058,16 +4110,18 @@ class WsTrust {
                                       { kerberos: kerberos }) }));
       });
     }
-    // THE SIGNATURE, ON THE MESSAGE AS IT ARRIVED (#1668), and then the
-    // request's encrypted elements. A Kerberos token stays in the header
-    // and is accepted above, before either. A success is kept on the
-    // connection: reading the signature again off the decrypted document
-    // would fail its digest. An unsigned request is not kept, so a
-    // signature that was itself encrypted is still read once it is open.
+    // THE SIGNATURE, AND THEN THE REQUEST'S ENCRYPTED ELEMENTS (#1668). A
+    // Kerberos token stays in the header and is accepted above, before
+    // either. The signature is read in the order WS-Security processes the
+    // header (signedReading()): over the message as it arrived when it was
+    // made after the encryption, over an opened copy when it was made
+    // before it or is itself encrypted. A success is kept on the
+    // connection, so it is not read again off a document whose digests are
+    // the other reading's.
     if (!options.connection) {
       options.connection = {};
     }
-    const signed = this.messageSignature(doc, options.connection);
+    const signed = this.signedReading(doc, options.connection, false);
     const earlyVersion = this.detectSoapVersion(doc, contentType);
     const earlyRst = firstByLocal(doc, 'RequestSecurityToken');
     const earlyNs = (earlyRst && earlyRst.namespaceURI) || WST_NS;
@@ -4083,12 +4137,37 @@ class WsTrust {
     if (signed && signed.ok === true && !signed.prepared) {
       options.connection.acceptedSignature = signed;
     }
+    const hadCiphertext = WsEncryption.hasCiphertext(doc);
     const opened = WsEncryption.openRequest(doc);
     if (!opened.ok) {
       const openedRst = firstByLocal(doc, 'RequestSecurityToken');
       const openedNs = (openedRst && openedRst.namespaceURI) || earlyNs;
       log.debug("Leaving WsTrust.handleRst(). The request would not open.");
       return this.encryptionFault(earlyVersion, opened, openedNs);
+    }
+    // WHAT WAS OPENED IS HELD TO THE SIGNED BODY TOO (#521's step 5, on
+    // #1908's review). A signature over ciphertext covers only where the
+    // ciphertext stood: anybody can encrypt to this realm's published
+    // certificate, so an unsigned header that opens to a
+    // RequestSecurityToken or an AppliesTo would be read first in document
+    // order, beside a genuinely signed Body. Product checks the parts once
+    // more on the opened document; development believes the signature and
+    // never checked them.
+    if (hadCiphertext && options.connection.acceptedSignature &&
+        mode.verifiesCredentials()) {
+      const outside = this.partsOutsideSignedBody(doc);
+      if (outside.length) {
+        const code = 'STS-WSTRUST-0046';
+        log.info(errorCodes.tag(code) + 'wstrust: the request opened to ' +
+                 outside.join(', ') + ' outside the signed SOAP Body.');
+        log.debug("Leaving WsTrust.handleRst(). Opened outside the Body.");
+        return { status: 500, version: earlyVersion, errorCode: code,
+                 body: this.soapFault(earlyVersion,
+                   'The WS-Security signature on this request was ' +
+                   'refused: the request carries ' + outside.join(', ') +
+                   ' outside the signed SOAP Body once it is decrypted.',
+                   'FailedAuthentication', earlyNs) };
+      }
     }
     const version = this.detectSoapVersion(doc, contentType);
     const requestType = textByLocal(doc, 'RequestType');
@@ -4921,8 +5000,19 @@ class WsTrust {
     const self = this;
     let claimed = '';
     const read = validation.parseXml(req.body || '', 'request');
+    // WHAT THE DOOR READS IS THE OPENED REQUEST (#1668, on #1908's review).
+    // The WSDL lets a client encrypt any header or the Body, so a
+    // UsernameToken, an OnBehalfOf or an AppliesTo may arrive as
+    // ciphertext. The home cell, the claimed name and the door's
+    // assessment are read from an opened copy, or a request that encrypted
+    // its UsernameToken would be assessed as nobody's. The signature and
+    // the Kerberos tokens are read from the request as it arrived
+    // (signedReading() takes both orders).
+    const view = read.ok && WsEncryption.hasCiphertext(read.value)
+      ? (WsEncryption.openedCopy(read.value) || read.value)
+      : (read.ok ? read.value : null);
     if (read.ok) {
-      claimed = textByLocal(read.value, 'Username');
+      claimed = textByLocal(view, 'Username');
     }
     // THE PERSON'S HOME CELL (#98 D10), before anything is read, verified,
     // recorded or spent: see homeNameOf(). Single-cell mode goes straight
@@ -4933,11 +5023,11 @@ class WsTrust {
     // it on — so homeNameOf() is told not to fall back to the delegated
     // subject's home.
     const home = read.ok && cells.isMulti() && !req.stsCellRelay
-      ? this.homeNameOf(read.value, this.verifiedOnConnection(req)) : '';
+      ? this.homeNameOf(view, this.verifiedOnConnection(req)) : '';
     // THE DELEGATED SUBJECT, when it is somebody other than the person the
     // request is served for: see delegatedHere().
     const delegated = read.ok && cells.isMulti()
-      ? this.delegatedNameOf(read.value, home) : '';
+      ? this.delegatedNameOf(view, home) : '';
     if (home) {
       log.debug("Leaving WsTrust.stsEndpoint(). Finding the home cell.");
       return cellPlacement.relayToHome(req, res,
@@ -4945,12 +5035,12 @@ class WsTrust {
         'a WS-Trust request').then(function (relayed: boolean): unknown {
           return relayed ? undefined
             : self.stsEndpointHere(req, res, claimed, delegated,
-                                   read.value);
+                                   read.value, view);
         });
     }
     log.debug("Leaving WsTrust.stsEndpoint().");
     return this.stsEndpointHere(req, res, claimed, delegated,
-                                read.ok ? read.value : null);
+                                read.ok ? read.value : null, view);
   }
 
   // The subject of an OnBehalfOf / ActAs, when the request is served for
@@ -5175,16 +5265,20 @@ class WsTrust {
   // that assessment rather than on the standing an earlier one left —
   // which is what risk/CLAUDE.md's door table always said WS-Trust did.
   // ---------------------------------------------------------------------------
-  private stsEndpointHere(req, res, claimed, delegated?: string, doc?) {
+  private stsEndpointHere(req, res, claimed, delegated?: string, doc?,
+                          opened?) {
     const { log, subjectForName, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.stsEndpointHere().");
     const self = this;
+    // The opened request, for everything but the signature and the
+    // Kerberos tokens (stsEndpoint()).
+    const view = opened || doc;
     const names: string[] = [];
     if (claimed) {
       names.push(String(claimed));
     }
-    const obo = doc ? firstByLocal(doc, 'OnBehalfOf') ||
-                      firstByLocal(doc, 'ActAs') : null;
+    const obo = view ? firstByLocal(view, 'OnBehalfOf') ||
+                       firstByLocal(view, 'ActAs') : null;
     const oboNamed = obo ? firstByLocal(obo, 'NameID') ||
                            firstByLocal(obo, 'NameIdentifier') : null;
     const oboName = oboNamed ? String(oboNamed.textContent || '').trim() : '';
@@ -5208,7 +5302,7 @@ class WsTrust {
     const serve = function (door: any): unknown {
       log.debug("Entering serve().");
       log.debug("Leaving serve().");
-      return delegated ? self.delegatedHere(req, res, delegated, doc)
+      return delegated ? self.delegatedHere(req, res, delegated, view)
                        : self.stsEndpointNow(req, res, door);
     };
     log.debug("Leaving WsTrust.stsEndpointHere().");
@@ -5221,7 +5315,7 @@ class WsTrust {
       return self.prepareKerberosAt(req, doc);
     }).then(function (): Promise<unknown> {
       return delegated ? Promise.resolve(null)
-                       : self.doorAssessment(req, doc);
+                       : self.doorAssessment(req, view);
     }).then(serve, function (e: any): unknown {
       log.debug("Caught in WsTrust.stsEndpointHere(): " +
                 ((e && e.message) || e));

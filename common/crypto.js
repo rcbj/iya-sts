@@ -2567,7 +2567,13 @@ function encryptAssertion(assertionXml, certPem, opts) {
 // fail is it rubbish. What this service ITSELF emits is self-contained — see
 // subjectFor() in saml2_sso.js — but somebody else's document is not this
 // service's to dictate.
-function parsesAsFragment(xml) {
+//
+// `namespaces` (#1668) is the prefix-to-URI map in scope where the ciphertext
+// stood, as a WS-Security receiver has it: a SOAP header or Body content
+// encrypted by Apache Santuario relies on declarations on the Envelope, which
+// are not the SAML prefixes below. Only well-formed `xmlns`/`xmlns:p` pairs
+// are written, each value escaped, so it adds no markup of the sender's.
+function parsesAsFragment(xml, namespaces) {
   log.debug("Entering parsesAsFragment().");
   const ok = function (doc) {
     log.debug("Entering ok().");
@@ -2585,9 +2591,16 @@ function parsesAsFragment(xml) {
     // a fragment, and a genuine syntax error fails that too.
     log.debug("Caught in parsesAsFragment(): " + ((e && e.message) || e));
   }
-  const wrapped = '<x xmlns:saml="' + NS_SAML +
-    '" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"' +
-    ' xmlns:ds="' + DS_NS + '" xmlns:xenc="' + XENC_NS + '">' + xml + '</x>';
+  const inScope = Object.assign({ 'xmlns:saml': NS_SAML,
+    'xmlns:samlp': 'urn:oasis:names:tc:SAML:2.0:protocol',
+    'xmlns:ds': DS_NS, 'xmlns:xenc': XENC_NS }, namespaces || {});
+  const declared = Object.keys(inScope).filter(function (name) {
+    return /^xmlns(:[A-Za-z_][\w.-]*)?$/.test(name);
+  }).map(function (name) {
+    return ' ' + name + '="' + String(inScope[name]).replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;').replace(/</g, '&lt;') + '"';
+  }).join('');
+  const wrapped = '<x' + declared + '>' + xml + '</x>';
   try {
     log.debug("Leaving parsesAsFragment().");
     return ok(new DOMParser().parseFromString(wrapped, 'text/xml'));
@@ -2785,7 +2798,7 @@ const CBC_REFUSAL = 'the AES-CBC ciphertext did not decrypt to a ' +
   'Encryption 1.1 section 6.1.3). AES-CBC is unauthenticated; AES-GCM ' +
   'would have detected an altered ciphertext';
 
-function cbcPlaintextUsable(opened) {
+function cbcPlaintextUsable(opened, namespaces) {
   log.debug("Entering cbcPlaintextUsable().");
   const padOk = !!(opened && opened.padOk);
   const bytes = opened ? opened.plain : Buffer.alloc(0);
@@ -2800,7 +2813,7 @@ function cbcPlaintextUsable(opened) {
   }
   // Parsed whether or not the two checks above held, so the three failures
   // cost the same work up to the parser's own.
-  const xmlOk = parsesAsFragment(text);
+  const xmlOk = parsesAsFragment(text, namespaces);
   const ok = padOk && utf8Ok && xmlOk && !!opened;
   log.debug("Leaving cbcPlaintextUsable(). " + ok);
   return { ok: ok, text: text };
@@ -2886,7 +2899,8 @@ function openXmlContent(cipher, key, raw) {
  * @param xml - the encrypted element's XML
  * @param privateKeyPem - the private key it was encrypted to
  * @param opts - `allowedCiphers`, `allowedKeyManagement`,
- *   `allowedOaepDigests` and `logArtifact`
+ *   `allowedOaepDigests`, `logArtifact`, and `namespaces`: the `xmlns`
+ *   declarations in scope where the element stood (#1668)
  * @returns `{ ok, xml, why, algorithm, keyTransport }`
  */
 function decryptElement(xml, privateKeyPem, opts) {
@@ -3157,7 +3171,7 @@ function decryptElement(xml, privateKeyPem, opts) {
     if (!cipher.tagBytes) {
       // AES-CBC: ONE REFUSAL FOR THE PADDING, THE ENCODING AND THE PARSE.
       // See cbcPlaintextUsable() for why.
-      const usable = cbcPlaintextUsable(opened);
+      const usable = cbcPlaintextUsable(opened, options.namespaces);
       if (!usable.ok) {
         log.debug("Leaving decryptElement(). CBC did not yield a document.");
         return errorCodes.mark({ ok: false, why: CBC_REFUSAL },
@@ -3194,7 +3208,7 @@ function decryptElement(xml, privateKeyPem, opts) {
     // For GCM (authenticated) a plaintext that is not XML is the sender's
     // bug and is named as such. For CBC the same question is asked inside
     // cbcPlaintextUsable(), above, and answered as one refusal.
-    if (!parsesAsFragment(plain)) {
+    if (!parsesAsFragment(plain, options.namespaces)) {
       log.debug("Leaving decryptElement(). The plaintext is not XML.");
       return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
                'something that is not well-formed XML' }, 'STS-KEYS-0023');
