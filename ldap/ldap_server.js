@@ -18249,6 +18249,85 @@ function peerAddressOf(req) {
   return String((req && req.connection && req.connection.remoteAddress) || '');
 }
 
+// ---------------------------------------------------------------------------
+// AN OPERATION IS ANSWERED AFTER THIS NODE HAS APPLIED WHAT THE OTHERS
+// COMMITTED BEFORE IT ARRIVED (2026-11-18, GitHub run #510, cluster mode).
+//
+// `tests/protocol/sts_second_factor_doors.js` required a second factor of
+// Alice through `/admin-api` — answered on node A at 03:17:50.496, after its
+// commit — and its next step, an LDAPS simple bind with her password alone,
+// was balanced to node B at 50.522 and ACCEPTED (`ldap 0`): B's copy of her
+// entry did not carry `stsMfaRequired` yet. The same second-factor rule held
+// on every HTTP door in the same run, because `app.js` puts each HTTP
+// request behind `cluster_barrier.js`'s rule 1 and nothing put an LDAP
+// operation behind it — a socket is not an HTTP request (root `CLAUDE.md`,
+// *One front process, and what a socket cannot share*). SPIFFE's gRPC
+// listener had the same gap and closed it the same way
+// (`spiffe/spiffe_grpc.ts`, `fromCaller()`).
+//
+// Every operation but unbind waits, wherever the barrier is active
+// (active-active), for a change-log pull that STARTED after it arrived:
+// `clusterBarrier.catchUp()`, the one the HTTP side shares among every
+// request that arrived before it began. A bind decides on a password, a
+// disabled account, a second-factor requirement, an app password; a search
+// answers what was just written; a write checks a parent and a name — each
+// is a decision another node's commit can change. Outside active-active it
+// runs in the same tick, as before, and nothing is pulled.
+//
+// **A HANDLER THAT THROWS AFTER THE WAIT CAN NO LONGER REACH THE SOCKET'S
+// OWN HANDLING**, so it is answered here, exactly once: `unavailable` (52)
+// for a directory this process could not read — `performOperation()`'s
+// reading of the same three codes — and `operationsError` (1) under
+// STS-LDAP-0223 for anything else, rather than an operation left open.
+// ---------------------------------------------------------------------------
+const UNREADABLE_DIRECTORY_CODES = ['STS-LDAP-0130', 'STS-LDAP-0131',
+                                    'STS-LDAP-0175'];
+function afterClusterCatchUp(operation, handler) {
+  log.debug("Entering afterClusterCatchUp(). " + operation);
+  log.debug("Leaving afterClusterCatchUp().");
+  return function caughtUpFirst(req, res, next) {
+    log.debug("Entering caughtUpFirst(). " + operation);
+    if (!clusterBarrier.isActive()) {
+      log.debug("Leaving caughtUpFirst(). Not active-active.");
+      return handler(req, res, next);
+    }
+    req.stsAsyncOperation = true;
+    let answered = false;
+    const answerOnce = function (err) {
+      log.debug("Entering answerOnce().");
+      answered = true;
+      log.debug("Leaving answerOnce().");
+      return next(err);
+    };
+    clusterBarrier.catchUp('an LDAP ' + operation)
+      .then(function () {
+        return handler(req, res, answerOnce);
+      })
+      .catch(function (e) {
+        log.debug("Caught in caughtUpFirst(): " + ((e && e.message) || e));
+        if (answered) {
+          log.error(errorCodes.tag('STS-LDAP-0223') + 'ldap: the ' +
+                    operation + ' handler threw after it had answered: ' +
+                    ((e && e.stack) || e));
+          return undefined;
+        }
+        const code = errorCodes.codeOf(e);
+        if (UNREADABLE_DIRECTORY_CODES.indexOf(code) >= 0) {
+          // error-code: none — `code` is the thrown one, one of the three
+          return answerOnce(coded(code, new ldap.UnavailableError(
+            'the directory could not be read')));
+        }
+        log.error(errorCodes.tag('STS-LDAP-0223') + 'ldap: the ' + operation +
+                  ' handler threw after the cluster read barrier: ' +
+                  ((e && e.stack) || e));
+        return answerOnce(coded('STS-LDAP-0223', new ldap.OperationsError(
+          'the ' + operation + ' could not be completed')));
+      });
+    log.debug("Leaving caughtUpFirst(). Catching up first.");
+    return undefined;
+  };
+}
+
 const server = {};
 OPERATIONS.forEach(function (operation) {
   server[operation] = function () {
@@ -18269,6 +18348,17 @@ OPERATIONS.forEach(function (operation) {
       // handler) — and only it is wrapped, so a route registered with
       // middleware would keep its shape.
       args[args.length - 1] = inRealmOfRequest(args[args.length - 1]);
+    }
+    // AND CAUGHT UP WITH THE OTHER NODES FIRST (2026-11-18, run #510):
+    // `cluster_barrier.js`'s rule 1, which `app.js` gives every HTTP request
+    // and nothing gave an LDAP operation. OUTSIDE the realm wrapper, so a
+    // realm another node created a moment ago is known when the DN is
+    // placed; INSIDE what `LOCAL_HANDLERS` holds, so it runs in whichever
+    // process runs the operation — a worker's copy is the one that answers
+    // a dispatched bind. See `afterClusterCatchUp()`.
+    if (operation !== 'unbind') {
+      args[args.length - 1] = afterClusterCatchUp(operation,
+                                                  args[args.length - 1]);
     }
     // ---------------------------------------------------------------------
     // AND THE SECOND WRAPPER: THE REQUEST-WORKER POOL (2026-09-12).
@@ -32289,6 +32379,9 @@ module.exports = {
     log.debug("Leaving localHandler().");
     return LOCAL_HANDLERS[operation];
   },
+  // For `tests/ldap_cluster_barrier.js`, which drives it with a stub
+  // barrier so the ORDER is what is asserted (run #510).
+  afterClusterCatchUp: afterClusterCatchUp,
   operationRequest: operationRequest,
   operationContext: operationContext,
   performOperation: performOperation,

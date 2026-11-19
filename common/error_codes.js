@@ -16690,6 +16690,12 @@ const CODES = [
       'a person made again under the name may inherit it. The delete ' +
       'itself stands.',
     spec: '' },
+  { code: 'STS-LDAP-0223',
+    summary: 'An LDAP operation\'s handler threw after the cluster read ' +
+      'barrier it waited for (active-active), where the socket\'s own ' +
+      'handling can no longer catch it: the client is answered ' +
+      'operationsError (1) rather than left without a result (run #510).',
+    spec: 'RFC 4511 section 4.1.9' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

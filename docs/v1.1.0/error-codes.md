@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5733** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5734** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 176
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 177
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
@@ -3587,6 +3587,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0220` | A person import was refused: a credential in the file is not in the form an export writes (a password that is not a stored hash, a record that is not JSON, a certificate that is not one), is already held by somebody else in this realm (a passkey user handle, a stored certificate), or could not be sealed. Nothing was created. | none (a console or management API refusal, HTTP 400) |
 | `STS-LDAP-0221` | A person import created the entry but could not write the credentials the file carried. The person is there without them. | none (a console or management API refusal, HTTP 400) |
 | `STS-LDAP-0222` | Something a deleted person held outside their entry, under their name or DN (devices, post-login progress, mail preferences, federation blocks, GNAP approvals, the identity register, pending enrolments, rich authorization Allows, the risk standing; the RISC register row, moved out of the name when it is taken again), could not be forgotten, so a person made again under the name may inherit it. The delete itself stands. | — |
+| `STS-LDAP-0223` | An LDAP operation's handler threw after the cluster read barrier it waited for (active-active), where the socket's own handling can no longer catch it: the client is answered operationsError (1) rather than left without a result (run #510). | RFC 4511 section 4.1.9 |
 
 ## STS-ATTR
 
