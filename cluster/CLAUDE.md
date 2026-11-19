@@ -393,6 +393,12 @@ flush (2026-09-08) removed that cost, which is why it is acceptable here.
 
 It is installed in `app.js` directly below `requestPool.middleware()`, so it
 runs in the process that serves a request and never in one that only proxies.
+**A socket's operation is not an HTTP request and reaches rule 1 by asking
+for it**: SPIFFE's gRPC handlers through `syncShared()` (2026-09-24) and
+every LDAP operation but unbind through `catchUp()` (2026-11-18, run #510,
+where a bind on node B accepted a password node A had just required a second
+factor beside). A new socket listener owes the same call — `ldap/CLAUDE.md`,
+*And caught up with the OTHER NODES first*.
 It does not make CONCURRENT requests serialisable — that is `cluster_claims.js`.
 
 ### And the replication change underneath it
