@@ -698,15 +698,48 @@ class WsTrust {
     return String(kept || '').trim();
   }
 
-  // WHO ?encrypt=1 ENCRYPTS TO (#747): the requester, by the certificate in its
-  // own WS-Security header. Not the first X509Certificate in the document,
-  // which with a UsernameToken requester and an OnBehalfOf or ActAs assertion
-  // was the delegated assertion's, so the token went to the wrong party's key.
-  // An assertion in the header is skipped too: its KeyInfo is its ISSUER's
-  // certificate, which is this service's, and names nobody asking.
-  private recipientCertificateOf(doc) {
-    const { log, firstByLocal } = this.deps;
+  // WHO ?encrypt=1 ENCRYPTS TO (#747, #1668): the requester, by the
+  // certificate its own WS-Security header names.
+  //
+  // A signature this service accepts names that certificate the X.509
+  // Certificate Token Profile 1.1 way (section 3.2): a Reference to a
+  // #X509v3 BinarySecurityToken, a KeyIdentifier (thumbprint or Subject Key
+  // Identifier) or an X509IssuerSerial. Section 3.4 lets encrypted data
+  // identify the decryption key by any of those, and a thumbprint or an
+  // issuer and serial need not carry the certificate in the message. The
+  // walk below looks for a ds:X509Certificate element, and a
+  // BinarySecurityToken's text is not one, so a request the signature
+  // check accepted had no recipient (#1668).
+  //
+  // The reading is messageSignature()'s. A Reference to an X.509 v3 token
+  // is that token. A thumbprint, a Subject Key Identifier or an issuer and
+  // serial is the issued message-signing certificate
+  // signingCertificateFor() finds — the same lookup, and a stored
+  // certificate is still only the token, because that lookup does not see
+  // userCertificate. '' when the reference names nothing: a different
+  // X509Certificate in the header would be somebody else's key. A Kerberos
+  // reference, a signature that does not read, and a KeyInfo with no
+  // SignedInfo (readWsSecuritySignature() answers present:false, which is
+  // how the older test control carries a bare X509Certificate) fall
+  // through to the walk. An unreferenced BinarySecurityToken — a JWT — is
+  // not a recipient either.
+  //
+  // The walk is what #747 fixed: not the first X509Certificate in the
+  // document, which with a UsernameToken requester and an OnBehalfOf or
+  // ActAs assertion was the delegated assertion's. An assertion in the
+  // header is skipped too: its KeyInfo is its ISSUER's certificate, which
+  // is this service's, and names nobody asking.
+  private recipientCertificateOf(doc): string {
+    const { log, firstByLocal, stsCrypto, loadTlsClientCertificates } =
+      this.deps;
     log.debug("Entering WsTrust.recipientCertificateOf().");
+    const named = this.certificateNamedBySignature(doc, stsCrypto,
+                                                   loadTlsClientCertificates);
+    if (named !== null) {
+      log.debug("Leaving WsTrust.recipientCertificateOf(). Named by the " +
+                "signature.");
+      return named;
+    }
     const found = (node) => {
       const kids = (node && node.childNodes) || [];
       for (let i = 0; i < kids.length; i += 1) {
@@ -723,6 +756,71 @@ class WsTrust {
     const cert = found(firstByLocal(doc, 'Security'));
     log.debug("Leaving WsTrust.recipientCertificateOf(). " + !!cert);
     return cert ? String(cert.textContent || '').replace(/\s+/g, '') : '';
+  }
+
+  // The base64 DER a readable X.509 signature names, or null when the
+  // header has no such signature and the caller should walk for an
+  // X509Certificate. '' is an answer: the signature named a key and it
+  // did not resolve, and the walk must not pick a different certificate.
+  private certificateNamedBySignature(doc, stsCrypto, load): string | null {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.certificateNamedBySignature().");
+    if (!doc || !stsCrypto ||
+        typeof stsCrypto.readWsSecuritySignature !== 'function') {
+      log.debug("Leaving WsTrust.certificateNamedBySignature(). No reader.");
+      return null;
+    }
+    let reading: any = null;
+    try {
+      const xml = new XMLSerializer().serializeToString(doc);
+      reading = stsCrypto.readWsSecuritySignature(xml);
+    } catch (e) {
+      log.debug("Caught in WsTrust.certificateNamedBySignature(): " +
+                ((e && e.message) || e));
+      // A document that cannot be re-read as XML has no signature to
+      // prefer over the elements the walk sees.
+      log.debug("Leaving WsTrust.certificateNamedBySignature(). " +
+                "Unreadable.");
+      return null;
+    }
+    if (!reading || !reading.present || !reading.ok) {
+      log.debug("Leaving WsTrust.certificateNamedBySignature(). No " +
+                "readable signature.");
+      return null;
+    }
+    const reference = reading.keyReference || {};
+    const kind = String(reference.kind || '');
+    if (kind === 'kerberos' || kind === 'kerberos-id') {
+      log.debug("Leaving WsTrust.certificateNamedBySignature(). A " +
+                "Kerberos key.");
+      return null;
+    }
+    if (kind === 'token') {
+      log.debug("Leaving WsTrust.certificateNamedBySignature(). The token.");
+      return String(reference.certB64 || '').replace(/\s+/g, '');
+    }
+    if (kind !== 'thumbprint' && kind !== 'ski' &&
+        kind !== 'issuer-serial') {
+      log.debug("Leaving WsTrust.certificateNamedBySignature(). Not an " +
+                "X.509 reference.");
+      return null;
+    }
+    let pem = '';
+    try {
+      const gates = typeof load === 'function' ? load() : null;
+      if (gates && typeof gates.signingCertificateFor === 'function') {
+        pem = String(gates.signingCertificateFor(undefined, reference) ||
+                     '');
+      }
+    } catch (e) {
+      log.debug("Caught in WsTrust.certificateNamedBySignature(): " +
+                ((e && e.message) || e));
+      // The reference named an issued certificate and the lookup failed.
+      // Falling through would encrypt to a different certificate.
+      pem = '';
+    }
+    log.debug("Leaving WsTrust.certificateNamedBySignature(). " + !!pem);
+    return pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   }
 
   // THE APPLICATION A TOKEN IS FOR (#483): the one registered for the
@@ -4505,8 +4603,10 @@ class WsTrust {
             delegationDecision, lifetimeMin, keyTypeIssued, op } = issuing;
 
     // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
-    // recipient certificate carried in the request's WS-Security signature
-    // (X509Data).
+    // requester's certificate. A readable X.509 signature names it (a
+    // BinarySecurityToken, or a thumbprint, Subject Key Identifier or
+    // issuer and serial of a certificate this realm issued); otherwise the
+    // security header's own X509Certificate (#747, #1668).
     //
     // TWO CHANGES ON 2026-09-12. The algorithms are `saml2.encryptionAlgorithm`
     // and `saml2.keyTransportAlgorithm`, answered for the AppliesTo as
@@ -4555,9 +4655,10 @@ class WsTrust {
                     e.message;
         }
       } else {
-        failure = '?encrypt=1 was requested and the request carries no ' +
-                  'recipient certificate (no X509Certificate in its ' +
-                  'WS-Security signature)';
+        failure = '?encrypt=1 was requested and the request names no ' +
+                  'recipient certificate (no X.509 token on its ' +
+                  'WS-Security signature, and no X509Certificate in the ' +
+                  'security header)';
       }
       if (failure) {
         if (heldRefused || !mode.sendsWeakerThanAsked()) {

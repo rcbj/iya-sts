@@ -904,6 +904,43 @@ UsernameToken's name is; any other signer is served where it arrived.
 refusal by code, wrapping and replay, signing with keys made at run time;
 `tests/protocol/sts_wstrust_signed_requests.js` drives it over HTTP.
 
+## `?encrypt=1` USES THE SIGNATURE'S CERTIFICATE (#1668)
+
+`recipientCertificateOf()` walked `wsse:Security` for a `ds:X509Certificate`.
+Since v1.0.0 a signature this service accepts names its certificate the
+X.509 Certificate Token Profile 1.1 way (section 3.2): a
+`BinarySecurityToken` and a `SecurityTokenReference` to it, or a
+`KeyIdentifier` or `X509IssuerSerial`. That token's text is not an
+`X509Certificate` element, so a request the signature check accepted had, for
+`?encrypt=1`, no recipient. Development returned the assertion in clear
+(`STS-WSTRUST-0012` logged); product faulted. Section 3.4 says encrypted
+data may identify the decryption key by any of those token types or
+references, including a thumbprint or an issuer and serial that does not
+embed the certificate.
+
+The recipient is now that reading (`crypto.readWsSecuritySignature()`),
+resolved as `messageSignature()` resolves it: `keyReference.certB64` for a
+`Reference` to a `#X509v3` token, and `signingCertificateFor()` for a
+thumbprint, Subject Key Identifier or issuer and serial. A reference that
+names nothing returns no certificate and does not fall through to a
+different `X509Certificate` in the header — that would encrypt to the wrong
+party. A Kerberos reference, a signature that is not readable, and a
+`KeyInfo` with no `SignedInfo` (the older test-control shape, which the
+reader treats as no signature) keep the walk, which still skips every
+`Assertion` (#747). An unreferenced `BinarySecurityToken`, a JWT's, is not a
+recipient.
+
+Paranoid PKI (`encryption-recipient`, `STS-PKI-0248`) is unchanged. A
+message-signing leaf is `digitalSignature` only, so product refuses to
+encrypt to it (`STS-WSTRUST-0013`, nothing in clear in either mode) after
+the certificate has been found. Development, where paranoid is off, encrypts
+to the public key. Finding the certificate is this change; the gate is not
+weakened to let a signing-only certificate receive ciphertext.
+
+`tests/wstrust_message_signature.js` I holds the token and the three
+references that do not carry it; `tests/wstrust_fault_codes.js` holds the
+bare `X509Certificate` and a certificate that lives only inside an assertion.
+
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
 `requesterCredential()` passes `door: 'wstrust'`, so in product a person who

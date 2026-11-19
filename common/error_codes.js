@@ -12608,10 +12608,13 @@ const CODES = [
     spec: 'SOAP Fault wst:RequestFailed (HTTP 403), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0012',
-    summary: '?encrypt=1 was requested but the request carries no recipient ' +
-      'X509Certificate to encrypt the assertion to. Product mode ' +
-      'refuses; development returns the assertion in clear and logs ' +
-      'this.',
+    summary: '?encrypt=1 was requested but the request names no recipient ' +
+      'certificate: neither the X.509 token its WS-Security signature ' +
+      'references (a BinarySecurityToken, or a thumbprint, Subject Key ' +
+      'Identifier or issuer and serial of a certificate this realm ' +
+      'issued) nor an X509Certificate in the security header. Product ' +
+      'mode refuses; development returns the assertion in clear and ' +
+      'logs this.',
     spec: 'SOAP Fault wst:InvalidRequest (HTTP 500) in product; none ' +
       'in development' },
   { code: 'STS-WSTRUST-0013',

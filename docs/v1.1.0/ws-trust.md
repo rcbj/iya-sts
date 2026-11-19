@@ -642,20 +642,47 @@ refuse a token for a subject and audience with a SOAP Fault.
 ### Encryption, as a test control
 
 `POST /sts?encrypt=1` (**not part of WS-Trust**) encrypts the SAML assertion to
-the certificate in the request's own WS-Security signature (`X509Certificate`),
-with the algorithms `saml2.encryptionAlgorithm` and
-`saml2.keyTransportAlgorithm` answer for the `AppliesTo`. A request with no
-such certificate, or one that cannot be encrypted to, is answered in clear in
-development and refused in product.
+the requester's certificate, with the algorithms `saml2.encryptionAlgorithm`
+and `saml2.keyTransportAlgorithm` answer for the `AppliesTo`.
+
+The recipient is the certificate the request's WS-Security signature names,
+read the same way [a signed request](#a-signed-request) reads it. The X.509
+Certificate Token Profile 1.1 section 3.2 is how that reference names an
+X.509 token, and section 3.4 is how encrypted data identifies the decryption
+key by any of those types or references:
+
+* the `wsse:BinarySecurityToken` a `wsse:Reference` points at (`#X509v3`);
+* a certificate this realm's message-signing Issuing CA issued, named by a
+  `#ThumbprintSHA1` `KeyIdentifier`, a Subject Key Identifier, or an
+  `X509IssuerSerial` — those three need not carry the certificate in the
+  message;
+* and, where the header carries no readable X.509 signature, the
+  `ds:X509Certificate` in the security header. A `UsernameToken` request, and
+  a `KeyInfo` that signs nothing, still use that element.
+
+A certificate inside an assertion is not a recipient: that key is the
+issuer's, or a third party's inside `OnBehalfOf` or `ActAs`. A
+`BinarySecurityToken` the signature does not reference — a JWT, a Kerberos
+token — is not one either. A reference that names a certificate this realm
+cannot find is no recipient, rather than some other certificate sitting in
+the header.
+
+A request with no such certificate, or one that cannot be encrypted to, is
+answered in clear in development and refused in product. Under
+[paranoid PKI mode](pki.md#paranoid-pki-mode) the certificate must permit
+`keyEncipherment` or `keyAgreement`. A message-signing certificate is
+`digitalSignature` only, so product refuses to encrypt to it
+(`STS-WSTRUST-0013`) once it has been found.
 
 ### Not implemented
 
 A signed request's certificate is found by thumbprint, issuer and serial or
 Subject Key Identifier only among the certificates this realm issued; a
 stored one is sent in a `BinarySecurityToken`. Only a signature over the
-request is read: a signed or encrypted response is not offered, and
-`?encrypt=1` reads its recipient from an `X509Certificate`, not a
-`BinarySecurityToken`. `Validate` reports whether a token is
+request is read: a signed response is not offered, and `?encrypt=1` encrypts
+the issued SAML assertion to the certificate that signature names (see
+[Encryption, as a test control](#encryption-as-a-test-control)) rather than
+encrypting the SOAP response. `Validate` reports whether a token is
 **present**, not whether it verifies, except for a Kerberos token, which it
 accepts; `Cancel` recalls nothing already issued;
 and a SAML assertion presented as a credential is trusted only when **this**

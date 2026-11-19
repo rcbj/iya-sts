@@ -40,7 +40,15 @@
 //   G. development: an altered Body is believed, and the note says so; a
 //      signed ActAs is a token about its subject with the signer acting;
 //   H. the endpoint: over HTTP a signed request is issued and the same
-//      request again is refused.
+//      request again is refused;
+//   I. ?encrypt=1 (#1668): the recipient is the certificate the signature
+//      names — the BinarySecurityToken, or a thumbprint, issuer and serial
+//      or Subject Key Identifier of an issued certificate — and a JWT
+//      token the signature does not reference is not one. Development
+//      encrypts to that key. Product finds the same certificate and
+//      refuses it: a message-signing leaf is digitalSignature only, and
+//      paranoid PKI's encryption recipient needs keyEncipherment or
+//      keyAgreement (STS-WSTRUST-0013, not 0012).
 //
 // IN A CHILD PROCESS, for `wstrust_client_certificate.js`'s reason: it loads
 // the stack and builds a certificate authority, both process state `run.js`
@@ -206,6 +214,7 @@ async function childBody() {
   const accountState = require(ROOT + '/common/account_state');
   const tlsClient = require(ROOT + '/common/tls_client_certificates');
   const xmldsig = require(ROOT + '/common/crypto_impl/xmldsig.js');
+  const stsCrypto = require(ROOT + '/common/crypto');
   const xmldom = require('@xmldom/xmldom');
   const wstrustModule = require(ROOT + '/ws-trust/wstrust');
   const wstrust = new wstrustModule.WsTrust(
@@ -286,7 +295,7 @@ async function childBody() {
       }
       log.debug("Leaving ask().");
       return wstrust.handleRst(xml, 'application/soap+xml', {
-        base: BASE,
+        base: BASE, encrypt: !!o.encrypt,
         connection: { socket: null, revocation: null,
                       signature: req.stsMessageSignature || null } });
     } finally {
@@ -536,6 +545,83 @@ async function childBody() {
           'in', brief(r));
 
   // -------------------------------------------------------------------------
+  // I. ?encrypt=1 READS THE SIGNATURE'S CERTIFICATE (#1668)
+  //
+  // The X.509 Token Profile 1.1 names the certificate by a Reference to a
+  // BinarySecurityToken, or by a thumbprint, Subject Key Identifier or
+  // issuer and serial that need not embed it. Development encrypts the
+  // assertion to that key (paranoid PKI is off). Product finds the same
+  // issued leaf and refuses: digitalSignature does not encipher
+  // (STS-WSTRUST-0013). A JWT BinarySecurityToken the signature does not
+  // reference is not a recipient.
+  // -------------------------------------------------------------------------
+  const openedFor = function (body, keyPem) {
+    log.debug("Entering openedFor().");
+    config.setOverride('global.mode', 'development');
+    let xml = '';
+    try {
+      const opened = stsCrypto.decryptElement(String(body), keyPem);
+      xml = opened && opened.ok ? String(opened.xml || '') : '';
+    } catch (e) {
+      log.debug("Caught in openedFor(): " + ((e && e.message) || e));
+      xml = '';
+    } finally {
+      config.clearOverride('global.mode');
+    }
+    log.debug("Leaving openedFor().");
+    return xml;
+  };
+  const encryptedTo = function (body, keyPem, name) {
+    log.debug("Entering encryptedTo().");
+    const plain = openedFor(body, keyPem);
+    log.debug("Leaving encryptedTo().");
+    return /EncryptedAssertion/.test(String(body)) &&
+      !/>wmsalice</.test(String(body)) && !/>wmsbob</.test(String(body)) &&
+      plain.indexOf('>' + name + '<') >= 0;
+  };
+  r = await ask('development', sign('alice'), { encrypt: true });
+  t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice'),
+          'I1. development: ?encrypt=1 encrypts to the BinarySecurityToken ' +
+          'the signature references, and that key opens it', brief(r));
+  const bobB64 = String(issued.bob.certPem)
+    .replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  r = await ask('development', sign('alice', { after: function (xml) {
+    return xml.replace('</wsse:Security>',
+      '<ds:X509Data xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
+      '<ds:X509Certificate>' + bobB64 + '</ds:X509Certificate>' +
+      '</ds:X509Data></wsse:Security>');
+  } }), { encrypt: true });
+  t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice') &&
+          openedFor(r.body, issued.bob.keyPem) === '',
+          'I2. a second X509Certificate in the header is not the ' +
+          'recipient when the signature names the token', brief(r));
+  for (const form of ['thumbprint', 'issuer-serial', 'ski']) {
+    r = await ask('development', sign('alice', { form: form }),
+                  { encrypt: true });
+    t.check(encryptedTo(r.body, issued.alice.keyPem, 'wmsalice'),
+            'I3. development: ?encrypt=1 encrypts to the certificate named ' +
+            'by ' + form + ', which the message does not carry', brief(r));
+  }
+  r = await ask('product', sign('alice'), { encrypt: true });
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0013' &&
+          /RequestFailed/.test(String(r.body)) &&
+          !/EncryptedAssertion/.test(String(r.body)),
+          'I4. product: the issued message-signing certificate is found ' +
+          'and refused for encryption (digitalSignature only), ' +
+          'STS-WSTRUST-0013', brief(r));
+  const jwtOnly = envelope({
+    security: '<wsse:BinarySecurityToken wsu:Id="jwt" ValueType="' +
+      JWT_TYPE + '" EncodingType="' + BASE64 + '">' +
+      Buffer.from('not-a-certificate').toString('base64') +
+      '</wsse:BinarySecurityToken>'
+  });
+  r = await ask('development', jwtOnly, { encrypt: true });
+  t.check(r.status === 200 && !/EncryptedAssertion/.test(String(r.body)) &&
+          /Assertion/.test(String(r.body)),
+          'I5. a BinarySecurityToken the signature does not reference is ' +
+          'not a recipient', brief(r));
+
+  // -------------------------------------------------------------------------
   // H. THE ENDPOINT
   // -------------------------------------------------------------------------
   config.setOverride('global.mode', 'product');
@@ -638,6 +724,7 @@ module.exports = {
   describe: 'WS-Trust: a WS-Security signature over the Body and Timestamp ' +
             'authenticates the requester its certificate maps to, and is ' +
             'refused when it does not verify, is wrapped, stale, replayed, ' +
-            'revoked or nobody\'s (#521)',
+            'revoked or nobody\'s (#521); ?encrypt=1 encrypts to that ' +
+            'certificate (#1668)',
   run: run
 };

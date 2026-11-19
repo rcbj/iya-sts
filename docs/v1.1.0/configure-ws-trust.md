@@ -589,10 +589,19 @@ protected subjects and the realm settings are on
 ## An encrypted SAML 2.0 assertion
 
 `POST /sts?encrypt=1` encrypts a SAML 2.0 assertion. It is not part of
-WS-Trust. The key is the first `X509Certificate` in the request, which a
-WS-Security signature's `KeyInfo` carries. The algorithms are
+WS-Trust. The key is the requester's certificate. The algorithms are
 `saml2.encryptionAlgorithm` and `saml2.keyTransportAlgorithm`.
 
+A signed request names that certificate the way
+[a signed request](#a-signed-request-as-the-requesters-credential) names it
+(X.509 Certificate Token Profile 1.1): the `BinarySecurityToken` the
+signature's `SecurityTokenReference` points at, or a thumbprint, Subject
+Key Identifier or issuer and serial of a certificate this realm issued for
+message signing.
+
+A request that is not signed that way still uses the first
+`ds:X509Certificate` in `wsse:Security`, outside any assertion. A
+`UsernameToken` with the certificate beside it is that older shape.
 `sts_xml_schema_validation.js` puts the certificate in the security header:
 
 ```xml
@@ -610,7 +619,10 @@ curl -sk -X POST "$BASE/sts?encrypt=1" -H 'content-type: application/soap+xml' -
 
 The answer carries an `EncryptedAssertion`. With no certificate, or one that
 cannot be used, development mode returns the assertion unencrypted and logs
-it, and product mode refuses the request.
+it, and product mode refuses the request. A message-signing certificate
+permits `digitalSignature` only, so under paranoid PKI mode (on in product)
+the request is refused once that certificate has been found: encryption
+needs `keyEncipherment` or `keyAgreement`.
 
 ## Related
 
