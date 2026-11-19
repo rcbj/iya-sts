@@ -719,7 +719,7 @@ class WsTrust {
   }
 
   // Every encryption refusal, as one SOAP Fault. The code that happened
-  // is one of the seven literals beside the call.
+  // is one of the nine literals beside the call.
   private encryptionFault(version, fault, trustNs): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.encryptionFault().");
@@ -731,6 +731,8 @@ class WsTrust {
       : fault.code === 'STS-WSTRUST-0079' ? 'STS-WSTRUST-0079'
       : fault.code === 'STS-WSTRUST-0080' ? 'STS-WSTRUST-0080'
       : fault.code === 'STS-WSTRUST-0081' ? 'STS-WSTRUST-0081'
+      : fault.code === 'STS-WSTRUST-0082' ? 'STS-WSTRUST-0082'
+      : fault.code === 'STS-WSTRUST-0083' ? 'STS-WSTRUST-0083'
       : 'STS-WSTRUST-0077';
     log.debug("Leaving WsTrust.encryptionFault().");
     return { status: 500, version: version, errorCode: code,

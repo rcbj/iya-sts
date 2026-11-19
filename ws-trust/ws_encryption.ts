@@ -18,6 +18,7 @@ import mode = require('../common/mode');
 import DomainMap = require('../common/domain_map');
 import CertificateTrust = require('../common/certificate_trust');
 import xmldom = require('../common/xml_parser');
+import WsDecryptionKey = require('./ws_decryption_key');
 
 const { DOMParser, XMLSerializer } = xmldom;
 const log = helpers.log;
@@ -117,12 +118,14 @@ export = class WsEncryption {
         'the request carries ciphertext, and no request map names an ' +
         'element it may stand for');
     }
+    let owners: string[] = [];
     if (hadCiphertext) {
       const done = WsEncryption.decryptAll(doc);
       if (!done.ok) {
         log.debug("Leaving WsEncryption.openRequest(). It would not open.");
         return done;
       }
+      owners = done.owners || [];
       const placed = opened ? opened() : null;
       if (placed) {
         log.debug("Leaving WsEncryption.openRequest(). Outside the Body.");
@@ -132,6 +135,13 @@ export = class WsEncryption {
     // The application is read from the opened request: an AppliesTo inside
     // the ciphertext names it only now.
     const appId = WsEncryption.applicationId(doc);
+    if (hadCiphertext) {
+      const owned = WsEncryption.ownersProblem(owners, appId);
+      if (owned) {
+        log.debug("Leaving WsEncryption.openRequest(). Whose key.");
+        return owned;
+      }
+    }
     const paths = WsEncryption.stringsOf(appId, 'requestElements');
     if (hadCiphertext &&
         !WsEncryption.on(appId, 'wstrust.acceptEncryptedElements')) {
@@ -475,11 +485,14 @@ export = class WsEncryption {
   private static decryptAll(doc): any {
     log.debug("Entering WsEncryption.decryptAll().");
     let count = 0;
+    // Whose key opened each ciphertext: an application's identifier, or ''
+    // for the realm's (`ownersProblem()`).
+    const owners: string[] = [];
     for (let round = 0; round < 8; round++) {
       const nodes = WsEncryption.ciphertexts(doc);
       if (!nodes.length) {
         log.debug("Leaving WsEncryption.decryptAll(). Open.");
-        return { ok: true };
+        return { ok: true, owners: owners };
       }
       count += nodes.length;
       if (count > WsEncryption.MOST) {
@@ -494,6 +507,7 @@ export = class WsEncryption {
           log.debug("Leaving WsEncryption.decryptAll(). Refused.");
           return replaced;
         }
+        owners.push(String(replaced.owner || ''));
       }
     }
     log.debug("Leaving WsEncryption.decryptAll(). Nested too deep.");
@@ -637,8 +651,14 @@ export = class WsEncryption {
         serializer.serializeToString(node) + '</' + HOLDER + ':Ciphertext>'
       : serializer.serializeToString(node);
     const namespaces = WsEncryption.inScope(context);
-    const opened = helpers.decryptOwnElement(xml,
-                                             { namespaces: namespaces });
+    // WHICH KEY (#1668): an application's own, where the EncryptedKey names
+    // its certificate; the realm's otherwise, each tried as before.
+    const own = WsDecryptionKey.keyFor(WsEncryption.recipientHandles(doc,
+      key || WsEncryption.ownEncryptedKey(node), node));
+    const opened = own
+      ? stsCrypto.decryptElement(xml, own.privateKey,
+                                 { namespaces: namespaces })
+      : helpers.decryptOwnElement(xml, { namespaces: namespaces });
     if (!opened || !opened.ok || !opened.xml) {
       log.debug("Leaving WsEncryption.decryptOne(). It did not open.");
       return WsEncryption.fail('STS-WSTRUST-0075', 'FailedCheck',
@@ -701,7 +721,170 @@ export = class WsEncryption {
     context.removeChild(target);
     log.debug("Leaving WsEncryption.decryptOne(). Restored " +
               elements.length + ".");
-    return { ok: true };
+    return { ok: true, owner: own ? String(own.owner) : '' };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHOSE KEY OPENED IT, HELD TO WHOSE REQUEST IT IS (#1668, rcbj's request
+  // of 2026-11-19). An application may hold its own decryption key pair
+  // (`ws_decryption_key.ts`). The key is CHOSEN by the recipient the
+  // EncryptedKey names, so a request whose AppliesTo is itself inside the
+  // ciphertext still opens; what opened it is then held to the application
+  // the opened request is for:
+  //
+  //   * ciphertext opened by one application's key, in a request for any
+  //     other application or none — or by two applications' keys — is
+  //     `STS-WSTRUST-0082`: a key does not choose whose request it is;
+  //   * ciphertext opened by the realm's key, in a request for an
+  //     application that holds its own, is `STS-WSTRUST-0083`.
+  //
+  // Both are wsse:FailedCheck, and the sentence says no more than that the
+  // request was encrypted to a key it may not be opened with: the requester
+  // encrypted it, so nothing about the plaintext is told. An application
+  // without a key of its own is unchanged — the realm's keys, as before.
+  // -------------------------------------------------------------------------
+  private static ownersProblem(owners: string[], appId: string): any {
+    log.debug("Entering WsEncryption.ownersProblem().");
+    const apps = owners.filter(function (one, i) {
+      return one && owners.indexOf(one) === i;
+    });
+    const realmUsed = owners.indexOf('') >= 0;
+    if (apps.length > 1 || (apps.length === 1 && apps[0] !== appId)) {
+      log.warn('ws-trust: a request for "' + (appId || '(no application)') +
+               '" carried ciphertext encrypted to the decryption key of ' +
+               apps.join(' and ') + ' (STS-WSTRUST-0082).');
+      log.debug("Leaving WsEncryption.ownersProblem(). Another's key.");
+      return WsEncryption.fail('STS-WSTRUST-0082', 'FailedCheck',
+        'the request was encrypted to a key it may not be opened with');
+    }
+    if (realmUsed && appId &&
+        applications.wstrustDecryptionKeyFacts(appId).held) {
+      log.warn('ws-trust: a request for "' + appId + '", which holds its ' +
+               'own decryption key, was encrypted to the realm\'s key ' +
+               '(STS-WSTRUST-0083).');
+      log.debug("Leaving WsEncryption.ownersProblem(). The realm's key.");
+      return WsEncryption.fail('STS-WSTRUST-0083', 'FailedCheck',
+        'the request was encrypted to a key it may not be opened with');
+    }
+    log.debug("Leaving WsEncryption.ownersProblem(). " + apps.length +
+              " application key(s).");
+    return null;
+  }
+
+  // The EncryptedKey an EncryptedData carries in its own KeyInfo, the shape
+  // this service writes; null for one in a security header or an agreement.
+  private static ownEncryptedKey(node): any {
+    log.debug("Entering WsEncryption.ownEncryptedKey().");
+    const keyInfo = WsEncryption.childNamed(node, DS, 'KeyInfo');
+    const key = keyInfo ? WsEncryption.childNamed(keyInfo, XENC,
+                                                  'EncryptedKey') : null;
+    log.debug("Leaving WsEncryption.ownEncryptedKey(). " + !!key);
+    return key;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE RECIPIENT AN ENCRYPTEDKEY NAMES, as handles
+  // (`crypto.wssCertificateHandles()`): in its ds:KeyInfo, a
+  // SecurityTokenReference's `#ThumbprintSHA1` or `#X509SubjectKeyIdentifier`
+  // KeyIdentifier, its Reference to an `#X509v3` BinarySecurityToken, or an
+  // X509Data's certificate, SKI or issuer and serial; for a key agreed with
+  // ECDH-ES, the same inside the AgreementMethod's RecipientKeyInfo. Never
+  // the OriginatorKeyInfo, which is the sender's key. A handle chooses a key
+  // and vouches for nothing: the key still has to open the ciphertext.
+  // -------------------------------------------------------------------------
+  private static recipientHandles(doc, encryptedKey, data): string[] {
+    log.debug("Entering WsEncryption.recipientHandles().");
+    let info = encryptedKey ? WsEncryption.childNamed(encryptedKey, DS,
+                                                      'KeyInfo') : null;
+    if (!encryptedKey) {
+      const dataInfo = WsEncryption.childNamed(data, DS, 'KeyInfo');
+      const agreement = dataInfo ? WsEncryption.childNamed(dataInfo, XENC,
+                                                           'AgreementMethod')
+                                 : null;
+      info = agreement ? agreement.getElementsByTagNameNS('*',
+        'RecipientKeyInfo')[0] || null : null;
+    }
+    if (!info) {
+      log.debug("Leaving WsEncryption.recipientHandles(). No KeyInfo.");
+      return [];
+    }
+    const out: string[] = [];
+    const within = function (local: string): any[] {
+      log.debug("Entering within(). " + local);
+      const all = info.getElementsByTagNameNS('*', local);
+      const kept = [];
+      for (let i = 0; i < all.length; i++) {
+        if (!WsEncryption.underOriginator(all[i], info)) {
+          kept.push(all[i]);
+        }
+      }
+      log.debug("Leaving within(). " + kept.length);
+      return kept;
+    };
+    const textOf = function (el): string {
+      log.debug("Entering textOf().");
+      log.debug("Leaving textOf().");
+      return String((el && el.textContent) || '').replace(/\s+/g, '');
+    };
+    within('KeyIdentifier').forEach(function (el) {
+      const valueType = String(el.getAttribute('ValueType') || '');
+      const encoding = String(el.getAttribute('EncodingType') || '');
+      const hex = /#HexBinary$/.test(encoding) ? textOf(el).toLowerCase()
+        : Buffer.from(textOf(el), 'base64').toString('hex');
+      if (/#ThumbprintSHA1$/.test(valueType) && hex) {
+        out.push('sha1:' + hex);
+      } else if (/#X509SubjectKeyIdentifier$/.test(valueType) && hex) {
+        out.push('ski:' + hex);
+      }
+    });
+    within('Reference').forEach(function (el) {
+      const uri = String(el.getAttribute('URI') || '');
+      const id = uri.indexOf('#') === 0 ? uri.slice(1) : '';
+      const tokens = id ? doc.getElementsByTagNameNS(PREFIXES.wsse,
+        'BinarySecurityToken') : [];
+      for (let i = 0; i < tokens.length; i++) {
+        const tokenId = String(tokens[i].getAttributeNS(PREFIXES.wsu, 'Id') ||
+                               tokens[i].getAttribute('Id') || '');
+        if (tokenId === id && /#X509v3$/.test(String(
+              tokens[i].getAttribute('ValueType') || ''))) {
+          stsCrypto.wssCertificateHandles(textOf(tokens[i]))
+            .forEach(function (one) { out.push(one); });
+        }
+      }
+    });
+    within('X509Certificate').forEach(function (el) {
+      stsCrypto.wssCertificateHandles(textOf(el))
+        .forEach(function (one) { out.push(one); });
+    });
+    within('X509SKI').forEach(function (el) {
+      if (textOf(el)) {
+        out.push('ski:' + Buffer.from(textOf(el), 'base64').toString('hex'));
+      }
+    });
+    within('X509IssuerSerial').forEach(function (el) {
+      const name = el.getElementsByTagNameNS('*', 'X509IssuerName')[0];
+      const serial = String((el.getElementsByTagNameNS('*',
+        'X509SerialNumber')[0] || {}).textContent || '').trim();
+      if (name && /^[0-9]+$/.test(serial)) {
+        out.push(stsCrypto.wssIssuerSerialHandle(
+          String(name.textContent || '').trim(),
+          BigInt(serial).toString(16)));
+      }
+    });
+    log.debug("Leaving WsEncryption.recipientHandles(). " + out.length);
+    return out;
+  }
+
+  // Once per element a recipient handle could be read from. A debug line
+  // here would bury the request.
+  private static underOriginator(node, stop): boolean {
+    for (let cur = node.parentNode; cur && cur !== stop;
+         cur = cur.parentNode) {
+      if (cur.localName === 'OriginatorKeyInfo') {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static enforce(doc, paths): any {
