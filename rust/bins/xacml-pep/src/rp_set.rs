@@ -42,6 +42,18 @@
 //! so a rotation signs nobody out. **No secret is logged or reported**:
 //! the digest is not either.
 //!
+//! **THE DPOP KEY OUTLIVES A REBUILD TOO** (run #543). The library makes a
+//! DPoP key of its own when it is given none (`Dpop::generate`), so every
+//! rebuild used to change it — and a sign-in in flight across a rebuild
+//! had pushed its request with the OLD key's `dpop_jkt` and redeemed its
+//! code, at the callback, through the NEW party with the new key: the
+//! service refused the code (`invalid_grant`, `STS-OAUTH-0205`) and the
+//! browser got 401 `STS-XPEP-0083`. The access and refresh tokens the
+//! library's session store holds are bound to the key the same way. So
+//! one P-256 key per client is made here, once, and handed to every party
+//! built for that client as `dpopKey`; it is NOT in the digest (a secret,
+//! and nothing a pull changes), and it is never logged or reported.
+//!
 //! **THE REGISTERED NAME IS THE MEMBER'S STREAM** (#1760 phase 3). Once
 //! registration has succeeded, every transmitter call carries
 //! `X-Iya-Pep-Name` with that name, and the service answers the list with
@@ -141,6 +153,9 @@ pub struct RpSet {
     entries: Mutex<HashMap<String, Entry>>,
     /// The library's session stores, one per client, outliving rebuilds.
     stores: Mutex<HashMap<String, Arc<MemorySessionStore>>>,
+    /// The DPoP key of each client, PKCS #8 PEM, outliving rebuilds (see
+    /// the module's comment). A secret: never logged or reported.
+    dpop_keys: Mutex<HashMap<String, String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -267,6 +282,7 @@ impl RpSet {
             on_end,
             entries: Mutex::new(HashMap::new()),
             stores: Mutex::new(HashMap::new()),
+            dpop_keys: Mutex::new(HashMap::new()),
         }
     }
 
@@ -294,6 +310,35 @@ impl RpSet {
                 ))
             })
             .clone()
+    }
+
+    /// The DPoP key every party of `client_id` signs its proofs with, made
+    /// the first time it is asked for. None when no key could be made: the
+    /// library then makes one of its own, as it always did, and only a
+    /// sign-in in flight across a rebuild is lost.
+    fn dpop_key_for(&self, client_id: &str) -> Option<String> {
+        let mut keys = lock(&self.dpop_keys);
+        if let Some(pem) = keys.get(client_id) {
+            return Some(pem.clone());
+        }
+        match new_dpop_key() {
+            Ok(pem) => {
+                keys.insert(client_id.to_string(), pem.clone());
+                Some(pem)
+            }
+            Err(why) => {
+                tracing::warn!(
+                    "{}xacml-pep: proxy: no DPoP key could be made for \
+                     client {} ({}); the library makes one per relying \
+                     party, so a sign-in in flight when it is rebuilt \
+                     fails.",
+                    tag("STS-XPEP-0090"),
+                    client_id,
+                    why
+                );
+                None
+            }
+        }
     }
 
     /// The relying party of `client_id` as the pull describes it: the one
@@ -338,6 +383,12 @@ impl RpSet {
             }
         }
         let store = self.store_for(client_id);
+        // After the digest: the key is a secret and the same for every
+        // build of this client, so it neither belongs in nor changes it.
+        let mut config = config;
+        if let Some(pem) = self.dpop_key_for(client_id) {
+            config.insert("dpopKey".into(), json!(pem));
+        }
         let on_end = self.on_end.clone();
         let issuer = pulled.realm.issuer.clone();
         let tls_ca =
@@ -632,6 +683,20 @@ fn party_digest(
     )
 }
 
+/// A new P-256 private key in PKCS #8 PEM: the one curve the library signs
+/// DPoP proofs with (`DPOP_ALG`, ES256).
+fn new_dpop_key() -> Result<String, String> {
+    let group = openssl::ec::EcGroup::from_curve_name(
+        openssl::nid::Nid::X9_62_PRIME256V1,
+    )
+    .map_err(|e| e.to_string())?;
+    let key = openssl::ec::EcKey::generate(&group)
+        .and_then(openssl::pkey::PKey::from_ec_key)
+        .map_err(|e| e.to_string())?;
+    let pem = key.private_key_to_pem_pkcs8().map_err(|e| e.to_string())?;
+    String::from_utf8(pem).map_err(|e| e.to_string())
+}
+
 /// A receiver's `stop()` waits for a transmitter call in flight (at most
 /// the library's 15 s HTTP timeout), so it is never awaited on a request:
 /// it runs as a task of its own, on the blocking pool.
@@ -725,5 +790,32 @@ mod tests {
         assert_ne!(named, other, "two members do not share a digest");
         assert_ne!(named, bare, "a name rebuilds an untagged receiver");
         assert_eq!(bare, blank, "a blank name sends no header");
+    }
+
+    #[test]
+    fn a_client_keeps_one_dpop_key_across_rebuilds() {
+        // Run #543: a party rebuilt between a sign-in's PAR and its
+        // callback redeemed the code with a new DPoP key, and the service
+        // refused it (STS-OAUTH-0205). Every build of a client must sign
+        // with the key the first one did.
+        let set = RpSet::new(
+            RpLimits {
+                allow_insecure: false,
+                poll_ms: 1000,
+                stale_ms: 3000,
+                max_sessions: 4,
+                session_ttl_ms: 60_000,
+            },
+            Arc::new(|_| {}),
+        );
+        let first = set.dpop_key_for("app").expect("a key is made");
+        let again = set.dpop_key_for("app").expect("and kept");
+        assert_eq!(first, again, "a rebuild signs with the same key");
+        let other = set.dpop_key_for("other").expect("a key per client");
+        assert_ne!(first, other, "two clients do not share a key");
+        let one = oidc_caep_risc::Dpop::from_pem(&first)
+            .expect("the library reads the key");
+        let two = oidc_caep_risc::Dpop::from_pem(&again).expect("again");
+        assert_eq!(one.jkt(), two.jkt(), "the same dpop_jkt every build");
     }
 }
