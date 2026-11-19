@@ -1691,6 +1691,12 @@ const JOBS = [
   // (RSA-OAEP and ECDH-ES), WS-Federation, a JWE ID Token, every refused
   // algorithm, plaintext in product, rotation and its grace period.
   { file: 'sts_federation_encryption.js', browser: false },
+  // AN APPLICATION'S OWN WS-TRUST DECRYPTION KEY PAIR (#1668, rcbj's
+  // request of 2026-11-19): issued from the realm's CA through /admin-api,
+  // the certificate downloaded, a wholly encrypted RST to it answered and
+  // one to the realm's key refused (STS-WSTRUST-0083), a client-made pair
+  // uploaded and used, and the pair removed. `local: true`: ours.
+  { file: 'sts_wstrust_decryption_key.js', browser: false, local: true },
   // EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS
   // SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS (#188,
   // 2026-09-24): metadata, Responses on every binding, the ArtifactResponse,

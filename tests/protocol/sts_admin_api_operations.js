@@ -5454,6 +5454,19 @@ const NOT_DRIVEN_HERE = {
   // grace period and not after it, and the retirement job removes it.
   "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
     "and checks the grace period and the retirement",
+  // AN APPLICATION'S WS-TRUST DECRYPTION KEY PAIR (#1668). Driven by
+  // `sts_wstrust_decryption_key.js`, which checks what each did: a request
+  // encrypted to the issued or uploaded certificate is answered, one to the
+  // realm's key refused, and after the removal answered again.
+  "POST /applications/issue-wstrust-decryption-key":
+    "sts_wstrust_decryption_key.js drives it, and sends a request " +
+    "encrypted to the certificate it issued",
+  "POST /applications/upload-wstrust-decryption-key":
+    "sts_wstrust_decryption_key.js drives it with a client-made pair, " +
+    "and its refusal of a mismatched key",
+  "POST /applications/remove-wstrust-decryption-key":
+    "sts_wstrust_decryption_key.js drives it, and checks the realm's key " +
+    "opens a request again",
   // A PARTNER'S DISCOVERY AND DYNAMIC REGISTRATION (#930). Both DIAL the
   // partner — its discovery document and JWKS, its registration endpoint —
   // so a walk with no partner could drive only their refusals.
