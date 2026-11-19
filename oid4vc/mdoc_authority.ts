@@ -87,6 +87,9 @@ class MdocAuthority {
   constructor(private readonly deps: MdocAuthorityDeps) {
   }
 
+  // The mint this process has in flight, per realm and key set.
+  private readonly inFlight = new Map<string, Promise<MdocPair>>();
+
   /**
    * The dependencies a process without the composition root builds with.
    *
@@ -154,14 +157,52 @@ class MdocAuthority {
       throw this.fail('the mdoc authority needs the credential ' +
                       'issuer URI and none was given.');
     }
+    // ONE MINT PER REALM PER PROCESS AT A TIME (CI run #532). Every
+    // concurrent request used to ask the cluster claim for itself, and
+    // each one that lost waited out the whole bound on its own. The
+    // requests of one process now share one promise, as
+    // `credential_signer.js`'s `memberForAsync()` does.
+    const flightKey = keys && keys.realm !== undefined
+      ? String(keys.realm) + ' ' + String(keys.kid || '') : '';
+    const flying = flightKey ? this.inFlight.get(flightKey) : undefined;
+    if (flying) {
+      log.debug("Leaving MdocAuthority.ensure(). One is in flight.");
+      return flying;
+    }
+    const running = this.claimAndMint(keys, issuer);
+    if (flightKey) {
+      this.inFlight.set(flightKey, running);
+      const release = (): void => {
+        log.debug("Entering release().");
+        if (this.inFlight.get(flightKey) === running) {
+          this.inFlight.delete(flightKey);
+        }
+        log.debug("Leaving release().");
+      };
+      running.then(release, function (e: any) {
+        log.debug("Caught in MdocAuthority.ensure(): " +
+                  ((e && e.message) || e));
+        // The caller awaiting `running` is the one told; this handler
+        // only frees the slot so the next request may try again.
+        release();
+      });
+    }
+    log.debug("Leaving MdocAuthority.ensure(). Minting.");
+    return running;
+  }
+
+  // The claim, then either the pair another process made or one made here.
+  private async claimAndMint(keys: any, issuer: string): Promise<MdocPair> {
+    const { log } = this.deps;
+    log.debug("Entering MdocAuthority.claimAndMint().");
     await this.claimMint(keys);
     const raced = this.pairFrom(keys);
     if (raced) {
-      log.debug("Leaving MdocAuthority.ensure(). Minted elsewhere.");
+      log.debug("Leaving MdocAuthority.claimAndMint(). Minted elsewhere.");
       return raced;
     }
     const made = await this.mint(keys, issuer);
-    log.debug("Leaving MdocAuthority.ensure(). Minted.");
+    log.debug("Leaving MdocAuthority.claimAndMint(). Minted.");
     return made;
   }
 
@@ -240,25 +281,64 @@ class MdocAuthority {
     return Buffer.from(body, 'base64');
   }
 
-  // Both certificates and the document signer's key, or null.
+  // Both certificates and the document signer's key, or null: the pair
+  // this key set carries, and otherwise the pair the keystore holds for
+  // the realm — the store's row or a sibling's shared blob.
+  //
+  // **THE SECOND HALF IS WHAT A LOST CLAIM WAITS FOR (CI run #532).** It
+  // read the certificates from the keystore and the private key through
+  // the kid of THIS key set's own document-signer row, so a process whose
+  // set had no such row — every process but the one that minted — never
+  // found the pair however long it waited. In the cluster, cells and
+  // MariaDB modes each request that lost the claim waited the whole
+  // MINT_WAIT_MS and then minted an authority of its own.
   private pairFrom(keys: any): MdocPair | null {
     const { log } = this.deps;
     log.debug("Entering MdocAuthority.pairFrom().");
     const realmId = keys && keys.realm !== undefined
       ? String(keys.realm) : '';
-    const iaca = this.slotOf(keys, IACA_SLOT);
-    const ds = this.slotOf(keys, DS_SLOT);
-    const iacaPem = (iaca && iaca.certPem) ||
-      this.heldCert(keys, realmId, IACA_SLOT);
-    const dsPem = (ds && ds.certPem) ||
-      this.heldCert(keys, realmId, DS_SLOT);
-    const dsKey = this.privateOf(ds, realmId);
-    if (!iacaPem || !dsPem || !dsKey) {
+    const own = this.pairOf(this.slotOf(keys, IACA_SLOT),
+                            this.slotOf(keys, DS_SLOT), realmId);
+    if (own) {
+      log.debug("Leaving MdocAuthority.pairFrom(). On the key set.");
+      return own;
+    }
+    if (!realmId) {
       log.debug("Leaving MdocAuthority.pairFrom(). Incomplete.");
       return null;
     }
-    const kid = (ds && ds.publicJwk && ds.publicJwk.kid) || DS_KID;
-    log.debug("Leaving MdocAuthority.pairFrom(). Held.");
+    const keystore = require('../common/keystore');
+    const rows = keystore.credentialSignersHeldFor(realmId) || [];
+    const heldRow = function (slot: string): any {
+      return rows.filter(function (one: any) {
+        return one && one.slot === slot && one.certPem;
+      })[0] || null;
+    };
+    const held = this.pairOf(heldRow(IACA_SLOT), heldRow(DS_SLOT),
+                             realmId);
+    log.debug("Leaving MdocAuthority.pairFrom(). " +
+              (held ? "Held for the realm." : "Incomplete."));
+    return held;
+  }
+
+  // The pair two rows make, or null where either certificate or the
+  // document signer's private key is missing.
+  private pairOf(iaca: any, ds: any, realmId: string): MdocPair | null {
+    const { log } = this.deps;
+    log.debug("Entering MdocAuthority.pairOf().");
+    const iacaPem = iaca && iaca.certPem;
+    const dsPem = ds && ds.certPem;
+    if (!iacaPem || !dsPem) {
+      log.debug("Leaving MdocAuthority.pairOf(). A certificate is missing.");
+      return null;
+    }
+    const dsKey = this.privateOf(ds, realmId);
+    if (!dsKey) {
+      log.debug("Leaving MdocAuthority.pairOf(). No private key.");
+      return null;
+    }
+    const kid = (ds.publicJwk && ds.publicJwk.kid) || DS_KID;
+    log.debug("Leaving MdocAuthority.pairOf().");
     return { iacaPem: String(iacaPem), dsPem: String(dsPem),
              dsDer: this.derOf(String(dsPem)), dsKey: dsKey,
              dsKid: String(kid) };
