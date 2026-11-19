@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5731** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5733** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 188
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 274
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 275
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 173
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -1108,6 +1108,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0285` | A realm's credential-signing key could not be made, did not arrive from the process that claimed it in time, or is held encrypted and could not be decrypted (#1880). | The credential request fails as the credential endpoint fails any signing error; a late key is made here instead |
 | `STS-PKI-0286` | A realm's credential-signing key could not be certified (#1880): no issuer identifier or key to name, or the JOSE Issuing CA refused. It still signs; its credentials carry no x5c until it is certified. | none: the credential is issued without x5c |
 | `STS-PKI-0287` | A realm's live credential-signing certificate was revoked for a reason that distrusts its key (keyCompromise, cACompromise, aACompromise, privilegeWithdrawn, certificateHold, unspecified or an unknown reason), so credentials are signed by a new key of the family from now on and the old key is neither published nor accepted while that revocation stands (#1880). | none: the credential is issued under the new key |
+| `STS-PKI-0288` | This realm's mdoc Issuing Authority CA or document signer could not be minted or restored (#1862): no credential issuer URI, a country code that is not ISO 3166-1 alpha-2, or the certificates could not be issued. An mdoc is not issued, and GET /oid4vci/mdoc-iaca answers 500. | the credential endpoint fails as it fails any signing error; the public certificate answers 500 |
 
 ## STS-ENROLL
 
@@ -4191,6 +4192,7 @@ Raised from: oid4vc/.
 | `STS-VC-0184` | A bbs-2023 derived proof was refused because its verificationMethod names no BBS key this realm publishes, so no issuer this Verifier trusts stands behind it (#1878). | a failed check in the OpenID4VP Verifier's result |
 | `STS-VC-0185` | A bbs-2023 derived proof was refused because its presentation header is not this request's nonce: a bare derived proof must carry the nonce, and one inside a Verifiable Presentation may carry the nonce or nothing (#1878). | a failed check in the OpenID4VP Verifier's result |
 | `STS-VC-0186` | A bbs-2023 derived proof did not verify (W3C Data Integrity BBS Cryptosuites v1.0, section 3.3.5): the reveal document, the issuer key, the label map, the indexes or the presentation header is not what it was derived for, or the proof is malformed (#1878). | a failed check in the OpenID4VP Verifier's result |
+| `STS-VC-0187` | An mso_mdoc credential could not be built (#1862): the holder key the proof named is not P-256, or the document signer could not sign the Mobile Security Object. | OpenID4VCI section 8.3: the credential endpoint answers server_error |
 
 ## STS-SSF
 

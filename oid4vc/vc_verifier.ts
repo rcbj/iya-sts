@@ -307,14 +307,15 @@ const ALL_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.slice();
 // ---------------------------------------------------------------------------
 // A SIGN-IN'S CREDENTIAL QUERIES, ONE PER FORMAT (#38's follow-ups). The
 // SD-JWT query keeps the id the bar door has always used, so a wallet that
-// answers only `identity_credential` still answers it; the other two are
+// answers only `identity_credential` still answers it; the others are
 // distinct, because the response is keyed by query id and the id is how the
 // Verifier knows which format arrived.
 // ---------------------------------------------------------------------------
 const SIGN_IN_QUERY_IDS = {
   'dc+sd-jwt': 'identity_credential',
   'jwt_vc_json': 'identity_credential_jwt_vc',
-  'ldp_vc': 'identity_credential_ldp_vc'
+  'ldp_vc': 'identity_credential_ldp_vc',
+  'mso_mdoc': 'identity_credential_mdoc'
 };
 const SIGN_IN_FORMATS = Object.keys(SIGN_IN_QUERY_IDS);
 
@@ -484,8 +485,8 @@ const RESPONSE_MODES = ['direct_post', 'direct_post.jwt', 'form_post'];
 const START_MODES = ['same-device', 'cross-device'];
 const BY = ['value', 'reference'];
 
-// The formats a start may name: the issuer's and the Verifier's, since an
-// mso_mdoc is asked for and never issued here (#935).
+// The formats a start may name: the issuer's and the Verifier's. mso_mdoc
+// is both, since #1862.
 const START_FORMATS = Array.from(new Set(
   VCI_FORMATS.concat(vpConfig.FORMAT_IDS)));
 
@@ -1526,13 +1527,35 @@ class VcVerifier {
     return this.deps.vcMdoc || vcMdoc;
   }
 
+  // The anchors an mdoc is checked against: the configured IACAs, and
+  // this realm's own once one has been minted. `currentPem()` does not
+  // mint, so a verifier that has never issued still trusts nobody when
+  // the setting is empty (#1862).
+  private mdocAnchors(): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.mdocAnchors().");
+    const configured = String(config.value('oid4vp.mdocTrustAnchors') ||
+                              '');
+    const authority = require('./mdoc_authority');
+    const own = String(authority.currentPem() || '');
+    let out = configured;
+    if (own) {
+      out = configured ? configured + '\n' + own : own;
+    }
+    log.debug("Leaving VcVerifier.mdocAnchors(). " +
+              (own ? "With this realm's IACA." : "Configured only."));
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // AN mdoc PRESENTATION (#935, OpenID4VP 1.0 Appendix B.2): `vc_mdoc.ts`
   // checks it against this request — its Client Identifier, nonce and
   // Response URI, the document type, namespace and elements frozen on the
   // transaction, and, for `direct_post.jwt`, the RFC 7638 thumbprint of the
   // key the response was encrypted to (`ctx.kid` names it), which the
-  // session transcript binds (B.2.6.1). A sign-in never asks for one.
+  // session transcript binds (B.2.6.1). A sign-in asks for one when
+  // `mso_mdoc` is among `oid4vp.signInFormats` (#1862), and only an mdoc
+  // this realm issued signs anybody in.
   // ---------------------------------------------------------------------------
   private async verifyMdoc(presentation: unknown, record: any,
                            ctx: any): Promise<any> {
@@ -1556,7 +1579,7 @@ class VcVerifier {
       doctype: String(question.doctype || ''),
       namespace: String(question.namespace || ''),
       elements: [].concat(question.elements || []),
-      anchorsPem: String(config.value('oid4vp.mdocTrustAnchors') || '')
+      anchorsPem: this.mdocAnchors()
     });
     if (record.responseMode === 'direct_post.jwt' && !thumbprint) {
       this.vpCheck(verified.checks, 'Response encryption key', false,
@@ -2061,13 +2084,21 @@ class VcVerifier {
       // AN mdoc'S QUESTION, frozen for the claims' reason (#935): the
       // document type, the namespace and the elements the DCQL query
       // named, and the Response URI its session transcript binds.
-      mdoc: wantsVp && !signIn &&
-            vpConfig.formatOf(opts.format) === 'mso_mdoc'
-        ? { doctype: vpConfig.expectedDoctype(),
-            namespace: vpConfig.mdocNamespace(),
-            elements: vpConfig.requestedClaims().map(function (name) {
-              return vpConfig.mdocElementFor(name);
-            }),
+      mdoc: wantsVp && (signIn
+            ? formats.indexOf('mso_mdoc') >= 0
+            : vpConfig.formatOf(opts.format) === 'mso_mdoc')
+        ? { doctype: signIn
+              ? String(this.deps.config.value('oid4vci.mdocDoctype') ||
+                       vpConfig.expectedDoctype())
+              : vpConfig.expectedDoctype(),
+            namespace: signIn
+              ? String(this.deps.config.value('oid4vci.mdocNamespace') ||
+                       vpConfig.mdocNamespace())
+              : vpConfig.mdocNamespace(),
+            elements: signIn ? ['issuing_authority']
+              : vpConfig.requestedClaims().map(function (name) {
+                return vpConfig.mdocElementFor(name);
+              }),
             responseUri: responseUri }
         : null,
       expires: Date.now() + ttlMs, verdict: null
@@ -2551,6 +2582,7 @@ class VcVerifier {
     void base;
     const wanted = formats && formats.length ? formats :
                    this.signInFormats();
+    const config = this.deps.config;
     const credentials = wanted.map(function (format) {
       const id = SIGN_IN_QUERY_IDS[format];
       if (format === 'dc+sd-jwt') {
@@ -2562,6 +2594,15 @@ class VcVerifier {
         return { id: id, format: format,
                  meta: { type_values: [VCI_JWT_TYPES] },
                  claims: [{ path: ['credentialSubject', 'id'] }] };
+      }
+      if (format === 'mso_mdoc') {
+        // The document this realm issues, and the one element it always
+        // emits, so a person with no given name still signs in (#1862).
+        const ns = String(config.value('oid4vci.mdocNamespace') || '');
+        const dt = String(config.value('oid4vci.mdocDoctype') || '');
+        return { id: id, format: format,
+                 meta: { doctype_value: dt },
+                 claims: [{ path: [ns, 'issuing_authority'] }] };
       }
       return { id: id, format: format,
                meta: { type_values: [VCI_JWT_TYPES] },
@@ -4233,7 +4274,11 @@ class VcVerifier {
                     'signs nobody in. The checks above say which rule it ' +
                     'broke.');
     }
-    if (verified.issuerCertificatePem) {
+    const format = String((answer && answer.format) || 'dc+sd-jwt');
+    // An mdoc always carries its document signer's certificate (#1862).
+    // That is not "another issuer": the issued register says whether
+    // this realm minted it. Every other format still refuses here.
+    if (verified.issuerCertificatePem && format !== 'mso_mdoc') {
       return refuse('STS-VC-0058', 'The credential verified against a ' +
                     'certificate in oid4vp.trustedIssuerCertificates, not ' +
                     'against this realm\'s own key. A credential another ' +
@@ -4241,7 +4286,6 @@ class VcVerifier {
                     'it does not sign anybody in here: only a credential ' +
                     'this realm issued can say who a person here is.');
     }
-    const format = String((answer && answer.format) || 'dc+sd-jwt');
     let presentedJkt = '';
     try {
       presentedJkt = verified.holderJwk ?
@@ -4260,7 +4304,21 @@ class VcVerifier {
       'development mode is not one.';
     let row = null;
     let candidates = [];
-    if (format === 'ldp_vc') {
+    if (format === 'mso_mdoc') {
+      // No OIDC `sub` in a Mobile Security Object. The register is keyed
+      // by issuerAuth's payload, and the device key must be the one the
+      // credential was issued to (#1862).
+      row = vcIssued.lookup(verified.credentialJwt);
+      if (!row) {
+        return refuse('STS-VC-0059', notIssued);
+      }
+      if (!presentedJkt || presentedJkt !== row.jkt) {
+        return refuse('STS-VC-0066', 'The mdoc does not match the device ' +
+                      'key this realm recorded when it issued it, so it ' +
+                      'signs nobody in.');
+      }
+      candidates = [].concat(row.credentials || []);
+    } else if (format === 'ldp_vc') {
       // A DERIVED PROOF names no credential; the holder key and the disclosed
       // validity window are what find it (vc_issued.ts's header).
       const rows = presentedJkt ? vcIssued.lookupHolder(presentedJkt) : [];
@@ -4593,8 +4651,7 @@ class VcVerifier {
     // signer chains to the same anchors, and its issuer is exempted by the
     // anchor it chained to — the document signer itself rotates.
     const mdoc = format === 'mso_mdoc';
-    const anchorsPem = String(this.deps.config.value(
-      'oid4vp.mdocTrustAnchors') || '');
+    const anchorsPem = mdoc ? this.mdocAnchors() : '';
     const answer = await vcStatus.checkPresented({
       own: own, format: format,
       claims: format === 'ldp_vc' || mdoc ? {} : verified.credentialClaims,

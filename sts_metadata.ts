@@ -3078,7 +3078,10 @@ const SPECS: Spec[] = [
               'proof\'s header and as the attestation proof type, ' +
               'verified against configured certificates; status lists for ' +
               'every credential; credentials signed with post-quantum ' +
-              'algorithms. No wallet attestation (Appendix E).' },
+              'algorithms. An mso_mdoc is issued ' +
+              '(IdentityCredentialMdoc, #1862): COSE ES256 (-7) or ' +
+              'ESP256 (-9), and the proof stays a jwt of ES256. No ' +
+              'wallet attestation (Appendix E).' },
   { id: 'oid4vp', name: 'OpenID for Verifiable Presentations 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-presentations-1_0.html',
@@ -3102,11 +3105,12 @@ const SPECS: Spec[] = [
               'audience), same-device with the section 8.2 response_code, ' +
               'and by a plain QR code only where oid4vp.signInCrossDevice is ' +
               'on — but only a holder-bound credential this realm issued, ' +
-              'in any of the three formats, and only as the directory entry ' +
+              'in any of the four formats, and only as the directory entry ' +
               'it was issued for; anything else verifies and signs nobody ' +
               'in. No presentation_definition (DIF PE) — DCQL only; no ' +
               'unsigned or multi-signed DC API request; no mdoc through ' +
-              'the DC API or for a sign-in; no ' +
+              'the DC API (Appendix A); an mso_mdoc signs somebody in ' +
+              'only when this realm issued it (#1862); no ' +
               'wallet attestation; no transaction_data. SINCE #129 a signed ' +
               'request names its Client Identifier by the prefix ' +
               'oid4vp.clientIdPrefix chooses (section 5.9): pre-registered, ' +
@@ -3340,11 +3344,12 @@ const SPECS: Spec[] = [
               'every GNAP jwt-signed and jwt-encrypted token carrying its ' +
               'status claim, advertised as status_list_aggregation_endpoint ' +
               '(section 9.1) in the authorization server metadata. No ' +
-              'historical resolution (501), no redirects followed. No mdoc is ' +
-              'issued; the Verifier resolves the CWT list a presented ' +
-              'mdoc\'s Mobile Security Object names, signed by a certificate ' +
-              'in its x5chain that chains to oid4vp.mdocTrustAnchors ' +
-              '(#935).' },
+              'historical resolution (501), no redirects followed. An ' +
+              'issued mdoc names a CWT at /oid4vci/status-lists/mdoc, ' +
+              'signed by the document signer with x5chain (#1862). The ' +
+              'Verifier resolves a presented mdoc\'s CWT against ' +
+              'oid4vp.mdocTrustAnchors and this realm\'s IACA once one ' +
+              'has been minted (#935).' },
   { id: 'etsi-ts-119-602',
     name: 'ETSI TS 119 602 V1.1.1, Lists of trusted entities (LoTE)',
     where: 'ETSI',
@@ -5631,6 +5636,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'private half. This API is not gated at all, which is the same ' +
           'honest consequence every operation here has and is worth saying ' +
           'twice for this one. Mirrors POST /admin/keys/export.' },
+  { path: '/admin-api/mdoc-iaca', group: 'Management API',
+    name: 'This realm\'s mdoc Issuing Authority CA',
+    specs: ['rfc5280', 'oid4vci'],
+    what: 'NON-SPEC (#1862). The certificate GET /oid4vci/mdoc-iaca ' +
+          'publishes, as JSON: the PEM, its subject, notBefore and ' +
+          'notAfter. Minted on the first call, the same way that public ' +
+          'read mints it. No private key. A failure to mint answers 500 ' +
+          'in plain text.' },
   { path: '/admin-api/pki', group: 'Management API',
     name: 'The certificate authority this realm holds',
     specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
@@ -9806,8 +9819,9 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oid4vci', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'di-bbs', 'rdf-c14n',
              'rfc7800', 'rfc7515',
              'rfc6750'],
-    what: 'Mints dc+sd-jwt, jwt_vc_json or ldp_vc per the configuration ' +
-          'asked for, each carrying its status-list reference. Verifies the ' +
+    what: 'Mints dc+sd-jwt, jwt_vc_json, ldp_vc or mso_mdoc per the ' +
+          'configuration asked for, each carrying its status-list ' +
+          'reference. Verifies the ' +
           'wallet\'s proof — a jwt proof, with a key attestation in its ' +
           'header where one is sent or required, or the attestation proof ' +
           'type — supports batch issuance, and accepts an encrypted request ' +
@@ -9821,6 +9835,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'oid4vci.statusListTtlS, exp oid4vci.statusListLifetimeS, signed ' +
           'with the credential key. ?time= answers 501: no historical ' +
           'lists are kept.' },
+  { path: '/oid4vci/status-lists/mdoc', group: 'VC Issuance (OID4VCI)',
+    name: 'mdoc Token Status List',
+    specs: ['token-status-list', 'rfc8392', 'rfc9052', 'oid4vci'],
+    what: 'The same bitstring as /oid4vci/status-lists/1, as ' +
+          'application/statuslist+cwt signed by this realm\'s mdoc ' +
+          'document signer. x5chain is that certificate. Cache-Control ' +
+          'is max-age of the list\'s ttl, and Vary is Accept. ?time= ' +
+          'answers 501.' },
+  { path: '/oid4vci/mdoc-iaca', group: 'VC Issuance (OID4VCI)',
+    name: 'mdoc Issuing Authority CA',
+    specs: ['oid4vci'],
+    what: 'This realm\'s mdoc Issuing Authority CA, PEM, ' +
+          'application/pem-certificate-chain, Cache-Control no-store. ' +
+          'Minted on the first call. No private key.' },
   { path: '/oid4vci/status-lists', group: 'VC Issuance (OID4VCI)',
     name: 'Status List Aggregation',
     specs: ['token-status-list'],

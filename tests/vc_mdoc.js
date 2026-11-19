@@ -54,7 +54,8 @@ const DOCTYPE = 'org.iso.18013.5.1.mDL';
 const NS = 'org.iso.18013.5.1';
 const QUERY_ID = 'identity_credential';
 const OVERRIDES = ['oid4vp.mdocTrustAnchors', 'oid4vp.requireStatusReference',
-                   'oid4vp.expectedDoctype', 'keys.postQuantumSigning',
+                   'oid4vp.expectedDoctype', 'oid4vp.mdocNamespace',
+                   'keys.postQuantumSigning',
                    'oid4vp.claims', 'oid4vc.walletCompatibility',
                    'pki.paranoid', 'pki.paranoidVcIssuer',
                    'pki.revocationCheck'];
@@ -369,6 +370,8 @@ async function body(t) {
   const other = await authority('another authority');
   const wallet = nodeCrypto.generateKeyPairSync('ec',
                                                 { namedCurve: 'P-256' });
+  config.setOverride('oid4vp.expectedDoctype', DOCTYPE);
+  config.setOverride('oid4vp.mdocNamespace', NS);
   config.setOverride('oid4vp.mdocTrustAnchors', iss.caPem);
   config.setOverride('oid4vp.requireStatusReference', 'own-only');
   vpConfig.setRequested(['given_name', 'family_name', 'birthdate']);
@@ -412,6 +415,13 @@ async function body(t) {
           '2a. a direct_post.jwt answer, its transcript naming the ' +
           'encryption key\'s thumbprint, is accepted with its elements',
           failures(v) + ' ' + JSON.stringify(v.claims));
+  const pub = wallet.publicKey.export({ format: 'jwk' });
+  t.check(v.holderJwk && v.holderJwk.kty === 'EC' &&
+          v.holderJwk.crv === 'P-256' && v.holderJwk.x === pub.x &&
+          v.holderJwk.y === pub.y && !!v.credentialJwt,
+          '2a-holder. the holder key is the device key, and the ' +
+          'register key is the issuer payload',
+          JSON.stringify(v.holderJwk));
   const plainRecord = verifier.buildVpRequest(fakeReq(),
     { format: 'mso_mdoc', responseMode: 'direct_post' });
   const plainCtx = contextOf(plainRecord);
@@ -454,6 +464,11 @@ async function body(t) {
                      jwtCtx.kid);
     t.check(failed(v, one[2]), one[0] + ' is refused by "' + one[2] + '"',
             failures(v));
+    if (String(one[0]).indexOf('3a.') === 0) {
+      t.check(!v.holderJwk,
+              '3a-holder. a failed device signature leaves the holder ' +
+              'unset', JSON.stringify(v.holderJwk));
+    }
   }
   v = await answer(jwtRecord, present(iss, wallet, jwtCtx), 'no-such-kid');
   t.check(failed(v, 'Response encryption key'),

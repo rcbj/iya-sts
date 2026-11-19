@@ -220,8 +220,9 @@ that can start a session without being counted, audited and reported:
 **No password is checked at any of them** in development mode. The Kerberos
 one verifies the ticket against a real long-term key, and the wallet one
 verifies the presentation — the issuer's signature and a fresh holder proof
-against the key the credential is bound to, whichever of the three formats it
-is in — and signs in only the directory entry the credential was issued for,
+against the key the credential is bound to, whichever of the four formats it
+is in — an `mso_mdoc` only when this realm issued it — and signs in only the
+directory entry the credential was issued for,
 and only while this service has not disowned it — see
 [what is not checked](what-is-not-checked.md).
 

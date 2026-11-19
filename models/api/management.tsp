@@ -47820,4 +47820,31 @@ op `getAuditIntegrity`(`responses/200/content/application~1json/schema`: {
     `head`: "intact" | "truncated" | "altered" | "none"
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/mdoc-iaca",
+  "get",
+  #{
+    `operationId`:"getMdocIaca",
+    `summary`:"This realm's mdoc Issuing Authority CA",
+    `description`:"`certificatePem` is the Issuing Authority CA only. No private key is returned. The authority is minted on the first call, and the certificate is the one `GET /oid4vci/mdoc-iaca` publishes.\n\n**Mirrors** `GET /oid4vci/mdoc-iaca`.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The Issuing Authority CA.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getMdocIaca`(`responses/200/content/application~1json/schema`: {
+    `certificatePem`: string;
+    `subject`: string;
+    `notBefore`: string;
+    `notAfter`: string
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 }

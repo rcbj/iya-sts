@@ -906,6 +906,28 @@ class VcIssuer {
     //                       which it varies, and computed from issuerDidFor() —
     //                       the same function the builders use — so the
     //                       advertisement and the credential cannot disagree.
+    // AN mdoc (#1862, OpenID4VCI 1.0 Appendix A.2). Written here, not as
+    // a clone: it has no sibling to copy, and its signing algorithms are
+    // COSE numbers. doctype stays on the configuration; display and
+    // claims move into credential_metadata with the others below.
+    const mdocIssue = require('./vc_mdoc_issue');
+    const mdocId = vcConfigs.VCI_MDOC_CONFIG_ID;
+    meta.credential_configurations_supported[mdocId] = {
+      format: 'mso_mdoc',
+      doctype: String(config.value('oid4vci.mdocDoctype') || ''),
+      scope: vcConfigs.VCI_MDOC_SCOPE,
+      cryptographic_binding_methods_supported: ['cose_key'],
+      credential_signing_alg_values_supported:
+        this.deps.vciSigningAlgsFor(mdocId).map(Number),
+      proof_types_supported: this.proofTypesSupported(['ES256']),
+      display: [{
+        name: 'Identity Credential',
+        locale: 'en-US',
+        background_color: '#12107c',
+        text_color: '#FFFFFF'
+      }],
+      claims: mdocIssue.claimPaths()
+    };
     meta.issuer_did = stsDid(req);
     vciConfigIds().forEach((id) => {
       const entry = meta.credential_configurations_supported[id];
@@ -2209,6 +2231,44 @@ class VcIssuer {
              validUntil: unsecured.validUntil };
   }
 
+  // An ISO mdoc (#1862). The document signer is minted on this call.
+  // The status index is the one allocate() just took, and the list it
+  // names is the document signer's CWT, not the JOSE Token Status List.
+  private async buildMdoc(subjectClaims, holderJwk, credentialIssuer,
+                          status, chosen) {
+    const { log, config } = this.deps;
+    log.debug("Entering VcIssuer.buildMdoc().");
+    const mdocIssue = require('./vc_mdoc_issue');
+    const authority = require('./mdoc_authority');
+    const issuer = String(credentialIssuer || '').replace(/\/+$/, '');
+    const ensured = await authority.ensure(helpers.stsKeysFor(), issuer);
+    const days = Number(config.value('oid4vci.mdocValidityDays'));
+    const span = Number.isFinite(days) && days >= 1 ? Math.floor(days)
+                                                     : 365;
+    const validFromMs = Date.now();
+    const validUntilMs = validFromMs + span * 86400000;
+    const elements = mdocIssue.elementsOf(subjectClaims, validFromMs,
+                                          validUntilMs);
+    const alg = Number(chosen);
+    const coseAlg = alg === -7 || alg === -9 ? alg : -7;
+    let statusRef = null;
+    if (status && status.key !== undefined && status.key !== null &&
+        String(status.key) !== '') {
+      statusRef = { idx: Number(status.key),
+                    uri: issuer + '/oid4vci/status-lists/mdoc' };
+    }
+    const built = await mdocIssue.issue({
+      holderJwk: holderJwk, elements: elements,
+      doctype: String(config.value('oid4vci.mdocDoctype') || ''),
+      namespace: String(config.value('oid4vci.mdocNamespace') || ''),
+      validFromMs: validFromMs, validUntilMs: validUntilMs,
+      signedMs: validFromMs, dsKey: ensured.dsKey, dsDer: ensured.dsDer,
+      coseAlg: coseAlg, status: statusRef
+    });
+    log.debug("Leaving VcIssuer.buildMdoc().");
+    return built;
+  }
+
   // Mint whichever format the requested configuration names.
   // WHO THE ACCESS TOKEN SAYS THE CREDENTIAL IS ABOUT, as one function because
   // it is now asked twice and the two answers must be the same string.
@@ -2309,12 +2369,19 @@ class VcIssuer {
     // the one point every format and both endpoints meet: the portal
     // checked it when the offer was made, and the configured algorithm may
     // have changed since. A JOSE algorithm only — ldp_vc is bbs-2023.
-    const chosen = String(signingAlg || '');
+    let chosen = String(signingAlg || '');
+    // An mdoc is signed with COSE -7 unless the offer named -7 or -9
+    // (#1862). The JOSE compatibility check does not apply: those
+    // identifiers are not JWS algorithms.
+    if (format === 'mso_mdoc' && !chosen) {
+      chosen = '-7';
+    }
     // THE WALLET COMPATIBILITY MODE (#657) refuses a post-quantum or
     // composite algorithm here, before a status index is allocated, and
     // signs nothing in its place (STS-VC-0152): the offer's choice, else the
-    // configured one. ldp_vc is bbs-2023 and not this mode's.
-    if (format !== 'ldp_vc') {
+    // configured one. ldp_vc is bbs-2023 and an mdoc is COSE, and neither
+    // is this mode's.
+    if (format !== 'ldp_vc' && format !== 'mso_mdoc') {
       const effective = chosen || String(this.deps.config.value(
         'oid4vci.credentialSigningAlgorithm') || 'RS256');
       const refused = VcAlgorithms.signingRefusal(effective, chosen ?
@@ -2330,14 +2397,18 @@ class VcIssuer {
                       ' credentials are not signed with: ' +
                       vciSigningAlgsFor(configId).join(', '));
     }
-    const jwsAlg = format === 'ldp_vc' ? '' : chosen;
+    const jwsAlg = format === 'ldp_vc' || format === 'mso_mdoc' ? ''
+      : chosen;
     // THE STATUS-LIST INDEX FIRST (vc_status.ts), because the reference is
     // signed into the credential.
     const status = await vcStatus.allocate({
       base: credentialIssuer, format: format, configId: configId,
       expiresAt: Date.now() + this.credentialLifetimeSeconds() * 1000 });
     let built;
-    if (format === 'ldp_vc') {
+    if (format === 'mso_mdoc') {
+      built = await this.buildMdoc(subjectClaims, holderJwk,
+                                   credentialIssuer, status, chosen);
+    } else if (format === 'ldp_vc') {
       built = await this.buildLdpVc(subjectClaims, holderJwk,
                                     credentialIssuer, issuerDid, status,
                                     holderKid || '', configId);
@@ -2637,7 +2708,11 @@ class VcIssuer {
         const holderDid = boundTo || (format === 'ldp_vc' && holderJwks[i]
           ? String(didOf(holderJwks[i]) || '') : '');
         vcIssued.record({
-          credential: built && built.credential,
+          // An mdoc is registered by issuerAuth's payload, which is
+          // what a presentation's credentialJwt carries (#1862). The
+          // wallet is handed the IssuerSigned in `credential`.
+          credential: (built && built.recordCredential) ||
+                      (built && built.credential),
           format: format,
           configId: configId,
           subject: subject,
@@ -3502,6 +3577,34 @@ class VcIssuer {
         () => this.sendJwtVcIssuerMetadata(req, res));
     });
 
+    // GET /oid4vci/mdoc-iaca (#1862). The Issuing Authority CA an mdoc's
+    // document signer chains to. Minted on the first read, the same
+    // certificate an issuance uses. Ungated: a wallet is configured with
+    // it before it will accept this realm's mdocs. `no-store`, the rule
+    // for every document that publishes key material.
+    app.get('/oid4vci/mdoc-iaca', async (req, res) => {
+      log.debug("Entering the mdoc IACA endpoint.");
+      res.set('Cache-Control', 'no-store');
+      try {
+        const authority = require('./mdoc_authority');
+        const issuer = String(baseUrlOf(req) || '').replace(/\/+$/, '');
+        const held = await authority.ensure(helpers.stsKeysFor(), issuer);
+        res.status(200).type('application/pem-certificate-chain')
+           .send(String(held.iacaPem).replace(/\s*$/, '') + '\n');
+        log.debug("Leaving the mdoc IACA endpoint.");
+      } catch (e) {
+        log.debug("Caught in the mdoc IACA endpoint: " +
+                  ((e && e.message) || e));
+        const code = (e && e.code) || 'STS-PKI-0288';
+        log.error(errorCodes.tag(code) + 'the mdoc authority could not ' +
+                  'be minted: ' + ((e && e.message) || e));
+        errorCodes.mark(res, code);
+        res.status(500).type('text/plain')
+           .send('The mdoc authority could not be minted.\n');
+        log.debug("Leaving the mdoc IACA endpoint. Not minted.");
+      }
+    });
+
     // --- Nonce Endpoint ------------------------------------------------------
     app.post('/oid4vci/nonce', (req, res) => {
       log.debug("Entering the OID4VCI nonce endpoint.");
@@ -3943,6 +4046,17 @@ class VcIssuer {
                     "compatibility mode.");
           return vciError(res, 400, 'credential_request_denied', e.message);
         }
+        // An mdoc that cannot be built, or an authority that cannot be
+        // minted, already named its code (#1862). The answer stays
+        // server_error; the recorded code is the one that was found.
+        if (e && (e.code === 'STS-VC-0187' || e.code === 'STS-PKI-0288')) {
+          errorCodes.mark(res, e.code);
+          log.error(errorCodes.tag(e.code) + 'the credential could not ' +
+                    'be built: ' + e.message);
+          log.debug("Leaving the OID4VCI credential endpoint. " + e.code);
+          return vciError(res, 500, 'server_error',
+                          'The credential could not be built: ' + e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the credential could not ' +
                   'be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');
@@ -4082,6 +4196,14 @@ class VcIssuer {
           log.debug("Leaving the OID4VCI deferred credential endpoint. " +
                     "Wallet compatibility mode.");
           return vciError(res, 400, 'credential_request_denied', e.message);
+        }
+        if (e && (e.code === 'STS-VC-0187' || e.code === 'STS-PKI-0288')) {
+          errorCodes.mark(res, e.code);
+          log.error(errorCodes.tag(e.code) + 'the deferred credential ' +
+                    'could not be built: ' + e.message);
+          log.debug("Leaving deferred credential endpoint. " + e.code);
+          return vciError(res, 500, 'server_error',
+                          'The credential could not be built: ' + e.message);
         }
         log.error(errorCodes.tag('STS-VC-0079') + 'the deferred credential ' +
                   'could not be built: ' + e.message);

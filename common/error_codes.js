@@ -5306,6 +5306,14 @@ const CODES = [
       'family from now on and the old key is neither published nor ' +
       'accepted while that revocation stands (#1880).',
     spec: 'none: the credential is issued under the new key' },
+  { code: 'STS-PKI-0288',
+    summary: 'This realm\'s mdoc Issuing Authority CA or document signer ' +
+      'could not be minted or restored (#1862): no credential issuer ' +
+      'URI, a country code that is not ISO 3166-1 alpha-2, or the ' +
+      'certificates could not be issued. An mdoc is not issued, and ' +
+      'GET /oid4vci/mdoc-iaca answers 500.',
+    spec: 'the credential endpoint fails as it fails any signing error; ' +
+      'the public certificate answers 500' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -19283,6 +19291,12 @@ const CODES = [
       'issuer key, the label map, the indexes or the presentation header ' +
       'is not what it was derived for, or the proof is malformed (#1878).',
     spec: 'a failed check in the OpenID4VP Verifier\'s result' },
+  { code: 'STS-VC-0187',
+    summary: 'An mso_mdoc credential could not be built (#1862): the ' +
+      'holder key the proof named is not P-256, or the document signer ' +
+      'could not sign the Mobile Security Object.',
+    spec: 'OpenID4VCI section 8.3: the credential endpoint answers ' +
+      'server_error' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

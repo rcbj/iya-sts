@@ -220,6 +220,9 @@ async function prepare(plan) {
     assert.strictEqual(iaca.status, 200, "the suite's IACA root: " +
                        String(iaca.raw || "").slice(0, 200));
     settings.push(["oid4vp.mdocTrustAnchors", String(iaca.raw)]);
+    settings.push(["oid4vp.expectedDoctype",
+                   "org.iso.18013.5.1.mDL"]);
+    settings.push(["oid4vp.mdocNamespace", "org.iso.18013.5.1"]);
   }
   // See the header: signing post-quantum off does not drop the encrypted
   // response's HPKE-10-KE key. ECDH-ES is the key HAIP requires.
