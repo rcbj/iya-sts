@@ -16,6 +16,8 @@
 // ports dagre. `federation_diagram.ts` is the server's wrapper over this one
 // copy — for the `svg` the answer still carries, `?format=svg` and the key —
 // so the picture a browser draws is the one this process draws, to the byte.
+// #1768 redraws that `svg` from the translated answer; the key stays the
+// filled template the server already translates.
 //
 // It requires `web_kit.ts` (for `esc()`), `@dagrejs/dagre` (bundled with it,
 // the one package a `web_` module may require), and `./web_delegation_map` —

@@ -21,8 +21,8 @@
 // server's wrapper over it — the `svg` member every answer still carries and
 // `?format=svg` are drawn by this file through that one — and the console's
 // `web_delegation.ts` calls it on the answer it was given. So the picture a
-// browser draws is the picture this process draws, to the byte, which is
-// what lets the server's copy be retired without the page changing.
+// browser draws is the picture this process draws, to the byte. The API
+// still serves that SVG (#1768), redrawn from the translated answer.
 //
 // WHAT IT MAY REQUIRE: `web_kit.ts` (for `esc()`, which is
 // `helpers.xmlEscape()` to the byte) and `@dagrejs/dagre`, which

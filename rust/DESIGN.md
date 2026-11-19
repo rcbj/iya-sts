@@ -132,8 +132,12 @@ It is a sequence of phases, each of which leaves a service that passes the suite
 * **The runtime re-checks `frame-ancestors` on every response**, as `app.js`
   does today when a response is flushed.
 * **The server-drawn pictures** (delegation map, federation diagram,
-  geography map) are drawn by the SPA from API data, or served by the API as
-  SVG, decided in the phase that moves each.
+  geography map) are drawn by the SPA from API data AND served by the API
+  as SVG (#1768: every `svg` member stays). The runtime carries a server
+  copy of the drawing code. That copy runs after the answer is translated,
+  so the document is the console's picture in the caller's language; with
+  no `Accept-Language` it is the English the model laid out. The keys
+  (`mapKey`) stay server-drawn. The PEP picture has no server copy.
 
 ## 3. Getting there: a replacement, not a migration
 

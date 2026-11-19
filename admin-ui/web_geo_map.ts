@@ -20,7 +20,8 @@
 // ARE data) and the console projects and draws it, over the outlines it
 // fetches once from `/admin/geo-outlines.json`. `geo_map.ts` is the server's
 // wrapper over this one copy, for the `picture.svg` the answer still
-// carries, so the two cannot differ.
+// carries, so the two cannot differ. #1768 redraws that member from the
+// translated `drawing.map` when a language changes it.
 //
 // Everything it draws arrives as an argument — the outlines too — so how the
 // console decides what a number IS cannot reach the code that decides where

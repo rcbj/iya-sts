@@ -1465,9 +1465,12 @@ ITSELF** from the graph and `looks`, with the very code `svg` is drawn with
 `web_geo_map.ts`), so the answers ADDED what that code reads and the server
 had kept to itself — `drawing.verifiesCredentials` on every picture, the
 federation map's node names and `looks`, Geolocation's `drawing.map` — and
-removed nothing. `svg`, `picture.svg` and `format=svg` are still answered and
-the console no longer reads them; `admin-ui/CLAUDE.md`, *The pictures are
-laid out in the browser*, has the rest and the question of retiring them.
+removed nothing. `svg`, `picture.svg` and `format=svg` stay (#1768). The
+console lays the page out from the data. When the request names a language,
+those SVG members are redrawn from the translated answer
+(`admin-ui/picture_svg.ts`), so they are that picture; with no language they
+are the English the model laid out. `admin-ui/CLAUDE.md`, *The pictures are
+laid out in the browser*, has the rest.
 
 `format=svg` answers the document alone with no links, as the page's own
 `?format=svg` does. The five filter parameters are declared once

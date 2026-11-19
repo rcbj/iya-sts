@@ -829,8 +829,9 @@ each partner, how many people have signed in through each *application and
 relationship* pair, and what the identity-provider side does about
 authenticating somebody. One filter — role, protocol and free text — narrows
 the picture and the tables under it. `?format=svg` is the document alone and
-`?format=json` the graph. It carries no script, so it does not pan or zoom, and
-the page says so.
+`?format=json` the graph. With a language selected, that document is in that
+language, the same drawing the page shows. It carries no script, so it does
+not pan or zoom, and the page says so.
 
 **The per-application counts do not have to add up**, and the page names the
 difference. A relationship's own total counts every credential that crossed
