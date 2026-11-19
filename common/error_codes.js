@@ -20271,6 +20271,14 @@ const CODES = [
     summary: 'Too many lines of a dataset file were not rows of its ' +
       'format (ASVS 5.0.0 5.2.2).',
     spec: 'the version is refused' },
+  { code: 'STS-RISK-0057',
+    summary: 'A dataset version named to an import, an activation, a ' +
+      'deletion or a reload is not one this service could have recorded — ' +
+      'empty, longer than 200 characters, or holding a control character ' +
+      'or half of a surrogate pair — or a licence, attribution, source or ' +
+      'SHA-256 an import names holds a NUL or half of a surrogate pair. ' +
+      'Refused before the store is asked (fuzz run #500).',
+    spec: 'HTTP 400' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
