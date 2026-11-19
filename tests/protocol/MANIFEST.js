@@ -235,6 +235,16 @@ const JOBS = [
   // claims a realm's console. Its realm is left standing; in the default realm
   // it only signs a certificate holder in, which in product claims nothing.
   { file: 'sts_console_bootstrap_product.js', browser: false },
+  // THE EMBEDDED DEBUGGER'S SIGN-IN, OVER THE WIRE (#1717, 2026-11-18): a
+  // default-realm console administrator signs in through the listener's
+  // code flow and loads the UI and the real api child; with no session the
+  // administrator's own Bearer and DPoP tokens open nothing; with it, a junk
+  // Authorization breaks nothing, the header reaches the api intact (its
+  // UserInfo relay answers that person), and a DPoP proof passed through is
+  // not a replay at its target. SKIPPED where the debugger is not embedded
+  // (every product mode). `local: true`: the listener and its gate are ours.
+  // Its client and person are deleted on a pass.
+  { file: 'sts_debugger_signin.js',      browser: false, local: true },
   { file: 'sts_consent.js',              browser: false },
   // WITHDRAWN MEANS WITHDRAWN (#172, 2026-09-23): a consent withdrawn through
   // /admin-api, globally and on /portal/consents ends the grant it covered,
