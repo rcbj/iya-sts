@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5732** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5733** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 54
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
@@ -4407,6 +4407,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0054` | A person's risk level moved and the standing was written, but the risk-standing change row that tells every other process to read it again could not be recorded. The others keep the standing they hold until risk.standingValidMinutes runs out (#666). | none — a warning in the log |
 | `STS-RISK-0055` | A dataset upload's file name does not fit the format it was sent as (ASVS 5.0.0 5.2.2). | HTTP 400 |
 | `STS-RISK-0056` | Too many lines of a dataset file were not rows of its format (ASVS 5.0.0 5.2.2). | the version is refused |
+| `STS-RISK-0057` | A dataset version named to an import, an activation, a deletion or a reload is not one this service could have recorded — empty, longer than 200 characters, or holding a control character or half of a surrogate pair — or a licence, attribution, source or SHA-256 an import names holds a NUL or half of a surrogate pair. Refused before the store is asked (fuzz run #500). | HTTP 400 |
 
 ## STS-MAIL
 
