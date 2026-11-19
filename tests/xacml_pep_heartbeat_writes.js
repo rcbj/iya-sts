@@ -20,8 +20,9 @@
 //
 //   H1. N heartbeats that change nothing durable write the entry ZERO times
 //       after the first, and journal the liveness record at most once;
-//   H2. a changed durable member (the version, a listener's state) writes the
-//       entry exactly once, and repeating it writes nothing;
+//   H2. a changed durable member (the version, a listener's state or pool
+//       bounds) writes the entry exactly once, and repeating it writes
+//       nothing;
 //   H3. `lastSeen` and the counters read through `all()` — what the console
 //       and `/admin-api/xacml/peps` draw — move with every heartbeat, with no
 //       entry write; counters that moved are journalled at once;
@@ -152,7 +153,9 @@ function child() {
     });
     // What a PEP serving traffic reports: the figures move every time, the
     // listener's state and certificate do not.
-    const listeners = function (n, state) {
+    // The pool's figures move too; its bounds (`max`) only when a test
+    // says so, as a tuning applied at the PEP does.
+    const listeners = function (n, state, poolMax) {
       return {
         listeners: [{
           id: 'api', source: 'environment', protocol: 'https',
@@ -160,7 +163,10 @@ function child() {
           state: state || 'listening', reason: 'none', renew: 0,
           certificate: { subject: 'CN=pep-1', notAfter: '2027-01-01' },
           stats: { accepted: 10 * n, open: n, refused: 0, http1: 7 * n,
-                   http2: 3 * n, handshakes: 10 * n }
+                   http2: 3 * n, handshakes: 10 * n,
+                   pool: { min: 4, max: poolMax || 32, current: 4 + n % 3,
+                           busy: n % 2, idle: 4, queued: 0,
+                           completed: 100 * n } }
         }],
         memory: { rssBytes: 1000000 + n, virtualBytes: 2000000 + n,
                   dataBytes: 300000 + n, threads: 8 },
@@ -333,10 +339,31 @@ function child() {
       note(writes === beforeState + 1,
            'H2. a listener that stops listening is durable: one write',
            'writes=' + (writes - beforeState));
+      // The pool's BOUNDS are the tuning in force, durable (run #500): a
+      // changed max writes the entry once and carries it into the entry,
+      // where every process reads it; the figures beside it never do.
+      const beforeBounds = writes;
+      registry.heartbeat('pep-1', Object.assign(report(N + 6, {
+        decisions: 41, allowed: 31, version: 'v2' }),
+        { listeners: listeners(N + 6, 'failed', 35) }));
+      const boundsEntry = JSON.parse(
+        entries.get('pep-1').xacmlpeplistenersinuse[0]);
+      note(writes === beforeBounds + 1 &&
+           boundsEntry.listeners[0].stats.pool.max === 35,
+           'H2. a listener\'s pool bounds are durable: a changed max writes ' +
+           'the entry once, and the entry carries it',
+           'writes=' + (writes - beforeBounds) + ' pool=' +
+           JSON.stringify(boundsEntry.listeners[0].stats));
+      registry.heartbeat('pep-1', Object.assign(report(N + 7, {
+        decisions: 41, allowed: 31, version: 'v2' }),
+        { listeners: listeners(N + 7, 'failed', 35) }));
+      note(writes === beforeBounds + 1,
+           'H2. and the pool\'s figures moving under the same bounds write ' +
+           'nothing', 'writes=' + (writes - beforeBounds));
       const beforeSync = writes;
       registry.heartbeat('pep-1', Object.assign(report(N + 7, {
         decisions: 41, allowed: 31, version: 'v2', syncToken: 'older' }),
-        { listeners: listeners(N + 7, 'failed') }));
+        { listeners: listeners(N + 8, 'failed', 35) }));
       note(writes === beforeSync + 1 &&
            registry.read('pep-1').current === false,
            'H2. so is the sync token the PEP holds: one write, and the row ' +

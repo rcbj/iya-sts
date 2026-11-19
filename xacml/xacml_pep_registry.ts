@@ -1573,6 +1573,19 @@ class PepRegistry {
   // and without the process's memory and per-path counts. Those figures move
   // on every heartbeat of a PEP serving traffic, and a listener that stops
   // listening or is given a new certificate does not.
+  //
+  // **EXCEPT THE POOL'S BOUNDS, `stats.pool.min` AND `max`, WHICH ARE
+  // DURABLE.** They are not a figure of the traffic but the listener's
+  // `threadPoolMin` and `threadPoolMax` IN FORCE, and they move only when a
+  // saved tuning is applied — the same fact as the settings in force. Until
+  // this was said they were held in the receiving process with the rest of
+  // the pool for up to a journal interval (a minute at the defaults), so in a
+  // cluster the node answering `/admin-api/xacml/peps` drew the old bounds:
+  // the PEP reports a pulled settings token on the heartbeat that can come
+  // before its listeners are re-tuned, that heartbeat wrote the entry with
+  // the old pool, the next one carried the new bounds as volatile, and
+  // `sts_xacml_pep_proxy_cluster` gave up on `api-http.threadPoolMax` after
+  // 60 s, a second before the record was due (run #500, cluster).
   // -------------------------------------------------------------------------
   private durableOf(attributes: Record<string, unknown>): string {
     const { log } = this.deps;
@@ -1595,7 +1608,11 @@ class PepRegistry {
       kept.xacmlPepListenersInUse = (listeners.listeners || [])
         .map(function (one: any) {
           const copy = Object.assign({}, one);
+          const pool = (one.stats || {}).pool;
           delete copy.stats;
+          if (pool) {
+            copy.poolBounds = { min: pool.min, max: pool.max };
+          }
           return copy;
         });
     }
