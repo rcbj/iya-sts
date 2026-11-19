@@ -18,7 +18,9 @@
 //      its version defines (May 2004 has no Cancel), each operation reading
 //      its version's RST and answering its RSTR (an RSTRC for a 1.3/1.4
 //      Issue), WS-Trust's input action and the output action an RSTR
-//      carries; eight ports at the realm's /sts; a schema per trust
+//      carries; sixteen ports at the realm's /sts (eight under the
+//      IYA-STS suite), each naming the encryption certificate; a schema per
+//      trust
 //      namespace; the capability document and WS-MEX named, optionally.
 //   C. GET /sts/metadata/capabilities (#958's extension): every credential
 //      in the order the endpoint reads them, every issued type, every pair
@@ -191,12 +193,26 @@ async function wsdl(id, label) {
     });
   }
   const ports = elements(root, WSDL, "port");
-  K.check("V3 (" + label + "). eight ports, each version over SOAP 1.1 " +
-          "and 1.2, every one at the realm's /sts", function () {
-    assert.strictEqual(ports.length, 8);
+  // #1668 (rcbj on #1908): eight more ports carry the IYA-STS algorithm
+  // suite in a policy of their own, and every port names the realm's XML
+  // Encryption certificate as its endpoint identity, where WCF reads it.
+  K.check("V3 (" + label + "). sixteen ports, each version over SOAP 1.1 " +
+          "and 1.2 under each algorithm suite, every one at the realm's " +
+          "/sts and naming the encryption certificate", function () {
+    assert.strictEqual(ports.length, 16);
+    assert.strictEqual(ports.filter(function (one) {
+      return /IyaSuite$/.test(one.getAttribute("name"));
+    }).length, 8);
     for (const port of ports) {
       const address = port.getElementsByTagNameNS("*", "address")[0];
       assert.strictEqual(address.getAttribute("location"), rb + "/sts");
+      const certs = port.getElementsByTagNameNS(
+        "http://www.w3.org/2000/09/xmldsig#", "X509Certificate");
+      assert.ok(port.getElementsByTagNameNS(
+        "http://schemas.xmlsoap.org/ws/2006/02/addressingidentity",
+        "Identity").length === 1 && certs.length === 1 &&
+        String(certs[0].textContent).trim().length > 100,
+                port.getAttribute("name") + " names no certificate");
     }
   });
   const schemas = elements(root, "http://www.w3.org/2001/XMLSchema",

@@ -25,8 +25,11 @@
 //      (STS-WSTRUST-0027) and a SAML 1.1 assertion (0006) inside ActAs; and
 //      K2b, a JWT another issuer named — another realm's (0026).
 //   B. the fault's namespace is the request's own (2005/02).
-//   E. the RSTR says Bearer when PublicKey was asked for; the AppliesTo's
-//      application chooses the response cipher (#747, #1668).
+//   E. the RSTR says Bearer when PublicKey was asked for; a response
+//      recipient expression on an unsigned request is STS-WSTRUST-0081, and
+//      on a signed one selects the signer's own token, the AppliesTo's
+//      application choosing the cipher and the answer announcing its
+//      EncryptedKey (#747, #1668).
 //   R. `reserved_password_refusal.js`'s WS-Trust half: `invalid` refused in
 //      both modes with a wrong password's answer, and the LDAP half: an LDAPS
 //      simple bind with `invalid` is 49 in both modes, STS-LDAP-0001 in
@@ -53,6 +56,17 @@
 
 const assert = require("assert");
 const ldapjs = require("ldapjs");
+const nodeCrypto = require("crypto");
+// xmldsig.js reaches for the bare DOM globals a node process lacks
+// (sts_wstrust_signed_requests.js's note).
+const xmldom = require("@xmldom/xmldom");
+if (!global.DOMParser) {
+  global.DOMParser = xmldom.DOMParser;
+}
+if (!global.XMLSerializer) {
+  global.XMLSerializer = xmldom.XMLSerializer;
+}
+const xmldsig = require("../../common/crypto_impl/xmldsig.js");
 const K = require("./oauth_wire_kit.js").kit("sts_wstrust_rules");
 const W = require("./wstrust_wire_kit.js").wsKit(K);
 
@@ -69,6 +83,14 @@ const LAST = URL_OF("wf-last");
 const PLAIN = URL_OF("wf-plain");
 const PAYROLL = URL_OF("wf-payroll");
 const BASIC = "urn:oasis:names:tc:SAML:2.0:attrname-format:basic";
+const WSSE = "http://docs.oasis-open.org/wss/2004/01/" +
+  "oasis-200401-wss-wssecurity-secext-1.0.xsd";
+const WSU = "http://docs.oasis-open.org/wss/2004/01/" +
+  "oasis-200401-wss-wssecurity-utility-1.0.xsd";
+const X509V3 = "http://docs.oasis-open.org/wss/2004/01/" +
+  "oasis-200401-wss-x509-token-profile-1.0#X509v3";
+const BASE64 = "http://docs.oasis-open.org/wss/2004/01/" +
+  "oasis-200401-wss-soap-message-security-1.0#Base64Binary";
 const ASSERTION_XPATH = "//*[local-name()='Assertion' and " +
   "namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']";
 const RECIPIENT_XPATH = "//*[local-name()='Security']/*[local-name()=" +
@@ -91,6 +113,58 @@ async function responseMap(id, on, algorithm) {
       value: on ? algorithm : "" });
   }
   log.debug("Leaving responseMap().");
+}
+
+// #1908: a WS-Security signature over the Body and the Timestamp, made
+// with a message-signing certificate the realm issued, the certificate in
+// a BinarySecurityToken the signature references (as
+// sts_wstrust_signed_requests.js signs).
+const FILE_PASSWORD = "file-" + nodeCrypto.randomBytes(8).toString("hex");
+
+function openIssued(reply) {
+  log.debug("Entering openIssued().");
+  const cert = reply && reply.certificate;
+  const key = reply && reply.files && reply.files.key;
+  assert.ok(cert && cert.certificatePem && key && key.text, "the issue " +
+            "handed back no certificate or key: " +
+            JSON.stringify(reply).slice(0, 300));
+  const privateKey = nodeCrypto.createPrivateKey({
+    key: key.text, format: "pem", passphrase: FILE_PASSWORD });
+  log.debug("Leaving openIssued().");
+  return { certPem: cert.certificatePem,
+           keyPem: privateKey.export({ type: "pkcs1", format: "pem" }) };
+}
+
+function signedRst(holder, appliesTo) {
+  log.debug("Entering signedRst().");
+  const now = Date.now();
+  const certB64 = String(holder.certPem)
+    .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const xml = '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-' +
+    'envelope" xmlns:wsse="' + WSSE + '" xmlns:wsu="' + WSU + '">' +
+    '<s:Header><wsse:Security><wsu:Timestamp wsu:Id="ts"><wsu:Created>' +
+    new Date(now).toISOString() + '</wsu:Created><wsu:Expires>' +
+    new Date(now + 300000).toISOString() + '</wsu:Expires>' +
+    '</wsu:Timestamp><wsse:BinarySecurityToken wsu:Id="x509" ValueType="' +
+    X509V3 + '" EncodingType="' + BASE64 + '">' + certB64 +
+    '</wsse:BinarySecurityToken></wsse:Security></s:Header>' +
+    '<s:Body wsu:Id="body"><wst:RequestSecurityToken xmlns:wst="' + W.WST +
+    '" Context="urn:uuid:' + nodeCrypto.randomUUID() + '">' +
+    '<wst:RequestType>' + W.WST + '/Issue</wst:RequestType>' +
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+    'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/08/' +
+    'addressing"><wsa:Address>' + appliesTo + '</wsa:Address>' +
+    '</wsa:EndpointReference></wsp:AppliesTo>' +
+    '</wst:RequestSecurityToken></s:Body></s:Envelope>';
+  const signed = xmldsig.signWsSecurity(xml, {
+    privateKeyPem: holder.keyPem, certPem: holder.certPem,
+    signTimestamp: true })
+    .replace(/<ds:KeyInfo>[\s\S]*?<\/ds:KeyInfo>/,
+             '<ds:KeyInfo><wsse:SecurityTokenReference><wsse:Reference ' +
+             'URI="#x509" ValueType="' + X509V3 + '"/>' +
+             '</wsse:SecurityTokenReference></ds:KeyInfo>');
+  log.debug("Leaving signedRst().");
+  return signed;
 }
 
 async function api(id, path, body, what) {
@@ -244,9 +318,11 @@ async function faults(P, D) {
      { security: W.stripCertificates(frontSigned),
        body: W.actAs(aliceForFront), appliesTo: BACK },
      "STS-WSTRUST-0076", "InvalidRequest"],
-    [P, "response encryption to a certificate element that is not one",
+    // #1908: the recipient expression may select only a certificate an
+    // accepted signature covers, and this request is not signed.
+    [P, "response encryption to a certificate element no signature covers",
      { security: badCertificate + aliceSigned, appliesTo: BACK },
-     "STS-WSTRUST-0077", "RequestFailed"],
+     "STS-WSTRUST-0081", "InvalidRequest"],
     [P, "a protected subject", { security: frontSigned,
       body: W.actAs(carlForFront), appliesTo: BACK }, "STS-WSTRUST-0018",
      "RequestFailed"],
@@ -329,23 +405,51 @@ async function faults(P, D) {
                       0, asked.text.slice(0, 400));
             assert.ok(asked.text.indexOf("/PublicKey") < 0);
           });
+  // THE RECIPIENT EXPRESSION AND THE SIGNATURE (#1908, rcbj). An unsigned
+  // request's certificate element is no recipient: STS-WSTRUST-0081.
   const certificate = (/<ds:X509Certificate>([^<]+)</.exec(
     await tokenFor(D, "wf-alice")) || [])[1] || "";
   await responseMap(D, true, "aes128-gcm");
-  const encrypted = await W.post(D, { appliesTo: BACK,
+  const unsignedAsk = await W.post(D, { appliesTo: BACK,
     security: UT("wf-alice", "x") + '<ds:Signature xmlns:ds="http://www.w3' +
       '.org/2000/09/xmldsig#"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>' +
       certificate + "</ds:X509Certificate></ds:X509Data></ds:KeyInfo>" +
       "</ds:Signature>" });
+  K.check("E2. a recipient expression on an unsigned request is " +
+          "wst:InvalidRequest (STS-WSTRUST-0081), and nothing is issued",
+          function () {
+            assert.ok(certificate, "no certificate in the request");
+            assert.strictEqual(unsignedAsk.status, 500,
+                               unsignedAsk.text.slice(0, 300));
+            assert.ok(W.carries(unsignedAsk.text, false, "InvalidRequest",
+                                W.WST) &&
+                      !/EncryptedData/.test(unsignedAsk.text) &&
+                      /accepted signature covers/.test(unsignedAsk.text),
+                      unsignedAsk.text.slice(0, 500));
+          });
+  // Signed, the expression selects the signer's own BinarySecurityToken:
+  // the recipient, and the AppliesTo's application chooses the cipher.
+  await api(D, "/applications/set", { application: "wf-back",
+    attribute: "wstrustResponseRecipientXPath",
+    value: "//wsse:Security/wsse:BinarySecurityToken" });
+  const holder = openIssued(await api(D, "/users/issue-signing-certificate",
+    { user: "wf-alice", keyAlg: "rsa-2048", password: FILE_PASSWORD }));
+  const encrypted = await K.send(K.rb(D) + "/sts", { method: "POST",
+    raw: signedRst(holder, BACK),
+    headers: { "Content-Type": "application/soap+xml" } });
   await responseMap(D, false, "aes128-gcm");
-  K.check("E2. the AppliesTo's application chooses the cipher, and its " +
-          "identifier is not the AppliesTo", function () {
-    assert.ok(certificate, "no certificate to encrypt to");
+  K.check("E3. a signed request's own token is the recipient; the " +
+          "AppliesTo's application chooses the cipher; the answer announces " +
+          "its EncryptedKey in a security header", function () {
     assert.strictEqual(encrypted.status, 200, encrypted.text.slice(0, 300));
     assert.ok(/EncryptedData/.test(encrypted.text) &&
               !/EncryptedAssertion/.test(encrypted.text) &&
               /xmlenc11#aes128-gcm/.test(encrypted.text),
               encrypted.text.slice(0, 500));
+    assert.ok(/<wsse:Security[^>]*><xenc:EncryptedKey[^>]*Id="iya-ek-1"/
+                .test(encrypted.text) &&
+              /<xenc:DataReference URI="#iya-ed-1"\/>/.test(encrypted.text),
+              encrypted.text.slice(0, 700));
   });
 
   log.info("=== A. the expired credentials, after their minute ===");
