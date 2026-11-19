@@ -15,11 +15,13 @@
 // query on it would be a different document pretending to be the same one.
 // WS-MetadataExchange is `wstrust_mex.ts`, at `POST /sts/mex`, and the
 // credential/token-type pairs are `wstrust_capabilities.ts`'s document,
-// which this one names. The document is not signed. Each port carries the
-// realm's XML Encryption certificate as its endpoint identity (#1668, rcbj
-// on #1908): the document is drawn per request and served no-store, so a
-// development restart's or a rotation's key is in the next one. Until then
-// a copy here was refused as yesterday's key, which no-store answers.
+// which this one names. The document is not signed. While
+// `wstrust.advertiseEndpointIdentity` is on (off by default, rcbj
+// 2026-11-19), each port carries the realm's XML Encryption certificate as
+// its endpoint identity (#1668, rcbj on #1908): the document is drawn per
+// request and served no-store, so a development restart's or a rotation's
+// key is in the next one. Until then a copy here was refused as
+// yesterday's key, which no-store answers.
 //
 // This file exists so those URIs are not written in `wstrust.ts`.
 // `tests/model_ws.js` fails when that file quotes one. The trust namespaces,
@@ -43,8 +45,9 @@
 // readWsSecuritySignature()): the requester's X.509 v3 certificate as the
 // InitiatorToken, always sent to the recipient, named by a Reference, a
 // KeyIdentifier (thumbprint or Subject Key Identifier) or an issuer and
-// serial (sp:Wss11); this realm's encryption certificate, the ports'
-// endpoint identity, as the RecipientToken, never included; any
+// serial (sp:Wss11); this realm's encryption certificate (the ports'
+// endpoint identity where that is advertised) as the RecipientToken, never
+// included; any
 // header order (sp:Lax); whole elements only, by wsu:Id
 // (sp:OnlySignEntireHeadersAndBody). It is written once per algorithm
 // suite: sp:Basic256Sha256 in RequesterAuthentication, on the eight ports
@@ -173,8 +176,14 @@ type Flags = {
   // as the IYA-STS suite.
   encryptsResponses?: boolean;
   // #1668: the realm's XML Encryption certificate, base64 DER, which the
-  // ports carry as their endpoint identity.
+  // ports carry as their endpoint identity while
+  // `advertiseEndpointIdentity` is on.
   encryptionCertificate?: string;
+  // `wstrust.advertiseEndpointIdentity` (rcbj, 2026-11-19): whether each
+  // port carries a WS-AddressingIdentity EndpointReference holding the
+  // encryption certificate. Off by default: the element is Microsoft's,
+  // never standardised.
+  advertiseEndpointIdentity?: boolean;
 };
 
 type TrustVersion = {
@@ -269,7 +278,9 @@ class WsTrustMetadata {
       this.messages(terms) +
       this.portTypes(terms) +
       this.bindings(terms, flags) +
-      this.service(root, terms, flags.encryptionCertificate || '') +
+      this.service(root, terms,
+                   flags.advertiseEndpointIdentity === true
+                     ? flags.encryptionCertificate || '' : '') +
       '</wsdl:definitions>\n';
     log.debug("Leaving WsTrustMetadata.document().");
     // ALWAYS FORMATTED (rcbj, 2026-11-13): one element a line, indented, so
@@ -350,7 +361,9 @@ class WsTrustMetadata {
       readsBasic256: !!mode.usesBrokenAlgorithms() &&
         !!mode.allowsLegacyHashes(),
       responseSuite: this.responseSuiteOf(),
-      encryptionCertificate: this.encryptionCertificate()
+      encryptionCertificate: this.encryptionCertificate(),
+      advertiseEndpointIdentity:
+        config.value('wstrust.advertiseEndpointIdentity') === true
     };
     log.debug("Leaving WsTrustMetadata.liveFlags().");
     return out;
@@ -527,10 +540,17 @@ class WsTrustMetadata {
     const sentences = [
       'This document is the WSDL 1.1 description of the WS-Trust security ' +
         'token service at ' + address + ', with WS-SecurityPolicy embedded.',
-      'It is not signed. Each port names this realm\'s XML Encryption ' +
-        'certificate as its endpoint identity, the certificate a request ' +
-        'is encrypted to; the signing certificate is at ' + base +
-        '/sts/cert.',
+      flags.advertiseEndpointIdentity === true &&
+        flags.encryptionCertificate
+        ? 'It is not signed. Each port names this realm\'s XML ' +
+          'Encryption certificate as its endpoint identity ' +
+          '(WS-AddressingIdentity), the certificate a request is ' +
+          'encrypted to; the signing certificate is at ' + base +
+          '/sts/cert.'
+        : 'It is not signed. The certificate a request is encrypted to is ' +
+          'this realm\'s XML Encryption certificate, the KeyDescriptor ' +
+          'use="encryption" of ' + base + '/saml2/metadata; the signing ' +
+          'certificate is at ' + base + '/sts/cert.',
       'The message signature is an AsymmetricBinding under ' +
         'sp:Basic256Sha256 and under the IYA-STS suite ' + SUITE_NS + ' ' +
         SUITE_NAME + ': SHA-256, AES-256-GCM, RSA-OAEP with SHA-256 and ' +
@@ -1243,6 +1263,7 @@ class WsTrustMetadata {
    * @param base - the realm's base URL
    * @param terms - the model's values
    * @param certificate - the encryption certificate, base64 DER, or ''
+   *   when none is advertised (the setting off, or no certificate)
    * @returns the service
    */
   private static service(base: string, terms: Terms,
@@ -1255,6 +1276,12 @@ class WsTrustMetadata {
     // is encrypted to, the same for every application of the realm, so
     // the one-document rule holds. The document is drawn per request and
     // served no-store, so a rotation is in the next one.
+    // ONLY WHILE `wstrust.advertiseEndpointIdentity` IS ON (rcbj,
+    // 2026-11-19): wsid:Identity is WS-AddressingIdentity's, a Microsoft
+    // specification that never became a standard, and a realm does not
+    // publish a non-standard element by default. Off, `document()` passes
+    // '' here and a client takes the certificate out of band
+    // (ws-trust/CLAUDE.md, *THE ENDPOINT IDENTITY*).
     const identity = certificate
       ? '<wsa10:EndpointReference xmlns:wsa10="' + WSA10_NS + '">' +
         '<wsa10:Address>' + location + '</wsa10:Address>' +

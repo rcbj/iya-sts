@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "Indique si un RequestSecurityToken peut porter du chiffrement XML n’importe où, dans un en-tête ou le corps, sans qu’une table de requête le nomme. Activé, tout élément chiffré est ouvert. Désactivé, le texte chiffré n’est accepté que là où wstrustEncryptRequestElements de l’application le nomme, et un texte chiffré sans table est un wst:InvalidRequest. Dans tous les cas, un texte chiffré doit s’ouvrir avec les clés de ce domaine. Le wstrustAcceptEncryptedElements d’une application remplace ce réglage. Le WSDL n’offre le chiffrement des requêtes que lorsqu’il est activé."
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "Annoncer le certificat de chiffrement comme identité de chaque port"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Indique si chaque port du WSDL à /sts/metadata porte une wsa:EndpointReference dont la wsid:Identity contient le certificat de chiffrement XML de ce domaine, le certificat vers lequel une requête est chiffrée. L'élément vient de WS-AddressingIdentity, une spécification Microsoft qui n'a jamais été normalisée ; WCF le lit, de même que les boîtes à outils qui imitent WCF. Désactivé, le WSDL ne nomme aucun certificat et un client en est configuré hors bande : le KeyDescriptor use=\"encryption\" de /saml2/metadata, qui est le même certificat. Ce qu'une requête peut chiffrer ne change dans aucun cas."
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "Chiffrer les éléments nommés d’une réponse"

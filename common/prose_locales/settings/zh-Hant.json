@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "RequestSecurityToken 是否可以在任何位置（標頭或本文）攜帶 XML 加密，而無需請求對應點名。開啟時，開啟每個加密元素。關閉時，僅在應用程式的 wstrustEncryptRequestElements 點名之處接受密文，沒有對應的密文為 wst:InvalidRequest。無論哪種情況，密文都必須能以本領域的金鑰開啟。應用程式的 wstrustAcceptEncryptedElements 會覆寫此設定。僅在此設定開啟時，WSDL 才提供請求加密。"
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "將加密憑證公布為每個連接埠的識別"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "/sts/metadata 處的 WSDL 的每個連接埠是否帶有一個 wsa:EndpointReference，其 wsid:Identity 包含本領域的 XML Encryption 憑證，即請求所加密到的憑證。該元素出自 WS-AddressingIdentity，這是一份從未標準化的 Microsoft 規範；WCF 讀取它，仿效 WCF 的工具組也讀取它。關閉時，WSDL 不指明任何憑證，用戶端透過頻外方式設定該憑證：/saml2/metadata 的 KeyDescriptor use=\"encryption\"，它就是同一張憑證。無論哪種情況，請求可以加密的內容都不變。"
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "加密回應中被點名的元素"

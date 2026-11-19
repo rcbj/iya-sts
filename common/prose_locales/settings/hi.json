@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "क्या कोई RequestSecurityToken कहीं भी, किसी हेडर या बॉडी में, XML एन्क्रिप्शन ले जा सकता है, बिना किसी अनुरोध मैप के उसे नामित किए। चालू होने पर हर एन्क्रिप्टेड तत्व खोला जाता है। बंद होने पर सिफरटेक्स्ट केवल वहीं स्वीकार होता है जहाँ अनुप्रयोग का wstrustEncryptRequestElements उसे नामित करता है, और बिना मैप का सिफरटेक्स्ट wst:InvalidRequest है। हर स्थिति में सिफरटेक्स्ट इस रील्म की कुंजियों से खुलना चाहिए। अनुप्रयोग का wstrustAcceptEncryptedElements इसे ओवरराइड करता है। WSDL अनुरोध एन्क्रिप्शन केवल तभी प्रस्तुत करता है जब यह चालू हो।"
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "एन्क्रिप्शन प्रमाणपत्र को हर पोर्ट की पहचान के रूप में घोषित करें"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "क्या /sts/metadata पर WSDL का हर पोर्ट एक wsa:EndpointReference रखता है जिसकी wsid:Identity में इस रीयल्म का XML Encryption प्रमाणपत्र है, वह प्रमाणपत्र जिसके लिए अनुरोध एन्क्रिप्ट किया जाता है। यह तत्व WS-AddressingIdentity से है, Microsoft का एक विनिर्देश जो कभी मानकीकृत नहीं हुआ; WCF इसे पढ़ता है, और WCF की नकल करने वाले टूलकिट भी। बंद होने पर WSDL कोई प्रमाणपत्र नहीं बताता और क्लाइंट को बैंड के बाहर उससे कॉन्फ़िगर किया जाता है: /saml2/metadata का KeyDescriptor use=\"encryption\", जो वही प्रमाणपत्र है। अनुरोध क्या एन्क्रिप्ट कर सकता है, यह किसी भी स्थिति में नहीं बदलता।"
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "प्रतिक्रिया के नामित तत्वों को एन्क्रिप्ट करें"

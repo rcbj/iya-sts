@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "Si un RequestSecurityToken puede llevar cifrado XML en cualquier lugar, en una cabecera o en el cuerpo, sin que un mapa de solicitud lo nombre. Activado, se abre todo elemento cifrado. Desactivado, el texto cifrado solo se acepta donde lo nombra wstrustEncryptRequestElements de la aplicación, y un texto cifrado sin mapa es un wst:InvalidRequest. En cualquier caso, un texto cifrado debe abrirse con las claves de este dominio. El wstrustAcceptEncryptedElements de una aplicación reemplaza este valor. El WSDL ofrece cifrado de solicitudes solo mientras está activado."
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "Anunciar el certificado de cifrado como identidad de cada puerto"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Si cada puerto del WSDL en /sts/metadata lleva una wsa:EndpointReference cuya wsid:Identity contiene el certificado de cifrado XML de este dominio, el certificado al que se cifra una solicitud. El elemento procede de WS-AddressingIdentity, una especificación de Microsoft que nunca se estandarizó; WCF lo lee, y también los kits de herramientas que imitan a WCF. Desactivado, el WSDL no nombra ningún certificado y un cliente se configura con él fuera de banda: el KeyDescriptor use=\"encryption\" de /saml2/metadata, que es el mismo certificado. Lo que una solicitud puede cifrar no cambia en ningún caso."
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "Cifrar los elementos nombrados de una respuesta"

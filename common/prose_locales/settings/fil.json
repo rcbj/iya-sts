@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "Kung ang isang RequestSecurityToken ay maaaring magdala ng XML Encryption saanman, sa isang header o sa body, nang walang request map na nagpapangalan dito. Kapag naka-on, binubuksan ang bawat naka-encrypt na elemento. Kapag naka-off, tinatanggap lang ang ciphertext kung saan ito pinangalanan ng wstrustEncryptRequestElements ng application, at ang ciphertext na walang map ay isang wst:InvalidRequest. Sa alinmang kaso, dapat mabuksan ang ciphertext gamit ang mga key ng realm na ito. Pinapalitan ito ng wstrustAcceptEncryptedElements ng isang application. Nag-aalok lang ang WSDL ng encryption ng request habang naka-on ito."
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "I-anunsyo ang encryption certificate bilang pagkakakilanlan ng bawat port"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Kung ang bawat port ng WSDL sa /sts/metadata ay may wsa:EndpointReference na ang wsid:Identity ay naglalaman ng XML Encryption certificate ng realm na ito, ang certificate kung saan ine-encrypt ang isang request. Ang elemento ay mula sa WS-AddressingIdentity, isang specification ng Microsoft na hindi kailanman naging pamantayan; binabasa ito ng WCF, at ng mga toolkit na gumagaya sa WCF. Kapag naka-off, walang certificate na pinangangalanan ang WSDL at kino-configure ang isang client gamit ito sa labas ng band: ang KeyDescriptor use=\"encryption\" ng /saml2/metadata, na siya ring certificate. Hindi nagbabago kahit kailan kung ano ang maaaring i-encrypt ng isang request."
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "I-encrypt ang mga pinangalanang elemento ng isang response"

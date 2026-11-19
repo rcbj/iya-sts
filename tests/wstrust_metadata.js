@@ -400,19 +400,35 @@ function messagePolicies(t) {
           contains(gcmAnswer, '#ResponseProtectionIyaSuite') &&
           !contains(gcmAnswer, '#ResponseProtection"'),
           'P7. ResponseProtection only under a suite the document offers');
-  // P8. The encryption certificate is every port's identity, where WCF
-  // reads it.
+  // P8. The encryption certificate as every port's identity, where WCF
+  // reads it, only while wstrust.advertiseEndpointIdentity is on (rcbj,
+  // 2026-11-19): off, the default, no port carries wsid:Identity even with
+  // a certificate; on, all sixteen do, and none without a certificate.
   const certificate = 'MIIBAAEC';
-  const named = flat(documentOf(flags({ encryptionCertificate:
-                                          certificate })));
-  const identities = named.split('<wsid:Identity xmlns:wsid="http://' +
-    'schemas.xmlsoap.org/ws/2006/02/addressingidentity"><ds:KeyInfo ' +
-    'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
-    '<ds:X509Certificate>' + certificate + '</ds:X509Certificate>')
-    .length - 1;
-  t.check(identities === 16 && !contains(dev, 'wsid:Identity'),
-          'P8. each of the sixteen ports carries the encryption certificate ' +
-          'as its endpoint identity, and none without one', identities);
+  const identitiesOf = function (xml) {
+    log.debug("Entering identitiesOf().");
+    log.debug("Leaving identitiesOf().");
+    return flat(xml).split('<wsid:Identity xmlns:wsid="http://' +
+      'schemas.xmlsoap.org/ws/2006/02/addressingidentity"><ds:KeyInfo ' +
+      'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
+      '<ds:X509Certificate>' + certificate + '</ds:X509Certificate>')
+      .length - 1;
+  };
+  const silent = documentOf(flags({ encryptionCertificate: certificate }));
+  t.check(!contains(silent, 'wsid:Identity') &&
+          !contains(silent, 'wsa10:EndpointReference') &&
+          !contains(silent, certificate),
+          'P8. off by default: no port carries an endpoint identity, ' +
+          'though a certificate exists');
+  const named = documentOf(flags({ encryptionCertificate: certificate,
+                                   advertiseEndpointIdentity: true }));
+  const unnamed = documentOf(flags({ advertiseEndpointIdentity: true }));
+  const identities = identitiesOf(named);
+  t.check(identities === 16 && !contains(dev, 'wsid:Identity') &&
+          !contains(unnamed, 'wsid:Identity'),
+          'P8. on: each of the sixteen ports carries the encryption ' +
+          'certificate as its endpoint identity, and none without one',
+          identities);
   log.debug("Leaving messagePolicies().");
 }
 
@@ -856,7 +872,9 @@ function declaredNames() {
   add(WsTrustCapabilities.schema());
   // #1668: the IYA-STS algorithm suite's own schema, and WCF's identity
   // namespace, whose published schema the corpora image does not carry:
-  // the one element of it a port writes.
+  // the one element of it a port writes. A port writes it only while
+  // wstrust.advertiseEndpointIdentity is on (off by default, rcbj
+  // 2026-11-19); the W case below turns it on so that it is checked.
   add(WsTrustMetadata.suiteSchema());
   out['http://schemas.xmlsoap.org/ws/2006/02/addressingidentity'] =
     new Set(['Identity']);
@@ -969,8 +987,10 @@ function wholeContract(t) {
   const declared = declaredNames();
   const cases = [
     { name: 'development, everything on',
-      // A base64 certificate, so the ports' identity is validated too.
+      // A base64 certificate and the identity advertised, so the ports'
+      // identity is validated too.
       flags: flags({ issueKerberos: true, encryptionCertificate: 'MIIBAA==',
+                     advertiseEndpointIdentity: true,
                      responseSuite: 'iya' }),
       inputs: ['', 'HttpsToken RequireClientCertificate',
                'IssuedToken ' + SPEC.jwt,

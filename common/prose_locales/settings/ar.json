@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "ما إذا كان يجوز أن يحمل RequestSecurityToken تشفير XML في أي مكان، في ترويسة أو في الجسم، دون أن تسميه خريطة طلب. عند التفعيل يُفتح كل عنصر مشفّر. وعند التعطيل لا يُقبل النص المشفّر إلا حيث يسميه wstrustEncryptRequestElements الخاص بالتطبيق، والنص المشفّر بلا خريطة هو wst:InvalidRequest. وفي كل الأحوال يجب أن يُفتح النص المشفّر بمفاتيح هذا النطاق. يتجاوز wstrustAcceptEncryptedElements الخاص بالتطبيق هذا الإعداد. لا يعرض WSDL تشفير الطلبات إلا وهذا مفعّل."
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "الإعلان عن شهادة التشفير بوصفها هوية كل منفذ"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "ما إذا كان كل منفذ في WSDL على /sts/metadata يحمل wsa:EndpointReference يتضمن wsid:Identity الخاص به شهادة XML Encryption لهذا النطاق، وهي الشهادة التي يُشفَّر إليها الطلب. هذا العنصر من WS-AddressingIdentity، وهي مواصفة من Microsoft لم تُعتمد معيارًا قط؛ يقرؤه WCF وكذلك مجموعات الأدوات التي تحاكي WCF. عند الإيقاف، لا يسمّي WSDL أي شهادة ويُهيَّأ العميل بها خارج النطاق: KeyDescriptor use=\"encryption\" في /saml2/metadata، وهي الشهادة نفسها. ما يجوز للطلب تشفيره لا يتغير في الحالتين."
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "تشفير العناصر المسماة في الاستجابة"

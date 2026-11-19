@@ -654,8 +654,7 @@ may encrypt. A certificate with no `keyUsage` may encrypt (RFC 5280).
 Encrypting a request is off until it is turned on. With
 `wstrust.acceptEncryptedElements` (the application's
 `wstrustAcceptEncryptedElements`) on, a client may encrypt any header or the
-Body to this realm's XML Encryption certificate, which the WSDL carries as
-each port's endpoint identity. That includes the shapes WSS4J, WCF and
+Body to this realm's XML Encryption certificate. That includes the shapes WSS4J, WCF and
 Metro send under the WSDL's `sp:AsymmetricBinding`
 ([the metadata document](ws-trust.md#the-metadata-document)): the Body's
 content, a WS-Security 1.1 `EncryptedHeader`, and one `EncryptedKey` in the
@@ -682,6 +681,40 @@ ciphertext that will not open whether or not the switch is on. An expression out
 subset this service evaluates — `/`, `//`, `*`, an element name,
 `prefix:local`, `|`, and `local-name()`, `namespace-uri()` and `@attr`
 joined by `and` — is `wst:RequestFailed` (`STS-WSTRUST-0079`).
+
+### The certificate a client encrypts to
+
+The client needs this realm's XML Encryption certificate before it sends an
+encrypted request. Where it gets it depends on
+`wstrust.advertiseEndpointIdentity`:
+
+* **Off, the default.** The WSDL names no certificate. Fetch it and
+  configure the client with it:
+
+  ```bash
+  curl -sk "$BASE/saml2/metadata" > idp.xml   # the KeyDescriptor use="encryption"
+  curl -sk "$BASE/sts/cert" > sts.pem          # the same certificate while
+                                               # saml.signatureAlgorithm is RSA
+  ```
+
+  The first `md:KeyDescriptor use="encryption"` of `/saml2/metadata` is
+  always the right certificate. `/sts/cert` is the XML signing certificate, and is the
+  same one only while `saml.signatureAlgorithm` is an RSA algorithm (the
+  default).
+* **On.** Every port of `/sts/metadata` also carries the certificate as a
+  `wsa:EndpointReference/wsid:Identity`. WCF and the toolkits that copy it
+  read it from there. The element is from WS-AddressingIdentity, a
+  Microsoft specification that was never standardised, which is why it is
+  off by default.
+
+  ```bash
+  api config/set '{"key":"wstrust.advertiseEndpointIdentity","value":true}'
+  ```
+
+In development mode the key is regenerated on every start, so fetch the
+certificate again after a restart. In product mode it changes when the
+`xml` key rotates. The setting changes only what the WSDL says; which
+ciphertext is accepted is still the settings above.
 
 ## Related
 

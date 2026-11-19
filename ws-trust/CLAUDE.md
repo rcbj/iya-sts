@@ -44,7 +44,9 @@ advertised moves with what is accepted:
   `sp:Wss11` naming the key references `messageSignature()` resolves; the
   RecipientToken is the realm's XML Encryption certificate, which every port
   carries as its endpoint identity (`wsa:EndpointReference/wsid:Identity`,
-  where WCF reads it; drawn per request, no-store, so a rotation shows).
+  where WCF reads it; drawn per request, no-store, so a rotation shows)
+  **only while `wstrust.advertiseEndpointIdentity` is on — off by default**
+  (*THE ENDPOINT IDENTITY*, below).
   **The IYA-STS suite** (`SUITE_NS`, AES-256-GCM, RSA-OAEP-SHA256,
   RSA-SHA256), product's, is in a policy of its own on eight `IyaSuite`
   ports: CXF refuses a policy whose suite it has no loader for, and one
@@ -971,6 +973,36 @@ would teach a client the wrong contract. **A map's prefixes are the
 service's** (`PREFIXES`), never the request's declarations: a request that
 bound `wsa` to a namespace of its own could offer a decoy the map matched
 (`tests/wstrust_message_signature.js` J9).
+
+**THE ENDPOINT IDENTITY IS A SETTING, OFF BY DEFAULT (rcbj, 2026-11-19, on
+#1908).** Until then every one of the sixteen ports carried the realm's XML
+Encryption certificate as
+`wsa10:EndpointReference/wsid:Identity/ds:KeyInfo/ds:X509Data`, in
+`http://schemas.xmlsoap.org/ws/2006/02/addressingidentity`:
+WS-AddressingIdentity, Microsoft's, which never became an OASIS or W3C
+standard. rcbj's decision: a realm does not advertise a non-standard
+element by default. It is kept for WCF and the toolkits that copy it,
+behind `wstrust.advertiseEndpointIdentity` (`STS_WSTRUST_ADVERTISE_ENDPOINT_IDENTITY`),
+a realm setting because the WSDL is one document per realm — never an
+application attribute, so no directory attribute or OID. It decides two
+things together: which WSDL is advertised (`service()` gets the certificate
+only while it is on, through `document()`; `liveFlags()` reads it, so
+`/sts/metadata` and WS-MEX agree), and whether that element is how a
+client learns the certificate. **Off, the client is configured out of
+band**, and what a request may encrypt is unchanged: the per-application
+maps and checkboxes, `wstrust.encryptRequest`/`encryptResponse` and
+`wstrust.acceptEncryptedElements`. The out-of-band source is the first
+`md:KeyDescriptor use="encryption"` of `/saml2/metadata`, which reads the
+same `helpers.ownXmlEncryptionCertificates()` list `encryptionCertificate()`
+does; `/sts/cert` is the same certificate only while
+`saml.signatureAlgorithm` is RSA, because it serves `STS.xmlSigner`, so
+the documentation names `/saml2/metadata` first. **There is no WS-Trust
+surface that names the encryption certificate as such** — no console page
+or `/admin-api` operation labels it; the SAML metadata is where it is
+published. The `wsdl:documentation` sentence follows the setting
+(`description()`). `tests/wstrust_metadata.js` P8 holds both shapes, and
+its W case turns the setting on so the identity is schema-checked; the
+`declaredNames()` entry for the namespace is needed only then.
 
 **THE SIGNATURE IS READ IN WS-SECURITY'S ORDER** (`signedReading()`, also
 `prepareMessageSignature()`'s): an EncryptedKey, ReferenceList or

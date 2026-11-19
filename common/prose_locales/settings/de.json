@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "Ob ein RequestSecurityToken XML-Verschlüsselung an beliebiger Stelle tragen darf, in einem Header oder im Body, ohne dass eine Anfragezuordnung sie nennt. An, wird jedes verschlüsselte Element geöffnet. Aus, wird Geheimtext nur dort angenommen, wo wstrustEncryptRequestElements der Anwendung ihn nennt, und Geheimtext ohne Zuordnung ist ein wst:InvalidRequest. In jedem Fall muss sich ein Geheimtext mit den Schlüsseln dieses Bereichs öffnen lassen. Das wstrustAcceptEncryptedElements einer Anwendung ersetzt dies. Die WSDL bietet Anfrageverschlüsselung nur an, solange dies an ist."
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "Das Verschlüsselungszertifikat als Identität jedes Ports ankündigen"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Ob jeder Port der WSDL unter /sts/metadata eine wsa:EndpointReference trägt, deren wsid:Identity das XML-Encryption-Zertifikat dieses Bereichs enthält, das Zertifikat, an das eine Anfrage verschlüsselt wird. Das Element stammt aus WS-AddressingIdentity, einer Microsoft-Spezifikation, die nie standardisiert wurde; WCF liest es, ebenso die Toolkits, die WCF nachahmen. Aus, nennt die WSDL kein Zertifikat, und ein Client wird außerhalb des Bandes damit konfiguriert: der KeyDescriptor use=\"encryption\" von /saml2/metadata, der dasselbe Zertifikat ist. Was eine Anfrage verschlüsseln darf, ändert sich in keinem Fall."
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "Die benannten Elemente einer Antwort verschlüsseln"

@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "Om ett RequestSecurityToken får bära XML-kryptering var som helst, i ett huvud eller i kroppen, utan att en begärankarta namnger den. På öppnas varje krypterat element. Av godtas chiffertext bara där applikationens wstrustEncryptRequestElements namnger den, och chiffertext utan karta är ett wst:InvalidRequest. I båda fallen måste en chiffertext gå att öppna med den här sfärens nycklar. En applikations wstrustAcceptEncryptedElements åsidosätter detta. WSDL:en erbjuder kryptering av begäran bara när detta är på."
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "Annonsera krypteringscertifikatet som varje ports identitet"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "Om varje port i WSDL:en på /sts/metadata bär en wsa:EndpointReference vars wsid:Identity innehåller denna sfärs XML Encryption-certifikat, certifikatet som en begäran krypteras till. Elementet kommer från WS-AddressingIdentity, en Microsoft-specifikation som aldrig standardiserades; WCF läser det, liksom de verktygslådor som efterliknar WCF. Av, namnger WSDL:en inget certifikat och en klient konfigureras med det utanför bandet: KeyDescriptor use=\"encryption\" i /saml2/metadata, som är samma certifikat. Vad en begäran får kryptera ändras inte i något fall."
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "Kryptera de namngivna elementen i ett svar"

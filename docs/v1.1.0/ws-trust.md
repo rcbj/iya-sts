@@ -135,14 +135,63 @@ elements in one request are refused.
 * the `InitiatorToken` is the requester's X.509 v3 certificate, always sent
   to the recipient;
 * the `RecipientToken` is this realm's XML Encryption certificate, never
-  included in a message. A request is encrypted to it. Every port carries
-  it as its endpoint identity, where WCF reads it:
-  `wsa:EndpointReference/wsid:Identity/ds:KeyInfo/ds:X509Data` (WS-Addressing
-  1.0 and `http://schemas.xmlsoap.org/ws/2006/02/addressingidentity`). The
-  WSDL is drawn for each request and served `no-store`, so a rotated or
-  regenerated key is in the next copy;
+  included in a message. A request is encrypted to it. See
+  [The encryption certificate](#the-encryption-certificate) for where a
+  client gets it;
 * `sp:Lax` layout and `sp:OnlySignEntireHeadersAndBody`: parts are signed
   whole, by `wsu:Id`.
+
+#### The encryption certificate
+
+The certificate a request is encrypted to is the realm's XML Encryption
+certificate. It is the same for every application of the realm. Where a
+client gets it depends on `wstrust.advertiseEndpointIdentity`.
+
+**Off, the default.** The WSDL names no certificate. Configure the client
+with it out of band. It is published at:
+
+* `GET /saml2/metadata` (under the realm's prefix), as the first
+  `md:KeyDescriptor use="encryption"` of the `IDPSSODescriptor`. This is
+  the exact certificate: both come from the same list.
+* `GET /sts/cert`, the XML signing certificate. It is the same certificate
+  while `saml.signatureAlgorithm` is an RSA algorithm, which is the default.
+  Under an ECDSA or ML-DSA XML signature algorithm it is not, so use
+  `/saml2/metadata`.
+
+**On.** Every one of the sixteen ports also carries the certificate as its
+endpoint identity, where WCF reads it:
+
+```xml
+<wsdl:port name="Trust13Soap12" binding="tns:Trust13Soap12">
+  <soap12:address location="https://sts.example/sts"/>
+  <wsa10:EndpointReference xmlns:wsa10="http://www.w3.org/2005/08/addressing">
+    <wsa10:Address>https://sts.example/sts</wsa10:Address>
+    <wsid:Identity xmlns:wsid="http://schemas.xmlsoap.org/ws/2006/02/addressingidentity">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data><ds:X509Certificate>MIIE…</ds:X509Certificate></ds:X509Data>
+      </ds:KeyInfo>
+    </wsid:Identity>
+  </wsa10:EndpointReference>
+</wsdl:port>
+```
+
+`wsid:Identity` is from WS-AddressingIdentity, a Microsoft specification
+that was never standardised. WCF and the toolkits that copy it read it. It
+is off by default for that reason. Turn it on for a realm whose clients
+expect it:
+
+```bash
+api config/set '{"key":"wstrust.advertiseEndpointIdentity","value":true}'
+```
+
+The WSDL is drawn for each request and served `no-store`, so a rotated or
+regenerated key is in the next copy, in either mode. In development mode
+the key is regenerated on every start, so a client configured out of band
+must fetch the certificate again after a restart.
+
+The setting changes only what the WSDL says. What a request may encrypt is
+still `wstrust.acceptEncryptedElements` and the application's request map
+([XML Encryption](#xml-encryption)).
 
 **Two algorithm suites, on separate ports.** The eight ports a client reads
 first (each version over SOAP 1.1 and 1.2) name `sp:Basic256Sha256` in
@@ -942,6 +991,7 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 | `wstrust.acceptKerberos` | `STS_WSTRUST_ACCEPT_KERBEROS` | `true` | yes | Whether a [Kerberos token](#kerberos-tokens) is accepted as the requester's credential and inside `OnBehalfOf` / `ActAs`. |
 | `wstrust.issueKerberos` | `STS_WSTRUST_ISSUE_KERBEROS` | `false` | yes | Whether a `wst:TokenType` naming a Kerberos token is answered with one (see [Kerberos tokens](#kerberos-tokens)). |
 | `wstrust.encryptRequest` | `STS_WSTRUST_ENCRYPT_REQUEST` | `false` | yes | Whether a request whose `AppliesTo` names no application of its own must arrive with `wstrustEncryptRequestElements` encrypted. An application's `wstrustEncryptRequest` overrides it. On, a map mismatch stops processing (`STS-WSTRUST-0075`). |
+| `wstrust.advertiseEndpointIdentity` | `STS_WSTRUST_ADVERTISE_ENDPOINT_IDENTITY` | `false` | yes | Whether every WSDL port carries the encryption certificate as a `wsa:EndpointReference/wsid:Identity` (WS-AddressingIdentity, a Microsoft specification never standardised). Off, a client takes the certificate from `/saml2/metadata` (see [The encryption certificate](#the-encryption-certificate)). |
 | `wstrust.encryptResponse` | `STS_WSTRUST_ENCRYPT_RESPONSE` | `false` | yes | Whether a response has `wstrustEncryptResponseElements` replaced by `xenc:EncryptedData`. An application's `wstrustEncryptResponse` overrides it. On, and the encryption cannot be completed, the request is a fault in both modes and the clear response is not sent. |
 | `wstrust.encryptionAlgorithm` | `STS_WSTRUST_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher those elements use. `aes128-gcm` is also available; `aes256-cbc` and `aes128-cbc` only where broken algorithms are allowed. An application's `wstrustEncryptionAlgorithm` overrides it. |
 | `wstrust.keyTransportAlgorithm` | `STS_WSTRUST_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | How the content key is wrapped to an RSA recipient. `rsa-oaep` is also available; `rsa-1_5` only where broken algorithms are allowed, and product mode ignores it. An EC recipient uses ECDH-ES. An application's `wstrustKeyTransportAlgorithm` overrides it. |

@@ -768,10 +768,13 @@ const DOCUMENTS = [
     type: WSDL_TYPE, json: false, badCredential: "ignored",
     // THE WSDL (#958): a port type per trust version. WS-MetadataExchange
     // is POST /sts/mex, a SOAP request rather than a document. The signing
-    // certificate stays at /sts/cert. Since #1668 (rcbj on #1908) every port
-    // carries the realm's XML Encryption certificate as its endpoint
-    // identity, and the message signature is an AsymmetricBinding under
-    // sp:Basic256Sha256 on eight ports and the IYA-STS suite on eight more.
+    // certificate stays at /sts/cert. Since #1668 (rcbj on #1908) the
+    // message signature is an AsymmetricBinding under sp:Basic256Sha256 on
+    // eight ports and the IYA-STS suite on eight more. The encryption
+    // certificate as each port's endpoint identity is
+    // wstrust.advertiseEndpointIdentity, OFF BY DEFAULT (rcbj, 2026-11-19:
+    // WS-AddressingIdentity was never standardised), so by default no port
+    // carries one; sts_wstrust_metadata.js V5 turns it on.
     must: function (text) {
       log.debug("Entering must().");
       const bad = [];
@@ -808,12 +811,9 @@ const DOCUMENTS = [
             8) {
         bad.push("not eight ports under each suite");
       }
-      const identities = (text.match(/<wsid:Identity[\s>]/g) || []).length;
-      if (identities !== 16 ||
-          !/<ds:X509Certificate>[A-Za-z0-9+\/=\s]{100,}<\/ds:X509Certificate>/
-            .test(text)) {
-        bad.push("a port without the encryption certificate as its " +
-                 "identity");
+      if (/addressingidentity|<wsid:Identity[\s>]|EndpointReference/
+        .test(text)) {
+        bad.push("a port names an endpoint identity by default");
       }
       if (!/location="[^"]*\/sts"/.test(text)) {
         bad.push("the RST address is not /sts");

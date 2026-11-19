@@ -5727,6 +5727,14 @@
     "en": "91a62934f0ef031e",
     "text": "RequestSecurityToken 是否可以在任何位置（头或正文）携带 XML 加密，而无需请求映射点名。开启时，打开每个加密元素。关闭时，仅在应用的 wstrustEncryptRequestElements 点名之处接受密文，没有映射的密文为 wst:InvalidRequest。无论哪种情况，密文都必须能用本领域的密钥打开。应用的 wstrustAcceptEncryptedElements 覆盖此设置。仅在此设置开启时，WSDL 才提供请求加密。"
   },
+  "wstrust.advertiseEndpointIdentity|label": {
+    "en": "3c4111aa7ace7ccd",
+    "text": "将加密证书公布为每个端口的标识"
+  },
+  "wstrust.advertiseEndpointIdentity|description": {
+    "en": "761faaf79fa0e5b4",
+    "text": "/sts/metadata 处的 WSDL 的每个端口是否带有一个 wsa:EndpointReference，其 wsid:Identity 包含本领域的 XML Encryption 证书，即请求所加密到的证书。该元素出自 WS-AddressingIdentity，这是一份从未标准化的 Microsoft 规范；WCF 读取它，仿效 WCF 的工具包也读取它。关闭时，WSDL 不指明任何证书，客户端通过带外方式配置该证书：/saml2/metadata 的 KeyDescriptor use=\"encryption\"，它就是同一张证书。无论哪种情况，请求可以加密的内容都不变。"
+  },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
     "text": "加密响应中被点名的元素"

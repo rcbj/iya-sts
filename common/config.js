@@ -11737,6 +11737,28 @@ const SETTINGS = [
                  'application\'s wstrustAcceptEncryptedElements overrides ' +
                  'this. The WSDL offers request encryption only while it ' +
                  'is on.' },
+  // THE ENCRYPTION CERTIFICATE AS EACH PORT'S ENDPOINT IDENTITY (rcbj,
+  // 2026-11-19, on #1908). OFF BY DEFAULT IN BOTH MODES: the element is
+  // WS-AddressingIdentity's, a Microsoft specification that never became
+  // an OASIS or W3C standard, and a realm does not advertise a
+  // non-standard element unless an operator asks for it. Off, a client
+  // takes the certificate out of band (ws-trust/CLAUDE.md). One WSDL per
+  // realm, so a realm setting and no application attribute.
+  { key: 'wstrust.advertiseEndpointIdentity', group: 'WS-Trust',
+    label: 'Advertise the encryption certificate as each port\'s identity',
+    env: 'STS_WSTRUST_ADVERTISE_ENDPOINT_IDENTITY', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether every port of the WSDL at /sts/metadata carries ' +
+                 'a wsa:EndpointReference whose wsid:Identity holds this ' +
+                 'realm\'s XML Encryption certificate, the certificate a ' +
+                 'request is encrypted to. The element is from ' +
+                 'WS-AddressingIdentity, a Microsoft specification that ' +
+                 'was never standardised; WCF reads it, and so do the ' +
+                 'toolkits that copy WCF. Off, the WSDL names no ' +
+                 'certificate and a client is configured with it out of ' +
+                 'band: the KeyDescriptor use="encryption" of ' +
+                 '/saml2/metadata, which is the same certificate. What a ' +
+                 'request may encrypt is unchanged either way.' },
   { key: 'wstrust.encryptResponse', group: 'WS-Trust',
     label: 'Encrypt the named elements of a response',
     env: 'STS_WSTRUST_ENCRYPT_RESPONSE', type: 'bool', dflt: false,

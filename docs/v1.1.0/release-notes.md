@@ -468,13 +468,20 @@ own attributes.
   `sp:Basic256Sha256` on the eight ports, and under this service's own
   suite, `urn:iya-sts:ws-securitypolicy:algorithm-suite:1`
   `Basic256GcmRsaOaepSha256` (AES-256-GCM, RSA-OAEP over SHA-256,
-  RSA-SHA256), on eight more `IyaSuite` ports. Every port carries the
-  realm's encryption certificate as its endpoint identity. A request may
+  RSA-SHA256), on eight more `IyaSuite` ports. A request may
   sign every header and the Body, and may be encrypted where the realm
   accepts it under the port's suite; an answer may be encrypted where the
   service-wide cipher is that suite's. Each choice is optional. An
   `sp:IssuedToken` now carries the nested `wsp:Policy` WS-SecurityPolicy
   requires; without it Apache CXF would not load the WSDL.
+* **The encryption certificate as each port's identity is a setting, off by
+  default.** With `wstrust.advertiseEndpointIdentity` on, every port
+  carries the realm's encryption certificate in a
+  `wsa:EndpointReference/wsid:Identity`, where WCF reads it. That element is
+  from WS-AddressingIdentity, a Microsoft specification that was never
+  standardised, so the WSDL does not carry it by default. Off, a client is
+  configured with the certificate from `/saml2/metadata`
+  ([The encryption certificate](ws-trust.md#the-encryption-certificate)).
 * **An RST may name a cipher only inside the application's policy.**
   Absent `wst:EncryptionAlgorithm` and `wst:EncryptWith`, the
   application's settings are used as they stand. Either element may name
