@@ -918,7 +918,7 @@ var config = {
     acceptClientCertificate: true,           // Accept the TLS client certificate as the requester's credential
     acceptKerberos: true,                    // Accept a Kerberos token
     issueKerberos: false,                    // Issue Kerberos tokens
-    encryptRequest: false,                   // Decrypt the named elements of a request
+    encryptRequest: false,                   // Require the named elements of a request encrypted
     encryptResponse: false,                  // Encrypt the named elements of a response
     encryptionAlgorithm: "aes256-gcm",       // Response encryption algorithm
     keyTransportAlgorithm: "rsa-oaep-mgf1p"  // Response key transport algorithm

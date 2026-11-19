@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "ما إذا كان wst:TokenType يسمّي أحد ValueTypes الستة في Kerberos Token Profile 1.1 يُجاب برمز Kerberos: AP-REQ يحمل تذكرة خدمة أصدرها KDC لنطاق الثقة هذا للموضوع إلى خدمة Kerberos التي يسمّيها AppliesTo، مع إعادة المفتاح الفرعي لـ Authenticator بوصفه رمز الإثبات عبر TLS. تسمّي تذكرة ActAs كل طرف تصرّف في S4U_DELEGATION_INFO ضمن PAC الخاص بها. عند الإيقاف يُرفض مثل هذا الطلب."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "اشتراط تشفير العناصر المسماة في الطلب"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "c969f465f8a7e1bf",
+    "text": "ما إذا كان يجب أن يصل RequestSecurityToken الذي لا يسمي AppliesTo الخاص به أي تطبيق بعينه وعناصر wstrustEncryptRequestElements مشفّرة. يتجاوز wstrustEncryptRequest الخاص بالتطبيق هذا الإعداد لطلب يسميه AppliesTo. كل ما يصل مشفّرًا إلى هذا النطاق يُفتح سواء كان هذا مفعّلًا أم لا، ويُقرأ AppliesTo من الطلب المفتوح. عند التفعيل، إذا كانت الخريطة فارغة، أو طابق تعبير عنصرًا وصل بنص واضح أو لم يطابق شيئًا مستعادًا، فالطلب wsse:FailedCheck. والنص المشفّر الذي لا يُفتح هو هذا الخطأ في كل الأحوال."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "تشفير العناصر المسماة في الاستجابة"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "ما إذا كان RequestSecurityTokenResponse يستبدل عناصر wstrustEncryptResponseElements بـ xenc:EncryptedData بعد بنائه، لأي نوع من الرموز. يعلو wstrustEncryptResponse الخاص بتطبيق على هذا. المستلم هو wstrustEncryptionCertificate الخاص بذلك التطبيق، وإلا عنصر الشهادة الذي يحدده wstrustResponseRecipientXPath، وإلا أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب. يُرسَل الخطأ واضحًا. عند التشغيل، وتعذّر إتمام التشفير، يكون الطلب خطأ في الوضعين."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "خوارزمية تشفير الاستجابة"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "تشفير الكتلة الذي تُشفَّر به العناصر المشفّرة في استجابة WS-Trust. تشفيرا GCM مصادَق عليهما: النص المشفّر المعدَّل يفشل في وسمه ويُرفض. تشفيرا CBC ليسا كذلك. يعلو wstrustEncryptionAlgorithm الخاص بتطبيق على هذا. يجوز لعنصر wst:EncryptionAlgorithm أن يسمي هذا التشفير، باسمه القصير أو بمعرّف URI لـ XML Encryption، فقط ما دام تشفير الاستجابة قيد التشغيل."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "خوارزمية نقل مفتاح الاستجابة"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "كيف يُغلَّف مفتاح المحتوى الوحيد الاستخدام لاستجابة WS-Trust إلى المفتاح العام RSA للمستلم. `rsa-oaep` هو RSA-OAEP في XML Encryption 1.1 مع SHA-256 وMGF1-SHA-256؛ و`rsa-oaep-mgf1p` هو OAEP فوق SHA-1. المستلم الذي شهادته EC يُشفَّر إليه باتفاق مفتاح ECDH-ES مهما قال هذا الإعداد. يعلو wstrustKeyTransportAlgorithm الخاص بتطبيق على هذا. `rsa-1_5` هو RSAES-PKCS1-v1_5 وهو مكسور، ويُعرَض لأن طالبًا منشورًا قد لا يقبل سواه. تحذير: rsa-1_5 لوضع التطوير فقط — في وضع المنتج يُتجاهل حيث يُقرأ، على هذا الإعداد وعلى wstrustKeyTransportAlgorithm الخاص بتطبيق (يُستخدم rsa-oaep-mgf1p، ويُسجَّل مرة واحدة، STS-CORE-0106)، وتعيينه مرفوض (STS-CORE-0103، STS-REG-0193). يجوز لعنصر wst:EncryptWith أن يسمي هذه الخوارزمية فقط ما دام تشفير الاستجابة قيد التشغيل."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "تسجيل الدخول الذي يبدأه مزود الهوية"
@@ -12602,37 +12634,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "لمستمع مصحّح البروتوكول وحده: http.http2MaxConcurrentStreams. القيمة -1، وهي الافتراضية، تتبع http.http2MaxConcurrentStreams؛ وأي قيمة أخرى تقرر لهذا المستمع فقط. عدد الطلبات التي يجوز لاتصال HTTP/2 واحد أن يُبقيها مفتوحة في آن واحد (SETTINGS_MAX_CONCURRENT_STREAMS)؛ ويُرفض أي تدفّق يتجاوز ذلك حتى ينتهي أحدها. القيمة 100، وهي الافتراضية، هي أصغر قيمة يوصي بها RFC 9113؛ أما قيمة node نفسها فغير محدودة، مما يسمح لاتصال واحد بحمل عمل الآلاف. يحدّ العمل على اتصال كما يحدّ http.maxConnections الاتصالات. يتبع الاتصال الجديد التغيير فورًا، ويُرسَل إلى الاتصال المفتوح القيمة الجديدة."
-  },
-  "wstrust.encryptRequest|label": {
-    "en": "8c74f4c7c47d9035",
-    "text": "فك تشفير العناصر المسماة في الطلب"
-  },
-  "wstrust.encryptRequest|description": {
-    "en": "5f309591d610ee41",
-    "text": "ما إذا كان يجب أن يصل RequestSecurityToken الذي لا يسمي AppliesTo الخاص به أي تطبيق بعينه وعناصر wstrustEncryptRequestElements مشفّرة (XML Encryption، النوع Element)، وما إذا كان يُفتح أصلًا طلب مشفّر بالكامل — يكون AppliesTo داخله في النص المشفّر. يعلو wstrustEncryptRequest الخاص بتطبيق على هذا لطلب يسميه AppliesTo. عند التشغيل، وكانت الخريطة فارغة، أو طابق تعبير عنصرًا وصل واضحًا، أو لم يطابق تعبير شيئًا مما استُعيد، أو لم يُفتح نص مشفّر بمفاتيح هذا النطاق، فالطلب wst:FailedCheck. عند الإيقاف يُترك النص المشفّر كما وصل، والطلب الذي لا يُقرأ هو الخطأ الذي كان عليه."
-  },
-  "wstrust.encryptResponse|label": {
-    "en": "1d9d5a11338444b1",
-    "text": "تشفير العناصر المسماة في الاستجابة"
-  },
-  "wstrust.encryptResponse|description": {
-    "en": "cdc7fb979f5c7e5b",
-    "text": "ما إذا كان RequestSecurityTokenResponse يستبدل عناصر wstrustEncryptResponseElements بـ xenc:EncryptedData بعد بنائه، لأي نوع من الرموز. يعلو wstrustEncryptResponse الخاص بتطبيق على هذا. المستلم هو wstrustEncryptionCertificate الخاص بذلك التطبيق، وإلا عنصر الشهادة الذي يحدده wstrustResponseRecipientXPath، وإلا أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب. يُرسَل الخطأ واضحًا. عند التشغيل، وتعذّر إتمام التشفير، يكون الطلب خطأ في الوضعين."
-  },
-  "wstrust.encryptionAlgorithm|label": {
-    "en": "d91b60a56e964f0a",
-    "text": "خوارزمية تشفير الاستجابة"
-  },
-  "wstrust.encryptionAlgorithm|description": {
-    "en": "0308b0e0b66692a8",
-    "text": "تشفير الكتلة الذي تُشفَّر به العناصر المشفّرة في استجابة WS-Trust. تشفيرا GCM مصادَق عليهما: النص المشفّر المعدَّل يفشل في وسمه ويُرفض. تشفيرا CBC ليسا كذلك. يعلو wstrustEncryptionAlgorithm الخاص بتطبيق على هذا. يجوز لعنصر wst:EncryptionAlgorithm أن يسمي هذا التشفير، باسمه القصير أو بمعرّف URI لـ XML Encryption، فقط ما دام تشفير الاستجابة قيد التشغيل."
-  },
-  "wstrust.keyTransportAlgorithm|label": {
-    "en": "614f82577349a013",
-    "text": "خوارزمية نقل مفتاح الاستجابة"
-  },
-  "wstrust.keyTransportAlgorithm|description": {
-    "en": "ffc141f1ac37ec59",
-    "text": "كيف يُغلَّف مفتاح المحتوى الوحيد الاستخدام لاستجابة WS-Trust إلى المفتاح العام RSA للمستلم. `rsa-oaep` هو RSA-OAEP في XML Encryption 1.1 مع SHA-256 وMGF1-SHA-256؛ و`rsa-oaep-mgf1p` هو OAEP فوق SHA-1. المستلم الذي شهادته EC يُشفَّر إليه باتفاق مفتاح ECDH-ES مهما قال هذا الإعداد. يعلو wstrustKeyTransportAlgorithm الخاص بتطبيق على هذا. `rsa-1_5` هو RSAES-PKCS1-v1_5 وهو مكسور، ويُعرَض لأن طالبًا منشورًا قد لا يقبل سواه. تحذير: rsa-1_5 لوضع التطوير فقط — في وضع المنتج يُتجاهل حيث يُقرأ، على هذا الإعداد وعلى wstrustKeyTransportAlgorithm الخاص بتطبيق (يُستخدم rsa-oaep-mgf1p، ويُسجَّل مرة واحدة، STS-CORE-0106)، وتعيينه مرفوض (STS-CORE-0103، STS-REG-0193). يجوز لعنصر wst:EncryptWith أن يسمي هذه الخوارزمية فقط ما دام تشفير الاستجابة قيد التشغيل."
   }
 }

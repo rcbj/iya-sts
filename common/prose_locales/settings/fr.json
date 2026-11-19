@@ -5712,12 +5712,12 @@
     "text": "Indique si un wst:TokenType qui nomme l'un des six ValueType du Kerberos Token Profile 1.1 reçoit en réponse un jeton Kerberos : un AP-REQ portant un ticket de service que le KDC de ce domaine a émis pour le sujet vers le service Kerberos que nomme AppliesTo, la sous-clé de l'Authenticator étant renvoyée comme jeton de preuve sur TLS. Un ticket ActAs nomme chaque partie ayant agi dans le S4U_DELEGATION_INFO de son PAC. Désactivé, une telle demande est refusée."
   },
   "wstrust.encryptRequest|label": {
-    "en": "8c74f4c7c47d9035",
-    "text": "Déchiffrer les éléments nommés d’une requête"
+    "en": "8c145f441c1aa7f2",
+    "text": "Exiger le chiffrement des éléments nommés d’une requête"
   },
   "wstrust.encryptRequest|description": {
-    "en": "5f309591d610ee41",
-    "text": "Indique si un RequestSecurityToken dont l’AppliesTo ne nomme aucune application propre doit arriver avec les éléments de wstrustEncryptRequestElements chiffrés (XML Encryption, type Element), et si une requête entièrement chiffrée — dont l’AppliesTo est dans le texte chiffré — est ouverte. Le wstrustEncryptRequest d’une application l’emporte pour une requête dont l’AppliesTo la nomme. Activé, et la carte est vide, une expression correspond à un élément arrivé en clair, une expression ne correspond à rien de ce qui a été restauré, ou un texte chiffré ne s’ouvre pas avec les clés de ce domaine, la requête est un wst:FailedCheck. Désactivé, le texte chiffré est laissé tel qu’il est arrivé et une requête illisible est la faute qu’elle était déjà."
+    "en": "c969f465f8a7e1bf",
+    "text": "Indique si un RequestSecurityToken dont l’AppliesTo ne nomme aucune application propre doit arriver avec les éléments de wstrustEncryptRequestElements chiffrés. Le wstrustEncryptRequest d’une application remplace ce réglage pour une requête dont l’AppliesTo la nomme. Tout ce qui arrive chiffré pour ce domaine est ouvert, que ce réglage soit actif ou non, et l’AppliesTo est lu dans la requête ouverte. Activé, si la table est vide, ou si une expression désigne un élément arrivé en clair ou rien qui ait été restauré, la requête est un wsse:FailedCheck. Un texte chiffré qui ne s’ouvre pas est cette même faute dans tous les cas."
   },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",

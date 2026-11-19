@@ -589,9 +589,7 @@ protected subjects and the realm settings are on
 ## An encrypted response
 
 XML Encryption of a WS-Trust response is per application, and it is off
-until that application turns it on. `POST /sts?encrypt=1` is retired: a
-request that still carries it is handled as if the parameter were absent.
-The algorithms are `wstrust.encryptionAlgorithm` and
+until that application turns it on. The algorithms are `wstrust.encryptionAlgorithm` and
 `wstrust.keyTransportAlgorithm`, overridable on the application. They are
 not the SAML assertion settings.
 
@@ -658,11 +656,23 @@ certificate has been found: encryption needs `keyEncipherment` or
 `keyAgreement`. Set `wstrustEncryptionCertificate` to a certificate that
 may encrypt. A certificate with no `keyUsage` may encrypt (RFC 5280).
 
-The request map is the same idea in the other direction.
-`wstrustEncryptRequest` and `wstrustEncryptRequestElements` require the
-named elements to arrive as `xenc:EncryptedData`. An empty map, a clear
-match, a miss, or a ciphertext that will not open is `wst:FailedCheck`
-(`STS-WSTRUST-0075`) and processing stops. An expression outside the
+## An encrypted request
+
+A client may encrypt any header or the Body, and needs no switch for it:
+whatever arrives encrypted to this realm's certificate (`GET /sts/cert`) is
+opened. That includes the shapes WSS4J, WCF and Metro send under the WSDL's
+`sp:AsymmetricBinding` ([the metadata document](ws-trust.md#the-metadata-document)):
+the Body's content, a WS-Security 1.1 `EncryptedHeader`, and one
+`EncryptedKey` in the security header listing them. The signature may be
+made before or after the encryption. The WSDL offers request encryption only
+in a realm that reads AES-256-CBC, so not in product mode, where a client
+encrypts with AES-GCM by configuration rather than from the policy.
+
+The request map makes encryption required.
+`wstrustEncryptRequest` and `wstrustEncryptRequestElements` require each
+named element to arrive encrypted. An empty map, a clear match or a miss is
+`wsse:FailedCheck` (`STS-WSTRUST-0075`) and processing stops, as is a
+ciphertext that will not open whether or not the switch is on. An expression outside the
 subset this service evaluates — `/`, `//`, `*`, an element name,
 `prefix:local`, `|`, and `local-name()`, `namespace-uri()` and `@attr`
 joined by `and` — is `wst:RequestFailed` (`STS-WSTRUST-0079`).

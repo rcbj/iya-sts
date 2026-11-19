@@ -434,8 +434,10 @@ model Response {
 
 /**
  * The issued token, exactly one of these: a SAML 2.0 assertion (held to
- * SAML's own model), a SAML 1.1 one, either encrypted (`?encrypt=1`), or a
- * BinarySecurityToken — a JWT or a Kerberos AP-REQ.
+ * SAML's own model), a SAML 1.1 one, or a BinarySecurityToken — a JWT or a
+ * Kerberos AP-REQ. Where an application's response map names the token
+ * (#1668), it is replaced by an `xenc:EncryptedData` after the answer is
+ * held to this model.
  */
 @message(#{ id: "wst.RequestedSecurityToken", element: "RequestedSecurityToken",
             namespaces: "wst.namespace", direction: "write",
@@ -451,9 +453,10 @@ model RequestedSecurityToken {
               cite: "WSS SAML Token Profile 1.1 section 3 (SAML 1.1, #487)" })
   saml11Assertion?: IyaSts.Saml11.Assertion;
 
-  @element(#{ xml: "EncryptedAssertion", occurs: "optional",
-              cite: "saml-core-2.0-os section 2.3.4 (?encrypt=1)" })
-  encryptedAssertion?: string;
+  @element(#{ xml: "EncryptedData", occurs: "optional",
+              xmlns: "http://www.w3.org/2001/04/xmlenc#",
+              cite: "XML Encryption 1.0 section 3.4; WS-Trust 1.3 section 4.4 (an application's response map, #1668)" })
+  encryptedData?: string;
 
   @element(#{ xml: "BinarySecurityToken", occurs: "optional",
               cite: "WSS SOAP Message Security 1.0 section 6.3 (a JWT, #476; a Kerberos AP-REQ, #658)" })

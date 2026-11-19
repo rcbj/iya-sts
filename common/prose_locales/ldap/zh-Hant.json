@@ -1288,12 +1288,12 @@
     "text": "此應用程式的 WS-TRUST JWT 所攜帶的 OAUTH 2.0 範圍，每個值一個範圍（#485）。WS-Trust 以此應用程式為 AppliesTo 簽發的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）會在其 `scope` 宣告中攜帶它們，以空格分隔（RFC 9068 第 2.2.3 節）；未設定時則不攜帶 `scope`。SAML 權杖不受影響。\n\n**每個範圍都以 OAuth 存取權杖的範圍方式判斷**，以此應用程式作為用戶端：`oauthAllowedScope` 宣告它可以獲簽發什麼（在產品模式下；本服務的受保護範圍則在每種模式下），並由簽發原則的逐範圍問題決定。被原則丟棄的值會從權杖中「略去」並記錄稽核（STS-OAUTH-0579），絕不簽發。指名未宣告範圍的寫入在此會被接受，因為宣告可能變更，且開發模式會授予未宣告的範圍：也請在 oauthAllowedScope 上宣告它。會被原則丟棄的值，會在設定它的地方發出「警告」（#488）：在此欄位旁、在儲存回覆中，以及在 /admin-api 寫入回覆與應用程式檢視中的 `warnings`。"
   },
   "applications.schema.attributes.wstrustEncryptRequest.what": {
-    "en": "2fc947c1194f5438",
-    "text": "TRUE 或 FALSE：開啟此應用程式的請求對應所點名的元素，覆蓋 wstrust.encryptRequest。開啟時，AppliesTo 為此應用程式的請求在對應為空、某個運算式比對到以明文到達的元素、某個運算式沒有比對到任何從密文還原的內容，或密文無法用此領域的 XML Encryption 金鑰開啟時，是 FailedCheck。AppliesTo 藏在密文之內的請求僅在全服務開關開啟時被開啟；這次開啟所揭示的應用程式隨後受其自身開關約束。關閉時，此應用程式的密文被拒絕而不是被開啟。"
+    "en": "ebd5efe4a3d97cec",
+    "text": "TRUE 或 FALSE：要求此應用程式的請求對應所點名的元素以加密形式到達，覆寫 wstrust.encryptRequest。開啟時，若對應為空、某個運算式符合以明文到達的元素，或某個運算式未符合任何從密文還原的內容，則 AppliesTo 為此應用程式的請求即為 FailedCheck。無論開啟與否，凡是加密給本領域的內容都會被開啟，AppliesTo 從開啟後的請求中讀取；無法開啟的密文在任何情況下都是 FailedCheck。"
   },
   "applications.schema.attributes.wstrustEncryptRequestElements.what": {
-    "en": "64d29149c3c87cba",
-    "text": "必須加密到達的 WS-Trust 請求元素，每個一條 XPath 1.0 運算式。子集為 `/`、`//`、`*`、元素名、`prefix:local`、用 `|` 組成的聯集，以及述詞 `local-name()`、`namespace-uri()` 和 `@attr`，以 `and` 連接。每條運算式必須至少選中一個從類型為 Element 的 xenc:EncryptedData 還原出來的元素。超出該子集的運算式是 RequestFailed。可以點名 SOAP 標頭、SOAP 本文或任何元素，適用於任何權杖類型。"
+    "en": "d28549992db71c30",
+    "text": "WS-TRUST 請求中必須以加密形式到達的元素，每個一條 XPath 1.0 運算式。子集為 `/`、`//`、`*`、元素名稱、`prefix:local`、以 `|` 的聯集，以及述詞 `local-name()`、`namespace-uri()` 與 `@attr`，以 `and` 連接。每個運算式必須至少選取一個從密文還原的元素：類型為 Element 或 Content 的 xenc:EncryptedData，或 WS-Security 1.1 的 EncryptedHeader。超出該子集的運算式為 RequestFailed。可以點名 SOAP 標頭、SOAP 本文或任何元素，適用於任何權杖類型。"
   },
   "applications.schema.attributes.wstrustEncryptResponse.what": {
     "en": "aafbbba9cd31d6c9",

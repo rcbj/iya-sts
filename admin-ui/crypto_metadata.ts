@@ -2287,10 +2287,12 @@ class CryptoMetadata {
                   '`invalid`.',
         encrypts: 'Named elements of a response, as xenc:EncryptedData, to ' +
                   'the application\'s certificate or the signer certificate ' +
-                  'element. `?encrypt=1` is retired and encrypts nothing. ' +
-                  'The cipher is this family\'s, through crypto.js; SAML\'s ' +
+                  'element. The cipher is this family\'s, through ' +
+                  'crypto.js; SAML\'s ' +
                   'EncryptedAssertion stays in `saml/saml2.ts`.',
-        decrypts: '',
+        decrypts: 'Any encrypted element of a request, to this realm\'s ' +
+                  'XML Encryption key: an EncryptedData of type Element or ' +
+                  'Content, or an EncryptedHeader, through crypto.js.',
         hashes: 'SHA-256 for the Reference digest.',
         // "It polices no delegation" until #543's review: #108 and #186 put
         // `OnBehalfOf` and `ActAs` under the delegation policy.

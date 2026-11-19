@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "क्या Kerberos Token Profile 1.1 के छह ValueTypes में से एक का नाम लेने वाला wst:TokenType Kerberos टोकन से उत्तर दिया जाता है: AP-REQ जो इस विश्वास क्षेत्र के KDC द्वारा विषय के लिए AppliesTo द्वारा नामित Kerberos सेवा को जारी सेवा टिकट ले जाता है, Authenticator की उपकुंजी TLS पर प्रमाण टोकन के रूप में लौटाई जाती है। ActAs टिकट अपने PAC के S4U_DELEGATION_INFO में हर पक्ष का नाम लेता है जिसने कार्य किया। बंद होने पर ऐसा अनुरोध अस्वीकार है।"
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "अनुरोध के नामित तत्वों का एन्क्रिप्टेड होना आवश्यक करें"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "c969f465f8a7e1bf",
+    "text": "क्या ऐसा RequestSecurityToken, जिसका AppliesTo किसी अपने अनुप्रयोग का नाम नहीं लेता, wstrustEncryptRequestElements के तत्व एन्क्रिप्टेड लेकर आना चाहिए। जिस अनुरोध का AppliesTo किसी अनुप्रयोग का नाम लेता है, उसके लिए उस अनुप्रयोग का wstrustEncryptRequest इसे ओवरराइड करता है। इस रील्म के लिए एन्क्रिप्टेड आने वाली हर चीज़ खोली जाती है, यह चालू हो या बंद, और AppliesTo खुले हुए अनुरोध से पढ़ा जाता है। चालू होने पर, यदि मैप खाली है, या कोई अभिव्यक्ति स्पष्ट पाठ में आए तत्व से या किसी भी पुनर्स्थापित चीज़ से मेल नहीं खाती, तो अनुरोध wsse:FailedCheck है। जो सिफरटेक्स्ट नहीं खुलता, वह हर स्थिति में यही त्रुटि है।"
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "प्रतिक्रिया के नामित तत्वों को एन्क्रिप्ट करें"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "क्या RequestSecurityTokenResponse बनने के बाद wstrustEncryptResponseElements के तत्व xenc:EncryptedData से बदल दिए जाते हैं, किसी भी टोकन प्रकार के लिए। किसी अनुप्रयोग का wstrustEncryptResponse इसे ओवरराइड करता है। प्राप्तकर्ता उस अनुप्रयोग का wstrustEncryptionCertificate है, अन्यथा वह प्रमाणपत्र तत्व जिसे wstrustResponseRecipientXPath चुनता है, अन्यथा अनुरोध के WS-Security हस्ताक्षर द्वारा नामित पहला हस्ताक्षरकर्ता प्रमाणपत्र तत्व। दोष साफ़ पाठ में भेजा जाता है। चालू होने पर, और एन्क्रिप्शन पूरा न हो सके, तो अनुरोध दोनों मोड में दोष है।"
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "प्रतिक्रिया का एन्क्रिप्शन एल्गोरिदम"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "वह ब्लॉक सिफर जिससे WS-Trust प्रतिक्रिया के एन्क्रिप्टेड तत्व एन्क्रिप्ट होते हैं। दोनों GCM प्रमाणीकृत हैं: बदला हुआ सिफरटेक्स्ट अपना टैग असफल करता है और अस्वीकार होता है। दोनों CBC ऐसे नहीं हैं। किसी अनुप्रयोग का wstrustEncryptionAlgorithm इसे ओवरराइड करता है। तत्व wst:EncryptionAlgorithm इस सिफर का नाम, उसके छोटे नाम या उसके XML Encryption URI से, केवल तभी ले सकता है जब प्रतिक्रिया एन्क्रिप्शन चालू हो।"
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "प्रतिक्रिया का कुंजी-परिवहन एल्गोरिदम"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "WS-Trust प्रतिक्रिया की एकबारगी सामग्री कुंजी प्राप्तकर्ता की RSA सार्वजनिक कुंजी में कैसे लपेटी जाती है। `rsa-oaep` XML Encryption 1.1 का RSA-OAEP है, SHA-256 और MGF1-SHA-256 के साथ; `rsa-oaep-mgf1p` SHA-1 पर OAEP है। जिस प्राप्तकर्ता का प्रमाणपत्र EC है उसे ECDH-ES कुंजी समझौते से एन्क्रिप्ट किया जाता है, यह कुछ भी कहे। किसी अनुप्रयोग का wstrustKeyTransportAlgorithm इसे ओवरराइड करता है। `rsa-1_5` RSAES-PKCS1-v1_5 है और टूटा हुआ है, और इसे इसलिए दिया जाता है क्योंकि तैनात अनुरोधकर्ता और कुछ स्वीकार न करे। चेतावनी: rsa-1_5 केवल विकास मोड है — उत्पाद मोड में जहाँ पढ़ा जाता है वहाँ अनदेखा होता है, इस सेटिंग पर और किसी अनुप्रयोग के wstrustKeyTransportAlgorithm पर (rsa-oaep-mgf1p उपयोग होता है, एक बार लॉग, STS-CORE-0106), और इसे सेट करना अस्वीकार है (STS-CORE-0103, STS-REG-0193)। तत्व wst:EncryptWith इस एल्गोरिदम का नाम केवल तभी ले सकता है जब प्रतिक्रिया एन्क्रिप्शन चालू हो।"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "पहचान-प्रदाता-प्रारंभित साइन-इन"
@@ -12602,37 +12634,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "केवल प्रोटोकॉल डीबगर श्रोता के लिए: http.http2MaxConcurrentStreams. -1, डिफ़ॉल्ट, http.http2MaxConcurrentStreams का अनुसरण करता है; कोई अन्य मान केवल इस श्रोता के लिए तय करता है। एक HTTP/2 कनेक्शन पर एक साथ कितने अनुरोध खुले हो सकते हैं (SETTINGS_MAX_CONCURRENT_STREAMS); उससे आगे की स्ट्रीम तब तक अस्वीकार की जाती है जब तक एक समाप्त न हो जाए। 100, डिफ़ॉल्ट, वह सबसे छोटा मान है जिसकी RFC 9113 अनुशंसा करता है; node का अपना असीमित है, जिससे एक कनेक्शन हज़ारों का काम ले जा सकता है। यह एक कनेक्शन पर काम को वैसे ही सीमाबद्ध करता है जैसे http.maxConnections कनेक्शनों को सीमाबद्ध करता है। नया कनेक्शन परिवर्तन का तुरंत पालन करता है, और खुले कनेक्शन को नया मान भेज दिया जाता है।"
-  },
-  "wstrust.encryptRequest|label": {
-    "en": "8c74f4c7c47d9035",
-    "text": "अनुरोध के नामित तत्वों को डिक्रिप्ट करें"
-  },
-  "wstrust.encryptRequest|description": {
-    "en": "5f309591d610ee41",
-    "text": "क्या ऐसा RequestSecurityToken, जिसका AppliesTo अपने किसी अनुप्रयोग का नाम नहीं लेता, wstrustEncryptRequestElements के तत्व एन्क्रिप्टेड रूप में लाए (XML Encryption, प्रकार Element), और क्या पूरी तरह एन्क्रिप्टेड अनुरोध — जिसका AppliesTo सिफरटेक्स्ट के भीतर है — खोला भी जाए। किसी अनुप्रयोग का wstrustEncryptRequest उस अनुरोध के लिए इसे ओवरराइड करता है जिसका AppliesTo उसे नाम देता है। चालू होने पर, और मानचित्र खाली हो, कोई व्यंजक साफ़ आए तत्व से मेल खाए, कोई व्यंजक पुनर्स्थापित में से कुछ से मेल न खाए, या सिफरटेक्स्ट इस विश्वास-क्षेत्र की कुंजियों से न खुले, तो अनुरोध wst:FailedCheck है। बंद होने पर सिफरटेक्स्ट जैसा आया वैसा रहता है, और जो अनुरोध पढ़ा नहीं जा सकता वह वही दोष है जो वह पहले से था।"
-  },
-  "wstrust.encryptResponse|label": {
-    "en": "1d9d5a11338444b1",
-    "text": "प्रतिक्रिया के नामित तत्वों को एन्क्रिप्ट करें"
-  },
-  "wstrust.encryptResponse|description": {
-    "en": "cdc7fb979f5c7e5b",
-    "text": "क्या RequestSecurityTokenResponse बनने के बाद wstrustEncryptResponseElements के तत्व xenc:EncryptedData से बदल दिए जाते हैं, किसी भी टोकन प्रकार के लिए। किसी अनुप्रयोग का wstrustEncryptResponse इसे ओवरराइड करता है। प्राप्तकर्ता उस अनुप्रयोग का wstrustEncryptionCertificate है, अन्यथा वह प्रमाणपत्र तत्व जिसे wstrustResponseRecipientXPath चुनता है, अन्यथा अनुरोध के WS-Security हस्ताक्षर द्वारा नामित पहला हस्ताक्षरकर्ता प्रमाणपत्र तत्व। दोष साफ़ पाठ में भेजा जाता है। चालू होने पर, और एन्क्रिप्शन पूरा न हो सके, तो अनुरोध दोनों मोड में दोष है।"
-  },
-  "wstrust.encryptionAlgorithm|label": {
-    "en": "d91b60a56e964f0a",
-    "text": "प्रतिक्रिया का एन्क्रिप्शन एल्गोरिदम"
-  },
-  "wstrust.encryptionAlgorithm|description": {
-    "en": "0308b0e0b66692a8",
-    "text": "वह ब्लॉक सिफर जिससे WS-Trust प्रतिक्रिया के एन्क्रिप्टेड तत्व एन्क्रिप्ट होते हैं। दोनों GCM प्रमाणीकृत हैं: बदला हुआ सिफरटेक्स्ट अपना टैग असफल करता है और अस्वीकार होता है। दोनों CBC ऐसे नहीं हैं। किसी अनुप्रयोग का wstrustEncryptionAlgorithm इसे ओवरराइड करता है। तत्व wst:EncryptionAlgorithm इस सिफर का नाम, उसके छोटे नाम या उसके XML Encryption URI से, केवल तभी ले सकता है जब प्रतिक्रिया एन्क्रिप्शन चालू हो।"
-  },
-  "wstrust.keyTransportAlgorithm|label": {
-    "en": "614f82577349a013",
-    "text": "प्रतिक्रिया का कुंजी-परिवहन एल्गोरिदम"
-  },
-  "wstrust.keyTransportAlgorithm|description": {
-    "en": "ffc141f1ac37ec59",
-    "text": "WS-Trust प्रतिक्रिया की एकबारगी सामग्री कुंजी प्राप्तकर्ता की RSA सार्वजनिक कुंजी में कैसे लपेटी जाती है। `rsa-oaep` XML Encryption 1.1 का RSA-OAEP है, SHA-256 और MGF1-SHA-256 के साथ; `rsa-oaep-mgf1p` SHA-1 पर OAEP है। जिस प्राप्तकर्ता का प्रमाणपत्र EC है उसे ECDH-ES कुंजी समझौते से एन्क्रिप्ट किया जाता है, यह कुछ भी कहे। किसी अनुप्रयोग का wstrustKeyTransportAlgorithm इसे ओवरराइड करता है। `rsa-1_5` RSAES-PKCS1-v1_5 है और टूटा हुआ है, और इसे इसलिए दिया जाता है क्योंकि तैनात अनुरोधकर्ता और कुछ स्वीकार न करे। चेतावनी: rsa-1_5 केवल विकास मोड है — उत्पाद मोड में जहाँ पढ़ा जाता है वहाँ अनदेखा होता है, इस सेटिंग पर और किसी अनुप्रयोग के wstrustKeyTransportAlgorithm पर (rsa-oaep-mgf1p उपयोग होता है, एक बार लॉग, STS-CORE-0106), और इसे सेट करना अस्वीकार है (STS-CORE-0103, STS-REG-0193)। तत्व wst:EncryptWith इस एल्गोरिदम का नाम केवल तभी ले सकता है जब प्रतिक्रिया एन्क्रिप्शन चालू हो।"
   }
 }

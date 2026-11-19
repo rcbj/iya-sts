@@ -122,8 +122,8 @@ model PassiveParams {
   wresult: string;
 
   /**
-   * NON-SPEC, in the manner of `/sts`'s `?encrypt=1`: a token type, or one
-   * of a type's `shortForms`, without typing an RST into a URL.
+   * NON-SPEC: a token type, or one of a type's `shortForms`, without
+   * typing an RST into a URL.
    */
   @param(#{ wire: "tokenType", use: "read", nonSpec: true,
             refusedAs: "STS-WSFED-0005",

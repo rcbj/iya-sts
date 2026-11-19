@@ -440,14 +440,25 @@ own attributes.
   modes.** After decryption every request expression must select at least
   one node, and every selected node must be one restored from ciphertext
   or inside one. A clear match, a miss, or a decrypt that fails is
-  `wst:FailedCheck` (`STS-WSTRUST-0075`). Development mode no longer
+  `wsse:FailedCheck` (`STS-WSTRUST-0075`), WS-Security 1.1's code. Development mode no longer
   answers in clear when encryption was required and could not be done.
-* **The application is the one a clear `AppliesTo` names.** Encrypting
-  the whole `RequestSecurityToken` hides `AppliesTo` inside ciphertext,
-  so the service-wide `wstrust.encryptRequest` has to be on before that
-  body is opened. The application's own map is enforced after that, and
-  an application whose switch is off is refused. Leave `AppliesTo` in the
-  clear to decide from that application alone.
+* **Request encryption is optional on the wire.** Whatever arrives
+  encrypted to this realm is opened, with or without a switch: an
+  `EncryptedData` of type Element or Content, a WS-Security 1.1
+  `EncryptedHeader`, its key in its own `KeyInfo` or in an `EncryptedKey`
+  in the security header that lists it. The `AppliesTo` is read from the
+  opened request. A signature is verified in the order the security
+  header gives, so a request signed before it was encrypted verifies, and
+  what opens outside the signed Body is `STS-WSTRUST-0046` in product.
+* **The WSDL describes it** ([the metadata document](ws-trust.md#the-metadata-document)).
+  The message signature is an `sp:AsymmetricBinding` with
+  `sp:Basic256Sha256`, its `RecipientToken` the certificate at
+  `/sts/cert`. Every input may sign every header and the Body, and, in a
+  realm that reads AES-256-CBC, encrypt the Body and any header. An output
+  may be encrypted only where the service-wide cipher is that suite's.
+  Each choice is optional. An `sp:IssuedToken` now carries the nested
+  `wsp:Policy` WS-SecurityPolicy requires; without it Apache CXF would not
+  load the WSDL.
 * **An RST may name a cipher only inside the application's policy.**
   Absent `wst:EncryptionAlgorithm` and `wst:EncryptWith`, the
   application's settings are used as they stand. Either element may name

@@ -1116,8 +1116,12 @@
     "text": "Il LIT le justificatif `<wsse:Security>` d’un demandeur. Le chiffrement de la réponse utilise le certificat de l’application, un élément de certificat que sélectionne son expression de destinataire, ou l’élément de certificat du signataire — pas un `<ds:X509Certificate>` à l’intérieur d’une assertion. En mode produit, le mot de passe d’un UsernameToken est vérifié par rapport au `userPassword` de la personne, ou aux secrets client d’une application ; le mode développement le croit sur parole, sauf le mot réservé `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "33f83b68482ff9b5",
-    "text": "Des éléments nommés d’une réponse, sous forme de xenc:EncryptedData, vers le certificat de l’application ou l’élément de certificat du signataire. `?encrypt=1` est retiré et ne chiffre rien. Le chiffrement est celui de cette famille, par crypto.js ; l’EncryptedAssertion de SAML reste dans `saml/saml2.ts`."
+    "en": "9b946662ee148582",
+    "text": "Des éléments nommés d’une réponse, sous forme de xenc:EncryptedData, vers le certificat de l’application ou l’élément de certificat du signataire. Le chiffrement est celui de cette famille, par crypto.js ; l’EncryptedAssertion de SAML reste dans `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "Tout élément chiffré d’une requête, vers la clé XML Encryption de ce domaine : un EncryptedData de type Element ou Content, ou un EncryptedHeader, par crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

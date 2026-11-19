@@ -240,8 +240,8 @@
     "text": "它會「讀取」請求者的 `<wsse:Security>` 認證資料。回應加密使用應用程式的證書、其接收方運算式選中的證書元素，或簽章者證書元素——不是斷言內部的 `<ds:X509Certificate>`。在產品模式下，UsernameToken 的密碼會對照該人員的 `userPassword` 或應用程式的客戶端密碼驗證；開發模式則照單全收，保留值 `invalid` 除外。"
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "33f83b68482ff9b5",
-    "text": "回應中被點名的元素，作為 xenc:EncryptedData，加密給應用程式的證書或簽章者證書元素。`?encrypt=1` 已停用，不再加密任何內容。密碼是這個系列的，經由 crypto.js；SAML 的 EncryptedAssertion 仍在 `saml/saml2.ts`。"
+    "en": "9b946662ee148582",
+    "text": "回應中被點名的元素，作為 xenc:EncryptedData，加密給應用程式的證書或簽章者證書元素。密碼是這個系列的，經由 crypto.js；SAML 的 EncryptedAssertion 仍在 `saml/saml2.ts`。"
   },
   "crypto.families.kerberos.signs": {
     "en": "d0004d29106d6b55",

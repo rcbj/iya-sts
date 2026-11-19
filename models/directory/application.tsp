@@ -2504,7 +2504,7 @@ model Application {
     from: "by hand",
     families: #["wstrust"],
     overrides: "wstrust.encryptRequest",
-    what: "TRUE or FALSE: open the elements this application's request map names, overriding wstrust.encryptRequest. On, a request whose AppliesTo is this application is a FailedCheck when the map is empty, an expression matches an element that arrived in the clear, an expression matches nothing that was restored from ciphertext, or a ciphertext will not open with this realm's XML Encryption keys. A request whose AppliesTo is hidden inside ciphertext is opened only when the service-wide switch is on; the application revealed by that opening is then held to its own switch. Off, ciphertext for this application is refused rather than opened."
+    what: "TRUE or FALSE: require the elements this application's request map names to arrive encrypted, overriding wstrust.encryptRequest. On, a request whose AppliesTo is this application is a FailedCheck when the map is empty, an expression matches an element that arrived in the clear, or an expression matches nothing that was restored from ciphertext. Whatever arrives encrypted to this realm is opened whether this is on or off, and the AppliesTo is read from the opened request; a ciphertext that will not open is a FailedCheck either way."
   })
   wstrustEncryptRequest?: string;
   @attr(#{
@@ -2512,7 +2512,7 @@ model Application {
     kind: "multi",
     from: "by hand",
     families: #["wstrust"],
-    what: "THE ELEMENTS OF A WS-TRUST REQUEST THAT MUST ARRIVE ENCRYPTED, one XPath 1.0 expression each. The subset is `/`, `//`, `*`, an element name, `prefix:local`, a union with `|`, and predicates `local-name()`, `namespace-uri()` and `@attr`, joined by `and`. Each expression must select at least one element that was restored from an xenc:EncryptedData of type Element. An expression outside that subset is a RequestFailed. A SOAP header, the SOAP body, or any element may be named, for any token type."
+    what: "THE ELEMENTS OF A WS-TRUST REQUEST THAT MUST ARRIVE ENCRYPTED, one XPath 1.0 expression each. The subset is `/`, `//`, `*`, an element name, `prefix:local`, a union with `|`, and predicates `local-name()`, `namespace-uri()` and `@attr`, joined by `and`. Each expression must select at least one element that was restored from ciphertext: an xenc:EncryptedData of type Element or Content, or a WS-Security 1.1 EncryptedHeader. An expression outside that subset is a RequestFailed. A SOAP header, the SOAP body, or any element may be named, for any token type."
   })
   wstrustEncryptRequestElements?: string[];
   @attr(#{

@@ -1116,8 +1116,12 @@
     "text": "يقرأ بيانات اعتماد مقدِّم الطلب في `<wsse:Security>`. يستخدم تشفير الاستجابة شهادة التطبيق، أو عنصر شهادة يحدده تعبير المستلم، أو عنصر شهادة الموقِّع — وليس `<ds:X509Certificate>` داخل تأكيد. في وضع المنتج تُتحقق كلمة مرور UsernameToken مقابل `userPassword` الخاص بالشخص، أو مقابل أسرار العميل الخاصة بالتطبيق؛ ويصدّق وضع التطوير ذلك، باستثناء المحجوز `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "33f83b68482ff9b5",
-    "text": "عناصر مسماة من الاستجابة، على هيئة xenc:EncryptedData، إلى شهادة التطبيق أو عنصر شهادة الموقِّع. `?encrypt=1` متقاعد ولا يشفّر شيئًا. التشفير هو تشفير هذه العائلة، عبر crypto.js؛ ويبقى EncryptedAssertion الخاص بـ SAML في `saml/saml2.ts`."
+    "en": "9b946662ee148582",
+    "text": "عناصر مسماة من الاستجابة، على هيئة xenc:EncryptedData، إلى شهادة التطبيق أو عنصر شهادة الموقِّع. التشفير هو تشفير هذه العائلة، عبر crypto.js؛ ويبقى EncryptedAssertion الخاص بـ SAML في `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "أي عنصر مشفّر في الطلب، إلى مفتاح XML Encryption لهذا النطاق: EncryptedData من النوع Element أو Content، أو EncryptedHeader، عبر crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

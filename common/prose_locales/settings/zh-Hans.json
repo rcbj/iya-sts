@@ -5712,12 +5712,12 @@
     "text": "指定 Kerberos Token Profile 1.1 六种 ValueType 之一的 wst:TokenType 是否以 Kerberos 令牌应答：一个 AP-REQ，携带本领域 KDC 为主体签发、发给 AppliesTo 所指 Kerberos 服务的服务票据，并通过 TLS 把 Authenticator 的子密钥作为证明令牌返回。ActAs 票据在其 PAC 的 S4U_DELEGATION_INFO 中列出每个执行过操作的参与方。关闭时，拒绝此类请求。"
   },
   "wstrust.encryptRequest|label": {
-    "en": "8c74f4c7c47d9035",
-    "text": "解密请求中被点名的元素"
+    "en": "8c145f441c1aa7f2",
+    "text": "要求请求中被点名的元素已加密"
   },
   "wstrust.encryptRequest|description": {
-    "en": "5f309591d610ee41",
-    "text": "一个 AppliesTo 未点名自身应用的 RequestSecurityToken 是否必须带着已加密的 wstrustEncryptRequestElements 元素到达（XML Encryption，类型 Element），以及一份完全加密的请求——其 AppliesTo 位于密文之内——是否会被打开。应用的 wstrustEncryptRequest 对 AppliesTo 点名该应用的请求覆盖此项。开启时，若映射为空、某个表达式匹配到以明文到达的元素、某个表达式没有匹配到任何已还原的内容，或者密文无法用此领域的密钥打开，该请求是 wst:FailedCheck。关闭时，密文保持到达时的样子，无法读取的请求仍是它原本的故障。"
+    "en": "c969f465f8a7e1bf",
+    "text": "AppliesTo 未点名自身应用的 RequestSecurityToken 是否必须带着已加密的 wstrustEncryptRequestElements 元素到达。对于 AppliesTo 点名某应用的请求，该应用的 wstrustEncryptRequest 覆盖此设置。无论此设置开启与否，凡是加密给本领域的内容都会被打开，AppliesTo 从打开后的请求中读取。开启时，若映射为空，或某个表达式匹配到以明文到达的元素或未匹配到任何被还原的内容，该请求即为 wsse:FailedCheck。无法打开的密文在任何情况下都是该错误。"
   },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",

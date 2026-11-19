@@ -1116,8 +1116,12 @@
     "text": "LEE la credencial `<wsse:Security>` de un solicitante. El cifrado de la respuesta usa el certificado de la aplicación, un elemento de certificado que selecciona su expresión de destinatario, o el elemento de certificado del firmante — no un `<ds:X509Certificate>` dentro de una aserción. En modo producto la contraseña de un UsernameToken se verifica contra el `userPassword` de la persona, o contra los secretos de cliente de una aplicación; el modo de desarrollo la da por buena, salvo la reservada `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "33f83b68482ff9b5",
-    "text": "Elementos nombrados de una respuesta, como xenc:EncryptedData, para el certificado de la aplicación o el elemento de certificado del firmante. `?encrypt=1` está retirado y no cifra nada. El cifrado es el de esta familia, a través de crypto.js; la EncryptedAssertion de SAML permanece en `saml/saml2.ts`."
+    "en": "9b946662ee148582",
+    "text": "Elementos nombrados de una respuesta, como xenc:EncryptedData, para el certificado de la aplicación o el elemento de certificado del firmante. El cifrado es el de esta familia, a través de crypto.js; la EncryptedAssertion de SAML permanece en `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "Cualquier elemento cifrado de una solicitud, para la clave XML Encryption de este dominio: un EncryptedData de tipo Element o Content, o un EncryptedHeader, a través de crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

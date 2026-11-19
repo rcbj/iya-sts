@@ -86,12 +86,13 @@ BatchIssue are not implemented.
 The credentials are one `wsp:ExactlyOne`. An alternative is present only
 while the running service accepts it, in the order the endpoint looks:
 
-1. a WS-Security signature over the SOAP Body and the `wsu:Timestamp`
-   (`sp:X509Token` / `sp:WssX509V3Token11`, with `sp:SignedParts`). The
-   certificate is named by a Reference to an X.509 v3 BinarySecurityToken, a
-   ThumbprintSHA1 KeyIdentifier, an X509SubjectKeyIdentifier, or an
-   X509IssuerSerial. A signature made with a Kerberos token's session key
-   (HMAC-SHA256, HMAC-SHA384 or HMAC-SHA512) is that check's other branch;
+1. a WS-Security signature over the SOAP Body and the `wsu:Timestamp`: an
+   `sp:AsymmetricBinding` (below) with `sp:SignedParts` naming the Body and
+   the Timestamp. The certificate is named by a Reference to an X.509 v3
+   BinarySecurityToken, a ThumbprintSHA1 KeyIdentifier, an
+   X509SubjectKeyIdentifier, or an X509IssuerSerial (`sp:Wss11`). A
+   signature made with a Kerberos token's session key (HMAC-SHA256,
+   HMAC-SHA384 or HMAC-SHA512) is that check's other branch;
 2. a UsernameToken (`sp:WssUsernameToken11`), a person or a service account,
    or else an application's identifier or client_id with one of its client
    secrets. A person who must hold a second factor presents an application
@@ -128,8 +129,57 @@ this service issues. A Kerberos token inside OnBehalfOf or ActAs must have
 been obtained by delegation for this service's own service principal. Both
 elements in one request are refused.
 
-No alternative names an algorithm suite. The policy says which token is
-accepted, not which suite the listener promises.
+**The signature's binding.** The first alternative is an
+`sp:AsymmetricBinding`:
+
+* the `InitiatorToken` is the requester's X.509 v3 certificate, always sent
+  to the recipient;
+* the `RecipientToken` is this realm's certificate, the one at
+  `GET /sts/cert`, never included. A request is encrypted to it. The WSDL
+  does not embed it: fetch it from `/sts/cert`, which is current after a
+  development restart;
+* the `sp:AlgorithmSuite` is `sp:Basic256Sha256`. Its signature half,
+  RSA-SHA256 over SHA-256 under exclusive canonicalization, is what product
+  verifies. The endpoint also verifies stronger signatures, which no suite
+  names;
+* `sp:Lax` layout and `sp:OnlySignEntireHeadersAndBody`: parts are signed
+  whole, by `wsu:Id`.
+
+There is no `sp:IncludeTimestamp`. WS-SecurityPolicy 1.3 section 6.2 makes
+it apply to every message under the binding, including the answer, and
+requires that Timestamp to be signed. This service does not sign its
+answers. The request's Timestamp is still required, by `sp:SignedParts`.
+
+**What a message may protect beyond that.** Every binding operation's
+`wsdl:input` names the `RequestProtection` policy:
+
+* **Signing.** A request may sign every header and the Body (an empty
+  `sp:SignedParts`). The endpoint verifies every Reference a signature
+  carries, by `wsu:Id` under exclusive canonicalization. Only the Body and
+  the Timestamp are required.
+* **Encryption**, only in a realm that decrypts what `sp:Basic256Sha256`
+  encrypts with: AES-256-CBC, and RSA-OAEP with MGF1-SHA-1, to an RSA
+  certificate. Product mode reads no AES-CBC, so a product WSDL offers no
+  request encryption. Where it is offered, a request may encrypt the Body's
+  content and the WS-Addressing headers (`sp:EncryptedParts`), or the
+  Body's content, any other header and a UsernameToken in the security
+  header (`sp:EncryptedElements`, XPath 1.0).
+
+Every `wsdl:output` names `ResponseProtection` only when the service-wide
+response cipher is that suite's (`wstrust.encryptionAlgorithm` `aes256-cbc`
+and `wstrust.keyTransportAlgorithm` `rsa-oaep-mgf1p`). It offers encryption
+of the Body's content and the WS-Addressing header, and never signing. The
+answer is encrypted to the `InitiatorToken`, the signer's certificate,
+unless the application names another recipient (see
+[XML Encryption](#xml-encryption)). One document serves every application,
+so an application's own cipher or map is not in it.
+
+Each choice is optional. It is written as a `wsp:ExactlyOne` whose first
+alternative is empty, not as `wsp:Optional="true"`. The two are the same
+policy, but a WCF or Metro client takes the first alternative it supports,
+and an Apache CXF client the one with the fewest assertions. Written this
+way, every one of them sends the message as it is sent today, and protects
+more only when it is configured to.
 
 ### Which credential gets which token: the capability document
 
@@ -646,13 +696,9 @@ Each direction is a checkbox and an XPath expression map. Both checkboxes
 default to off. `wstrustEncryptRequest` and `wstrustEncryptResponse` on the
 application override `wstrust.encryptRequest` and `wstrust.encryptResponse`.
 
-`POST /sts?encrypt=1` is retired. A request that still carries it is handled
-as if the parameter were absent: nothing is encrypted because of it, and the
-parameter alone is not a fault. `STS-WSTRUST-0012` and `STS-WSTRUST-0013`
-named that parameter and are retired.
-
-A selected element is replaced by `xenc:EncryptedData` with `Type`
-`http://www.w3.org/2001/04/xmlenc#Element`. The key sits inside that element.
+A selected response element is replaced by `xenc:EncryptedData` with
+`Type` `http://www.w3.org/2001/04/xmlenc#Element`. The key sits inside that
+element, and no ReferenceList is written in a security header.
 The response is not wrapped in `saml:EncryptedAssertion`. The SAML settings
 `saml2.encryptAssertion`, `saml2.encryptionAlgorithm`,
 `saml2.keyTransportAlgorithm` and `samlEncryptionCertificate` stay SAML-only.
@@ -662,24 +708,35 @@ returns a fault.** Nothing is issued, and the clear response is not sent.
 The fault itself stays in the clear, in both modes. Development no longer
 answers in clear when encryption was required and could not be done.
 
-* **The request.** The service verifies a WS-Security signature on the
-  message as it arrived, then opens the elements
-  `wstrustEncryptRequestElements` names, with this realm's XML Encryption
-  keys. An empty map, an expression that matches an element that arrived in
-  the clear, an expression that matches nothing restored from ciphertext, or
-  a ciphertext that will not open is `wst:FailedCheck`
-  (`STS-WSTRUST-0075`).
+* **The request.** Encryption is optional on the wire. Whatever arrives
+  encrypted to this realm is opened, whether or not a switch is on: an
+  `xenc:EncryptedData` of type Element or Content, or a WS-Security 1.1
+  `EncryptedHeader`. Its key may be in its own `KeyInfo`, or in an
+  `xenc:EncryptedKey` in the security header whose `ReferenceList` names
+  it, the way WSS4J, WCF and Metro send it. The switch makes the map
+  required: each expression of `wstrustEncryptRequestElements` must match
+  an element that arrived encrypted. An empty map, an expression that
+  matches an element that arrived in the clear, or one that matches nothing
+  restored from ciphertext is `wsse:FailedCheck` (`STS-WSTRUST-0075`). A
+  ciphertext that will not open is that fault either way, and so are more
+  than 64 ciphertexts.
+* **The signature and the encryption.** A WS-Security signature is read in
+  the order the security header gives. An `EncryptedKey`, a
+  `ReferenceList` or an `EncryptedData` ahead of the `ds:Signature`, or no
+  signature in the clear, means it was made before the encryption
+  (WS-SecurityPolicy's default, SignBeforeEncrypting): it is verified over
+  the opened request. Otherwise it is verified over the message as it
+  arrived, and the other order is tried when that one does not verify.
+  Whatever opens is then held to the signed Body: a header that opens to a
+  `RequestSecurityToken` or an `AppliesTo` outside the signed Body is
+  `wst:FailedAuthentication` (`STS-WSTRUST-0046`) in product.
 * **The response.** The response is built in the clear, then every match of
   `wstrustEncryptResponseElements` is replaced. An empty map, or an
   expression that selects nothing, is `wst:RequestFailed`
   (`STS-WSTRUST-0077`). A successful issue is recorded only after that seal
   succeeds.
-* **Which application.** A clear `AppliesTo` names it. Encrypting the whole
-  `RequestSecurityToken` hides `AppliesTo`, so that body is opened only when
-  the service-wide `wstrust.encryptRequest` is on. The application that
-  opening reveals is then held to its own switch, and an application whose
-  switch is off is refused. Leave `AppliesTo` in the clear to decide from
-  that application alone.
+* **Which application.** The `AppliesTo` is read from the opened request,
+  so an encrypted Body names its application as a clear one does.
 
 An expression is a stated subset of XPath: `/` and `//`, `*`, an element
 name, `prefix:local`, a union with `|`, and the predicates `local-name()`,
@@ -778,7 +835,7 @@ codes, in the request's own trust namespace: on SOAP 1.1 it is the
 | A Kerberos token asked for without TLS; a Renew or Cancel of a Kerberos token | `wst:InvalidRequest` |
 | A forwarded Kerberos ticket from a requester not trusted for delegation; `wst:Delegatable` to a target not trusted for it; the KDC could not issue the ticket | `wst:RequestFailed` |
 | Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; response encryption on and the request names no recipient certificate element; `wst:EncryptionAlgorithm` or `wst:EncryptWith` while response encryption is off, or naming a cipher other than the one configured | `wst:InvalidRequest` |
-| Request encryption on and the request does not match its map — the map is empty, an expression matches an element that arrived in the clear or matches nothing restored, or a ciphertext will not open. Processing stops | `wst:FailedCheck` |
+| Request encryption on and the request does not match its map — the map is empty, or an expression matches an element that arrived in the clear or nothing restored; or, either way, a ciphertext will not open. Processing stops | `wsse:FailedCheck` (WS-Security 1.1 section 12) |
 | The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; response encryption that cannot be completed (an empty map, an expression that matches nothing, a certificate element or the application's encryption certificate that is not readable, a recipient the encryption check refuses, a cipher that failed); an XPath expression outside the subset this service evaluates; a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
 
 A failure of the service itself, not of the request, is `soap:Receiver` (SOAP

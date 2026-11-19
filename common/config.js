@@ -11702,22 +11702,20 @@ const SETTINGS = [
   // until an operator turns one on. Which elements, and which certificate
   // a response is encrypted to, are the application's own attributes.
   { key: 'wstrust.encryptRequest', group: 'WS-Trust',
-    label: 'Decrypt the named elements of a request',
+    label: 'Require the named elements of a request encrypted',
     env: 'STS_WSTRUST_ENCRYPT_REQUEST', type: 'bool', dflt: false,
     runtime: true,
     description: 'Whether a RequestSecurityToken whose AppliesTo names no ' +
                  'application of its own must arrive with the elements of ' +
-                 'wstrustEncryptRequestElements encrypted (XML Encryption, ' +
-                 'type Element), and whether a wholly encrypted request — ' +
-                 'one whose AppliesTo is inside the ciphertext — is opened ' +
-                 'at all. An application\'s wstrustEncryptRequest overrides ' +
-                 'this for a request whose AppliesTo names it. On, and the ' +
-                 'map is empty, an expression matches an element that ' +
-                 'arrived in the clear, an expression matches nothing that ' +
-                 'was restored, or a ciphertext will not open with this ' +
-                 'realm\'s keys, the request is a wst:FailedCheck. Off, ' +
-                 'ciphertext is left as it arrived and a request that ' +
-                 'cannot be read is the fault it already was.' },
+                 'wstrustEncryptRequestElements encrypted. An ' +
+                 'application\'s wstrustEncryptRequest overrides this for ' +
+                 'a request whose AppliesTo names it. Whatever arrives ' +
+                 'encrypted to this realm is opened whether this is on or ' +
+                 'off, and the AppliesTo is read from the opened request. ' +
+                 'On, and the map is empty, or an expression matches an ' +
+                 'element that arrived in the clear or nothing that was ' +
+                 'restored, the request is a wsse:FailedCheck. A ' +
+                 'ciphertext that will not open is that fault either way.' },
   { key: 'wstrust.encryptResponse', group: 'WS-Trust',
     label: 'Encrypt the named elements of a response',
     env: 'STS_WSTRUST_ENCRYPT_RESPONSE', type: 'bool', dflt: false,

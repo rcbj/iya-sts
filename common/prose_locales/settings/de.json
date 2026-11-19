@@ -5711,6 +5711,38 @@
     "en": "52a63db9be2c6460",
     "text": "Ob ein wst:TokenType, der einen der sechs ValueTypes des Kerberos Token Profile 1.1 nennt, mit einem Kerberos-Token beantwortet wird: ein AP-REQ mit einem Service-Ticket, das das KDC dieses Vertrauensbereichs für das Subjekt an den Kerberos-Dienst ausgestellt hat, den AppliesTo nennt, wobei der Subkey des Authenticators als Proof-Token über TLS zurückgegeben wird. Ein ActAs-Ticket nennt in der S4U_DELEGATION_INFO seiner PAC jede Partei, die gehandelt hat. Aus wird eine solche Anfrage abgelehnt."
   },
+  "wstrust.encryptRequest|label": {
+    "en": "8c145f441c1aa7f2",
+    "text": "Die benannten Elemente einer Anfrage verschlüsselt verlangen"
+  },
+  "wstrust.encryptRequest|description": {
+    "en": "c969f465f8a7e1bf",
+    "text": "Ob ein RequestSecurityToken, dessen AppliesTo keine eigene Anwendung nennt, mit den Elementen von wstrustEncryptRequestElements verschlüsselt eintreffen muss. Das wstrustEncryptRequest einer Anwendung ersetzt dies für eine Anfrage, deren AppliesTo sie nennt. Was für diesen Bereich verschlüsselt eintrifft, wird geöffnet, ob dies an oder aus ist, und das AppliesTo wird aus der geöffneten Anfrage gelesen. An, und die Zuordnung ist leer oder ein Ausdruck trifft ein im Klartext eingetroffenes Element oder nichts Wiederhergestelltes, ist die Anfrage ein wsse:FailedCheck. Ein Geheimtext, der sich nicht öffnen lässt, ist in jedem Fall dieser Fehler."
+  },
+  "wstrust.encryptResponse|label": {
+    "en": "1d9d5a11338444b1",
+    "text": "Die benannten Elemente einer Antwort verschlüsseln"
+  },
+  "wstrust.encryptResponse|description": {
+    "en": "cdc7fb979f5c7e5b",
+    "text": "Ob ein RequestSecurityTokenResponse nach dem Aufbau die Elemente von wstrustEncryptResponseElements durch xenc:EncryptedData ersetzt bekommt, für jeden Tokentyp. Das wstrustEncryptResponse einer Anwendung setzt dies außer Kraft. Der Empfänger ist das wstrustEncryptionCertificate dieser Anwendung, sonst das Zertifikatelement, das wstrustResponseRecipientXPath auswählt, sonst das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt. Ein Fehler wird im Klartext gesendet. Eingeschaltet, und die Verschlüsselung lässt sich nicht abschließen, ist die Anfrage in beiden Modi ein Fehler."
+  },
+  "wstrust.encryptionAlgorithm|label": {
+    "en": "d91b60a56e964f0a",
+    "text": "Verschlüsselungsalgorithmus der Antwort"
+  },
+  "wstrust.encryptionAlgorithm|description": {
+    "en": "0308b0e0b66692a8",
+    "text": "Die Blockchiffre, mit der die verschlüsselten Elemente einer WS-Trust-Antwort verschlüsselt werden. Die beiden GCM-Chiffren sind authentisiert: ein veränderter Geheimtext besteht seine Marke nicht und wird abgelehnt. Die beiden CBC-Chiffren sind es nicht. Das wstrustEncryptionAlgorithm einer Anwendung setzt dies außer Kraft. Ein Element wst:EncryptionAlgorithm darf diese Chiffre nennen, mit ihrem Kurznamen oder ihrem XML-Encryption-URI, nur solange die Antwortverschlüsselung eingeschaltet ist."
+  },
+  "wstrust.keyTransportAlgorithm|label": {
+    "en": "614f82577349a013",
+    "text": "Schlüsseltransportalgorithmus der Antwort"
+  },
+  "wstrust.keyTransportAlgorithm|description": {
+    "en": "ffc141f1ac37ec59",
+    "text": "Wie der einmalige Inhaltsschlüssel einer WS-Trust-Antwort auf den öffentlichen RSA-Schlüssel des Empfängers gewickelt wird. `rsa-oaep` ist RSA-OAEP aus XML Encryption 1.1 mit SHA-256 und MGF1-SHA-256; `rsa-oaep-mgf1p` ist OAEP über SHA-1. Ein Empfänger, dessen Zertifikat EC ist, wird per ECDH-ES-Schlüsselvereinbarung verschlüsselt, was immer dies sagt. Das wstrustKeyTransportAlgorithm einer Anwendung setzt dies außer Kraft. `rsa-1_5` ist RSAES-PKCS1-v1_5 und ist gebrochen, und es wird angeboten, weil ein eingesetzter Anfragender nichts anderes annehmen kann. WARNUNG: rsa-1_5 gilt nur im Entwicklungsmodus — im Produktmodus wird es dort ignoriert, wo es gelesen wird, bei dieser Einstellung und beim wstrustKeyTransportAlgorithm einer Anwendung (verwendet wird rsa-oaep-mgf1p, einmal protokolliert, STS-CORE-0106), und das Setzen wird abgelehnt (STS-CORE-0103, STS-REG-0193). Ein Element wst:EncryptWith darf diesen Algorithmus nur nennen, solange die Antwortverschlüsselung eingeschaltet ist."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Vom Identitätsanbieter initiierte Anmeldung"
@@ -12602,37 +12634,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Für den Protokoll-Debugger-Listener allein: http.http2MaxConcurrentStreams. -1, der Standard, folgt http.http2MaxConcurrentStreams; jeder andere Wert gilt nur für diesen Listener. Wie viele Anfragen eine HTTP/2-Verbindung zugleich offen haben darf (SETTINGS_MAX_CONCURRENT_STREAMS); ein Stream darüber hinaus wird abgelehnt, bis einer endet. 100, der Standard, ist der kleinste Wert, den RFC 9113 empfiehlt; der eigene von node ist unbegrenzt, wodurch eine Verbindung die Arbeit von Tausenden tragen könnte. Er begrenzt die Arbeit auf einer Verbindung so, wie http.maxConnections die Verbindungen begrenzt. Eine neue Verbindung folgt einer Änderung sofort, und einer offenen wird der neue Wert gesendet."
-  },
-  "wstrust.encryptRequest|label": {
-    "en": "8c74f4c7c47d9035",
-    "text": "Die benannten Elemente einer Anfrage entschlüsseln"
-  },
-  "wstrust.encryptRequest|description": {
-    "en": "5f309591d610ee41",
-    "text": "Ob ein RequestSecurityToken, dessen AppliesTo keine eigene Anwendung nennt, mit den Elementen von wstrustEncryptRequestElements verschlüsselt ankommen muss (XML Encryption, Typ Element), und ob eine vollständig verschlüsselte Anfrage — deren AppliesTo im Geheimtext liegt — überhaupt geöffnet wird. Das wstrustEncryptRequest einer Anwendung setzt dies für eine Anfrage außer Kraft, deren AppliesTo sie nennt. Eingeschaltet, und die Zuordnung ist leer, ein Ausdruck trifft ein im Klartext angekommenes Element, ein Ausdruck trifft nichts von dem Wiederhergestellten, oder ein Geheimtext öffnet sich nicht mit den Schlüsseln dieses Vertrauensbereichs, ist die Anfrage ein wst:FailedCheck. Ausgeschaltet bleibt der Geheimtext, wie er ankam, und eine unlesbare Anfrage ist der Fehler, der sie bereits war."
-  },
-  "wstrust.encryptResponse|label": {
-    "en": "1d9d5a11338444b1",
-    "text": "Die benannten Elemente einer Antwort verschlüsseln"
-  },
-  "wstrust.encryptResponse|description": {
-    "en": "cdc7fb979f5c7e5b",
-    "text": "Ob ein RequestSecurityTokenResponse nach dem Aufbau die Elemente von wstrustEncryptResponseElements durch xenc:EncryptedData ersetzt bekommt, für jeden Tokentyp. Das wstrustEncryptResponse einer Anwendung setzt dies außer Kraft. Der Empfänger ist das wstrustEncryptionCertificate dieser Anwendung, sonst das Zertifikatelement, das wstrustResponseRecipientXPath auswählt, sonst das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt. Ein Fehler wird im Klartext gesendet. Eingeschaltet, und die Verschlüsselung lässt sich nicht abschließen, ist die Anfrage in beiden Modi ein Fehler."
-  },
-  "wstrust.encryptionAlgorithm|label": {
-    "en": "d91b60a56e964f0a",
-    "text": "Verschlüsselungsalgorithmus der Antwort"
-  },
-  "wstrust.encryptionAlgorithm|description": {
-    "en": "0308b0e0b66692a8",
-    "text": "Die Blockchiffre, mit der die verschlüsselten Elemente einer WS-Trust-Antwort verschlüsselt werden. Die beiden GCM-Chiffren sind authentisiert: ein veränderter Geheimtext besteht seine Marke nicht und wird abgelehnt. Die beiden CBC-Chiffren sind es nicht. Das wstrustEncryptionAlgorithm einer Anwendung setzt dies außer Kraft. Ein Element wst:EncryptionAlgorithm darf diese Chiffre nennen, mit ihrem Kurznamen oder ihrem XML-Encryption-URI, nur solange die Antwortverschlüsselung eingeschaltet ist."
-  },
-  "wstrust.keyTransportAlgorithm|label": {
-    "en": "614f82577349a013",
-    "text": "Schlüsseltransportalgorithmus der Antwort"
-  },
-  "wstrust.keyTransportAlgorithm|description": {
-    "en": "ffc141f1ac37ec59",
-    "text": "Wie der einmalige Inhaltsschlüssel einer WS-Trust-Antwort auf den öffentlichen RSA-Schlüssel des Empfängers gewickelt wird. `rsa-oaep` ist RSA-OAEP aus XML Encryption 1.1 mit SHA-256 und MGF1-SHA-256; `rsa-oaep-mgf1p` ist OAEP über SHA-1. Ein Empfänger, dessen Zertifikat EC ist, wird per ECDH-ES-Schlüsselvereinbarung verschlüsselt, was immer dies sagt. Das wstrustKeyTransportAlgorithm einer Anwendung setzt dies außer Kraft. `rsa-1_5` ist RSAES-PKCS1-v1_5 und ist gebrochen, und es wird angeboten, weil ein eingesetzter Anfragender nichts anderes annehmen kann. WARNUNG: rsa-1_5 gilt nur im Entwicklungsmodus — im Produktmodus wird es dort ignoriert, wo es gelesen wird, bei dieser Einstellung und beim wstrustKeyTransportAlgorithm einer Anwendung (verwendet wird rsa-oaep-mgf1p, einmal protokolliert, STS-CORE-0106), und das Setzen wird abgelehnt (STS-CORE-0103, STS-REG-0193). Ein Element wst:EncryptWith darf diesen Algorithmus nur nennen, solange die Antwortverschlüsselung eingeschaltet ist."
   }
 }

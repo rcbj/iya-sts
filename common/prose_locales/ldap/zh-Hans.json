@@ -1288,12 +1288,12 @@
     "text": "为此应用签发的 WS-Trust JWT 所携带的 OAuth 2.0 scope，每个值一个 scope（#485）。WS-Trust 以此应用为 AppliesTo 签发的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）会在其 `scope` 声明中携带它们，以空格分隔（RFC 9068 第 2.2.3 节）；未设置时不携带 `scope`。SAML 令牌不受影响。\n\n**每个 scope 的判定方式与 OAuth 访问令牌相同**，以此应用作为客户端：`oauthAllowedScope` 声明它可以被签发什么（在产品模式下；本服务的受保护 scope 在任何模式下都是如此），并由签发策略的逐 scope 问题作出决定。被策略丢弃的值会被从令牌中去掉并记入审计（STS-OAUTH-0579），绝不会被签发。指明未声明 scope 的写入在这里会被接受，因为声明可能改变，而且开发模式会授予未声明的 scope：请同时在 oauthAllowedScope 上声明它。策略将会丢弃的值会在设置处给出警告（#488）：在此字段旁、在 Save 的回复中，以及在 /admin-api 写入回复和应用视图的 `warnings` 中。"
   },
   "applications.schema.attributes.wstrustEncryptRequest.what": {
-    "en": "2fc947c1194f5438",
-    "text": "TRUE 或 FALSE：打开此应用的请求映射所点名的元素，覆盖 wstrust.encryptRequest。开启时，AppliesTo 为此应用的请求在映射为空、某个表达式匹配到以明文到达的元素、某个表达式没有匹配到任何从密文还原的内容，或者密文无法用此领域的 XML Encryption 密钥打开时，是 FailedCheck。AppliesTo 藏在密文之内的请求仅在全服务开关开启时被打开；这次打开所揭示的应用随后受其自身开关约束。关闭时，此应用的密文被拒绝而不是被打开。"
+    "en": "ebd5efe4a3d97cec",
+    "text": "TRUE 或 FALSE：要求此应用的请求映射所点名的元素以加密形式到达，覆盖 wstrust.encryptRequest。开启时，若映射为空、某个表达式匹配到以明文到达的元素，或某个表达式未匹配到任何从密文还原的内容，则 AppliesTo 为此应用的请求即为 FailedCheck。无论开启与否，凡是加密给本领域的内容都会被打开，AppliesTo 从打开后的请求中读取；无法打开的密文在任何情况下都是 FailedCheck。"
   },
   "applications.schema.attributes.wstrustEncryptRequestElements.what": {
-    "en": "64d29149c3c87cba",
-    "text": "必须加密到达的 WS-Trust 请求元素，每个一条 XPath 1.0 表达式。子集为 `/`、`//`、`*`、元素名、`prefix:local`、用 `|` 组成的并集，以及谓词 `local-name()`、`namespace-uri()` 和 `@attr`，以 `and` 连接。每条表达式必须至少选中一个从类型为 Element 的 xenc:EncryptedData 还原出来的元素。超出该子集的表达式是 RequestFailed。可以点名 SOAP 标头、SOAP 正文或任何元素，适用于任何令牌类型。"
+    "en": "d28549992db71c30",
+    "text": "WS-TRUST 请求中必须以加密形式到达的元素，每个一条 XPath 1.0 表达式。子集为 `/`、`//`、`*`、元素名、`prefix:local`、用 `|` 的并集，以及谓词 `local-name()`、`namespace-uri()` 和 `@attr`，用 `and` 连接。每个表达式必须至少选中一个从密文还原的元素：类型为 Element 或 Content 的 xenc:EncryptedData，或 WS-Security 1.1 的 EncryptedHeader。超出该子集的表达式为 RequestFailed。可以点名 SOAP 头、SOAP 正文或任何元素，适用于任何令牌类型。"
   },
   "applications.schema.attributes.wstrustEncryptResponse.what": {
     "en": "aafbbba9cd31d6c9",

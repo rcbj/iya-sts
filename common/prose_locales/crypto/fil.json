@@ -1116,8 +1116,12 @@
     "text": "BINABASA nito ang `<wsse:Security>` credential ng isang requester. Ginagamit ng response encryption ang certificate ng application, ang elemento ng certificate na pinipili ng expression ng recipient nito, o ang elemento ng certificate ng signer — hindi ang `<ds:X509Certificate>` sa loob ng isang assertion. Sa product mode, vine-verify ang password ng isang UsernameToken laban sa `userPassword` ng tao, o sa mga client secret ng isang application; pinaniniwalaan ito ng development, maliban sa nakareserbang `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "33f83b68482ff9b5",
-    "text": "Mga pinangalanang elemento ng isang response, bilang xenc:EncryptedData, para sa certificate ng application o sa elemento ng certificate ng signer. Retirado na ang `?encrypt=1` at wala itong ini-encrypt. Ang cipher ay sa pamilyang ito, sa pamamagitan ng crypto.js; nananatili ang EncryptedAssertion ng SAML sa `saml/saml2.ts`."
+    "en": "9b946662ee148582",
+    "text": "Mga pinangalanang elemento ng isang response, bilang xenc:EncryptedData, para sa certificate ng application o sa elemento ng certificate ng signer. Ang cipher ay sa pamilyang ito, sa pamamagitan ng crypto.js; nananatili ang EncryptedAssertion ng SAML sa `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "Anumang naka-encrypt na elemento ng isang request, para sa XML Encryption key ng realm na ito: isang EncryptedData na may uring Element o Content, o isang EncryptedHeader, sa pamamagitan ng crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

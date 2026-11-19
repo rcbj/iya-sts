@@ -12983,10 +12983,13 @@ const CODES = [
       'application\'s request map: the map is empty while request ' +
       'encryption is on, an expression matches an element that arrived in ' +
       'the clear or matches nothing restored from ciphertext, or a ' +
-      'ciphertext will not open with this realm\'s keys. A wholly ' +
-      'encrypted request is opened only when the service-wide switch is ' +
-      'on, and the application it reveals is then held to its own switch.',
-    spec: 'SOAP Fault wst:FailedCheck (HTTP 500), WS-Trust 1.4 section 11' },
+      'ciphertext will not open with this realm\'s keys. Encryption is ' +
+      'optional on the wire: whatever arrives encrypted is opened, and ' +
+      'the map is applied only where the application requires it, read ' +
+      'from the opened request. More than 64 ciphertexts, or nesting ' +
+      'more than eight deep, is this code too.',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
   { code: 'STS-WSTRUST-0076',
     summary: 'Response encryption is on and the request names no recipient ' +
       'certificate element. The application\'s encryption certificate is ' +

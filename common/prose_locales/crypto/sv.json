@@ -1116,8 +1116,12 @@
     "text": "Den LÄSER en begärares `<wsse:Security>`-autentiseringsuppgift. Svarskryptering använder applikationens certifikat, ett certifikatelement som dess mottagaruttryck väljer, eller signeringscertifikatelementet — inte ett `<ds:X509Certificate>` inuti ett intyg. I produktläge verifieras en UsernameTokens lösenord mot personens `userPassword`, eller mot en applikations klienthemligheter; utvecklingsläget tror på det, utom det reserverade `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
-    "en": "33f83b68482ff9b5",
-    "text": "Namngivna element i ett svar, som xenc:EncryptedData, till applikationens certifikat eller signeringscertifikatelementet. `?encrypt=1` är avvecklat och krypterar ingenting. Chiffret är den här familjens, genom crypto.js; SAML:s EncryptedAssertion stannar i `saml/saml2.ts`."
+    "en": "9b946662ee148582",
+    "text": "Namngivna element i ett svar, som xenc:EncryptedData, till applikationens certifikat eller signeringscertifikatelementet. Chiffret är den här familjens, genom crypto.js; SAML:s EncryptedAssertion stannar i `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.decrypts": {
+    "en": "05cf7d053caa91ee",
+    "text": "Varje krypterat element i en begäran, till den här sfärens XML Encryption-nyckel: ett EncryptedData av typen Element eller Content, eller ett EncryptedHeader, genom crypto.js."
   },
   "crypto.families.ws-trust.hashes": {
     "en": "4c6a8bf52c842baa",

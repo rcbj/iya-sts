@@ -5712,12 +5712,12 @@
     "text": "Kung sinasagot ng Kerberos token ang wst:TokenType na nagpapangalan sa isa sa anim na ValueType ng Kerberos Token Profile 1.1: isang AP-REQ na may dalang service ticket na inilabas ng KDC ng realm na ito para sa subject patungo sa Kerberos service na pinapangalanan ng AppliesTo, at ibinabalik ang subkey ng Authenticator bilang proof token sa TLS. Pinapangalanan ng isang ActAs ticket ang bawat partidong kumilos sa S4U_DELEGATION_INFO ng PAC nito. Kapag naka-off, tinatanggihan ang ganitong kahilingan."
   },
   "wstrust.encryptRequest|label": {
-    "en": "8c74f4c7c47d9035",
-    "text": "I-decrypt ang mga pinangalanang elemento ng isang request"
+    "en": "8c145f441c1aa7f2",
+    "text": "Hingin na naka-encrypt ang mga pinangalanang elemento ng isang request"
   },
   "wstrust.encryptRequest|description": {
-    "en": "5f309591d610ee41",
-    "text": "Kung ang isang RequestSecurityToken na ang AppliesTo ay walang sariling application ay dapat dumating nang naka-encrypt ang mga elemento ng wstrustEncryptRequestElements (XML Encryption, uri Element), at kung bubuksan ang isang ganap na naka-encrypt na request — ang AppliesTo ay nasa loob ng ciphertext. Ino-override ito ng wstrustEncryptRequest ng isang application para sa request na ang AppliesTo ay tumutukoy dito. Naka-on, at walang laman ang mapa, tumutugma ang isang expression sa elementong dumating nang klaro, walang tinutugma ang isang expression sa anumang naibalik, o hindi mabubuksan ang ciphertext gamit ang mga key ng realm na ito, ang request ay isang wst:FailedCheck. Naka-off, iniiwan ang ciphertext kung paano ito dumating at ang request na hindi mabasa ay ang fault na nariyan na."
+    "en": "c969f465f8a7e1bf",
+    "text": "Kung ang isang RequestSecurityToken na ang AppliesTo ay walang sariling application ay dapat dumating nang naka-encrypt ang mga elemento ng wstrustEncryptRequestElements. Pinapalitan ito ng wstrustEncryptRequest ng isang application para sa request na ang AppliesTo ay ito. Binubuksan ang anumang dumating na naka-encrypt para sa realm na ito, naka-on man ito o naka-off, at binabasa ang AppliesTo mula sa nabuksang request. Kapag naka-on, at walang laman ang map, o may expression na tumutugma sa elementong dumating nang hindi naka-encrypt o walang naibalik, ang request ay isang wsse:FailedCheck. Ang ciphertext na hindi mabuksan ay ganoong fault sa alinmang kaso."
   },
   "wstrust.encryptResponse|label": {
     "en": "1d9d5a11338444b1",
