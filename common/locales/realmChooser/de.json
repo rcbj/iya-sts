@@ -1,0 +1,9 @@
+{
+  "title": "Wählen Sie Ihren Bereich",
+  "heading": "Wählen Sie Ihren Bereich",
+  "lead": "Wählen Sie einen Bereich, um {surface, select, portal {zu Ihrem Konto} report {zu den Berichten} other {zur Administratorkonsole}} fortzufahren. Nichts anderes hier kann verwendet werden, bevor Sie das tun.",
+  "explain": "Dieser Dienst beherbergt mehr als einen Vertrauensbereich, und jeder hat eigene Personen und eigene Administratoren. Wählen Sie den Bereich, zu dem Sie gehören, dann werden Sie aufgefordert, sich dort anzumelden.",
+  "realm": "Bereich",
+  "continue": "Weiter {surface, select, portal {zu Ihrem Konto} report {zu den Berichten} other {zur Administratorkonsole}}",
+  "defaultRealm": "(der Standardbereich)"
+}

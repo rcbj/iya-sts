@@ -1,0 +1,66 @@
+{
+  "devices.enrolment.native-sso.what": {
+    "en": "16178c8191c0cc60",
+    "text": "मोबाइल ऐप्स के लिए OpenID Connect Native SSO: device_sso स्कोप वाला पहले ऐप का authorization-code अनुदान डिवाइस बनाता है और उसे एक device_secret देता है, जो प्रविष्टि पर हैश होता है और केवल उसी साइन-ऑन सत्र के लिए वैध होता है।"
+  },
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "एक व्यवस्थापक, निर्देशिका → डिवाइस पर या POST /admin-api/devices/create से: किसी व्यक्ति या किसी अनुप्रयोग के स्वामित्व में, मान टाइप करके दी गई कुंजियों के साथ। इस तरह जोड़ी गई कुंजी किसी के द्वारा सिद्ध नहीं और स्वयं-अभिकथित दर्ज होती है।"
+  },
+  "devices.enrolment.portal.what": {
+    "en": "91e4899bb82f5cd4",
+    "text": "स्वामी /portal/devices पर (या उसके JSON द्वार, POST /portal/devices/challenge और /portal/devices/proof), एक कुंजी सिद्ध करते हुए: उनके सत्र से बंधी चुनौती पर device-key-proof+jwt JWS — उसके x5c में Android Key Attestation के साथ, या उसके स्थान पर Apple App Attest कथन — अथवा उनके नामांकित WebAuthn प्लेटफ़ॉर्म क्रेडेंशियल को एक नए अभिकथन के साथ जोड़ते हुए।"
+  },
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "EST (RFC 7030) simpleenroll, /.well-known/est/device/ पर: उस डिवाइस प्रविष्टि को जारी प्रमाणपत्र जिसे अनुरोध का urn:sts:device:<id> नाम देता है — या एक नई प्रविष्टि को, अनुरोधकर्ता के स्वामित्व में — TPM कुंजी सत्यापन के साथ (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify)। अपने डिवाइस के लिए स्वामी, किसी भी के लिए Admin Write।"
+  },
+  "devices.enrolment.scep.what": {
+    "en": "f2790d20081d2a71",
+    "text": "डिवाइस प्रोफ़ाइल के लिए जारी चुनौती पासवर्ड के साथ SCEP (RFC 8894) PKCSReq — वही, उन डिवाइसों के लिए जो केवल यही बोलते हैं।"
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "TLS कनेक्शन पर क्लाइंट प्रमाणपत्र — साइन-इन पर और टोकन एंडपॉइंट पर (RFC 8705) — उसके SubjectPublicKeyInfo के SHA-256 से मिलाया जाता है, इसलिए उसी कुंजी पर नवीकृत प्रमाणपत्र वही डिवाइस रहता है। हैंडशेक धारण सिद्ध करता है; शृंखला सत्यापित हुई या नहीं यह दर्ज होता है, और निरसन पर अस्वीकृत प्रमाणपत्र पहचाना नहीं जाता।"
+  },
+  "devices.recognition.jwk.what": {
+    "en": "18f6dc11a05f7b7b",
+    "text": "टोकन एंडपॉइंट पर DPoP प्रमाण, उसके jkt से मिलाया जाता है — वह RFC 7638 थंबप्रिंट जो प्रत्येक jwk कुंजी रखती है।"
+  },
+  "devices.recognition.webauthn.what": {
+    "en": "baffd188b35ca245",
+    "text": "साइन-इन पर WebAuthn अभिकथन जिसका क्रेडेंशियल डिवाइस से जुड़ा है।"
+  },
+  "devices.recognition.native-sso.what": {
+    "en": "a79805a282a5905a",
+    "text": "Native SSO का device_secret, जब तक वह साइन-ऑन सत्र जीवित है जिसके लिए इसे जारी किया गया।"
+  },
+  "devices.notes.caepSessions": {
+    "en": "60b89495e94226ce",
+    "text": "session-established, session-presented और session-revoked पर device सदस्य"
+  },
+  "devices.notes.riscSessionsRevoked": {
+    "en": "c792bbacab53a2bf",
+    "text": "sessions-revoked (जहाँ risc.autoEmitTypes इसे नाम दे; डिफ़ॉल्ट रूप से नहीं)"
+  },
+  "devices.notes.subject": {
+    "en": "5701918ef6842f24",
+    "text": "जटिल: device (iss_sub — इस विश्वास क्षेत्र का जारीकर्ता और डिवाइस पहचान) और user (स्वामी, जहाँ व्यक्ति हो)"
+  },
+  "devices.notes.recordedAtSignIn": {
+    "en": "9f2344eae59daae5",
+    "text": "प्रमाणीकरण घटना का registeredDevice (authn.registeredDeviceOf(session) नवीनतम को पढ़ता है)"
+  },
+  "devices.notes.recordedAtTokenEndpoint": {
+    "en": "e5325ebe82720b8e",
+    "text": "जारीकरण अनुरोध का registered_device, जारीकरण द्वार से पहले"
+  },
+  "devices.notes.adminKeys": {
+    "en": "4a9c1c956ea1c116",
+    "text": "व्यवस्थापक की मान-द्वारा कुंजी दोनों मोड में स्वीकार होती है, प्रमाण admin और self-asserted दर्ज करके"
+  },
+  "devices.notes.scepFreshness": {
+    "en": "de8bddcb2b76d6c1",
+    "text": "SCEP में कोई नॉन्स ऑपरेशन नहीं, इसलिए उस पर TPM कथन कभी ताज़ा नहीं दिखाया जाता"
+  }
+}

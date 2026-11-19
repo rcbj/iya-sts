@@ -1,0 +1,6 @@
+{
+  "gnap.cells.note": {
+    "en": "26de01686adb3d1c",
+    "text": "Die Grants, die diese Zelle hält. Ein Grant entsteht dort, wo sein Client ankommt, und wechselt vor der Genehmigung in die Heimat-Zelle seines Ressourceninhabers, daher sind dies normalerweise alle; ein Grant, dessen Client-Instanz in einer anderen Zelle registriert ist, bleibt dort und wird dort aufgeführt und dort widerrufen."
+  }
+}

@@ -3650,6 +3650,15 @@ the realm DELETES such a row when its change arrives
 row whose realm the store no longer holds (`storedRealmIds()`, read from
 `sts_realms` before anything is opened). A LIVE realm's row that will not
 open still refuses the start. `tests/removed_realm_key_rows.js`.
+**An INTERNAL SCOPE is never such a row** (the same day, a regression of
+that change): the keystore also holds `pki:` and `dek:` rows for `*service`
+(the Root) and `*process` (the process branch, whose TLS Issuing CA signs
+the listener certificate), which no `sts_realms` row will ever name. Only
+`*service` was exempt, so every start of a product instance deleted the
+process branch and built a new one — a new listener certificate per
+restart, and each node of a cluster deleting the other's. `realmOfRow()`
+answers '' for any id with a leading `*` (no realm id can carry one), and it
+is the one predicate both doors and `removedSince()`/`adoptShared()` ask.
 
 ### The HTML rewrite in `app.js`, and its one honest limitation
 
@@ -15693,7 +15702,7 @@ none) for its activity. What reaches outside `post_login.ts`'s header:
   `dueFor()`, which with the policy off answered null for everybody, so a
   started activity mailed nobody unless the policy was also on (the page's
   `noActivity` warning said so). It now mails its people; the warning and
-  its key are gone from the page and the seven catalogs, and the API's
+  its key are gone from the page and every base catalog, and the API's
   `activityEnabled` is described as the POLICY's own answer.
 * **No new code.** Nothing new refuses or fails: a started store that
   cannot be read asks nobody through it (`runningActivities()` answers

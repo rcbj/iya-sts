@@ -1,0 +1,20 @@
+{
+  "scopeFor": " für {resource}",
+  "details": "{n} Autorisierungsdetail(s)",
+  "claims": "Claims {claims}",
+  "revoke": "Widerrufen",
+  "none": "Kein Client hält einen Grant in diesem Bereich. Ein Grant entsteht durch eine Autorisierungsanfrage mit <code>grant_management_action=create</code>.",
+  "note": "<strong>Grant Management for OAuth 2.0.</strong> Ein vertraulicher Client benennt, was eine Person ihm erlaubt hat — einen Grant anlegen, weiteres in einen zusammenführen oder ihn durch gewöhnliche Autorisierungsanfragen ersetzen — und liest oder widerruft ihn unter <code>{path}</code> mit den Scopes <code>grant_management_query</code> und <code>grant_management_revoke</code>. Ein Grant besteht, sobald seine Tokens abgerufen wurden, und läuft mit dem letzten von ihnen ab. Ihn hier zu widerrufen ist das, was das DELETE eines Clients tut: jedes Refresh-Token darunter wird auf jedem Knoten abgelehnt, und jedes Token, das dieser Bereich darunter aufgezeichnet hat, wird widerrufen. Wozu die Person ZUGESTIMMT hat, ist ",
+  "consentLink": "Einwilligung",
+  "noteEnd": ".",
+  "colClient": "Client",
+  "colSubject": "Subjekt",
+  "colScopes": "Scopes",
+  "colGeneration": "Generation",
+  "colCreated": "Angelegt / aktualisiert",
+  "colExpires": "Läuft ab",
+  "colTokens": "Gehaltene Tokens",
+  "noMatch": "Kein Grant entspricht <code>{wanted}</code>.",
+  "searchLabel": "Die Grants eingrenzen",
+  "searchPlaceholder": "eine grant_id, ein Client oder ein Subjekt"
+}

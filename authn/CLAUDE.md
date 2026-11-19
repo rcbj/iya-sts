@@ -3758,7 +3758,7 @@ The design is `common/CLAUDE.md` 3cq; what this module does with it:
   (`recoveryEnrolment()`) at the sign-in screen's doors, which pass the
   pending record: `factor: 'enrol'`, `proved`, `recovery`, `mfaAllowed:
   ['securityKey']`. `mfaSetupFacts()` says `recovery`, and the page draws
-  `authn.mfaSetup.subRecovery` (seven catalogs). `webauthnFacts()` draws a
+  `authn.mfaSetup.subRecovery` (every base catalog). `webauthnFacts()` draws a
   REGISTRATION for a recovery step whatever keys the person holds, and
   `finishWebauthn()` starts no session for one: `returnToCaller()`, so the
   application asks for a sign-in and the new passkey answers it.

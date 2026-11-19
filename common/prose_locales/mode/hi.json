@@ -1,0 +1,1422 @@
+{
+  "mode.requirements.cell-key.what": {
+    "en": "4f8bb53495422cda",
+    "text": "सेल के रूप में परिनियोजित सेवा का प्रत्येक सेल जो संग्रहीत करता है उसे अपनी ही कुंजी के अंतर्गत सील करता है"
+  },
+  "mode.requirements.cell-key.development": {
+    "en": "4d08283419abad5c",
+    "text": "जिस सेल में keys.cellKekProvider नहीं है, वह अपनी पंक्तियों को सेवा की कुंजी-एन्क्रिप्शन कुंजी के अंतर्गत सील करता है, इसलिए उसकी पंक्तियाँ किसी भी सेल में खुल जाएँगी — एक मशीन पर परीक्षित सेलों के लिए स्वीकार्य।"
+  },
+  "mode.requirements.cell-key.product": {
+    "en": "369ac4727226b20a",
+    "text": "जिस सेल के पास सेल कुंजी नहीं है, वह आरंभ नहीं होता (STS-CELL-0003)। किसी सेल में बसे लोग और जो वह निर्मित करता है, ऐसी कुंजी के अंतर्गत सील होते हैं जो केवल उसके प्रदेश में रहती है, और किसी अन्य सेल में नहीं खुलती (#98)। एकल-सेल मोड अप्रभावित रहता है।"
+  },
+  "mode.requirements.credentials.what": {
+    "en": "d15cf61729a21c92",
+    "text": "प्रस्तुत पासवर्ड सत्यापित किया जाता है"
+  },
+  "mode.requirements.credentials.development": {
+    "en": "e739d8f39e9b046f",
+    "text": "किसी भी प्रोटोकॉल में कोई पासवर्ड नहीं जाँचा जाता। साइन-इन स्क्रीन कुछ भी स्वीकार करती है, LDAP बाइंड किसी भी DN को किसी भी पासवर्ड के साथ स्वीकार करता है, WS-Security UsernameToken उसके नाम के लिए पढ़ा जाता है उसके रहस्य के लिए नहीं, SCIM Basic किसी भी युग्म पर पार हो जाता है, और WS-Trust ऐसे कॉलर को जारी करता है जिसने कुछ भी प्रस्तुत नहीं किया या एक अहस्ताक्षरित SAML अभिकथन प्रस्तुत किया।"
+  },
+  "mode.requirements.credentials.product": {
+    "en": "b0da5c4d2cc617e2",
+    "text": "व्यक्ति की निर्देशिका प्रविष्टि पर हैश किए गए `userPassword` के विरुद्ध उन सभी द्वारों पर सत्यापित किया जाता है। जिस व्यक्ति का `userPassword` सेट नहीं है, वह बिल्कुल साइन इन नहीं कर सकता। OAuth 2.0 पासवर्ड ग्रांट उत्पाद मोड में मौजूद नहीं है, जो RFC 9700 मोड को इंगित करता है (अनुभाग 2.4)। WS-Trust को क्रेडेंशियल चाहिए, और वह अभिकथन केवल तभी स्वीकार करता है जब इस क्षेत्र ने उस पर हस्ताक्षर किए हों और वह उसके Conditions के भीतर हो।"
+  },
+  "mode.requirements.credential-issuer-tokens.what": {
+    "en": "44c70d0922c9471b",
+    "text": "OpenID4VCI एंडपॉइंट केवल वही एक्सेस टोकन स्वीकार करता है जिसे यह क्षेत्र सत्यापित कर सकता है"
+  },
+  "mode.requirements.credential-issuer-tokens.development": {
+    "en": "b5994bd9f06c2622",
+    "text": "क्रेडेंशियल, आस्थगित क्रेडेंशियल और अधिसूचना एंडपॉइंट कोई भी एक्सेस टोकन स्वीकार करते हैं और उसके दावों को असत्यापित पढ़ते हैं — OpenID4VCI प्राधिकरण सर्वर को कोई और होने देता है — इसलिए किसी वॉलेट को कहीं से भी टोकन के साथ इस जारीकर्ता की ओर इंगित किया जा सकता है।"
+  },
+  "mode.requirements.credential-issuer-tokens.product": {
+    "en": "557e937f9ef07afe",
+    "text": "जो टोकन इस क्षेत्र की हस्ताक्षर कुंजी के विरुद्ध सत्यापित नहीं होता, या जिसे इस क्षेत्र ने निरस्त कर दिया है, उसे कुछ भी जारी होने से पहले invalid_token (HTTP 401) के रूप में अस्वीकार किया जाता है।"
+  },
+  "mode.requirements.unverified-signals.what": {
+    "en": "8bba1b51797ebea8",
+    "text": "प्राप्त Security Event Token जिसका हस्ताक्षर सत्यापित नहीं होता, अस्वीकार किया जाता है"
+  },
+  "mode.requirements.unverified-signals.development": {
+    "en": "d0b1b34847fe54b1",
+    "text": "कंसोल और पोर्टल के अपने रिसीवर इसे स्वीकार करते हैं, दर्ज करते हैं और बताते हैं कि यह सत्यापित क्यों नहीं हुआ — डीबगर का रुख — जब तक ssf.receiveRequireSignature चालू न हो। इस पर कुछ भी कार्रवाई नहीं करता। किसी फ़ेडरेशन भागीदार के Shared Signals, जिन्हें /federation/signals/{id} पर पुश किया गया हो या पोल किया गया हो, उसी तरह माने जाते हैं: असत्यापित SET संबंध के इनबॉक्स पर असत्यापित के रूप में दर्ज होता है और उस पर किसी भी तरह कार्रवाई नहीं होती, जब तक ssf.receiveRequireSignature चालू न हो।"
+  },
+  "mode.requirements.unverified-signals.product": {
+    "en": "369551d9ee637c3c",
+    "text": "कंसोल और पोर्टल के रिसीवर 400 invalid_key का उत्तर देते हैं, ssf.receiveRequireSignature कुछ भी कहे (#117), और इसे अपने इनबॉक्स पर अस्वीकृत चिह्नित रखकर रखते हैं। किसी फ़ेडरेशन भागीदार का असत्यापित SET भी invalid_key के रूप में अस्वीकार किया जाता है — /federation/signals/{id} पर पुश के लिए HTTP 400, और पोल किए गए के लिए अगले पोल अनुरोध में setErrs में — संबंध के इनबॉक्स पर अस्वीकृत चिह्नित रखकर रखा जाता है, और उस पर कभी कार्रवाई नहीं होती।"
+  },
+  "mode.requirements.signal-reactions.what": {
+    "en": "25aa56c5f929fe05",
+    "text": "इस सेवा के अपने कंसोल और पोर्टल को प्राप्त CAEP या RISC घटना पर जो करना है, वह किया जाता है"
+  },
+  "mode.requirements.signal-reactions.development": {
+    "en": "7be9247afb6c5c44",
+    "text": "सत्यापित घटना सतह के सिग्नल इनबॉक्स पर दर्ज की जाती है, इस बात के साथ कि सिग्नल-प्रतिक्रिया नीति ने क्या अनुमति दी, और कुछ भी समाप्त नहीं किया जाता, जब तक ssf.actOnSignalsInDevelopment चालू न हो।"
+  },
+  "mode.requirements.signal-reactions.product": {
+    "en": "4d69a170d09c1d35",
+    "text": "सिग्नल-प्रतिक्रिया नीति जिस सत्यापित घटना की अनुमति देती है — session-revoked, credential-change, कोई RISC खाता या क्रेडेंशियल घटना, risk-level-change से HIGH, डिफ़ॉल्ट रूप से — वह उस व्यक्ति के लिए प्राप्त करने वाली सतह के अपने सत्र समाप्त कर देती है जिसका नाम वह लेती है। असत्यापित घटना पर किसी भी मोड में कभी कार्रवाई नहीं होती।"
+  },
+  "mode.requirements.risk-decisions.what": {
+    "en": "c187e2cdafec165a",
+    "text": "प्रमाणीकरण के जोखिम पर जारीकरण नीति के निर्णय लागू किए जाते हैं"
+  },
+  "mode.requirements.risk-decisions.development": {
+    "en": "f19592d34351da44",
+    "text": "प्रत्येक साइन-इन का आकलन किया जाता है और जारीकरण नीति से उसके जोखिम तथ्यों के साथ पूछा जाता है, और वह जो तय करती है वह आकलन पर दर्ज होता है — परंतु जोखिम Deny अलग रख दिया जाता है और केवल भूमिकाएँ तय करती हैं, जब तक risk.enforceInDevelopment चालू न हो।"
+  },
+  "mode.requirements.risk-decisions.product": {
+    "en": "27940e1a18ad7fb0",
+    "text": "जोखिम Deny रखा जाता है: जिस प्रमाणीकरण को नीति जोखिम पर अस्वीकार करती है (HIGH, डिफ़ॉल्ट रूप से) वह अस्वीकार होता है, और जिससे वह स्टेप-अप माँगती है (MEDIUM) उससे दूसरा कारक या सुरक्षा कुंजी माँगी जाती है जहाँ द्वार पूछ सकता है, और जहाँ नहीं पूछ सकता वहाँ अस्वीकार किया जाता है। जब किसी व्यक्ति का जोखिम बदलता है, तो जोखिम-प्रतिक्रिया नीति जिन प्रतिक्रियाओं की अनुमति देती है वे की जाती हैं — HIGH पर सब कुछ समाप्त करना, RISC credential-compromise; विकास मोड परिवर्तन की घोषणा करता है और शेष को प्रेक्षित के रूप में दर्ज करता है।"
+  },
+  "mode.requirements.token-exchange-tokens.what": {
+    "en": "ae3a72a9b5d7b234",
+    "text": "RFC 8693 टोकन एक्सचेंज केवल वही subject_token और actor_token स्वीकार करता है जिन्हें यह क्षेत्र सत्यापित कर सकता है"
+  },
+  "mode.requirements.token-exchange-tokens.development": {
+    "en": "7eb1db0e063f53dc",
+    "text": "जिस subject_token को यह क्षेत्र सत्यापित नहीं कर सकता, वह उसके नाम के लिए पढ़ा जाता है और फिर भी एक्सचेंज किया जाता है, और actor_token पढ़ा जाता है तथा कभी सत्यापित नहीं होता, इसलिए कोई क्लाइंट किसी भी जारीकर्ता के टोकन से ग्रांट चला सकता है।"
+  },
+  "mode.requirements.token-exchange-tokens.product": {
+    "en": "b66324c8935f8390",
+    "text": "दोनों को इस क्षेत्र की हस्ताक्षर कुंजी के विरुद्ध सत्यापित होना चाहिए, अनवसित और अनिरस्त होना चाहिए, अन्यथा एक्सचेंज invalid_request (HTTP 400, RFC 8693 अनुभाग 2.2.2) के रूप में अस्वीकार होता है।"
+  },
+  "mode.requirements.delegation-policy.what": {
+    "en": "415893f644c81a40",
+    "text": "कौन किसकी ओर से कार्य कर सकता है, यह WS-Trust OnBehalfOf / ActAs और RFC 8693 टोकन एक्सचेंज पर तय होता है"
+  },
+  "mode.requirements.delegation-policy.development": {
+    "en": "89d3215a1960b7f3",
+    "text": "प्रत्येक प्रत्यायोजन जारी किया जाता है। नीति से फिर भी पूछा जाता है और उसका उत्तर /admin/delegation पर कार्य पर \"अस्वीकार किया गया होता: ...\" के रूप में दर्ज होता है, और कोई एक्सचेंज अपने subject_token से अधिक व्यापक स्कोप माँग सकता है।"
+  },
+  "mode.requirements.delegation-policy.product": {
+    "en": "fe19fc117becfe0b",
+    "text": "जारीकरण नीति तय करती है (#186), प्रत्यायोजन विशेषताओं से (अनुप्रयोग प्रविष्टियों पर appAllowedToDelegateTo, appAllowedToActOnBehalfOf, appDelegationSubjectGroup, appDelegationSemantics, appNotDelegated; लोगों के लिए stsNotDelegated, stsDelegationSemantics, delegation.protectedGroups और कंसोल रोस्टर)। अस्वीकृति invalid_request या invalid_target (RFC 8693 अनुभाग 2.2.2) अथवा wst:RequestFailed SOAP Fault (WS-Trust 1.4 अनुभाग 11) होती है। कोई व्यक्ति केवल delegation.actorRole धारण करके कार्य करता है, और कोई एक्सचेंज अपने subject_token का स्कोप नहीं बढ़ा सकता (invalid_scope)।"
+  },
+  "mode.requirements.declared-scopes.what": {
+    "en": "24912ad15f5cdcc7",
+    "text": "किसी क्लाइंट को केवल वे स्कोप जारी किए जाते हैं जिन्हें उसने घोषित किया"
+  },
+  "mode.requirements.declared-scopes.development": {
+    "en": "1c76373a91206e5a",
+    "text": "क्लाइंट जो भी स्कोप माँगता है वह जारी किया जाता है, उसकी `oauthAllowedScope` सूची में कुछ भी हो। दोनों मोड में admin:read, admin:write, SCIM और Shared Signals स्कोप तथा डीबगर अनुमति केवल उस क्लाइंट को जारी किए जाते हैं जिसकी `oauthAllowedScope` उन्हें सूचीबद्ध करती है।"
+  },
+  "mode.requirements.declared-scopes.product": {
+    "en": "33fcb48e8c17655e",
+    "text": "क्लाइंट की `oauthAllowedScope` से बाहर का स्कोप प्राधिकरण, पुश किए गए प्राधिकरण और टोकन एंडपॉइंट पर invalid_scope के रूप में अस्वीकार किया जाता है (STS-OAUTH-0578) और रिफ़्रेश या एक्सचेंज से हटा दिया जाता है। जो क्लाइंट कुछ भी सूचीबद्ध नहीं करता उसे प्रलेखित डिफ़ॉल्ट मिलता है: openid, profile, email, address, phone, offline_access और इस क्षेत्र के OpenID4VCI स्कोप। किसी अनुप्रयोग या प्रत्यायोजित अनुमति का नाम लेने वाला स्कोप अपने नियम रखता है।"
+  },
+  "mode.requirements.declared-protocols.what": {
+    "en": "89e8ef1624565f1b",
+    "text": "किसी अनुप्रयोग को ऐसे प्रोटोकॉल के माध्यम से कुछ भी जारी नहीं किया जाता जिसके लिए वह घोषित नहीं है"
+  },
+  "mode.requirements.declared-protocols.development": {
+    "en": "b8f60692e2fa6b31",
+    "text": "appAllowedProtocol एक विवरण है: टोकन, अभिकथन या टिकट जो भी प्रोटोकॉल माँगे, जारी किया जाता है।"
+  },
+  "mode.requirements.declared-protocols.product": {
+    "en": "01bf0ea288cde1c4",
+    "text": "जारीकरण नीति का protocol-not-declared नियम ऐसे प्रोटोकॉल परिवार के माध्यम से जारीकरण अस्वीकार करता है जिसके लिए अनुप्रयोग घोषित नहीं है (STS-XACML-0084): केवल OAuth 2.0 के लिए घोषित अनुप्रयोग को ID Token, OpenID Connect के लिए घोषित अनुप्रयोग को SAML अभिकथन। जो अनुप्रयोग किसी चीज़ के लिए घोषित नहीं है, उसे अस्वीकार नहीं किया जाता।"
+  },
+  "mode.requirements.uncatalogued-access.what": {
+    "en": "cae99ea77ebca46f",
+    "text": "GNAP पहुँच अधिकार केवल उसी प्रकार का दिया जाता है जिसे पहुँच-प्रकार सूची घोषित करती है"
+  },
+  "mode.requirements.uncatalogued-access.development": {
+    "en": "de56636f7e123b4d",
+    "text": "ऐसे प्रकार का अधिकार जिसे कोई संसाधन अनुप्रयोग घोषित नहीं करता (oauthAuthorizationDetailsType), क्लाइंट ने जैसा माँगा वैसा दिया जाता है।"
+  },
+  "mode.requirements.uncatalogued-access.product": {
+    "en": "89edeaa0cee05b30",
+    "text": "जारीकरण नीति का gnap-type-not-catalogued नियम इसे ग्रांट एंडपॉइंट पर अस्वीकार करता है (request_denied, STS-GNAP-0810)। RFC 9396 authorization_details दोनों मोड में अघोषित प्रकार को अस्वीकार करते हैं, जैसा अनुभाग 5 अपेक्षा करता है।"
+  },
+  "mode.requirements.delegated-permissions.what": {
+    "en": "81f1a910d89c9265",
+    "text": "प्रत्यायोजित अनुमति केवल उसी क्लाइंट को जारी की जाती है जिसे वह दी गई है"
+  },
+  "mode.requirements.delegated-permissions.development": {
+    "en": "2748c5103ef68673",
+    "text": "न दी गई अनुमति मान ली जाती है और न दी गई के रूप में दर्ज की जाती है, जब तक oauth2.delegatedPermissionsEnforced चालू न हो।"
+  },
+  "mode.requirements.delegated-permissions.product": {
+    "en": "e3783b780299b3c1",
+    "text": "oauth2.delegatedPermissionsEnforced कुछ भी कहे, invalid_scope (STS-OAUTH-0155) के रूप में अस्वीकार: ग्रांट क्लाइंट की प्रविष्टि पर `oauthDelegatedPermission` है।"
+  },
+  "mode.requirements.federated-name-match.what": {
+    "en": "aa45efa130eb1fdf",
+    "text": "कोई फ़ेडरेशन भागीदार केवल उसी व्यक्ति को साइन इन करता है जिससे उसका विषय जुड़ा है"
+  },
+  "mode.requirements.federated-name-match.development": {
+    "en": "935cd045cd8649e7",
+    "text": "कोई संबंध fedSubjectPolicy को any-existing पर सेट कर सकता है, जो भागीदार द्वारा अभिकथित नाम को सीधे किसी स्थानीय व्यक्ति से मिलाता है — कोई भी व्यक्ति, व्यवस्थापक सहित, जब तक fedMayAssertAdministrators बंद न हो (डिफ़ॉल्ट)। हर अन्य नीति उत्पाद में जैसे व्यवहार करती है वैसे ही व्यवहार करती है।"
+  },
+  "mode.requirements.federated-name-match.product": {
+    "en": "21b1d1c16447c0c6",
+    "text": "any-existing अस्वीकार किया जाता है, संबंध पर (STS-FED-0095) और साइन-इन पर (STS-FED-0094)। भागीदार उस प्रविष्टि को साइन इन करता है जिससे उसका (issuer, subject) जुड़ा है; किसी मौजूदा व्यक्ति का नाम लेने वाले असंबद्ध विषय को पहले यहाँ उस व्यक्ति के रूप में साइन इन करना होगा (link-at-first-sign-in, डिफ़ॉल्ट), अन्यथा वह अस्वीकार होता है (pre-linked)। विकास और उत्पाद दोनों नियम तथा कंसोल-व्यवस्थापक अस्वीकृति रखते हैं।"
+  },
+  "mode.requirements.federated-autocreate.what": {
+    "en": "d38d38e45a73467e",
+    "text": "नया फ़ेडरेशन संबंध ऐसे भागीदार विषय के लिए निर्देशिका प्रविष्टि बनाता है जिसे किसी ने नहीं जोड़ा"
+  },
+  "mode.requirements.federated-autocreate.development": {
+    "en": "04193f48cc244e1b",
+    "text": "संबंध बनते समय fedAutocreateUsers TRUE लिखा जाता है, और जो संबंध विशेषता संग्रहीत नहीं करता वह बनाता है। संग्रहीत FALSE फिर भी किसी को नहीं बनाता।"
+  },
+  "mode.requirements.federated-autocreate.product": {
+    "en": "b8758f8842b1fc0a",
+    "text": "संबंध बनते समय fedAutocreateUsers FALSE लिखा जाता है, और अनुपस्थित विशेषता किसी को नहीं बनाती (STS-FED-0090)। जो संबंध पहले से TRUE संग्रहीत करता है वह संपादित होने तक बनाता रहता है। link-at-first-sign-in दोनों मोड में मौजूदा मैप किए गए व्यक्ति को फिर भी जोड़ता है।"
+  },
+  "mode.requirements.federated-logout-signature.what": {
+    "en": "ab3acff66ae80262",
+    "text": "किसी फ़ेडरेशन भागीदार का SAML साइन-आउट उस भागीदार द्वारा हस्ताक्षरित होता है"
+  },
+  "mode.requirements.federated-logout-signature.development": {
+    "en": "0e22c30af1770452",
+    "text": "जिस संबंध का fedRequireSignedLogout बंद सेट है, वह अपने भागीदार से अहस्ताक्षरित LogoutRequest या LogoutResponse स्वीकार करता है। जो हस्ताक्षर मौजूद है वह fedSigningCertificate के विरुद्ध ठीक उत्पाद की तरह सत्यापित होता है, और सेटिंग हर संबंध के लिए चालू है जब तक कोई उसे बंद न करे।"
+  },
+  "mode.requirements.federated-logout-signature.product": {
+    "en": "103de5212c6c07d6",
+    "text": "भागीदार का प्रत्येक SAML लॉगआउट संदेश हस्ताक्षरित होना चाहिए और संबंध के प्रमाणपत्र के विरुद्ध सत्यापित होना चाहिए (saml-profiles-2.0-os अनुभाग 4.4.4.1): अहस्ताक्षरित संदेश अस्वीकार होता है (STS-FED-0115), fedRequireSignedLogout कुछ भी कहे, और सेटिंग को बंद करना अस्वीकार होता है (STS-FED-0132)।"
+  },
+  "mode.requirements.federated-assertion-encryption.what": {
+    "en": "0fdc50d76534c95c",
+    "text": "किसी फ़ेडरेशन भागीदार का अभिकथन या फ़्रंट-चैनल ID Token संबंध की अपनी कुंजी के लिए एन्क्रिप्ट किया जाता है"
+  },
+  "mode.requirements.federated-assertion-encryption.development": {
+    "en": "980ef0a024b77d35",
+    "text": "SAML 2.0 या WS-Federation अभिकथन, अथवा form_post द्वारा OpenID Connect id_token, स्पष्ट रूप में स्वीकार किया जाता है। जो एन्क्रिप्टेड है उसे डिक्रिप्ट किया जाता है और उत्पाद जैसी ही एल्गोरिथ्म सूची पर रखा जाता है।"
+  },
+  "mode.requirements.federated-assertion-encryption.product": {
+    "en": "8e50a67f08bab738",
+    "text": "सादा अभिकथन या फ़्रंट-चैनल ID Token अस्वीकार किया जाता है (STS-FED-0140) जब तक संबंध fedAllowUnencrypted सेट न करे, जो चेतावनी के साथ प्रलेखित है। AES-CBC, rsa-1_5 और RSA1_5 दोनों मोड में अस्वीकार किए जाते हैं (STS-FED-0139)।"
+  },
+  "mode.requirements.passkey-first-use.what": {
+    "en": "c8556d37e16453f0",
+    "text": "साइन-इन स्क्रीन ऐसे व्यक्ति के लिए पासकी नामांकित नहीं करती जिसने यह सिद्ध नहीं किया कि वह कौन है"
+  },
+  "mode.requirements.passkey-first-use.development": {
+    "en": "8bea6b2667160433",
+    "text": "बिना पासवर्ड का साइन-इन, जो ऐसे व्यक्ति का नाम लेता है जिसके पास कोई पासकी नहीं है, बिना पासवर्ड पढ़े उसी समय एक पासकी नामांकित कर देता है — नाम पर दावा करने वाले पहले व्यक्ति को वह मिल जाती है।"
+  },
+  "mode.requirements.passkey-first-use.product": {
+    "en": "b2a73f5e48d6f2c4",
+    "text": "यह अस्वीकार किया जाता है। पासकी /portal/keys पर किसी सत्र के पीछे, सक्रियण लिंक द्वारा, या किसी ऑपरेटर द्वारा जोड़ी जाती है।"
+  },
+  "mode.requirements.siop-did-web-pin.what": {
+    "en": "a8f5db1a7e30f55d",
+    "text": "did:web स्व-जारी विषय केवल उस कुंजी से साइन इन करता है जो नामांकन के समय पिन की गई थी"
+  },
+  "mode.requirements.siop-did-web-pin.development": {
+    "en": "df2d670db990d330",
+    "text": "कुंजी पिन करने से पहले नामांकित did:web, जिसकी कोई कुंजी पिन नहीं है, अपने अगले साइन-इन पर उस कुंजी से साइन इन करता है जिसे उसका दस्तावेज़ नाम देता है, और वह कुंजी तब पिन की जाती है (पहली बार पर विश्वास), एक लॉग पंक्ति और एक ऑडिट पंक्ति के साथ।"
+  },
+  "mode.requirements.siop-did-web-pin.product": {
+    "en": "f2869db882e1f25d",
+    "text": "वह साइन-इन अस्वीकार किया जाता है (STS-VC-0127), ऑडिट किया जाता है, और व्यक्ति /portal/self-issued पर उसे सिद्ध करके DID को फिर से नामांकित करता है। दोनों मोड में वह कुंजी जिसे पिन नाम नहीं देता अस्वीकार की जाती है (STS-VC-0126)।"
+  },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "प्रोफ़ाइल फ़ोटो का पता पिन किए गए सार्वजनिक आधार URL पर बनाया जाता है"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "जब कोई सार्वजनिक आधार URL पिन नहीं है, तो /portal पर सेट या फ़ेडरेशन भागीदार से कॉपी की गई फ़ोटो उस होस्ट पर संबोधित होती है जहाँ अनुरोध पहुँचा, और टोकन वह पता रखते हैं।"
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "फ़ोटो सेट करना अस्वीकार किया जाता है (STS-PORTAL-0635), और भागीदार की कॉपी नहीं की जाती (STS-FED-0220), जब तक global.publicBaseUrl आधार को पिन न करे: Host हेडर कभी उस पते का हिस्सा नहीं बनता जिसे टोकन रखता है।"
+  },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "किसी व्यक्ति का प्रकाशित did:web पिन किए गए सार्वजनिक आधार URL पर निर्मित किया जाता है"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "जब कोई सार्वजनिक आधार URL पिन नहीं है, तो /portal/self-issued से प्रकाशित DID उस पते पर बनाया जाता है जहाँ अनुरोध पहुँचा, और वह पता DID का स्थायी हिस्सा बन जाता है।"
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "DID प्रकाशित करना अस्वीकार किया जाता है (STS-VC-0168) जब तक global.publicBaseUrl, या सत्यापन योग्य क्रेडेंशियल अनुप्रयोग का विज्ञापित श्रोता, आधार को पिन न करे: Host हेडर कभी संग्रहीत पहचानकर्ता का हिस्सा नहीं बनता।"
+  },
+  "mode.requirements.webauthn-attestation.what": {
+    "en": "8c22563b2f23268b",
+    "text": "सुरक्षा कुंजी का अटेस्टेशन कथन कुंजी पंजीकृत होने से पहले सत्यापित किया जाता है"
+  },
+  "mode.requirements.webauthn-attestation.development": {
+    "en": "6e29fa143ed40161",
+    "text": "webauthn.attestationPolicy by-mode है, जो यहाँ बंद है: कथन का प्रारूप दर्ज किया जाता है और उसमें कुछ भी जाँचा नहीं जाता। verify-if-present और require-trusted सेट करने के लिए मौजूद हैं।"
+  },
+  "mode.requirements.webauthn-attestation.product": {
+    "en": "1114fdf1aee58a97",
+    "text": "by-mode verify-if-present है: प्रत्येक कथन उसकी WebAuthn Level 3 अनुभाग 8 प्रक्रिया से सत्यापित होता है (सभी आठ प्रारूप), उसकी शृंखला क्षेत्र के एंकरों और FIDO Metadata Service की जड़ों के विरुद्ध जाँची जाती है, उसका निरसन देखा जाता है, और जिस मॉडल को MDS समझौताग्रस्त बताता है वह अस्वीकार होता है। none और self अटेस्टेशन स्वीकार किए जाते हैं और अविश्वसनीय के रूप में दर्ज होते हैं। off लेखन पर अस्वीकार होता है और by-mode के रूप में पढ़ा जाता है।"
+  },
+  "mode.requirements.second-factor-doors.what": {
+    "en": "c4647caa0a5e5f86",
+    "text": "जो व्यक्ति दूसरा कारक रखता है या जिसे रखना आवश्यक है, उसे केवल-पासवर्ड वाले द्वारों पर अकेले उसके पासवर्ड से अस्वीकार किया जाता है"
+  },
+  "mode.requirements.second-factor-doors.development": {
+    "en": "f1ede458c1549c0c",
+    "text": "LDAP सिंपल बाइंड, WS-Security UsernameToken, SCIM और SSF HTTP Basic तथा EST Basic पासवर्ड को वैसे ही स्वीकार करते हैं जैसे वे हर पासवर्ड स्वीकार करते हैं; साइन-इन स्क्रीन फिर भी दूसरा कारक माँगती है।"
+  },
+  "mode.requirements.second-factor-doors.product": {
+    "en": "a4d4c20c45b2d573",
+    "text": "उन पाँच द्वारों पर व्यक्ति का अपना पासवर्ड अस्वीकार किया जाता है — ठीक गलत पासवर्ड की तरह उत्तर दिया जाता है, और दर सीमा के विरुद्ध एक के रूप में गिना जाता है (STS-AUTHN-0213 केवल ऑडिट पंक्ति पर और लॉग में) — जब भी वे ऑथेंटिकेटर ऐप रखते हों या कोई पासकी जहाँ क्षेत्र (या अनुप्रयोग द्वारा नामित प्रमाणीकरण नीति) पासकी को दूसरे कारक के रूप में स्वीकार करता है, या उनसे दूसरा कारक अपेक्षित हो (stsMfaRequired, प्रमाणीकरण नीति)। /portal/app-passwords पर उनके द्वारा बनाया गया ऐप पासवर्ड, द्वार तक सीमित, इसके बजाय स्वीकार किया जाता है। authn.passwordAloneDoors उन द्वारों के नाम बताता है जो पासवर्ड को फिर भी स्वीकार करते हैं, जिससे ऐसे प्रत्येक व्यक्ति वहाँ एक कारक तक नीचे आ जाते हैं।"
+  },
+  "mode.requirements.kerberos-sid-filtering.what": {
+    "en": "e3950aa2a75faaec",
+    "text": "Kerberos विश्वास का सम्मान केवल तब होता है जब वह SID फ़िल्टर करता है"
+  },
+  "mode.requirements.kerberos-sid-filtering.development": {
+    "en": "75b6728bdcc111d0",
+    "text": "quarantined बंद वाला विश्वास अभिलेख किसी अन्य की तरह उपयोग होता है: टिकट इसके माध्यम से रेफ़र किए जाते हैं और इससे स्वीकार किए जाते हैं, और इसके पार आने वाला PAC उसकी विश्वास सीमा के अनुसार फ़िल्टर होता है, संगरोध के उस नियम के बिना कि केवल विश्वसनीय डोमेन के SID ही गुजरें।"
+  },
+  "mode.requirements.kerberos-sid-filtering.product": {
+    "en": "e9c9138415ca5310",
+    "text": "quarantined बंद वाला विश्वास अभिलेख किसी को रेफ़र नहीं करता और कुछ भी स्वीकार नहीं करता (STS-KRB-0229 कारण बताता है) जब krb5.requireSidFilteringInProduct चालू है, जो डिफ़ॉल्ट है। क्षेत्र पर उस सेटिंग को बंद करना ऑपरेटर द्वारा भागीदार के SID स्वीकार करना है।"
+  },
+  "mode.requirements.kerberos-second-factor.what": {
+    "en": "6bb019d0381a77a4",
+    "text": "जो व्यक्ति दूसरा कारक रखता है या जिसे रखना आवश्यक है, उसे अकेले पासवर्ड पर कोई Kerberos टिकट नहीं मिलता"
+  },
+  "mode.requirements.kerberos-second-factor.development": {
+    "en": "48c67bd985cdac31",
+    "text": "KDC अकेले पासवर्ड से पूर्व-प्रमाणित AS-REQ को TGT जारी करता है (PA-ENC-TIMESTAMP, या FAST का PA-ENCRYPTED-CHALLENGE), जैसे वह हर पासवर्ड लेता है।"
+  },
+  "mode.requirements.kerberos-second-factor.product": {
+    "en": "ab8a6af4d276b0bc",
+    "text": "वह AS-REQ पासवर्ड सत्यापित होने के बाद KDC_ERR_POLICY (12), STS-KRB-0135, के रूप में अस्वीकार किया जाता है (गलत पासवर्ड फिर भी KDC_ERR_PREAUTH_FAILED है), जब भी व्यक्ति ऑथेंटिकेटर ऐप रखता हो या कोई पासकी जहाँ क्षेत्र (या अनुप्रयोग द्वारा नामित प्रमाणीकरण नीति) पासकी को दूसरे कारक के रूप में स्वीकार करता है, या उनसे दूसरा कारक अपेक्षित हो। ऑथेंटिकेटर ऐप वाला व्यक्ति RFC 6113 FAST आर्मर के साथ RFC 6560 OTP पूर्व-प्रमाणीकरण से टिकट पाता है — एक एक्सचेंज में पासवर्ड और कोड — और वह RFC 8129 संकेतक `otp` रखता है। ऐप पासवर्ड कभी Kerberos कुंजी नहीं होता।"
+  },
+  "mode.requirements.recovery-assurance.what": {
+    "en": "3c8ef817d4ad4971",
+    "text": "खाता पुनर्प्राप्ति, डिफ़ॉल्ट रूप से, उस पासकी से कमज़ोर नहीं होती जिसे वह बदलती है"
+  },
+  "mode.requirements.recovery-assurance.development": {
+    "en": "523ca60d0edeedd0",
+    "text": "पासकी नीति का recoveryAssurance डिफ़ॉल्ट any है: पासवर्ड रीसेट लिंक, सक्रियण लिंक, पुनर्प्राप्ति कोड या ईमेल किया गया कोड या लिंक तुरंत पहुँच बहाल कर देता है, व्यक्ति कोई भी पासकी रखे।"
+  },
+  "mode.requirements.recovery-assurance.product": {
+    "en": "7491bb7b906772bb",
+    "text": "यह डिफ़ॉल्ट not-weaker है: पासकी रखने वाले व्यक्ति के लिए, पुनर्प्राप्ति के बाद पहला साइन-इन जो पासकी साइन-इन नहीं है, किसी अनुप्रयोग तक नहीं पहुँचता (STS-AUTHN-0381)। साइन-इन स्क्रीन उनसे पासकी नीति को संतुष्ट करने वाली पासकी पंजीकृत करने को कहती है, और फिर उससे साइन इन करने को। क्षेत्र की अपनी पंक्ति किसी भी मोड में अन्यथा कहती है।"
+  },
+  "mode.requirements.resource-metadata-import.what": {
+    "en": "fb298f641de33009",
+    "text": "RFC 9728 संरक्षित संसाधन मेटाडेटा आयात उन नियमों पर रखा जाता है जिनका दस्तावेज़ का क्लाइंट पालन करता है"
+  },
+  "mode.requirements.resource-metadata-import.development": {
+    "en": "f89c0a8aa3cffb2b",
+    "text": "URL से लाया गया दस्तावेज़ चेतावनी के साथ आयात किया जाता है जब उसका `resource` उस well-known URL से मेल नहीं खाता जिससे वह आया (अनुभाग 3.3) या https नहीं है, और URL लूपबैक या निजी पते पर हल हो सकता है।"
+  },
+  "mode.requirements.resource-metadata-import.product": {
+    "en": "3364c42939a2cbce",
+    "text": "दोनों अस्वीकार किए जाते हैं, और लूपबैक, निजी, लिंक-लोकल या आरक्षित पते पर हल होने वाला URL डायल नहीं किया जाता — नाम एक बार हल किया जाता है और कनेक्शन जाँचे गए पते पर पिन किया जाता है। विकृत दस्तावेज़ दोनों मोड में अस्वीकार किया जाता है।"
+  },
+  "mode.requirements.mail.what": {
+    "en": "8b83e20e2d14d9a9",
+    "text": "मेल भेजा जाता है, रखा नहीं जाता; मेल किया गया लिंक पिन किए गए सार्वजनिक पते का नाम लेता है"
+  },
+  "mode.requirements.mail.development": {
+    "en": "c6e53c9e30d286e6",
+    "text": "mail.transport `default` CAPTURE ट्रांसपोर्ट है: प्रत्येक संदेश उसके मुख्य भाग के साथ रखा जाता है और भेजे जाने के बजाय निगरानी → मेल पर दिखाया जाता है, जब तक कोई वास्तविक ट्रांसपोर्ट कॉन्फ़िगर न हो। मेल किया गया लिंक global.publicBaseUrl पर बनाया जाता है, या जब वह खाली हो तो श्रोता के कॉन्फ़िगर होस्ट और पोर्ट पर — कभी अनुरोध पर नहीं।"
+  },
+  "mode.requirements.mail.product": {
+    "en": "497ff2ab5fad4b85",
+    "text": "`default` `off` है, और `capture` लेखन पर और आरंभ पर अस्वीकार किया जाता है (STS-MAIL-0003), क्योंकि कैप्चर किया गया पासवर्ड रीसेट लिंक कंसोल पर एक क्रेडेंशियल है। जो कॉन्फ़िगर ट्रांसपोर्ट बनाया नहीं जा सकता वह सेवा को आरंभ होने से रोकता है (STS-MAIL-0002)। लिंक केवल तभी मेल किया जाता है जब global.publicBaseUrl सेट हो (STS-MAIL-0015)।"
+  },
+  "mode.requirements.secret-destinations.what": {
+    "en": "745eb3890b07294e",
+    "text": "सेवा खाते का घुमाया गया पासवर्ड किसी सीक्रेट्स प्रबंधक को भेजा जाता है, कभी इस कंटेनर की डिस्क पर नहीं"
+  },
+  "mode.requirements.secret-destinations.development": {
+    "en": "0633c12f9bf4ca80",
+    "text": "सीक्रेट पुश गंतव्य FILE हो सकता है: पुश पासवर्ड को गंतव्य की निर्देशिका के अंतर्गत एक मौजूदा फ़ाइल में लिखता है, जिससे परीक्षण सूट बिना सीक्रेट्स प्रबंधक के रोटेशन का अभ्यास करता है।"
+  },
+  "mode.requirements.secret-destinations.product": {
+    "en": "5ab672b908ba6b88",
+    "text": "`file` नाम वाला गंतव्य अनुपयोगी बताया जाता है और उस पर पुश अस्वीकार किया जाता है (STS-SECDEST-0006)। AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault और Vault या OpenBao KV संस्करण 2 इंजन रहते हैं, प्रत्येक सत्यापित TLS पर गंतव्य के अपने लेखन क्रेडेंशियल के साथ (#221)।"
+  },
+  "mode.requirements.outbound-tls.what": {
+    "en": "b211ebe14931a1d7",
+    "text": "आउटबाउंड अनुरोध उत्तर देने वाले का प्रमाणपत्र सत्यापित करता है, और सादे http पर बाहर नहीं जाता"
+  },
+  "mode.requirements.outbound-tls.development": {
+    "en": "d23b51307ba13e8a",
+    "text": "GNAP पुश समापन, SSF पुश डिलीवरी, फ़ेडरेशन के बैक चैनल और XACML PEP नज अपनी …SkipTlsVerification सेटिंग का सम्मान करते हैं (सत्यापन बंद, प्रत्येक अनुरोध पर चेतावनी) और अपनी …AllowHttp सेटिंग का (किसी भी होस्ट पर सादा http)। SPIRE की spiffe.k8sSkipKubeletVerification का भी सम्मान होता है।"
+  },
+  "mode.requirements.outbound-tls.product": {
+    "en": "247dae79affdfe65",
+    "text": "प्रत्येक …SkipTlsVerification सेटिंग, और spiffe.k8sSkipKubeletVerification, अनदेखी की जाती है — अपने कोड के साथ एक बार लॉग होती है — और /admin तथा /admin-api के माध्यम से लेखन पर अस्वीकार की जाती है (STS-CORE-0103); निजी CA तक परिवार की …CaFile से सत्यापन चालू रखकर पहुँचा जाता है। सादा http SSF, फ़ेडरेशन और XACML के लिए अस्वीकार है, …AllowHttp कुछ भी कहे, और GNAP पुश समापन के लिए केवल लूपबैक पते पर अनुमत है (RFC 9635 अनुभाग 2.5.2.1)।"
+  },
+  "mode.requirements.deliberate-defects.what": {
+    "en": "055db67685f19f36",
+    "text": "जानबूझकर किया गया दोष उत्तर को गलत नहीं बनाता"
+  },
+  "mode.requirements.deliberate-defects.development": {
+    "en": "0b1230d1659875d3",
+    "text": "oauth2.breakIdTokenNonce हर ID Token में गलत nonce डालता है जिसमें एक होना चाहिए, ssf.breakSetSignature हर SET के हस्ताक्षर का एक वर्ण बदलता है, ssf.legacySubClaim `sub_id` के पास वह `sub` दावा जोड़ता है जिसे RFC 8417 निरुत्साहित करता है, risc.googleSubjectType वह `subject_type` सदस्य लिखता है जिसके बारे में RISC 1.0 अनुभाग 3.1 कहता है कि नई सेवाएँ MUST NOT उपयोग करें, और krb5.clockOffset KDC की घड़ी खिसकाता है — प्रत्येक जब वह सेट हो, ताकि क्लाइंट की गलत उत्तर की हैंडलिंग का अभ्यास हो सके।"
+  },
+  "mode.requirements.deliberate-defects.product": {
+    "en": "472a5c81b1274879",
+    "text": "पाँचों वहाँ अनदेखे किए जाते हैं जहाँ वे पढ़े जाते हैं — उत्पाद पर स्विच किया गया क्षेत्र, जिसमें एक अभी भी संग्रहीत है, मशीन की घड़ी पर सही उत्तर देता है — प्रति प्रक्रिया एक बार लॉग (STS-CORE-0106), और /admin, /admin-api तथा क्षेत्र की सेटिंग के माध्यम से लेखन पर अस्वीकार (STS-CORE-0103)।"
+  },
+  "mode.requirements.broken-algorithms.what": {
+    "en": "51bdc0bbaafe7762",
+    "text": "कोई टूटा एल्गोरिथ्म उपयोग नहीं होता: हस्ताक्षर में SHA-1, या RSA PKCS#1 v1.5 कुंजी परिवहन"
+  },
+  "mode.requirements.broken-algorithms.development": {
+    "en": "448d4e1f57c8cc23",
+    "text": "saml.signatureAlgorithm rsa-sha1 हर XML हस्ताक्षर पर SHA-1 से हस्ताक्षर करता है, saml2.keyTransportAlgorithm rsa-1_5 (या अनुप्रयोग का saml2KeyTransportAlgorithm) एन्क्रिप्टेड अभिकथन की कुंजी को RSAES-PKCS1-v1_5 से लपेटता है, saml.allowSha1Signatures चालू इस सेवा द्वारा सत्यापित हस्ताक्षर में SHA-1 स्वीकार करता है, pki.signatureAlgorithm sha1-rsa या sha1-ecdsa (या दोनों में से किसी का नाम लेने वाला बिल्ड फ़ॉर्म) प्रमाणपत्र प्राधिकरण से SHA-1 से हस्ताक्षर करवाता है, और rsa-1_5 से इस सेवा के लिए एन्क्रिप्ट किया गया XML तत्व अनरैप किया जाता है, और scim.digestMd5 चालू SCIM के HTTP Digest में MD5 प्रदान करता है और स्वीकार करता है। प्रत्येक तब तक बंद है जब तक सेट न हो।"
+  },
+  "mode.requirements.broken-algorithms.product": {
+    "en": "173ed3ea10d31cc3",
+    "text": "प्रत्येक कमज़ोर मान वहाँ अनदेखा किया जाता है जहाँ वह पढ़ा जाता है (एक बार लॉग, STS-CORE-0106) और लेखन पर अस्वीकार (STS-CORE-0103, और अनुप्रयोग पर STS-REG-0193): XML पर डिफ़ॉल्ट rsa-sha256 से हस्ताक्षर होता है, कुंजियाँ rsa-oaep से लपेटी जाती हैं (और rsa-oaep-mgf1p केवल crypto.allowLegacyHashes चालू होने पर), SHA-1 हस्ताक्षर अस्वीकार होता है, SHA-1 का नाम लेने वाला CA बिल्ड या कुंजी युग्म अस्वीकार होता है (STS-PKI-0191) और विकास में बनी शाखा से विरासत में मिला एक कुंजी के डिफ़ॉल्ट से बदल दिया जाता है, और rsa-1_5 EncryptedKey अनरैप होने से पहले अस्वीकार होता है (STS-KEYS-0070) — XML Encryption 1.1 अनुभाग 6.1.2। scim.digestMd5 निरर्थक है, उत्पाद कोई Digest ही नहीं देता (STS-SCIM-0056)। प्रत्येक सेटिंग के मज़बूत मान उपलब्ध रहते हैं। JOSE RSA1_5 दोनों मोड में अस्वीकार है।"
+  },
+  "mode.requirements.jose-key-sizes.what": {
+    "en": "73495c403f54e4f5",
+    "text": "JWS केवल उतने आकार की कुंजी से सत्यापित होता है जितना RFC 7518 अपेक्षा करता है"
+  },
+  "mode.requirements.jose-key-sizes.development": {
+    "en": "ef2804b46316aeed",
+    "text": "2048 बिट से छोटी RSA कुंजी (RFC 7518 अनुभाग 3.3, COSE के लिए RFC 8230 अनुभाग 5) और अपने हैश आउटपुट से छोटी HMAC कुंजी (RFC 7518 अनुभाग 3.2) — client_secret_jwt के अंतर्गत छोटा client_secret — फिर भी सत्यापित होती हैं, ताकि एक रखने वाले क्लाइंट का अभ्यास हो सके। विनिर्देश से कमज़ोर: दोनों MUST हैं।"
+  },
+  "mode.requirements.jose-key-sizes.product": {
+    "en": "d1fb3763f55efbde",
+    "text": "दोनों हस्ताक्षर जाँच पर अस्वीकार किए जाते हैं, साझा सत्यापक में, verifyJws() में और (RSA) WebAuthn कुंजी के लिए। निर्मित client_secret डिफ़ॉल्ट रूप से 48 यादृच्छिक बाइट है (oauth2.registeredSecretBytes), HS512 के लिए पर्याप्त लंबा। दोनों मोड में खाली HMAC कुंजी, 3 से कम या सम RSA घातांक (जालसाजी, कमज़ोर कुंजी नहीं), ROCA फ़िंगरप्रिंट वाला RSA मापांक (CVE-2017-15361), वह JWK जिसका use \"sig\" नहीं है या जिसके key_ops में \"verify\" नहीं है, और जो खंड कैननिकल base64url नहीं है, अस्वीकार किए जाते हैं।"
+  },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "secp256k1 केवल वहीं उपयोग होता है जहाँ कोई सूची उसका नाम लेती है"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "ES256K पर हस्ताक्षर होता है, और वह किसी अन्य एल्गोरिथ्म की तरह प्रदान और स्वीकार किया जाता है।"
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "ES256K पर हस्ताक्षर नहीं होता और वह प्रदान नहीं किया जाता जब तक keys.signingAlgorithms उसे सूचीबद्ध न करे, और उसमें हस्ताक्षर अस्वीकार होता है जब तक keys.acceptedSigningAlgorithms या keys.signingAlgorithms उसे सूचीबद्ध न करे (COSE के लिए cose.acceptedAlgorithms)। प्रकाशित एल्गोरिथ्म सूचियाँ, उनमें DPoP की भी, उसे बाहर रखती हैं।"
+  },
+  "mode.requirements.xml-ecdsa-curves.what": {
+    "en": "858a80a68d7c0582",
+    "text": "XML ECDSA हस्ताक्षर केवल कम से कम 256 बिट के वक्र पर सत्यापित होता है"
+  },
+  "mode.requirements.xml-ecdsa-curves.development": {
+    "en": "6d585203e0d0c40f",
+    "text": "node द्वारा पढ़े जाने वाले किसी भी वक्र पर कुंजी सत्यापित होती है — उनमें secp160, secp192, secp224 — ताकि उस पर भागीदार का अभ्यास हो सके। उनमें सबसे छोटे के लिए NIST SP 800-57 की 112-बिट न्यूनतम सीमा से कमज़ोर।"
+  },
+  "mode.requirements.xml-ecdsa-curves.product": {
+    "en": "83ca2ed6f0591c63",
+    "text": "केवल P-256, P-384, P-521 और brainpoolP256r1 तथा उससे बड़े सत्यापित होते हैं, और secp256k1 जहाँ keys.acceptedSigningAlgorithms या keys.signingAlgorithms ES256K का नाम लेते हैं; कोई अन्य वक्र अस्वीकार होता है (STS-KEYS-0077) और उस पर प्रमाणपत्र पंजीकृत नहीं होता।"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.what": {
+    "en": "d0088e020fb9a13e",
+    "text": "कोई Kerberos कुंजी, टिकट या एक्सचेंज ऐसे enctype का उपयोग नहीं करता जिसे RFC 8429 अप्रचलित करता है (rc4-hmac)"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.development": {
+    "en": "05d8e71722ffc76a",
+    "text": "krb5.enctypes डिफ़ॉल्ट रूप से 18,17,20,19,23 है: प्रत्येक खाते के पास उसकी AES कुंजियों के साथ एक rc4-hmac कुंजी है, rc4only फ़िक्स्चर के पास और कुछ नहीं है, और केवल 23 प्रस्तुत करने वाले क्लाइंट को टिकट मिलता है — ताकि RC4 क्लाइंट का अभ्यास हो सके।"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.product": {
+    "en": "7bb2840e2f96210a",
+    "text": "सूची 23 के बिना पढ़ी जाती है (एक बार लॉग, STS-CORE-0106) और उसका नाम लेने वाला लेखन अस्वीकार होता है (STS-CORE-0103)। krbtgt, किसी सेवा या व्यक्ति के लिए कोई RC4 कुंजी व्युत्पन्न, संग्रहीत या keytab में नहीं रखी जाती; उस enctype की कुंजी या टिकट कभी उपयोग नहीं होता; और कुछ न प्रस्तुत करने वाला AS-REQ या TGS-REQ KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156) के रूप में अस्वीकार होता है; TGS-REQ, AP-REQ या FAST आर्मर में RC4 सत्र कुंजी या उपकुंजी अस्वीकार होती है (STS-KRB-0157, 0158, 0159)। AES ही बचता है।"
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "मुख्य पोर्ट HTTPS है"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "STS_HTTPS=false मुख्य पोर्ट को क्लियरटेक्स्ट में चलाता है।"
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "global.https बंद वाली प्रक्रिया आरंभ नहीं होती (STS-CORE-0167)। सादा-HTTP निरसन और SCEP श्रोता रहता है, जैसा RFC 5280, RFC 5019 और RFC 8894 अपेक्षा करते हैं।"
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "श्रोता प्रमाणपत्र सार्वजनिक रूप से विश्वसनीय है"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "इस सेवा का अपना प्रमाणपत्र प्राधिकरण इसे निर्मित करता है।"
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "tls.certificateFile को सार्वजनिक रूप से विश्वसनीय शृंखला पर सेट करें। इस सेवा द्वारा निर्मित प्रमाणपत्र उसे आरंभ होने से नहीं रोकता, और इस पंक्ति पर दिखाया जाता है।"
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "SCEP, XML एन्क्रिप्शन और Kerberos विरासती सिफ़र से बचते हैं"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "SCEP उत्तर देता है, और XML एन्क्रिप्शन AES-CBC उपयोग कर सकता है, और Kerberos enctype 17 और 18 प्रदान करता है।"
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "SCEP केवल scep.allowInProduct चालू होने पर उत्तर देता है (STS-SCEP-0067)। XML एन्क्रिप्शन केवल AES-GCM चुनता और स्वीकार करता है (STS-KEYS-0195)। Kerberos 19 और 20 उपयोग करता है जब तक krb5.allowSha1Enctypes चालू न हो।"
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "क्लाइंट केवल उन्हीं ग्रांट का उपयोग करता है जिनकी उसे आवश्यकता है"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "जो क्लाइंट कोई ग्रांट प्रकार घोषित नहीं करता, वह कोई भी ग्रांट उपयोग कर सकता है।"
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "जो क्लाइंट कोई ग्रांट प्रकार घोषित नहीं करता, वह केवल authorization_code और refresh_token उपयोग कर सकता है, जब तक oauth2.allowUndeclaredGrants चालू न हो (STS-OAUTH-0598)।"
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "कोई खाता डिफ़ॉल्ट व्यवस्थापक नाम नहीं रखता"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "बूटस्ट्रैप व्यवस्थापक admin है, जिससे हर परीक्षण और वॉकथ्रू साइन इन करता है।"
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "admin, root, sa या administrator नाम वाला, या बिना नाम का, बूटस्ट्रैप व्यवस्थापक एक अप्रत्याशित उत्पन्न नाम पाता है, जो पहले आरंभ पर उसके पासवर्ड के साथ मुद्रित होता है, जब तक admin.allowDefaultUsername चालू न हो।"
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "अस्वीकृत हैश उपयोग नहीं होते"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "SHA-1 पर OAEP, SHA-1 PKINIT कुंजी व्युत्पत्ति और S4U2Self का HMAC-MD5 चेकसम उपलब्ध हैं।"
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "वे बंद हैं जब तक crypto.allowLegacyHashes चालू न हो। TOTP ऑथेंटिकेटर संगतता के लिए डिफ़ॉल्ट रूप से HMAC-SHA-1 रहता है, और PKINIT वह SHA-1 paChecksum रखता है जिसे RFC 4556 परिभाषित करता है।"
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "नामित फ़ाइल अनुमत निर्देशिका में होनी चाहिए"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "व्यवस्थापक जिस फ़ाइल का नाम लेता है, वह वहीं से पढ़ी जाती है जहाँ वह बताती है।"
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "फ़ाइल केवल तभी पढ़ी जाती है जब उसका वास्तविक पथ security.fileRoots द्वारा सूचीबद्ध निर्देशिका के भीतर हो, और उत्तर यह नहीं बताता कि पथ क्यों विफल हुआ।"
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "सभी से दूसरा कारक अपेक्षित है"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "प्रमाणीकरण नीति तय करती है, और डिफ़ॉल्ट रूप से केवल उनसे दूसरा कारक माँगा जाता है जो उसे रखते हैं।"
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "नीति कुछ भी कहे, सभी को दूसरा कारक चाहिए, जब तक authn.allowOptionalSecondFactor चालू न हो।"
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "दूसरा कारक साफ़ करने के लिए पहचान का बताया गया प्रमाण चाहिए"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "व्यवस्थापक व्यक्ति का नाम लेकर कारक साफ़ कर सकता है।"
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "व्यवस्थापक को बताना होगा कि व्यक्ति की पहचान कैसे सत्यापित की गई। कथन ऑडिट पंक्ति पर जाता है।"
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "प्रोटोकॉल इनपुट सख्त पठन पर रखा जाता है"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "दोहराया गया टोकन पैरामीटर अपना अंतिम मान लेता है, भागीदार के Logout Token को स्पष्ट प्रकार की आवश्यकता नहीं, अग्रेषित पते किसी से भी मान लिए जाते हैं जब global.trustProxy बिना सूची के चालू हो, और आंतरिक त्रुटि का पाठ कॉलर तक पहुँचता है।"
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "दोहराया गया टोकन पैरामीटर अस्वीकार होता है, भागीदार का Logout Token logout+jwt प्रकार का होना चाहिए जब तक federation.allowUntypedLogoutToken चालू न हो, अग्रेषित पतों को global.trustedProxies चाहिए, और आंतरिक त्रुटि का पाठ लॉग में रहता है।"
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "लॉग और डेटाबेस में कोई सुप्रसिद्ध रहस्य नहीं होते"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "debug स्तर पर लॉग पूरे अनुरोध और उत्तर रखता है, और डेटाबेस प्रदर्शन पासवर्ड उपयोग कर सकता है।"
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "अनुरोध लॉग हर स्तर पर क्रेडेंशियल और मुख्य भाग छोड़ देते हैं, हस्ताक्षरित टोकन या अभिकथन केवल अपने आकार और डाइजेस्ट से लॉग होता है, और डिफ़ॉल्ट डेटाबेस पासवर्ड सेवा को रोक देता है जब तक persistence.allowDefaultDatabasePassword चालू न हो।"
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "एकल साइन-ऑन किसी व्यक्ति को अनुप्रयोग में साइन इन करने से पहले पूछता है"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0, SAML 1.1 और WS-Federation व्यक्ति को उनके सत्र से बिना पूछे साइन इन करते हैं।"
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "SAML 2.0, SAML 1.1 या WS-Federation द्वारा व्यक्ति को अनुप्रयोग में साइन इन करने से पहले प्रति अनुप्रयोग एक बार पूछा जाता है, और उत्तर रखा जाता है। saml2.ssoConsent, saml11.ssoConsent और wsfed.ssoConsent इसे प्रति प्रोटोकॉल बंद करते हैं, और अनुप्रयोग का अपना मान उन्हें अधिलेखित करता है।"
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "बैकएंड रहस्य किसी सीक्रेट स्टोर से आते हैं"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "कुंजी-एन्क्रिप्शन कुंजी एक फ़ाइल हो सकती है, और डेटाबेस पासवर्ड किसी फ़ाइल में या कनेक्शन स्ट्रिंग में हो सकता है।"
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "कुंजी-एन्क्रिप्शन कुंजियाँ सीक्रेट स्टोर या कुंजी प्रबंधन सेवा से आती हैं, और डेटाबेस पासवर्ड सीक्रेट स्टोर से। फ़ाइल या कनेक्शन स्ट्रिंग में पासवर्ड सेवा को रोक देता है जब तक secrets.allowLocalSecrets चालू न हो। पिछली कुंजी-एन्क्रिप्शन कुंजी अभी भी फ़ाइल हो सकती है, ताकि परिनियोजन उससे हट सके।"
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "ऑडिट लॉग को इस सेवा से बाहर जाना चाहिए"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "ऑडिट निर्यात के बारे में कुछ नहीं कहा जाता।"
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "एक ऑडिट निर्यात गंतव्य जोड़ें, ताकि लॉग की एक प्रति यहाँ के भंग की पहुँच से बाहर रहे। जब तक एक मौजूद न हो, सेवा उस क्षेत्र के लिए चेतावनी लॉग करती है।"
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "फ़ाइलें मैलवेयर स्कैनर तक एन्क्रिप्टेड पहुँचती हैं"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "icap:// या icaps:// पता उपयोग किया जा सकता है।"
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "केवल icaps:// पता उपयोग होता है, जब तक malwareScan.allowCleartext चालू न हो।"
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "सत्रों और RSA कुंजियों के डिफ़ॉल्ट अधिक सख्त हैं"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "सत्र का कोई निष्क्रिय समय-सीमा नहीं है, और नई RSA कुंजियाँ 2048 बिट हैं।"
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "सत्र 30 निष्क्रिय मिनट के बाद समाप्त होता है और नई RSA कुंजियाँ 3072 बिट हैं, जब तक कोई सेटिंग अन्यथा न कहे।"
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "बूटस्ट्रैप पासवर्ड लॉग से बाहर रहता है"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "उत्पन्न पासवर्ड सेवा लॉग में लिखा जाता है।"
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "यह ऐसी फ़ाइल में लिखा जाता है जिसे केवल यह सेवा पढ़ सकती है, और लॉग बताता है कि कहाँ, जब तक admin.logBootstrapPassword चालू न हो।"
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "प्रत्येक क्लाइंट को PKCE उपयोग करना होगा"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "जो गोपनीय क्लाइंट कोई code_challenge नहीं भेजता, वह केवल लॉग होता है।"
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "यह अस्वीकार किया जाता है जब तक oauth2.allowConfidentialWithoutPkce चालू न हो।"
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "JWE सामग्री एन्क्रिप्शन केवल AES-GCM है"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "A128CBC-HS256, A192CBC-HS384 और A256CBC-HS512 प्रदान और स्वीकार किए जाते हैं, और A128CBC-HS256 डिफ़ॉल्ट है।"
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "केवल AES-GCM प्रदान या स्वीकार किया जाता है, और जहाँ क्लाइंट कोई enc नाम नहीं लेता वहाँ वही उपयोग होता है, जब तक crypto.allowCbcJwe चालू न हो।"
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "SCIM और Shared Signals पर व्यक्ति को भूमिका चाहिए"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "कोई भी प्रमाणित व्यक्ति पढ़ और लिख सकता है, उन्होंने जो भी स्कीम उपयोग की हो।"
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "जिस स्कीम में कोई स्कोप नहीं, उसे पढ़ने के लिए Admin Read और लिखने के लिए Admin Write चाहिए, जब तक security.allowUnscopedPeople चालू न हो। OAuth स्कोप और अनुप्रयोग प्रमाणपत्र पहले की तरह काम करते हैं।"
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "प्रत्येक कुकी __Host- या __Secure- उपसर्ग रखती है"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "कुकी अपने सादे नाम रखती हैं (sts_session और शेष), जिन्हें व्यक्ति ब्राउज़र उपकरणों में पढ़ता है।"
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "TLS पर प्रत्येक कुकी __Host- उपसर्ग वाली होती है, या __Secure- जहाँ वह Domain रखती है, और बिना उपसर्ग वाली अनदेखी की जाती है। उपसर्ग एक बार लगाया जाता है, सॉकेट रखने वाली प्रक्रिया द्वारा।"
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "जो पहुँच निर्णय लिया नहीं जा सकता वह अस्वीकृति है"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "अपवाद फेंकने वाला निर्णायक, खाली उत्तर, या कोई संसाधन अथवा क्रिया नाम न लेने वाली जाँच, अनुरोध की अनुमति देते हैं और लॉग होते हैं, ताकि आंशिक रूप से लोड हुई विकास प्रक्रिया फिर भी उत्तर दे।"
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "उनमें से प्रत्येक अस्वीकृति है (STS-XACML-0051, 0181, 0182)। xacml.enforceAccess और roles.enforceIssuance उस नीति से वापसी का मार्ग बने रहते हैं जो अपनी मरम्मत से इनकार करती है, और जो बंद है वह इस पंक्ति पर दिखाया जाता है।"
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "TLS पर प्रत्येक उत्तर ब्राउज़र को केवल HTTPS उपयोग करने को कहता है (Strict-Transport-Security)"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "हेडर नहीं भेजा जाता: HSTS होस्ट नाम के प्रत्येक पोर्ट को बाँध देता है और अविश्वसनीय प्रमाणपत्र पर क्लिक करके आगे बढ़ना हटा देता है, और localhost पर यह कंटेनर से अधिक समय तक बना रहता।"
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "TLS पर आया प्रत्येक उत्तर Strict-Transport-Security: max-age=31536000 (RFC 6797) रखता है। सादा-HTTP निरसन और SCEP श्रोता पर उत्तर कभी नहीं रखता।"
+  },
+  "mode.requirements.signed-assertions.what": {
+    "en": "61c90b75f7b0a5e3",
+    "text": "प्रत्येक SAML अभिकथन हस्ताक्षरित है, और प्रत्येक SAML 1.1 Response"
+  },
+  "mode.requirements.signed-assertions.development": {
+    "en": "38123244c09ef3c2",
+    "text": "saml2.signAssertion, saml11.signAssertion और saml11.signResponse बंद — सेवा-व्यापी या एक अनुप्रयोग पर — अहस्ताक्षरित अभिकथन या अहस्ताक्षरित SAML 1.1 Response भेजते हैं, जिससे वह रिलाइंग पार्टी मिलती है जो एक स्वीकार करती है।"
+  },
+  "mode.requirements.signed-assertions.product": {
+    "en": "aa7a88c57793c53d",
+    "text": "तीनों वहाँ अनदेखे किए जाते हैं जहाँ वे पढ़े जाते हैं (STS-CORE-0106) और लेखन पर अस्वीकार (STS-CORE-0103; अनुप्रयोग पर STS-REG-0193)। SAML 2.0 अभिकथन बाइंडिंग कुछ भी हो हस्ताक्षरित होता है (saml-profiles-2.0-os 4.1.3.5 और 4.1.4.5 इसे POST पर अपेक्षित करते हैं), और SAML 1.1 Response हस्ताक्षरित होता है (oasis-sstc-saml-bindings-1.1 4.1.2.4 इसे Browser/POST में अपेक्षित करता है), अपने अभिकथन के साथ। saml2.signResponse बंद अनुमत रहता है: अभिकथन हस्ताक्षरित होने पर प्रोफ़ाइल और कुछ नहीं माँगती।"
+  },
+  "mode.requirements.workload-security-header.what": {
+    "en": "776290c79cdd3f4a",
+    "text": "workload.spiffe.io हेडर के बिना Workload API कॉल अस्वीकार की जाती है"
+  },
+  "mode.requirements.workload-security-header.development": {
+    "en": "27e04db12d62c69b",
+    "text": "spiffe.requireSecurityHeader डिफ़ॉल्ट रूप से चालू है, उत्पाद की तरह; बंद हेडर के बिना कॉल की सेवा करता है।"
+  },
+  "mode.requirements.workload-security-header.product": {
+    "en": "3251248ccb01d6b6",
+    "text": "सदैव अस्वीकार (SPIFFE Workload Endpoint specification अनुभाग 3, एक SSRF सुदृढ़ीकरण उपाय): off वहाँ अनदेखा किया जाता है जहाँ वह पढ़ा जाता है (STS-CORE-0106) और लेखन पर अस्वीकार (STS-CORE-0103)।"
+  },
+  "mode.requirements.credential-status-reference.what": {
+    "en": "d2f22919aea82d16",
+    "text": "प्रस्तुत क्रेडेंशियल को स्थिति संदर्भ रखना होगा"
+  },
+  "mode.requirements.credential-status-reference.development": {
+    "en": "a291b8402b9977d5",
+    "text": "oid4vp.requireStatusReference डिफ़ॉल्ट रूप से all है, उत्पाद की तरह: OpenID4VP Verifier को प्रस्तुत प्रत्येक क्रेडेंशियल को ऐसी स्थिति का नाम देना होगा जो VALID पर हल हो, जब तक उसका विश्वसनीय जारीकर्ता oid4vp.statusOptionalIssuers में सूचीबद्ध न हो। own-only विदेशी क्रेडेंशियल को छूट देता है, और off — केवल विकास — इस क्षेत्र का अपना बिना संदर्भ स्वीकार करता है, और ऐसा ldp_vc जिसका प्रस्तुतिकरण credentialStatus रोक ले।"
+  },
+  "mode.requirements.credential-status-reference.product": {
+    "en": "091040d9ab1a08e5",
+    "text": "off वहाँ अनदेखा किया जाता है जहाँ वह पढ़ा जाता है (एक बार लॉग, STS-CORE-0106) और लेखन पर अस्वीकार (STS-CORE-0103): इस क्षेत्र का बिना स्थिति संदर्भ वाला क्रेडेंशियल, या जिस ldp_vc ने अपना credentialStatus प्रकट नहीं किया, सदैव अस्वीकार होता है। own-only और प्रति-जारीकर्ता छूट अनुमत हैं।"
+  },
+  "mode.requirements.weaker-responses.what": {
+    "en": "57d0e17e4a068c39",
+    "text": "उत्तर माँगे गए से कमज़ोर बाहर जा सकता है"
+  },
+  "mode.requirements.weaker-responses.development": {
+    "en": "552b8f1ae7baed48",
+    "text": "जो अभिकथन या टोकन एन्क्रिप्ट होना चाहिए था और नहीं हो सका, वह चेतावनी के साथ स्पष्ट रूप में भेजा जाता है।"
+  },
+  "mode.requirements.weaker-responses.product": {
+    "en": "231c8252c053a97b",
+    "text": "अस्वीकार।"
+  },
+  "mode.requirements.objects.what": {
+    "en": "9acaa32a6ee23f77",
+    "text": "संदर्भित ऑब्जेक्ट पहले से मौजूद होना चाहिए"
+  },
+  "mode.requirements.objects.development": {
+    "en": "b998406cf3b99cec",
+    "text": "उपयोगकर्ता, अनुप्रयोग, सेवा प्रिंसिपल या प्राधिकरण सर्वर पहली बार तब बनता है जब कुछ उसका नाम लेता है, जिससे क्लाइंट किसी भी पहचानकर्ता से इस सेवा की ओर संकेत कर कार्यशील एक्सचेंज पा सकता है।"
+  },
+  "mode.requirements.objects.product": {
+    "en": "a33d2b29f75e06ee",
+    "text": "अज्ञात नाम अस्वीकार किया जाता है। सब कुछ पहले से बनाया जाना चाहिए, कंसोल, /admin-api, SCIM या LDAP add के माध्यम से।"
+  },
+  "mode.requirements.key-material.what": {
+    "en": "07ec07df478bb563",
+    "text": "हस्ताक्षर कुंजियाँ पुनरारंभ के बाद बनी रहती हैं"
+  },
+  "mode.requirements.key-material.development": {
+    "en": "c2e1929930228d7a",
+    "text": "प्रत्येक आरंभ पर नई हस्ताक्षर कुंजी उत्पन्न होती है और मेमोरी में रखी जाती है। टोकन पुनरारंभ के बाद नहीं बचता — यही इस सेवा को त्याज्य बनाता है, और `kid` कुंजी सामग्री से व्युत्पन्न होता है ताकि दो इंस्टेंस कभी दो कुंजियों पर एक नाम प्रकाशित न कर सकें।"
+  },
+  "mode.requirements.key-material.product": {
+    "en": "f4d83aab08e747e0",
+    "text": "एक बार उत्पन्न की जाती हैं और पर्सिस्टेंस स्टोर से वापस पढ़ी जाती हैं — जिसकी उत्पाद मोड इसलिए अपेक्षा करता है — AES-256-GCM से एन्क्रिप्ट, ऐसी कुंजी के अंतर्गत जिसे यह सेवा कभी उत्पन्न नहीं करती और कभी संग्रहीत नहीं करती, जो माउंटेड फ़ाइल, AWS Secrets Manager, GCP Secret Manager, Azure Key Vault या HashiCorp Vault से पढ़ी जाती है।"
+  },
+  "mode.requirements.client-secret.what": {
+    "en": "f43a81528281dea5",
+    "text": "OAuth 2.0 / OIDC अनुप्रयोग उसी रूप में प्रमाणित होता है जैसा उसने पंजीकृत किया"
+  },
+  "mode.requirements.client-secret.development": {
+    "en": "ce6389143b3d36c0",
+    "text": "किसी से कुछ अपेक्षित नहीं: क्लाइंट केवल client_id भेज सकता है, उसका पंजीकरण कुछ भी घोषित करे।"
+  },
+  "mode.requirements.client-secret.product": {
+    "en": "9d1bf687c36cb03c",
+    "text": "गोपनीय क्लाइंट — जिसका पंजीकरण \"none\" के अलावा कोई भी token_endpoint_auth_method घोषित करता है, जिसमें वह पंजीकरण भी शामिल है जिसने कुछ भी घोषित नहीं किया (RFC 7591 अनुभाग 2 इसे client_secret_basic पर डिफ़ॉल्ट करता है) — को वह क्रेडेंशियल प्रस्तुत करना होगा और वह सत्यापित होना चाहिए। सार्वजनिक क्लाइंट (स्पष्ट token_endpoint_auth_method=none) अनुमत है और कुछ प्रस्तुत नहीं करता, जो सही है; इसके बजाय उसे नीचे की पंक्ति पर रखा जाता है। 2026-09-17 तक यह था \"कोई सार्वजनिक क्लाइंट नहीं हैं\"।"
+  },
+  "mode.requirements.oauth-security-bcp.what": {
+    "en": "87c3aae84dd60fee",
+    "text": "OAuth 2.0 Security BCP (RFC 9700) लागू किया जाता है"
+  },
+  "mode.requirements.oauth-security-bcp.development": {
+    "en": "03a913ace3bef932",
+    "text": "केवल जहाँ oauth2.rfc9700 या oauth2.oauth21 सेट है, प्रति प्रक्रिया या प्रति क्षेत्र। बंद होने पर, यह सेवा ऐसे अनुरोध का उत्तर देती है जिसे BCP अस्वीकार करता — जिससे क्लाइंट दोनों उत्तरों के विरुद्ध अभ्यास करता है।"
+  },
+  "mode.requirements.oauth-security-bcp.product": {
+    "en": "a92e513a7178c6bf",
+    "text": "सदैव, वे सेटिंग कुछ भी कहें, और क्षेत्र इसे बंद नहीं कर सकता। सार्वजनिक क्लाइंट के लिए S256 के साथ PKCE अपेक्षित, सटीक redirect-URI मिलान, कोई ओपन रीडायरेक्ट नहीं, लूपबैक के बाहर कोई http रीडायरेक्ट URI नहीं, ऐसी challenge या nonce जिसे दोहराया न जा सके, किसी भी id_token के साथ nonce, ऐसा कोई response type नहीं जो प्राधिकरण एंडपॉइंट से एक्सेस टोकन जारी करे, और पुन: उपयोग पहचान के साथ घूमने वाले रिफ़्रेश टोकन। यही वह है जिस पर सार्वजनिक क्लाइंट को क्रेडेंशियल के बजाय रखा जाता है, और यही कारण है कि उसे बिल्कुल अनुमत किया जा सकता है (2026-09-17)।"
+  },
+  "mode.requirements.public-client-grants.what": {
+    "en": "2b836cf35c373f3d",
+    "text": "सार्वजनिक क्लाइंट कौन से ग्रांट उपयोग कर सकता है"
+  },
+  "mode.requirements.public-client-grants.development": {
+    "en": "9a103bc53ec958ff",
+    "text": "यह सेवा जो भी ग्रांट प्रदान करती है, किसी को भी।"
+  },
+  "mode.requirements.public-client-grants.product": {
+    "en": "82bf0ab77ef49e17",
+    "text": "प्राधिकरण कोड और रिफ़्रेश ग्रांट, न कि क्लाइंट क्रेडेंशियल ग्रांट (RFC 6749 अनुभाग 4.4 इसे गोपनीय क्लाइंट के लिए परिभाषित करता है; OAuth 2.1 अनुभाग 4.2 स्पष्ट कहता है) या संसाधन स्वामी पासवर्ड ग्रांट (RFC 9700 अनुभाग 2.4: इसका MUST NOT उपयोग हो)। गोपनीय क्लाइंट अप्रभावित रहता है।"
+  },
+  "mode.requirements.introspection.what": {
+    "en": "9f11bb5247c41fb8",
+    "text": "/oauth2/introspect का कॉलर प्रमाणित होता है"
+  },
+  "mode.requirements.introspection.development": {
+    "en": "8a4fb8f785e4d1f4",
+    "text": "RFC 7662 JSON इंट्रोस्पेक्शन टोकन स्ट्रिंग रखने वाले किसी को भी उत्तर देता है, बिना क्लाइंट क्रेडेंशियल के। RFC 9701 JWT उत्तर (Accept: application/token-introspection+jwt) दोनों मोड में अपवाद है: उसका aud उस संसाधन सर्वर का नाम लेता है जिसने पूछा, इसलिए उस कॉलर को फ़ाइल पर क्रेडेंशियल वाले क्लाइंट के रूप में प्रमाणित होना होगा, अन्यथा 400 invalid_client से अस्वीकार।"
+  },
+  "mode.requirements.introspection.product": {
+    "en": "b53ed135725fbe0c",
+    "text": "प्रत्येक इंट्रोस्पेक्शन अनुरोध को ऐसे क्लाइंट के रूप में प्रमाणित होना होगा जिसका क्रेडेंशियल सत्यापित हो — client_secret_basic या post, क्लाइंट अभिकथन, या RFC 8705 प्रमाणपत्र — अन्यथा 401 invalid_client से अस्वीकार (JWT अनुरोध के लिए 400, RFC 9701 अनुभाग 5)।"
+  },
+  "mode.requirements.revocation.what": {
+    "en": "5677b3fbce656c33",
+    "text": "/oauth2/revoke का कॉलर प्रमाणित होता है, और केवल अपना टोकन निरस्त करता है"
+  },
+  "mode.requirements.revocation.development": {
+    "en": "99c5947846bf5a05",
+    "text": "बिना क्लाइंट क्रेडेंशियल वाला RFC 7009 निरसन इस क्षेत्र द्वारा जारी कोई भी एक्सेस या रिफ़्रेश टोकन निरस्त कर देता है, टोकन स्ट्रिंग रखने वाले किसी के लिए भी। जो कॉलर क्रेडेंशियल प्रस्तुत करता है, उसे उसी पर रखा जाता है जिस पर उत्पाद रखता है: जो क्रेडेंशियल सत्यापित नहीं होता वह 401 invalid_client से अस्वीकार, और दूसरे क्लाइंट को जारी टोकन invalid_grant से अस्वीकार।"
+  },
+  "mode.requirements.revocation.product": {
+    "en": "753907c223c4fde4",
+    "text": "प्रत्येक निरसन अनुरोध किसी क्लाइंट से आना चाहिए: गोपनीय क्लाइंट सत्यापित होने वाला क्रेडेंशियल प्रस्तुत करता है (टोकन एंडपॉइंट की विधियाँ), सार्वजनिक क्लाइंट अपना पंजीकृत client_id नाम लेता है, और कुछ भी अन्य 401 invalid_client से अस्वीकार होता है (RFC 7009 अनुभाग 2.1)। दूसरे क्लाइंट को जारी टोकन 400 invalid_grant से अस्वीकार होता है और कुछ निरस्त नहीं होता।"
+  },
+  "mode.requirements.oid4vp-x509-host.what": {
+    "en": "b6950c831f947bf4",
+    "text": "OpenID4VP Verifier का x509_san_dns नाम कॉन्फ़िगर किया जाता है, कभी अनुरोध से नहीं लिया जाता"
+  },
+  "mode.requirements.oid4vp-x509-host.development": {
+    "en": "c5a807820eba98b7",
+    "text": "जब oid4vp.x509DnsName खाली हो और global.publicBaseUrl पिन न हो, Verifier उस होस्ट को प्रमाणित करता है जहाँ अनुरोध पहुँचा (प्रति नाम एक प्रमाणपत्र, एक क्षेत्र में अधिकतम सोलह) और उसे अपने x509_san_dns Client Identifier के रूप में नाम देता है।"
+  },
+  "mode.requirements.oid4vp-x509-host.product": {
+    "en": "1bc891545748f93d",
+    "text": "नाम oid4vp.x509DnsName है, या global.publicBaseUrl का होस्ट; दोनों के बिना, x509_san_dns अनुरोध अस्वीकार होता है (STS-VC-0110) — Response URI उसी होस्ट से बनता है, इसलिए Host हेडर चुन लेगा कि हस्ताक्षरित, विश्वसनीय अनुरोध प्रस्तुतिकरण कहाँ भेजे। x509_hash को किसी नाम की आवश्यकता नहीं और वह अप्रभावित है।"
+  },
+  "mode.requirements.request-objects.what": {
+    "en": "6376797d2aae208e",
+    "text": "JWT-सुरक्षित प्राधिकरण अनुरोध हस्ताक्षरित होता है, और request_uri HTTPS होता है"
+  },
+  "mode.requirements.request-objects.development": {
+    "en": "00801b6681025497",
+    "text": "`none` से हस्ताक्षरित अनुरोध ऑब्जेक्ट (OpenID Connect Core 6.1) स्वीकार किया जाता है जब तक हस्ताक्षरित की अपेक्षा न हो — oauth2.requireSignedRequestObject द्वारा, क्लाइंट की प्रविष्टि या प्राधिकरण सर्वर की प्रोफ़ाइल द्वारा। पंजीकृत request_uri सादा http हो सकता है और किसी भी मीडिया प्रकार से उत्तर दे सकता है; दोनों लॉग होते हैं।"
+  },
+  "mode.requirements.request-objects.product": {
+    "en": "247799ea9e0595ef",
+    "text": "अनुरोध ऑब्जेक्ट हस्ताक्षरित होना चाहिए (RFC 9101 अनुभाग 4) अन्यथा invalid_request_object से अस्वीकार। पंजीकृत request_uri https होना चाहिए और application/oauth-authz-req+jwt या application/jwt से उत्तर देना चाहिए, अन्यथा अनुरोध invalid_request_uri से अस्वीकार होता है, जैसा तब होता है जब उसका होस्ट लूपबैक, निजी, लिंक-लोकल या आरक्षित पते पर हल होता है। दोनों मोड में request_uri केवल तभी लाया जाता है जब क्लाइंट ने उसे पंजीकृत किया हो।"
+  },
+  "mode.requirements.management-api.what": {
+    "en": "7e9bb52b567f5c3c",
+    "text": "/admin-api को एक्सेस टोकन और भूमिका चाहिए"
+  },
+  "mode.requirements.management-api.development": {
+    "en": "a91239e28663677c",
+    "text": "एक OAuth 2.0 एक्सेस टोकन जिसमें admin:read या admin:write हो, जब adminApi.authRequired चालू हो (डिफ़ॉल्ट)। इसे बंद करने पर: खुला। यही वह है जिसे परीक्षण चलाते हैं और जब किसी के पास भूमिका न हो तब वापस प्रवेश का मार्ग — जिसका यह भी अर्थ है कि जो कोई इस पोर्ट तक पहुँच सकता है, वह इसके माध्यम से स्वयं को दोनों भूमिकाएँ दे सकता है।"
+  },
+  "mode.requirements.management-api.product": {
+    "en": "2b5a59d171c39596",
+    "text": "वही एक्सेस टोकन, हमेशा। adminApi.authRequired=false लिखने पर अस्वीकृत होता है और जहाँ संग्रहीत है वहाँ अनदेखा किया जाता है: इस API का द्वार कंसोल का एकमात्र द्वार है, इसलिए कुछ भी इसे नहीं खोल सकता। वापस प्रवेश का मार्ग adminApi.clientSecret है, प्रारंभ से पहले पिन किया हुआ।"
+  },
+  "mode.requirements.console.what": {
+    "en": "44bcae0f35012ef6",
+    "text": "/admin के लिए साइन इन और एक भूमिका आवश्यक है"
+  },
+  "mode.requirements.console.development": {
+    "en": "6c836b756fab2991",
+    "text": "आवश्यक — और यह हमेशा से था; जो सेटिंग इसे बंद कर सकती थी वह अब नहीं रही। इसके पीछे का साइन इन कोई पासवर्ड नहीं जाँचता, इसलिए द्वार यह सिद्ध करता है कि किसी ने ऐसा नाम टाइप किया जिसके पास भूमिका है।"
+  },
+  "mode.requirements.console.product": {
+    "en": "d8fc7997d383c0b0",
+    "text": "आवश्यक, और इसके पीछे का साइन इन क्रेडेंशियल सत्यापित करता है।"
+  },
+  "mode.requirements.console-bootstrap-window.what": {
+    "en": "9aae56ff92524098",
+    "text": "बूटस्ट्रैप व्यवस्थापक के आने से पहले कंसोल सभी के लिए नहीं खोला जाता"
+  },
+  "mode.requirements.console-bootstrap-window.development": {
+    "en": "3e57442382188f6c",
+    "text": "जब तक किसी विश्वास क्षेत्र का बूटस्ट्रैप व्यवस्थापक पहली बार /admin पर साइन इन नहीं करता — या, जहाँ कोई पूर्व-स्थापित नहीं था, जब तक सूची खाली है — तब तक उस विश्वास क्षेत्र में प्रत्येक साइन इन व्यक्ति दोनों कंसोल भूमिकाएँ रखता है, जब admin.openWhenEmpty चालू हो। उस खाते का कोई भी साइन इन इस विंडो को बंद कर देता है।"
+  },
+  "mode.requirements.console-bootstrap-window.product": {
+    "en": "80feb38828e08d3d",
+    "text": "विंडो के कारण कोई भूमिका नहीं रखता, admin.openWhenEmpty कुछ भी कहे: केवल सूची निर्णय करती है। जब तक बूटस्ट्रैप व्यवस्थापक ने कंसोल पर दावा नहीं किया, इसकी भूमिकाएँ केवल उसके अपने विश्वास क्षेत्र से पासवर्ड साइन इन पर मानी जाती हैं (amr pwd, यहाँ सत्यापित, न कि कोई federation साझेदार, प्रमाणपत्र, वॉलेट या Kerberos टिकट), और केवल वही साइन इन उस पर दावा करता है (STS-ADMIN-0796); डीबगर और किसी सत्र की प्रमाणपत्र-नामांकन प्राधिकारी दावे की प्रतीक्षा करते हैं। बिना बूटस्ट्रैप व्यवस्थापक और खाली सूची वाला विश्वास क्षेत्र बंद होता है और प्रारंभ पर लॉग किया जाता है (STS-ADMIN-0798); POST /admin-api/rbac/grant प्रवेश का मार्ग है।"
+  },
+  "mode.requirements.certificate-enrollment.what": {
+    "en": "e1e5d0112481b526",
+    "text": "ACME और EST के लिए TLS आवश्यक है; नामांकन क्रेडेंशियल सत्यापित किया जाता है"
+  },
+  "mode.requirements.certificate-enrollment.development": {
+    "en": "cbe243baf730a04d",
+    "text": "ACME (/enroll/acme) और EST (/.well-known/est) सादे HTTP पर भी उत्तर देते हैं और लॉग करते हैं कि उन्होंने ऐसा किया। EST पासवर्ड नहीं जाँचा जाता (credentials पंक्ति) और अनुप्रयोग के क्लाइंट सीक्रेट की आवश्यकता नहीं। ACME External Account Binding का MAC और SCEP challenge password सत्यापित किए जाते हैं, और प्रमाणपत्र किसके लिए जारी हो सकता है यह ठीक उत्पाद की तरह लागू होता है: आपके लिए, या विश्वास क्षेत्र में किसी के लिए यदि आपके पास Admin Write हो।"
+  },
+  "mode.requirements.certificate-enrollment.product": {
+    "en": "f27791f1f0f45794",
+    "text": "जो अनुरोध TLS पर नहीं आया वह अस्वीकृत होता है (STS-ENROLL-0060)। EST निर्देशिका पासवर्ड सत्यापित करता है और क्लाइंट सीक्रेट की माँग करता है। शेष सब विकास जैसा है।"
+  },
+  "mode.requirements.scim.what": {
+    "en": "9a890adef7950278",
+    "text": "/scim/v2 के लिए क्रेडेंशियल आवश्यक है"
+  },
+  "mode.requirements.scim.development": {
+    "en": "7f09cdc729d11a04",
+    "text": "RFC 7644 section 2 की छह स्कीमों में से एक में आवश्यक — और यह हमेशा से था — जिनमें से किसी का भी उसके स्वरूप से आगे सत्यापन नहीं होता।"
+  },
+  "mode.requirements.scim.product": {
+    "en": "6a52ccdf24efb34f",
+    "text": "आवश्यक और सत्यापित। HTTP Digest प्रस्तुत नहीं किया जाता, क्योंकि RFC 7616 को पासवर्ड या उसके हैश की आवश्यकता है और scrypt हैश इनमें से किसी की जाँच नहीं कर सकता; HOBA कुंजी केवल किसी मौजूदा खाते के साइन इन स्वामी द्वारा पंजीकृत हो सकती है, और एक को पंजीकृत करना कभी खाता नहीं बनाता।"
+  },
+  "mode.requirements.shared-signals.what": {
+    "en": "b32bd06900029893",
+    "text": "/ssf के लिए क्रेडेंशियल आवश्यक है"
+  },
+  "mode.requirements.shared-signals.development": {
+    "en": "5056af1ab55c8c24",
+    "text": "उन स्कीमों में से एक में आवश्यक जिन्हें एंडपॉइंट स्वीकार करते हैं — और यह हमेशा से था — किसी का भी स्वरूप से आगे सत्यापन नहीं।"
+  },
+  "mode.requirements.shared-signals.product": {
+    "en": "815c7d1e43aaf41d",
+    "text": "आवश्यक और सत्यापित: Basic क्रेडेंशियल व्यक्ति के userPassword से जाँचा जाता है, और ssf.authBasic स्कीम हटा देता है।"
+  },
+  "mode.requirements.demo-data.what": {
+    "en": "bc4f8fb3268c8841",
+    "text": "एक नई सेवा में प्रदर्शन डेटा होता है"
+  },
+  "mode.requirements.demo-data.development": {
+    "en": "25a09144798ca6c5",
+    "text": "निर्देशिका में तीन लोग, दो समूह, एक बाइंड खाता, और दो XACML भूमिका समूहों में remote-pep-1 तथा xacml-user-1 पहचानें सीड की जाती हैं; KDC में फ़िक्स्चर खाते, प्रत्यायोजन नियम और एक विश्वसनीय रियल्म जिसके पासवर्ड उसके स्रोत में लिखे हैं; SPIFFE रजिस्ट्री में नमूना प्रविष्टियाँ; और प्रत्येक व्यक्ति को उत्पन्न क्रेडेंशियल विशेषताएँ दी जाती हैं।"
+  },
+  "mode.requirements.demo-data.product": {
+    "en": "2d0556abc166bc57",
+    "text": "इसमें से कुछ नहीं। निर्देशिका, प्रिंसिपल डेटाबेस और रजिस्ट्री वही रखती हैं जो कॉन्फ़िगर या प्रोविज़न किया गया, और कुछ और नहीं — दो XACML भूमिका समूह मौजूद हैं और खाली हैं, और KDC इस रिपॉज़िटरी में प्रकाशित पासवर्डों पर krbtgt या अपना सेवा खाता बनाने से इनकार करता है।"
+  },
+  "mode.requirements.test-double.what": {
+    "en": "f037d7b70aacf864",
+    "text": "सेवा स्वयं को परीक्षण डबल के रूप में वर्णित करती है"
+  },
+  "mode.requirements.test-double.development": {
+    "en": "ffe468af90a49423",
+    "text": "`testDouble` GET /admin-api/sts-metadata में true है: यह सेवा कोई पासवर्ड नहीं जाँचती और कोई एक्सेस टोकन मान्य नहीं करती, और एंडपॉइंट सूची को ऐसा दावा समझकर नहीं पढ़ा जाना चाहिए कि वह ऐसा करती है। कंसोल सूचकांक What it deliberately does not do दर्शाता है।"
+  },
+  "mode.requirements.test-double.product": {
+    "en": "2fef3ea99ceb768a",
+    "text": "`testDouble` false है: पासवर्ड सत्यापित होते हैं और एक्सेस टोकन मान्य किए जाते हैं, और दस्तावेज़ ऐसा कहता है। कंसोल सूचकांक वह सूची नहीं दर्शाता।"
+  },
+  "mode.requirements.claim-values.what": {
+    "en": "3e4acbf9a020d8f8",
+    "text": "किसी क्लेम का मान गढ़ा जा सकता है"
+  },
+  "mode.requirements.claim-values.development": {
+    "en": "656bcc392c40db7a",
+    "text": "एक टोकन एक पर्सोना नामित करता है — कुलनाम `Mock`, sts.example पर एक पता जिसमें email_verified true हो — एक क्रेडेंशियल अनुपस्थित विशेषता को उत्पन्न मान से भरता है, और एक सुरक्षा घटना @example.com विषय नामित करती है, और जिस व्यक्ति का कोई अभिलिखित पहचान सत्यापन नहीं, उसे विश्वास ढाँचे `urn:sts:demo` के अंतर्गत एक का उत्तर दिया जाता है (OpenID Connect for Identity Assurance 1.0, #127)।"
+  },
+  "mode.requirements.claim-values.product": {
+    "en": "3a1905ca05d2e355",
+    "text": "कोई मान व्यक्ति की निर्देशिका प्रविष्टि से आता है या छोड़ दिया जाता है; `verified_claims` केवल प्रविष्टि पर अभिलिखित सत्यापन से जारी होते हैं, और email_verified केवल सत्यापित पते के लिए true होता है: वह जिसे व्यक्ति ने मेल किए लिंक से सिद्ध किया (#63), या जिसे किसी विश्वसनीय स्रोत ने लिखा — एक व्यवस्थापक (कंसोल, /admin-api, या Admin Write वाला LDAP लेखन), SCIM, या कोई federation साझेदार जिसने email_verified false नहीं कहा (#64)।"
+  },
+  "mode.requirements.required-attributes.what": {
+    "en": "766f977cdfc5a340",
+    "text": "एक व्यक्ति वे विशेषताएँ रखता है जिनकी विश्वास क्षेत्र की विशेषता नीति माँग करती है"
+  },
+  "mode.requirements.required-attributes.development": {
+    "en": "9f3eb5f6be8b0a4f",
+    "text": "नीति संग्रहीत होती है और निर्देशिका > नीतियाँ पर दर्शाई जाती है तथा लागू नहीं होती: एक व्यक्ति केवल उपयोगकर्ता नाम के साथ बनाया जा सकता है, और संपादन cn और sn को छोड़कर किसी भी विशेषता को खाली कर सकता है।"
+  },
+  "mode.requirements.required-attributes.product": {
+    "en": "1217261af0bae35e",
+    "text": "एक निर्माण जो किसी आवश्यक विशेषता को बिना मान छोड़े, हर द्वार पर अस्वीकृत होता है (STS-LDAP-0162) — कंसोल, /admin-api, SCIM, LDAP add (objectClassViolation, 65), HOBA पंजीकरण और थोक आयात (STS-LDAP-0163) — और फ़ेडरेटेड पहला साइन इन जिसका साझेदार आवश्यक मान न दे, किसी को नहीं बनाता (STS-FED-0158)। जो संपादन आवश्यक मान छीन ले, वह अस्वीकृत होता है (STS-LDAP-0164)। uid, cn और sn हमेशा आवश्यक हैं; givenName और mail डिफ़ॉल्ट से। जिस व्यक्ति के पास पहले से कोई एक न हो, उसे साइन इन या किसी अन्य चीज़ के संपादन से इनकार नहीं किया जाता।"
+  },
+  "mode.requirements.saml-request-signatures.what": {
+    "en": "85e7bc435ce1b0c0",
+    "text": "किसी SAML 2.0 सेवा प्रदाता का अनुरोध हस्ताक्षरित होता है"
+  },
+  "mode.requirements.saml-request-signatures.development": {
+    "en": "6958e9df9b9440fb",
+    "text": "अहस्ताक्षरित AuthnRequest या LogoutRequest स्वीकार किया जाता है (saml2.requireSignedAuthnRequests=auto) जब तक सेवा प्रदाता का उपभोग किया मेटाडेटा AuthnRequestsSigned न कहे। जो हस्ताक्षर मौजूद है वह सेवा प्रदाता के पंजीकृत प्रमाणपत्र के विरुद्ध सत्यापित होता है और सत्यापित न होने पर अस्वीकृत; पंजीकृत प्रमाणपत्र न होने पर उसे सत्यापित नहीं के रूप में अभिलिखित किया जाता है। अनुरोध अपने KeyInfo में जो प्रमाणपत्र लाता है उसे OBSERVED अभिलिखित किया जाता है — कभी विश्वास एंकर नहीं — और जब प्रविष्टि में कोई अन्य प्रमाणपत्र न हो तब भी अभिकथन उसी पर एन्क्रिप्ट हो सकता है।"
+  },
+  "mode.requirements.saml-request-signatures.product": {
+    "en": "c05ec261d945ccda",
+    "text": "अहस्ताक्षरित AuthnRequest या LogoutRequest अस्वीकृत होता है (STS-SAML-0063)। हस्ताक्षर ठीक विकास की तरह सत्यापित होता है, और जिसके लिए जाँच हेतु कोई पंजीकृत प्रमाणपत्र न हो उसे अहस्ताक्षरित मानकर अस्वीकृत किया जाता है। OBSERVED प्रमाणपत्र पर तब तक एन्क्रिप्ट नहीं किया जाता जब तक कोई ऑपरेटर SAML 2.0 पृष्ठ पर या POST /admin-api/saml2/confirm-signing-certificate से उसकी पुष्टि न करे।"
+  },
+  "mode.requirements.saml-metadata-query.what": {
+    "en": "0ac0996817bde223",
+    "text": "Metadata Query खोज केवल उसी सेवा प्रदाता को पंजीकृत करती है जिसकी किसी ऑपरेटर या विश्वास एंकर ने पुष्टि की हो"
+  },
+  "mode.requirements.saml-metadata-query.development": {
+    "en": "161781e2465d3676",
+    "text": "किसी अज्ञात entityID का अनुरोध MDQ खोज शुरू करता है (saml2.mdqBaseUrl), और जो उत्तर उस एंटिटी का वर्णन करे वह अनुप्रयोग प्रविष्टि बनाता है, जिसे saml2.metadataTrustAnchors से केवल तभी बाँधा जाता है जब कोई सेट हों। Import from MDQ क्रिया एंकरों के साथ या उनके बिना वही करती है।"
+  },
+  "mode.requirements.saml-metadata-query.product": {
+    "en": "e7990881d9e5016a",
+    "text": "अनुरोध से शुरू खोज अज्ञात entityID के लिए नहीं होती जब विश्वास क्षेत्र में कोई saml2.metadataTrustAnchors न हो (STS-SAML-0080); एंकरों के साथ उत्तर प्रविष्टि केवल तभी बनाता है जब उसका हस्ताक्षर उनमें से एक के विरुद्ध सत्यापित हो (STS-SAML-0081)। बिना एंकर ऑपरेटर का Import from MDQ अस्वीकृत होता है (STS-SAML-0084) जब तक saml2.mdqImportWithoutAnchors चालू न हो। अस्वीकृत entityID SAML 2.0 पृष्ठ पर और GET /admin-api/saml2 (mdqRefused) में सूचीबद्ध हैं।"
+  },
+  "mode.requirements.saml-unregistered-providers.what": {
+    "en": "68a665e10d606a70",
+    "text": "प्रति-प्रदाता SAML मेटाडेटा और एंडपॉइंट केवल पंजीकृत प्रदाता के लिए उत्तर देते हैं"
+  },
+  "mode.requirements.saml-unregistered-providers.development": {
+    "en": "98a80675acb99981",
+    "text": "GET /saml2/metadata/{sp} और /saml11/metadata/{rp} किसी भी नाम के लिए हस्ताक्षरित दस्तावेज़ बनाते हैं, और {sp} या {rp} के अंतर्गत SSO, SLO, artifact और responder एंडपॉइंट उसके लिए उत्तर देते हैं।"
+  },
+  "mode.requirements.saml-unregistered-providers.product": {
+    "en": "5a56aaa1243f844e",
+    "text": "इन पथों में से प्रत्येक ऐसे नाम पर 404 देता है जो पंजीकृत SAML 2.0 सेवा प्रदाता नहीं (STS-SAML-0082) या SAML 1.1 रिलाइंग पार्टी नहीं (STS-SAML-0083)। बिना दायरे वाले दस्तावेज़ अपरिवर्तित हैं।"
+  },
+  "mode.requirements.unregistered-applications.what": {
+    "en": "f59ad1efb04f3196",
+    "text": "टोकन केवल पंजीकृत अनुप्रयोग के लिए जारी किया जाता है (#496)"
+  },
+  "mode.requirements.unregistered-applications.development": {
+    "en": "d4a6c5bb3e64bdeb",
+    "text": "किसी भी AppliesTo के लिए WS-Trust RST का उत्तर दिया जाता है, और बिना AppliesTo के भी (बिना ऑडियंस प्रतिबंध वाला टोकन); किसी भी wtrealm के लिए WS-Federation wsignin1.0। प्रत्येक साझा entityID के अंतर्गत जारी होता है, और अनुप्रयोग अपनी पहली साइटिंग पर रजिस्टर में दर्ज होता है।"
+  },
+  "mode.requirements.unregistered-applications.product": {
+    "en": "ad9954edbb251dbb",
+    "text": "जिस RST का AppliesTo किसी पंजीकृत अनुप्रयोग तक नहीं पहुँचता (appRegisteredBy सेट नहीं — साइटिंग पंजीकरण नहीं है) उसे wst:InvalidScope से अस्वीकृत किया जाता है (STS-WSTRUST-0030), और बिना AppliesTo वाले को wst:InvalidRequest से (STS-WSTRUST-0031), हर टोकन प्रकार और OnBehalfOf / ActAs के लिए, अनुरोधकर्ता के प्रमाणित होने या कुछ अभिलिखित होने से पहले। जिस wsignin1.0 का wtrealm किसी पंजीकृत रिलाइंग पार्टी का नाम नहीं लेता उसे साइन इन स्क्रीन से पहले 404 पृष्ठ से अस्वीकृत किया जाता है (STS-WSFED-0021)।"
+  },
+  "mode.requirements.unregistered-oauth-clients.what": {
+    "en": "264387e4eb558328",
+    "text": "किसी OAuth 2.0 क्लाइंट की सेवा केवल पंजीकृत होने पर की जाती है (#496)"
+  },
+  "mode.requirements.unregistered-oauth-clients.development": {
+    "en": "5a23e83731e4dd69",
+    "text": "प्राधिकरण एंडपॉइंट client_id के बारे में उसके रीडायरेक्ट URI से आगे कुछ नहीं पूछता, और टोकन एंडपॉइंट ऐसे क्लाइंट को अस्वीकार करने से पहले दर्ज कर लेता है जिसे उसने पहले देखा हो। RFC 8693 ऑडियंस जिसे किसी साइटिंग ने दर्ज किया एक लक्ष्य है, और किसी अभिकथन का ऑडियंस जो उसे नामित करे एक रिलाइंग पार्टी है।"
+  },
+  "mode.requirements.unregistered-oauth-clients.product": {
+    "en": "6b65fe6221534e38",
+    "text": "कोई प्राधिकरण अनुरोध या PAR जो ऐसे client_id को नामित करे जिसे किसी ने पंजीकृत नहीं किया (appRegisteredBy सेट नहीं — साइटिंग पंजीकरण नहीं है) इस सर्वर पर 400 है, कभी पुनर्निर्देशित नहीं (STS-OAUTH-0947; कोई नामित नहीं: STS-OAUTH-0948); ऐसा टोकन अनुरोध 401 invalid_client है (STS-OAUTH-0949), गिने या अभिलिखित होने से पहले। RFC 8693 ऑडियंस या resource जो अपंजीकृत अनुप्रयोग को नामित करे नीति का unregistered-target है (invalid_target, STS-OAUTH-0793), और विनिमय किए अभिकथन का ऑडियंस any-declared-relying-party के अंतर्गत पंजीकृत अनुप्रयोग होना चाहिए।"
+  },
+  "mode.requirements.unregistered-saml-providers.what": {
+    "en": "15c793bc36671f22",
+    "text": "किसी SAML सेवा प्रदाता या रिलाइंग पार्टी को केवल पंजीकृत होने पर उत्तर दिया जाता है (#496)"
+  },
+  "mode.requirements.unregistered-saml-providers.development": {
+    "en": "a0d68da6bdce5cb8",
+    "text": "किसी भी Issuer के लिए AuthnRequest, LogoutRequest और SAML 1.1 ब्राउज़र प्रवाह का उत्तर दिया जाता है; हस्ताक्षर जाँच उसे अभिलिखित करती है, और साइटिंग द्वारा दर्ज प्रविष्टि प्रति-SP पथों पर सेवा प्रदाता गिनी जाती है।"
+  },
+  "mode.requirements.unregistered-saml-providers.product": {
+    "en": "121d2314a39e79b5",
+    "text": "जिस AuthnRequest का Issuer कोई पंजीकृत SAML 2.0 सेवा प्रदाता नहीं (appRegisteredBy सेट नहीं — साइटिंग पंजीकरण नहीं है) उसके हस्ताक्षर की जाँच से पहले 403 पृष्ठ है (STS-SAML-0103; अज्ञात entityID के लिए केवल Metadata Query खोज अभी भी कतार में रहती है, विश्वास-एंकर नियम के अंतर्गत); ऐसे LogoutRequest से कुछ समाप्त नहीं होता (STS-SAML-0104); अपंजीकृत रिलाइंग पार्टी का SAML 1.1 प्रवाह 403 पृष्ठ है (STS-SAML-0105)। प्रति-SP पथ, विशेषता प्राधिकारी और SAML 1.1 responder केवल पंजीकृत प्रविष्टि गिनते हैं, और MDQ खोज अपंजीकृत प्रविष्टि को अज्ञात मानती है।"
+  },
+  "mode.requirements.unregistered-gnap-clients.what": {
+    "en": "60ada07c629c3794",
+    "text": "किसी GNAP क्लाइंट या रिसोर्स सर्वर की सेवा केवल पंजीकृत होने पर की जाती है (#496)"
+  },
+  "mode.requirements.unregistered-gnap-clients.development": {
+    "en": "431c5d7a551b30c7",
+    "text": "एक अज्ञात सिद्ध कुंजी पहली साइटिंग पर अनुप्रयोग प्रविष्टि बन जाती है, और उसके बाद उस प्रविष्टि की कुंजी तथा इंस्टेंस पहचानकर्ता स्वीकार होते हैं।"
+  },
+  "mode.requirements.unregistered-gnap-clients.product": {
+    "en": "43ea90ee5ea17888",
+    "text": "अज्ञात कुंजी अस्वीकृत होती है (STS-GNAP-0082), और वैसी कुंजी या इंस्टेंस पहचानकर्ता भी जो ऐसी प्रविष्टि का हो जिसे किसी ने पंजीकृत नहीं किया (appRegisteredBy सेट नहीं — पहली साइटिंग पर बनी प्रविष्टि पंजीकरण नहीं है): 401 invalid_client या invalid_resource_server (STS-GNAP-0902), प्रविष्टि के फिर देखे जाने या कुछ जारी होने से पहले।"
+  },
+  "mode.requirements.return-addresses.what": {
+    "en": "49ff721244e24e9d",
+    "text": "उत्तर वहीं जाता है जहाँ अनुरोध कहता है"
+  },
+  "mode.requirements.return-addresses.development": {
+    "en": "6c6eccc7e6bfce66",
+    "text": "कोई भी निरपेक्ष URL जिसे SAML AuthnRequest, SAML 1.1 shire, WS-Federation wreply या वॉलेट लिंक नामित करे, उपयोग होता है, पंजीकृत हो या नहीं — और कोई पता जिसे साइटिंग अनुप्रयोग प्रविष्टि पर लिखे (या कॉलबैक जिसे कंसोल या पोर्टल Host हेडर से सीखे) appReturnAddressObserved पर अवलोकित चिह्नित किया जाता है।"
+  },
+  "mode.requirements.return-addresses.product": {
+    "en": "c9aeb6e9c45812da",
+    "text": "केवल अनुप्रयोग की अपनी प्रविष्टि पर पंजीकृत पता — और साइटिंग कभी एक नहीं जोड़ती। जो पता अभी अवलोकित चिह्नित है वह पंजीकृत नहीं: विकास मोड ने उसे वहाँ रखा और वह तब तक अस्वीकृत रहता है जब तक ऑपरेटर अनुप्रयोग पृष्ठ पर या POST /admin-api/applications/confirm-address से पुष्टि न करे (STS-REG-0049)। साइटिंग चिह्नित होने से पहले अभिलिखित पतों पर कोई चिह्न नहीं और विश्वास क्षेत्र बदलने से पहले उनकी समीक्षा अभी भी चाहिए। कंसोल और पोर्टल के अपने कॉलबैक अनुरोध के Host हेडर से नहीं सीखे जाते (global.publicBaseUrl सेट करें), और जो WebAuthn RP ID होस्ट से मेल न खाए वह उस पर वापस लौटने के बजाय समारोह अस्वीकार कर देता है।"
+  },
+  "mode.requirements.test-controls.what": {
+    "en": "0a76dd48b1006dbe",
+    "text": "परीक्षण नियंत्रण खुले हैं"
+  },
+  "mode.requirements.test-controls.development": {
+    "en": "fd65d2d3c735e23e",
+    "text": "?username= से किसी अन्य को साइन आउट करना, खुला गतिशील क्लाइंट पंजीकरण, SAML 1.1 विशेषता प्राधिकारी और HOBA कुंजी पंजीकरण सभी किसी को भी उत्तर देते हैं, अस्वीकृत SCIM Digest चुनौती साझा पासवर्ड छापती है, और कंसोल का restore-kerberos किसी Kerberos साइन आउट क्षण को मिटा देता है।"
+  },
+  "mode.requirements.test-controls.product": {
+    "en": "eac9684b6453a72e",
+    "text": "प्रत्येक अस्वीकृत होता है, या उस क्रेडेंशियल की माँग करता है जो उसके प्रशासनिक समकक्ष को पहले से चाहिए। साइन इन कॉलर के अलावा किसी को नाम देने वाला साइन आउट अस्वीकृत होता है, logout.anyUser कुछ भी कहे। restore-kerberos कंसोल और /admin-api दोनों पर अस्वीकृत है, इसलिए Kerberos साइन आउट तब तक बना रहता है जब तक उससे पहले का टिकट अधिकतम वैध रह सकता था। गतिशील क्लाइंट पंजीकरण तब तक अस्वीकृत है जब तक oauth2.openRegistration चालू न हो — या पंजीकरण ऐसा सॉफ़्टवेयर कथन लाए जिस पर यह विश्वास क्षेत्र भरोसा करे (विश्वास क्षेत्र ने उसे जारी किया हो, या कोई अनुप्रयोग उसके जारीकर्ता की घोषणा करता हो) और oauth2.softwareStatementOpensRegistration चालू हो, अर्थात् ऑपरेटर यह तय करके कि किन कथनों पर भरोसा करना है यह तय करता है कि कौन पंजीकरण कर सकता है।"
+  },
+  "mode.requirements.directory-writes.what": {
+    "en": "3ad0ca0be1789212",
+    "text": "LDAP पर निर्देशिका लेखन अधिकृत होता है"
+  },
+  "mode.requirements.directory-writes.development": {
+    "en": "086b01f4240590eb",
+    "text": "कोई भी कनेक्शन किसी भी विश्वास क्षेत्र की किसी भी प्रविष्टि को जोड़, बदल, पुनर्नामित या हटा सकता है, अनाम सहित — यही परीक्षण को बिना तैयारी कच्चा सॉकेट चलाने देता है।"
+  },
+  "mode.requirements.directory-writes.product": {
+    "en": "18434dc600cc297c",
+    "text": "अनाम कनेक्शन कुछ नहीं लिखता। Admin Write रखने वाले के रूप में बाइंड कनेक्शन — डिफ़ॉल्ट विश्वास क्षेत्र की निर्देशिका में, और केवल इसलिए नहीं कि अभी किसी भूमिका का सदस्य नहीं — कुछ भी लिख सकता है। अन्य केवल अपनी प्रविष्टि बदल सकते हैं, और केवल वे विशेषताएँ जिन्हें ldap.selfWritableAttributes नाम देता है; उनमें userPassword फिर भी पासवर्ड नीति पूरी करता है। अस्वीकृति LDAP परिणाम कोड 50, insufficientAccessRights है। जो यह नहीं कवर करता वह पढ़ना है: directory-reads और directory-read-authorization देखें।"
+  },
+  "mode.requirements.directory-reads.what": {
+    "en": "5e95694a2b5ed0cc",
+    "text": "LDAP पर निर्देशिका पठन के लिए बाइंड चाहिए, और वह कभी क्रेडेंशियल नहीं लौटाता"
+  },
+  "mode.requirements.directory-reads.development": {
+    "en": "9f319ab9234595bb",
+    "text": "कोई भी कनेक्शन, अनाम या कभी बाइंड न किया, हर प्रविष्टि खोज और तुलना सकता है और Kerberos कुंजी छोड़ हर विशेषता पढ़ सकता है, तथा createTimestamp, modifyTimestamp और entryDN को किसी अन्य विशेषता की तरह लिख सकता है।"
+  },
+  "mode.requirements.directory-reads.product": {
+    "en": "c5c88b050f8273ed",
+    "text": "जिस कनेक्शन ने किसी के रूप में बाइंड नहीं किया उस पर खोज या तुलना परिणाम कोड 50, insufficientAccessRights से अस्वीकृत होती है — रूट DSE को छोड़कर, जिसे क्लाइंट यह जानने के लिए पढ़ता है कि कहाँ बाइंड करना है। क्रेडेंशियल विशेषताएँ (userPassword, pwdHistory, क्लाइंट सीक्रेट, पंजीकरण एक्सेस टोकन, निजी कुंजियाँ, TOTP सीक्रेट, पुनर्प्राप्ति कोड, सक्रियण टोकन और Kerberos कुंजियाँ) खोज से कभी नहीं लौटतीं, खोज फ़िल्टर के लिए अदृश्य रहती हैं ताकि उसे ओरेकल की तरह न चलाया जा सके, और तुलना नहीं हो सकती; व्यवस्थापक अपवाद नहीं। createTimestamp, modifyTimestamp और entryDN कोई नहीं लिख सकता, परिणाम कोड 19, constraintViolation।"
+  },
+  "mode.requirements.directory-read-authorization.what": {
+    "en": "1cdf8bb4054623dc",
+    "text": "LDAP पर निर्देशिका पठन उस पहचान के विरुद्ध अधिकृत होता है जिसने बाइंड किया"
+  },
+  "mode.requirements.directory-read-authorization.development": {
+    "en": "18724e51d13abb83",
+    "text": "कोई भी कनेक्शन Kerberos कुंजी छोड़ हर प्रविष्टि और हर विशेषता देखता है, और कोई भी DN बाइंड होता है — अनुप्रयोग का भी — यही परीक्षण को बिना तैयारी कच्चा सॉकेट चलाने देता है।"
+  },
+  "mode.requirements.directory-read-authorization.product": {
+    "en": "4e4200c1388999dd",
+    "text": "जो Admin Read या Admin Write रखता है — डिफ़ॉल्ट विश्वास क्षेत्र की सूची पर, जो हर विश्वास क्षेत्र तक पहुँचती है, या किसी विश्वास क्षेत्र की अपनी सूची पर, जो उस विश्वास क्षेत्र तक पहुँचती है — दायरे में हर प्रविष्टि पढ़ता है। अन्य अपनी प्रविष्टि पूरी पढ़ते हैं; दूसरे व्यक्ति की, केवल वे विशेषताएँ जिन्हें ldap.directoryReadableAttributes नाम देता है (डिफ़ॉल्ट रूप से कोई नहीं, इसलिए दूसरा व्यक्ति वहाँ है ही नहीं); कोई समूह केवल तभी जब वे उसके सदस्य हों, और तब उसका cn, description और objectClass (ldap.groupMembersReadable के साथ उसके सदस्य भी); और कंटेनर, नाम से। अनुप्रयोग, federation, नीतियाँ, भूमिकाएँ, विश्वास एंकर और SPIFFE पंजीकरण उनके लिए अदृश्य हैं। जिस प्रविष्टि को पाठक नहीं देख सकता वह noSuchObject (32) उत्तर देती है, ठीक जैसे कोई अनुपस्थित प्रविष्टि देती है, जिस विशेषता को वे नहीं पढ़ सकते वह परिणाम से और खोज फ़िल्टर से अनुपस्थित होती है, और उसके विरुद्ध तुलना 50 से अस्वीकृत होती है। जो बाइंड DN किसी व्यक्ति का नाम नहीं लेता — किसी अनुप्रयोग का, किसी federation का — उसका पासवर्ड पढ़े जाने से पहले 49 से अस्वीकृत होता है। रूट DSE और किसी CRL प्रविष्टि का बेस पठन खुला रहता है, और क्रेडेंशियल सभी से रोके रहते हैं।"
+  },
+  "mode.requirements.directory-binds.what": {
+    "en": "3f010c21151814fb",
+    "text": "LDAP बाइंड गोपनीय, प्रमाणित और दर-सीमित होता है"
+  },
+  "mode.requirements.directory-binds.development": {
+    "en": "750bac629938a394",
+    "text": "पासवर्ड \"invalid\" वाले को छोड़ हर बाइंड सफल होता है, 389 और 636 दोनों पर, अनाम और अप्रमाणित सहित, और विफलताओं की संख्या पर कोई सीमा नहीं।"
+  },
+  "mode.requirements.directory-binds.product": {
+    "en": "5b510b001e85e8d0",
+    "text": "अनाम बाइंड परिणाम कोड 48, inappropriateAuthentication से अस्वीकृत होता है, और खाली पासवर्ड वाला DN परिणाम कोड 53, unwillingToPerform से (RFC 4513 sections 5.1.1 and 5.1.2)। सादे श्रोता पर पासवर्ड वाला बाइंड पासवर्ड पढ़े जाने से पहले 13, confidentialityRequired से अस्वीकृत होता है — LDAPS का उपयोग करें, या ldap.plainListener बंद करें। विफल बाइंड प्रत्येक बाइंड DN और प्रत्येक पते पर security.rateLimitWindowS के भीतर security.rateLimitPerIdentity तथा security.rateLimitPerAddress के विरुद्ध गिने जाते हैं, और इनमें से किसी सीमा के पार कॉलर का पासवर्ड जाँचे जाने से पहले 53 से इनकार होता है; सफल बाइंड अपने DN का काउंटर मिटाता है, कभी अपने पते का नहीं, और स्वयं कभी गिना नहीं जाता।"
+  },
+  "mode.requirements.spire.what": {
+    "en": "8391a467ac94040a",
+    "text": "SPIRE Server API के लिए एक X509-SVID आवश्यक है"
+  },
+  "mode.requirements.spire.development": {
+    "en": "99df3afbc3a75e95",
+    "text": "म्यूचुअल TLS पर आवश्यक और SPIRE की अपनी प्रति-विधि तालिका के विरुद्ध अधिकृत; कोई भी स्थानीय सॉकेट से उस SVID को बनाने को कह सकता है जो उसे प्रवेश दिलाए।"
+  },
+  "mode.requirements.spire.product": {
+    "en": "6a6aa70f3583b8bb",
+    "text": "वही, एक ऐसी रजिस्ट्री पर जो अब माँगने वाले के लिए प्रविष्टि नहीं बनाती।"
+  },
+  "mode.requirements.spire-local-socket.what": {
+    "en": "cda7c1405aa2843d",
+    "text": "SPIRE Server API के Unix सॉकेट पर कोई कॉलर केवल वहीं विश्वसनीय `local` एंटिटी है जहाँ सॉकेट की सीमा कायम हो"
+  },
+  "mode.requirements.spire-local-socket.development": {
+    "en": "3203d7aa8d181aea",
+    "text": "सॉकेट पर हर कॉलर `local` है जब spiffe.trustLocalSocket चालू हो (डिफ़ॉल्ट): सॉकेट की फ़ाइलसिस्टम अनुमतियाँ सीमा मानी जाती हैं, जैसे एक वास्तविक spire-server मानता है।"
+  },
+  "mode.requirements.spire-local-socket.product": {
+    "en": "c6acb9b502748c92",
+    "text": "सीमा प्रत्येक कनेक्शन पर सत्यापित होती है: सॉकेट 0600 बना होना चाहिए और ऐसी निर्देशिका में होना चाहिए जिसमें group या other बिट न हों (STS-SPIFFE-0117), और पीयर का कर्नेल uid, जिसे नेटिव मॉड्यूल के माध्यम से SO_PEERCRED से पढ़ा जाए, इस सेवा का अपना होना चाहिए (STS-SPIFFE-0118; अपठनीय, STS-SPIFFE-0119)। जो कॉलर इनमें से किसी में विफल हो वह `local` नहीं है और TCP पोर्ट पर किसी व्यवस्थापक का X509-SVID चाहिए।"
+  },
+  "mode.requirements.spiffe-node-attestation.what": {
+    "en": "67505ccecccef296",
+    "text": "SPIFFE नोड अटेस्टेशन (AttestAgent)"
+  },
+  "mode.requirements.spiffe-node-attestation.development": {
+    "en": "bfa8ef829776ad45",
+    "text": "प्रत्येक प्रकार अपने अटेस्टर द्वारा सत्यापित होता है या अस्वीकृत — join_token, x509pop, sshpop, tpm_devid, k8s_psat, http_challenge, aws_iid, gcp_iit, azure_imds — जैसा विश्वास क्षेत्र spiffe.nodeAttestors में सूचीबद्ध करता है।"
+  },
+  "mode.requirements.spiffe-node-attestation.product": {
+    "en": "ae822c00223caa10",
+    "text": "वही; नोड अटेस्टेशन के बारे में मोड से कुछ भिन्न नहीं होता।"
+  },
+  "mode.requirements.spiffe-workload-attestation.what": {
+    "en": "1544cf58376f56fe",
+    "text": "SPIFFE वर्कलोड अटेस्टेशन (Workload API का Unix सॉकेट)"
+  },
+  "mode.requirements.spiffe-workload-attestation.development": {
+    "en": "4668876fe1c832e2",
+    "text": "कॉलर के कर्नेल क्रेडेंशियल और प्रक्रिया कनेक्ट पर पढ़े जाते हैं (spiffe.workloadAttestors: unix, docker, k8s) जहाँ नेटिव मॉड्यूल बना हो; उसके बिना सॉकेट केवल ट्रांसपोर्ट सेलेक्टरों पर प्रस्तुत होता है और ऐसा कहता है। अभिकथित सेलेक्टर तब माने जाते हैं जब spiffe.acceptAssertedSelectors चालू हो, और spiffe.attestWorkloads बंद होने पर हर कॉलर को हर प्रविष्टि का उत्तर मिलता है।"
+  },
+  "mode.requirements.spiffe-workload-attestation.product": {
+    "en": "5d5eaf65e73e2248",
+    "text": "नेटिव मॉड्यूल के बिना Workload API सॉकेट प्रस्तुत नहीं किया जाता। अभिकथित सेलेक्टर कभी नहीं माने जाते, और कॉलर को केवल उन प्रविष्टियों का उत्तर मिलता है जिनसे उसके सेलेक्टर मेल खाते हैं, spiffe.attestWorkloads कुछ भी कहे; दोनों सेटिंगें जहाँ पढ़ी जाती हैं वहाँ अनदेखी की जाती हैं (एक बार लॉग, STS-CORE-0106) और लिखने पर अस्वीकृत (STS-CORE-0103)।"
+  },
+  "mode.requirements.spiffe-workload-tcp.what": {
+    "en": "235ce79c4d00ce33",
+    "text": "TCP पर SPIFFE Workload API (spiffe.workloadPort)"
+  },
+  "mode.requirements.spiffe-workload-tcp.development": {
+    "en": "61ffdd49f4ac0582",
+    "text": "spiffe.grpcHost पर प्रस्तुत, वाइल्डकार्ड सहित। TCP कॉलर अटेस्टेड नहीं होता — पूछने के लिए कोई पीयर प्रक्रिया नहीं — और अपने ट्रांसपोर्ट, जिस एंडपॉइंट पर पहुँचा और अपने स्रोत पते से पहचाना जाता है।"
+  },
+  "mode.requirements.spiffe-workload-tcp.product": {
+    "en": "8f0bd456684ee03c",
+    "text": "प्रस्तुत नहीं किया जाता (STS-SPIFFE-0120) जब तक spiffe.workloadTcpSourceAuthenticated यह घोषित न करे कि नेटवर्क स्रोत पतों का प्रमाणीकरण करता है (Workload Endpoint section 3), और तब केवल नामित पते पर: वाइल्डकार्ड spiffe.grpcHost अस्वीकृत होता है (STS-SPIFFE-0121)। पोर्ट पहले से बाउंड होने पर उत्पाद पर स्विच किया गया विश्वास क्षेत्र उस पर हर कॉल को उन्हीं कोडों से अस्वीकार करता है।"
+  },
+  "mode.requirements.spiffe-entry-selectors.what": {
+    "en": "56b2a805f8092775",
+    "text": "एक SPIFFE पंजीकरण प्रविष्टि कुछ ऐसा चुनती है जो किसी वर्कलोड की पहचान करता है"
+  },
+  "mode.requirements.spiffe-entry-selectors.development": {
+    "en": "6c7626e3f66110d1",
+    "text": "कोई भी सेलेक्टर, एक भी न होना सहित: केवल transport:tcp पर प्रविष्टि हर TCP कॉलर को जारी होती है, और एक गढ़ी हुई प्रविष्टि ठीक वही रखती है।"
+  },
+  "mode.requirements.spiffe-entry-selectors.product": {
+    "en": "4aa137b3e071f46c",
+    "text": "बिना सेलेक्टर की, या केवल transport: और endpoint: वाले सेलेक्टरों की प्रविष्टि कंसोल, /admin-api और SPIRE Server API पर अस्वीकृत होती है (STS-SPIFFE-0122; वहाँ प्रति आइटम INVALID_ARGUMENT), और जो पहले से रजिस्ट्री में है वह किसी कॉलर को उत्तर नहीं देती (STS-SPIFFE-0123)। peer: सेलेक्टर स्रोत पते से ठीक मेल खाता है — कोई प्रीफ़िक्स नहीं, SPIRE की तरह।"
+  },
+  "mode.requirements.revocation-check.what": {
+    "en": "c47e754d9209d8a8",
+    "text": "प्रस्तुत प्रमाणपत्र की निरस्तीकरण जाँच होती है"
+  },
+  "mode.requirements.revocation-check.development": {
+    "en": "3a55260648f17cd6",
+    "text": "सौम्य विफलता (pki.revocationCheck=auto)। इस सेवा द्वारा जारी प्रमाणपत्र अपनी रजिस्ट्री में खोजा जाता है, पूरी शृंखला, और निरस्त प्रमाणपत्र अस्वीकृत होता है; किसी अन्य प्राधिकारी से आया प्रमाणपत्र उसके नामित OCSP रिस्पॉन्डर और CRL से जाँचा जाता है, और जिस स्थिति को प्राप्त या सत्यापित नहीं किया जा सकता उसे स्वीकार करके रिपोर्ट किया जाता है।"
+  },
+  "mode.requirements.revocation-check.product": {
+    "en": "27fcb65a331cb504",
+    "text": "कठोर विफलता (pki.revocationCheck=auto)। वही खोजें, और विदेशी प्रमाणपत्र जिसकी स्थिति प्राप्त, सत्यापित या ताज़ा रूप में विश्वसनीय नहीं की जा सकती — या जिसे उसके जारीकर्ता का रिस्पॉन्डर जानता नहीं — वह भी अस्वीकृत होता है: जो आक्रांता किसी प्राप्ति को रोक सकता है वह \"revoked\" को \"accepted\" नहीं बना सकता। वैसा प्रमाणपत्र भी, जिसकी एकमात्र सूची या रिस्पॉन्डर ऐसे पते पर हो जिसे डायल न करने के लिए यह सेवा कॉन्फ़िगर की गई है (pki.revocationLdap=ldaps के अंतर्गत सादा ldap:, इसे बंद होने पर कोई भी ldap, pki.revocationLdapDirectory के बिना सापेक्ष नाम; STS-PKI-0188): जारीकर्ता ने सूची प्रकाशित की और इस सेवा की अपनी नीति ने उसे पढ़ा जाना रोका।"
+  },
+  "mode.requirements.revocation-unrevocable.what": {
+    "en": "06bc21b848bd7218",
+    "text": "एक विदेशी प्रमाणपत्र जिसका जारीकर्ता कोई CRL और कोई OCSP रिस्पॉन्डर नामित नहीं करता"
+  },
+  "mode.requirements.revocation-unrevocable.development": {
+    "en": "1995d7e07f8cc2a1",
+    "text": "स्वीकृत (pki.revocationRequireDistributionPoint=auto), और निर्णय कहता है कि इसकी जाँच नहीं हो सकी: ऐसी कोई प्राप्ति नहीं जिसे कोई आक्रांता रोक सके, और बिना सूची वाला क्लाइंट लेखक का परीक्षण CA आमतौर पर पहली चीज़ होती है जो वे बनाते हैं।"
+  },
+  "mode.requirements.revocation-unrevocable.product": {
+    "en": "68f6ce868376fbc6",
+    "text": "कठोर विफलता के अंतर्गत अस्वीकृत (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): किसी CA द्वारा जारी — स्व-हस्ताक्षरित नहीं — प्रमाणपत्र जो कोई वितरण बिंदु और कोई रिस्पॉन्डर नामित नहीं करता, कभी निरस्त नहीं हो सकता, इसलिए उसके अंतर्गत चुराई गई कुंजी समाप्ति तक वैध रहती है। जो RFC 9608 noRevAvail रखता है वह स्वीकार होता है, क्योंकि उसके जारीकर्ता ने घोषित किया कि कोई निरस्तीकरण जानकारी मौजूद नहीं (section 4 जाँच छोड़ देता है)। सेटिंग को off करने पर शेष स्वीकार होते हैं, चेतावनी के साथ।"
+  },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "जिस भी X.509 प्रमाणपत्र पर भरोसा किया जाता है उसे एक द्वार के माध्यम से पूरी जाँचों (पथ, वैधता, निरस्तीकरण, उपयोग फ़ील्ड) पर रखा जाता है"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "बंद (pki.paranoid=auto): हर उपयोग-स्थिति #1360 से पहले जैसी व्यवहार करती है — पिन किया प्रमाणपत्र वैधता के लिए नहीं जाँचा जाता, आउटबाउंड पीयर, अटेस्टर या साझेदार के हस्ताक्षरकर्ता के लिए निरस्तीकरण नहीं देखा जाता, और extendedKeyUsage केवल वहाँ पूछा जाता है जहाँ कोई साइट उसे हाथ से पूछे। इन जाँचों को यहाँ चलाने के लिए pki.paranoid=on सेट करें।"
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "चालू (pki.paranoid=auto): common/certificate_trust.ts हर प्रमाणपत्र को — किसी भी दिशा के TLS हैंडशेक पर, किसी हस्ताक्षर के नीचे, एन्क्रिप्शन प्राप्तकर्ता के रूप में, किसी अटेस्टेशन में — उस एंकर तक के पथ पर रखता है जिसके बारे में इस सेवा को बताया गया था (क्लाइंट या signer ट्रस्टस्टोर, विश्वास क्षेत्र का CA, किसी परिवार की अपनी सेटिंग), अभी की वैधता पर, निरस्तीकरण पर, और basicConstraints, keyUsage तथा extendedKeyUsage पर जिनकी उसकी उपयोग-स्थिति माँग करे; जिस जाँच को उपयोग-स्थिति ने कभी नहीं चलाया वह अस्वीकृति है। प्रति उपयोग-स्थिति एक pki.paranoid<UseCase> पंक्ति, off होने पर, उस उपयोग-स्थिति का पूर्व व्यवहार बहाल करती है, और /admin/pki/trust पर लाल दर्शाई जाती है (STS-PKI-0239)।"
+  },
+  "mode.requirements.gnap-mtls-trust.what": {
+    "en": "9797405bffe8917b",
+    "text": "म्यूचुअल TLS से सिद्ध GNAP कुंजी वह प्रमाणपत्र है जिसे किसी विश्वसनीय प्राधिकारी ने क्लाइंट को जारी किया"
+  },
+  "mode.requirements.gnap-mtls-trust.development": {
+    "en": "a5a38e4582010d81",
+    "text": "PINNED (gnap.mtlsTrust=auto): TLS क्लाइंट प्रमाणपत्र वही होना चाहिए जिसे कुंजी नामित करती है — थंबप्रिंट से, या वही सार्वजनिक कुंजी — और स्व-हस्ताक्षरित स्वीकार किया जाता है (RFC 9635 section 7.3.2)। कोई शृंखला नहीं बनती। इस सेवा या किसी अन्य प्राधिकारी द्वारा निरस्त प्रमाणपत्र फिर भी अस्वीकृत होता है (pki.revocationCheck)।"
+  },
+  "mode.requirements.gnap-mtls-trust.product": {
+    "en": "3635435377d7498b",
+    "text": "PKI (gnap.mtlsTrust=auto, RFC 9635 section 11.4): प्रमाणपत्र को क्लाइंट ट्रस्टस्टोर तक शृंखला बनानी होगी, निरस्तीकरण जाँच पास करनी होगी, और क्लाइंट की अनुप्रयोग प्रविष्टि से बंधा होना होगा — इस विश्वास क्षेत्र के TLS क्लाइंट प्राधिकारी द्वारा उसे जारी किया गया, या वह एक RFC 8705 विषय पैरामीटर लिए हुए जिसे प्रविष्टि पंजीकृत करती है (oauthTlsClientAuth*)। प्राधिकारी का नया प्रमाणपत्र बिना पुनः पंजीकरण स्वीकार होता है, और उसका थंबप्रिंट प्रविष्टि पर अभिलिखित होता है। gnap.mtlsTrust=pinned किसी विश्वास क्षेत्र के लिए इसे बंद कर देता है; कोई प्रविष्टि वहाँ pki माँग सकती है जहाँ विश्वास क्षेत्र नहीं माँगता, कभी उलटा नहीं।"
+  },
+  "mode.requirements.protocol-debugger.what": {
+    "en": "b74abbe6b21c5dbc",
+    "text": "पहचान प्रोटोकॉल डीबगर एम्बेडेड है, और उसका api क्या डायल कर सकता है"
+  },
+  "mode.requirements.protocol-debugger.development": {
+    "en": "a784d5509a322d03",
+    "text": "चालू (debugger.enabled=auto): उसका अपना श्रोता (debugger.port) डीबगर UI प्रस्तुत करता है और /api को एक चाइल्ड प्रक्रिया को अग्रेषित करता है। api वह सब डायल करता है जो कोई साइन इन व्यवस्थापक माँगे, निजी नेटवर्क सहित।"
+  },
+  "mode.requirements.protocol-debugger.product": {
+    "en": "28c0296a7d41ddec",
+    "text": "बंद, जब तक debugger.enabled=on न हो। चालू होने पर api चाइल्ड को एक अनुमति-सूची दी जाती है — इस सेवा के अपने पते और debugger.allowedDestinations — और वह हर अन्य गंतव्य अस्वीकार करती है, कच्चे सॉकेट सहित।"
+  },
+  "mode.requirements.client-secret-expiry.what": {
+    "en": "995744aa9058b211",
+    "text": "एक समाप्त क्लाइंट सीक्रेट"
+  },
+  "mode.requirements.client-secret-expiry.development": {
+    "en": "9f39d413e509fdba",
+    "text": "जहाँ सीक्रेट जाँचा जाता है वहाँ स्वीकार, एक ऑडिट पंक्ति के साथ जो कहती है कि यह समाप्त हो चुका था।"
+  },
+  "mode.requirements.client-secret-expiry.product": {
+    "en": "870f4fcd8826cc66",
+    "text": "टोकन एंडपॉइंट पर अस्वीकृत (invalid_client, STS-OAUTH-0558), और client_secret_jwt कुंजी के रूप में, जब oauthClientSecret पर उस सीक्रेट के रिकॉर्ड की समाप्ति बीत चुकी हो। एक अनुप्रयोग कई सीक्रेट रख सकता है, प्रत्येक अपनी समाप्ति के साथ; एक रोटेशन जीवित सीक्रेटों को oauth2.clientSecretOverlapS के बाद समाप्त होने पर ले जाता है।"
+  },
+  "mode.requirements.signing-key-rotation.what": {
+    "en": "0643fa994213871f",
+    "text": "हस्ताक्षर कुंजियाँ घुमाई जाती हैं, एक ओवरलैप के साथ"
+  },
+  "mode.requirements.signing-key-rotation.development": {
+    "en": "ed30176d075c7eef",
+    "text": "घुमाई नहीं जातीं: कुंजियाँ हर प्रारंभ पर नए सिरे से बनती हैं। हर इकाई फिर भी अपनी पीढ़ियाँ रखती है, इसलिए हाथ से बनी अगली या सेवानिवृत्त कुंजी प्रकाशित होती है और उत्पाद की तरह सत्यापित करती है।"
+  },
+  "mode.requirements.signing-key-rotation.product": {
+    "en": "9cd85e5afa22e865",
+    "text": "हर इकाई (विश्वास क्षेत्र, उपयोग-स्थिति, एल्गोरिथ्म) एक NEXT कुंजी रखती है, जो JWKS, SAML और WS-Federation मेटाडेटा तथा /crypto/metadata में कुछ भी हस्ताक्षरित करने से पहले प्रकाशित होती है, और signing.rotate जॉब द्वारा हर signing.rotationIntervalDays पर पदोन्नत होती है; जिस कुंजी को यह बदलती है वह signing.retiredKeyGraceDays या सबसे लंबे टोकन जीवनकाल तक, जो भी अधिक हो, सत्यापन करती रहती है।"
+  },
+  "mode.requirements.krbtgt-key.what": {
+    "en": "d62d09cce263a9ae",
+    "text": "प्रत्येक विश्वास क्षेत्र की krbtgt कुंजी: वह कहाँ से आती है, और उसका रोटेशन"
+  },
+  "mode.requirements.krbtgt-key.development": {
+    "en": "df9896e4af770351",
+    "text": "krb5.krbtgtPassword से व्युत्पन्न (प्रकाशित डिफ़ॉल्ट), ताकि पाठक हर TGT डिक्रिप्ट कर सके, और अनुसूची पर नहीं घुमाई जाती। /admin/kerberos/principals पर हाथ से रोटेशन यहाँ भी काम करता है: यह व्युत्पन्न कुंजी को एक यादृच्छिक संग्रहीत कुंजी से बदल देता है, जब तक निर्देशिका उसे रखे।"
+  },
+  "mode.requirements.krbtgt-key.product": {
+    "en": "943c5e80b61d7656",
+    "text": "यादृच्छिक — krb5.enctypes के हर enctype के लिए RFC 3961 random-to-key — प्रति विश्वास क्षेत्र एक बार बनी, निर्देशिका प्रविष्टि krbtgt/<REALM>@<REALM> पर सील और कभी नहीं दिखाई जाती; krb5.krbtgtPassword अनदेखा होता है। krb5.krbtgt-rotate जॉब इसे हर krb5.krbtgtRotationIntervalDays पर बदलती है, बदले गए संस्करण को उतनी अवधि तक रखती है जितनी उसके अंतर्गत कोई TGT जीवित रह सकता है (नवीकरण सहित), और जब तक वह विंडो खुली हो कभी नहीं घुमाती। \"Rotate and invalidate\" एक ही क्रिया में Active Directory का दोहरा रीसेट है: कुछ नहीं रखा जाता और विश्वास क्षेत्र का हर TGT KRB_AP_ERR_BADKEYVER से अस्वीकृत होता है।"
+  },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "वह कुंजी जिससे Kerberos acceptor टिकट डिक्रिप्ट करता है, जब krb5.servicePassword खाली हो या प्रकाशित डिफ़ॉल्ट हो"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "प्रकाशित krb5.servicePassword से व्युत्पन्न, ताकि पाठक उसे व्युत्पन्न कर सके; खाली पासवर्ड कोई खाता नहीं बनाता और acceptor कोई टिकट स्वीकार नहीं करता।"
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "यादृच्छिक — krb5.enctypes में हर enctype के लिए एक कुंजी, उस SPN के लिए जिसे krb5.servicePrincipal नामित करता है, प्रति विश्वास क्षेत्र प्रारंभ पर एक बार बनी (या जब acceptor पहली बार माँगे), अनुप्रयोग प्रविष्टि <spn>@<REALM> पर सील और कभी नहीं दिखाई जाती। कीटैब के लिए इसे /admin/kerberos/principals पर घुमाएँ। ऑपरेटर का अपना krb5.servicePassword इस पर भारी पड़ता है।"
+  },
+  "mode.requirements.unattested-device-keys.what": {
+    "en": "6fe7c4a02a6ed641",
+    "text": "सत्यापन योग्य अटेस्टेशन के बिना प्रस्तुत डिवाइस कुंजी अस्वीकृत होती है"
+  },
+  "mode.requirements.unattested-device-keys.development": {
+    "en": "bf711f627a32037a",
+    "text": "/portal/devices पर सिद्ध कुंजी (एक JWK प्रमाण, एक जुड़ा WebAuthn क्रेडेंशियल) या किसी डिवाइस के लिए EST या SCEP पर प्रमाणित कुंजी बिना अटेस्टेशन पंजीकृत होती है, या ऐसे अटेस्टेशन के साथ जो devices.*TrustAnchors तक शृंखला न बनाए, और self-asserted अभिलिखित होती है।"
+  },
+  "mode.requirements.unattested-device-keys.product": {
+    "en": "f81bd7d492b66baa",
+    "text": "ऐसी कुंजी अस्वीकृत होती है (STS-DEVICE-0024): केवल Android Key Attestation, Apple App Attest कथन, TPM कुंजी अटेस्टेशन या WebAuthn अटेस्टेशन जो सत्यापित हो और किसी एंकर तक शृंखला बनाए, कुंजी पंजीकृत करता है। मान से कुंजी दर्ज करने वाला व्यवस्थापक एक व्यवस्थापक की क्रिया है और दोनों मोड में स्वीकार किया जाता है, proof admin, self-asserted अभिलिखित।"
+  },
+  "mode.requirements.android-attestation-revocation.what": {
+    "en": "72012b06e78ecc69",
+    "text": "जिस Android अटेस्टेशन का निरस्तीकरण जाँचा न जा सका उस पर भरोसा नहीं किया जाता, जहाँ विश्वास क्षेत्र ऐसा कहे"
+  },
+  "mode.requirements.android-attestation-revocation.development": {
+    "en": "31364892d7d7a96d",
+    "text": "जब कोई वर्तमान Android अटेस्टेशन स्थिति सूची न हो (कभी डाउनलोड नहीं हुई, डाउनलोड विफल, या बासी) तो Android शृंखला attested अभिलिखित होती है, उसका निरस्तीकरण UNCHECKED, devices.androidRevocationRequired कुछ भी कहे। जिस शृंखला को सूची निरस्त या निलंबित करती है वह दोनों मोड में self-asserted होती है।"
+  },
+  "mode.requirements.android-attestation-revocation.product": {
+    "en": "f55874a104fe39a1",
+    "text": "डिफ़ॉल्ट रूप से वही। devices.androidRevocationRequired चालू होने पर अनजाँची शृंखला self-asserted अभिलिखित होती है: डिवाइस कुंजी तब अस्वीकृत होती है (STS-DEVICE-0024) और WebAuthn का android-key कथन अविश्वसनीय होता है।"
+  },
+  "mode.requirements.fresh-key-attestation.what": {
+    "en": "703b4411bf1f7787",
+    "text": "डिवाइस प्रमाणपत्र अनुरोध में TPM कुंजी अटेस्टेशन ताज़ा होना चाहिए"
+  },
+  "mode.requirements.fresh-key-attestation.development": {
+    "en": "f1d730667e165896",
+    "text": "जिस TPM2_Certify कथन का extraData उसी क्लाइंट और कुकी के लिए EST /nonce पर जारी जीवित नॉन्स नहीं है (कोई प्राप्त नहीं, समाप्त, पहले ही खर्च, किसी अन्य क्लाइंट का, या SCEP पर अनुरोध, जिसमें कोई nonce ऑपरेशन नहीं) वह अपना स्तर बनाए रखता है और freshness UNPROVEN तथा कारण के साथ अभिलिखित होता है। जो नॉन्स मेल खाता है वह खर्च हो जाता है।"
+  },
+  "mode.requirements.fresh-key-attestation.product": {
+    "en": "335681287a816601",
+    "text": "ऐसा कथन अस्वीकृत होता है (STS-DEVICE-0050): उसी कुंजी के नए अनुरोध में दोहराया गया कैप्चर किया अटेस्टेशन अभी TPM में बनी और रखी कुंजी नहीं है। TPM अटेस्टेशन वाला डिवाइस प्रमाणपत्र इसलिए केवल EST पर जारी होता है, /nonce के बाद (draft-ietf-lamps-attestation-freshness section 5.1)।"
+  },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "किसी दूरस्थ PEP का रिवर्स प्रॉक्सी ब्राउज़र द्वारा https पर पहुँचा जाता है"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "प्रॉक्सी कॉन्फ़िगरेशन सादा-http publicBaseUrl नामित कर सकता है, ताकि एक मशीन के स्टैक को प्रॉक्सी के लिए श्रोता प्रमाणपत्र की आवश्यकता न हो।"
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "जो publicBaseUrl https नहीं है वह अस्वीकृत होता है (STS-XACML-0188): सत्र तंत्र का साइन इन वहाँ प्राधिकरण कोड लौटाता है और उसका सत्र कुकी Secure होता है।"
+  },
+  "mode.notYet.certificate-revocation.what": {
+    "en": "90de04e6940f9577",
+    "text": "प्रस्तुत प्रमाणपत्र के लिए निरस्तीकरण देखा जाता है (ऊपर की आवश्यकता देखें) और पंजीकृत प्रमाणपत्र के लिए जब वह कुछ सत्यापित करे — रजिस्ट्री, OCSP रिस्पॉन्डर (प्रत्यायोजित रिस्पॉन्डर की अपनी स्थिति सहित) और विदेशी प्रमाणपत्र द्वारा नामित CRL, http, https and ldaps पर, डेल्टा CRL मिलाकर, अप्रत्यक्ष CRL प्रति जारीकर्ता पढ़कर और उनका हस्ताक्षरकर्ता सूची के caIssuers पते से लाकर जहाँ यहाँ कुछ भी उसे न रखे। जो शेष है वह काम के बजाय सीमाएँ हैं: बिना प्रमाणपत्र पंजीकृत एक नंगी कुंजी (x5c के बिना JWK) कोई जारीकर्ता और कोई सूची नामित नहीं करती, इसलिए केवल उसे प्रविष्टि से हटाना सत्यापन रोकता है; सादा ldap: केवल तब डायल होता है जब pki.revocationLdap अनुमति दे; अपने CRL जारीकर्ता के सापेक्ष नामित वितरण बिंदु केवल pki.revocationLdapDirectory सेट होने और हर RDN एकल-मान होने पर उपयोग होता है; और LDAPS 636 कोई क्लाइंट प्रमाणपत्र नहीं माँगता, इसलिए वहाँ कुछ भी नहीं देखा जाता।"
+  },
+  "mode.notYet.post-quantum-keys.what": {
+    "en": "c03a9a7d18f82d4c",
+    "text": "TLS सर्वर प्रमाणपत्र और SPIFFE JWT प्राधिकारी किसी भी मोड में स्थायी नहीं रखे जाते: वे अपने ही मॉड्यूल के हैं और हर प्रारंभ पर फिर बनते हैं (जब तक tls.certificateFile प्रमाणपत्र न दे)। किसी विश्वास क्षेत्र की ग्यारह पोस्ट-क्वांटम कुंजियाँ 2026-09-12 को इस पंक्ति से हट गईं — उत्पाद मोड में वे विश्वास क्षेत्र के कुंजी सेट के साथ लिखी जाती हैं और उसके साथ बहाल होती हैं — और SPIFFE X.509 प्राधिकारी 2026-09-11 को: यह सेवा Root के अंतर्गत इस विश्वास क्षेत्र का SPIFFE Issuing CA है, इसलिए यह उत्पाद मोड में ठीक वैसे ही बना रहता है जैसे प्रमाणपत्र प्राधिकारी का शेष।"
+  },
+  "mode.notYet.key-never-in-memory.what": {
+    "en": "59055bc9d218975f",
+    "text": "एक निजी कुंजी हस्ताक्षर करते समय इस प्रक्रिया में डिक्रिप्ट होती है। 2026-09-06 से हस्ताक्षरों के बीच जो निवासी रहता है वह सिफरटेक्स्ट है, और `keys.plaintextRetention` तय करता है कि प्लेनटेक्स्ट कितनी देर जीवित रहे — परंतु कुंजी-एन्क्रिप्शन कुंजी भी निवासी है, इसलिए यह किसी स्नैपशॉट (कोर डंप, स्वैप किया पृष्ठ, एक क्षण के लिए जुड़ा डीबगर) के मूल्य को घटाता है और ऐसी किसी चीज़ से बचाव नहीं करता जो अपनी चुनी घड़ी पर इस मेमोरी को पढ़ सके और अगले हस्ताक्षर की प्रतीक्षा करे। जिस कुंजी को यह प्रक्रिया सचमुच पढ़ नहीं सकती वह HSM है, या एक KMS जो आपकी ओर से हस्ताक्षर करे, और यह सेटिंग के बजाय एक भिन्न डिज़ाइन है। JavaScript स्ट्रिंग को मिटाया भी नहीं जा सकता: डिक्रिप्ट बफ़र शून्य किया जाता है और उससे बनी हर चीज़ मिटाने के बजाय छोड़ दी जाती है।"
+  },
+  "mode.notYet.kerberos-keys.what": {
+    "en": "0529f94b9d0cd311",
+    "text": "उत्पाद मोड कोई फ़िक्स्चर प्रिंसिपल नहीं बनाता, कोई विश्वसनीय रियल्म नहीं और माँग पर कुछ नहीं, तथा प्रकाशित सेवा पासवर्ड अस्वीकार करता है। निर्देशिका के लोग उत्पाद KDC से उन कुंजियों पर प्रमाणित होते हैं जो उनके अपने पासवर्ड से व्युत्पन्न होती हैं जब वह सेट या सत्यापित हो, और उनकी प्रविष्टि पर सील रहती हैं (`stsKrb5Keys`); सेवा प्रिंसिपलों को यादृच्छिक कुंजियाँ और एक कीटैब मिलता है जो /admin/kerberos/principals पर एक बार दिखता है। किसी व्यक्ति का कीटैब (#59) हाथ में मौजूद पासवर्ड से व्युत्पन्न होता है — /portal/kerberos पर उनका अपना, या वह जिसे व्यवस्थापक \"Reset password and download keytab\" से सेट करे — और भंडारण से कभी नहीं पढ़ा जाता। पासवर्ड परिवर्तन या रोटेशन बदली संस्करण को रखता है — अधिकतम krb5.retainedKeyVersions, प्रत्येक krb5.retainedKeyTtlS तक — ताकि उसके अंतर्गत जारी टिकट तब तक स्वीकार हो जब तक वह समाप्त हो सकता था, जबकि पूर्व-प्रमाणीकरण और जारी करना केवल वर्तमान कुंजी का उपयोग करते हैं; \"Drop previous versions\" उस विंडो को समाप्त करता है। krbtgt कुंजी 2026-09-23 से यादृच्छिक, संग्रहीत और घुमाई जाती है (ऊपर krbtgt-key आवश्यकता)। 2026-09-15 से प्रत्येक विश्वास क्षेत्र जिसका krb5.enabled चालू है, साझा पोर्ट पर अपना KDC, अपना Kerberos रियल्म और अपनी कुंजियाँ रखता है।"
+  },
+  "mode.why.skipsOutboundTlsVerification": {
+    "en": "ed44b27a848b9e29",
+    "text": "वहाँ किसी आउटबाउंड अनुरोध का उत्तर देने वाले का प्रमाणपत्र सत्यापित करना वैकल्पिक नहीं है। इसके बजाय मेल खाती CA फ़ाइल सेटिंग में एक निजी CA नामित करें।"
+  },
+  "mode.why.spoilsOnPurpose": {
+    "en": "f2438188e89315dd",
+    "text": "एक जानबूझकर दोष वहाँ उत्तर को गलत नहीं बना सकता। किसी विकास विश्वास क्षेत्र में इसके विरुद्ध किसी क्लाइंट का अभ्यास करें।"
+  },
+  "mode.why.believesAssertedSelectors": {
+    "en": "0c7a45212f5facd9",
+    "text": "कोई सेलेक्टर जिसे कोई वर्कलोड अपने बारे में अभिकथित करे, एक ऐसा दावा है जिसकी किसी ने जाँच नहीं की, और उत्पाद कभी उस पर विश्वास नहीं करता।"
+  },
+  "mode.why.servesUnattestedEntries": {
+    "en": "2585acdb95860080",
+    "text": "Workload API वहाँ कॉलर को केवल उन पंजीकरण प्रविष्टियों से उत्तर देता है जिनसे उसके अटेस्टेड सेलेक्टर मेल खाते हैं, कभी हर प्रविष्टि से नहीं।"
+  },
+  "mode.why.acceptsCredentialsWithoutStatus": {
+    "en": "30f821c6bf407329",
+    "text": "इस विश्वास क्षेत्र द्वारा जारी क्रेडेंशियल जो कोई स्थिति संदर्भ न दिखाए, वह निरस्त किया गया हो सकता है, इसलिए Verifier वहाँ एक की माँग करता है। own-only अनुमत है, और oid4vp.statusOptionalIssuers ऐसे विश्वसनीय जारीकर्ता को छूट देता है जो कोई स्थिति प्रकाशित नहीं करता।"
+  },
+  "mode.why.usesBrokenAlgorithms": {
+    "en": "6a758f6a4b95efd8",
+    "text": "SHA-1 हस्ताक्षर, RSA PKCS#1 v1.5 कुंजी परिवहन, HTTP Digest में MD5 और वे Kerberos enctype जिन्हें RFC 8429 अप्रचलित घोषित करता है (rc4-hmac) टूटे हुए हैं, और उत्पाद इनमें से किसी का कभी उपयोग नहीं करता। अधिक मज़बूत मान अनुमत हैं।"
+  },
+  "mode.why.issuesUnsignedAssertions": {
+    "en": "ee4b4a8ecd3ef9b3",
+    "text": "हर SAML अभिकथन, और हर SAML 1.1 Response, वहाँ हस्ताक्षरित होता है (saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4)। किसी विकास विश्वास क्षेत्र में अहस्ताक्षरित अभिकथन के विरुद्ध किसी रिलाइंग पार्टी का अभ्यास करें।"
+  },
+  "mode.why.acceptsUnverifiedAttestation": {
+    "en": "3f571035da5396d2",
+    "text": "वहाँ आने वाला हर WebAuthn अटेस्टेशन कथन सत्यापित होता है, और जाली कथन अभिलिखित होने के बजाय अस्वीकृत होता है। verify-if-present और require-trusted अनुमत हैं।"
+  },
+  "mode.why.servesWithoutSecurityHeader": {
+    "en": "fb66d1b60cae1193",
+    "text": "SPIFFE Workload Endpoint विनिर्देश (section 3) कहता है कि workload.spiffe.io हेडर के बिना कॉल MUST अस्वीकृत हो।"
+  },
+  "mode.why.derivesKrbtgtFromPassword": {
+    "en": "25b530ec6472a47f",
+    "text": "krbtgt कुंजी वहाँ यादृच्छिक है, प्रति विश्वास क्षेत्र एक बार बनी और निर्देशिका पर सील रखी जाती है, इसलिए उसके लिए कोई पासवर्ड नहीं पढ़ा जाता।"
+  },
+  "mode.why.opensManagementApi": {
+    "en": "307e3194ee040685",
+    "text": "प्रबंधन API वहाँ हमेशा एक्सेस टोकन की माँग करता है, क्योंकि उसका द्वार व्यवस्थापक कंसोल का एकमात्र द्वार है; एक बना सकने के लिए प्रारंभ से पहले adminApi.clientSecret पिन करें।"
+  },
+  "mode.why.default": {
+    "en": "108a941d7ea44a81",
+    "text": "यह सेटिंग केवल विकास मोड के लिए है।"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "kerberos.notes.keys": {
+    "en": "01d360b3a9460a3b",
+    "text": "Kein Schlüsselmaterial steht in dieser Antwort oder auf der Seite. Die Schlüssel einer Person werden aus ihrem Passwort abgeleitet, wenn es gesetzt oder geprüft wird, und werden nie angezeigt; das Keytab eines Dienstprinzipals wird EINMAL übergeben, durch das Anlegen oder Rotieren, das es erzeugt hat, und das Keytab einer Person EINMAL, abgeleitet aus einem vorliegenden Passwort — dem, das ein Administrator auf der Seite der Person setzt, oder dem eigenen unter /portal/kerberos."
+  },
+  "kerberos.notes.modeProduct": {
+    "en": "8d432ed7c10cfff6",
+    "text": "Dieses KDC ist ein PRODUCT-KDC: eine Person authentifiziert sich mit ihrem eigenen Passwort über die auf ihrem Verzeichniseintrag gespeicherten Schlüssel, und eine Person ohne solche wird mit „einmal anmelden“ abgelehnt."
+  },
+  "kerberos.notes.modeDevelopment": {
+    "en": "14d392eb2589e34a",
+    "text": "Dieses KDC ist ein DEVELOPMENT-KDC: jeder Benutzer erhält seine Schlüssel aus krb5.userPassword, und Personen erhalten nie gespeicherte Schlüssel. Hier angelegte Dienstprinzipale werden in beiden Modi verwendet."
+  },
+  "kerberos.notes.realmServed": {
+    "en": "8a723c27287c5be5",
+    "text": "Ein KDC PRO VERTRAUENSBEREICH: dies sind die Personen und Anwendungen des Vertrauensbereichs, in dem diese Seite gelesen wird, als Prinzipale seines eigenen Kerberos-Realms {{kerberosRealm}}."
+  },
+  "kerberos.notes.realmNone": {
+    "en": "8b5e4bb62b24c1f7",
+    "text": "DIESER VERTRAUENSBEREICH HAT KEIN KDC: {{reason}}. Setzen Sie krb5.realm am Vertrauensbereich und schalten Sie krb5.enabled ein, um ihm eines zu geben; Port 88 leitet eine Anfrage nach dem darin stehenden Namen des Kerberos-Realms weiter."
+  },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "DAS KDC DIESES VERTRAUENSBEREICHS IST AN, KANN ABER NICHT VERWENDET WERDEN: {{reason}}. Sein Kerberos-Realm ist {{kerberosRealm}}."
+  },
+  "kerberos.notes.window": {
+    "en": "f23c2b84dd49da4d",
+    "text": "Schlüssel werden erst abgeleitet, NACHDEM ein Passwort gesetzt oder geprüft wurde, und brauchen einige zehn Millisekunden, bis sie ankommen; bis dahin lehnt das KDC die Person ab, statt einen älteren Schlüssel anzunehmen."
+  },
+  "kerberos.notes.previous": {
+    "en": "6266fa9952830399",
+    "text": "Eine Passwortänderung oder eine Rotation behält die ersetzte Version — höchstens krb5.retainedKeyVersions davon, jede für krb5.retainedKeyTtlS —, sodass ein darunter ausgestelltes Ticket noch angenommen wird, bis es hätte ablaufen können. Eine vorherige Version ÖFFNET ein solches Ticket nur: unter ihr wird nichts ausgestellt, und ein altes Passwort meldet nie an. „Vorherige Versionen verwerfen“ beendet das Fenster sofort, nach einer Kompromittierung."
+  },
+  "kerberos.notes.param.noKdcReason": {
+    "en": "eb8c1a9f118d56b9",
+    "text": "krb5.enabled ist dafür aus"
+  }
+}

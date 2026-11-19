@@ -254,7 +254,7 @@
   "caches.store.oid4vci.status-list-tokens.lifetime": "until the list changes, or half of oid4vci.statusListTtlS.",
   "caches.store.oid4vci.status-list-tokens.hitMeaning": "a list was served without signing it again",
   "caches.store.oid4vp.sign-in-register.title": "Wallet sign-in register",
-  "caches.store.oid4vp.sign-in-register.description": "The credentials this realm issued for a person on an access token it verified, which are the only ones a wallet may sign in with — keyed by a digest of the issuer-signed JWT, or for ldp_vc by the holder key and the person.",
+  "caches.store.oid4vp.sign-in-register.description": "The credentials this realm issued for a person on an access token it verified, which are the only ones a wallet may sign in with — keyed by a digest of the issuer-signed JWT (for an mdoc, of issuerAuth's payload), or for ldp_vc by the holder key and the person.",
   "caches.store.oid4vp.sign-in-register.bound": "Enforced: oid4vp.signInRegisterMaxEntries per realm; the row issued first is dropped. That fails CLOSED — a credential with no row signs nobody in.",
   "caches.store.oid4vp.sign-in-register.lifetime": "until the last credential on the row expires; a disowned row is kept until then too, so that it goes on refusing.",
   "caches.store.oid4vp.sign-in-register.hitMeaning": "a presented credential this realm recorded as one that may sign its person in",

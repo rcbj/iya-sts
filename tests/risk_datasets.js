@@ -457,6 +457,70 @@ async function partI(t) {
   JSON.stringify(refusals.map(function (r) {
     return r && r.errors;
   })));
+  // GitHub run #500's fuzz finding: POST /admin-api/risk/activate with a
+  // version holding a NUL reached PostgreSQL ("invalid byte sequence for
+  // encoding UTF8: 0x00") and was answered 500. A version this service could
+  // never have recorded is refused STS-RISK-0057 before the store is asked —
+  // at activate, delete and reload, and at an import — and is not repeated
+  // back. The store's readers and writers are counted to show it; a
+  // well-formed unknown version still reaches the store and is 0007.
+  const errorCodes = require('../common/error_codes');
+  const asked = [];
+  const spied = ['activate', 'listVersions', 'beginVersion', 'deactivate'];
+  const kept = {};
+  spied.forEach(function (name) {
+    kept[name] = riskStore[name];
+    riskStore[name] = function () {
+      asked.push(name);
+      return kept[name].apply(riskStore, arguments);
+    };
+  });
+  const fuzzed = 'b\u0000\u0004y\u00b1\u00c9z\udbc7\udf21G\ud86a' +
+                 '\uddd2\u0081h\u00eao\u0014';
+  const illFormed = [fuzzed, 'v\u0001', 'v\u0085', 'v\ud800',
+                     'x'.repeat(201)];
+  const shaped = [];
+  let before = -1;
+  let unknownVersion = null;
+  try {
+    for (const version of illFormed) {
+      for (const action of ['activate', 'delete', 'reload']) {
+        shaped.push(await riskAdmin.riskAction({
+          action: action, dataset: 'geo.country', version: version },
+                                               'a test'));
+      }
+      shaped.push(await riskAdmin.riskAction({
+        action: 'import', dataset: 'iplist.operator-allow', realm: 'acme',
+        format: 'ip-list', content: '192.0.2.124\n', version: version },
+                                             'a test'));
+    }
+    shaped.push(await riskAdmin.riskAction({
+      action: 'import', dataset: 'iplist.operator-allow', realm: 'acme',
+      format: 'ip-list', content: '192.0.2.124\n',
+      attribution: 'a\u0000b' }, 'a test'));
+    before = asked.length;
+    unknownVersion = await riskAdmin.riskAction({
+      action: 'activate', dataset: 'geo.country', version: 'v-never' },
+                                                'a test');
+  } finally {
+    spied.forEach(function (name) {
+      riskStore[name] = kept[name];
+    });
+  }
+  t.check(before === 0 && asked.length > 0 && shaped.length === illFormed.length * 4 + 1 &&
+          shaped.every(function (r) {
+            return r && r.ok === false &&
+                   errorCodes.codeOf(r) === 'STS-RISK-0057' &&
+                   JSON.stringify(r).indexOf('\\u0000') < 0 &&
+                   JSON.stringify(r).indexOf('xxxxxxxx') < 0;
+          }) && errorCodes.codeOf(unknownVersion) === 'STS-RISK-0007',
+          'I4. a version holding a NUL, another control character or half ' +
+          'a surrogate pair, or over 200 characters, is refused ' +
+          'STS-RISK-0057 at activate, delete, reload and import before the ' +
+          'store is asked, naming nothing of it (run #500)',
+          JSON.stringify({ asked: asked, codes: shaped.map(function (r) {
+            return errorCodes.codeOf(r);
+          }), unknown: errorCodes.codeOf(unknownVersion) }));
   log.debug("Leaving partI().");
 }
 

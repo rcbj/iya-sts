@@ -1339,7 +1339,7 @@ should have held. The ACS's refusal page escapes them as it always did.
 
 | `kind` | Page | Words |
 |---|---|---|
-| `index` | `GET /federation` | the `federationPages` catalogs, in seven languages |
+| `index` | `GET /federation` | the `federationPages` catalogs, in every base catalog |
 | `signedIn` | `/federation/link/{handle}`'s outcome where nothing asked to be returned to | the `handoff` catalogs' `federation.signedIn.*` — the same keys `signedInPage()` still draws for the ACS |
 | `refused` | every refusal of the two endpoints: `what`, `why`, the relationship | English, every word (#539's decision 6) |
 | `off`, `noRelationship` | the two 404s | English |

@@ -576,12 +576,12 @@
     "text": "full（#124，并入了 #115，2026-09-23）：end_session_endpoint 应答 GET 和 POST；请求在会话结束之前进行校验；id_token_hint 会被验证为本授权服务器签发的 ID 令牌（按第 2 节的允许，接受已过期的），其受众为该客户端，未签发给它的 client_id 会被拒绝；会请求最终用户确认——一个带真实按钮、不带脚本的页面——除非提示指明了本会话且任何 logout_hint 都指明了此人；post_logout_redirect_uri 只有在与客户端已注册列表精确匹配时才会被跟随，在每种模式下都如此（开发模式仍会为未注册任何列表的客户端跟随；产品模式和 OAuth 2.1 模式则不会），并返回 state。接受 ui_locales，而每个页面都是英文，这是本服务唯一的语言。前通道和后通道注销各有其行。作为依赖方（#167）：/logout 上的注销会提供联合伙伴的 end_session_endpoint，附带 id_token_hint、client_id、post_logout_redirect_uri 和 state，返回在 /federation/slo/{id} 上匹配。"
   },
   "stsmetadata.specs.oid4vci.coverage": {
-    "en": "9ec03ba02c69a7ce",
-    "text": "partial：但范围广泛：颁发者元数据、nonce、持有证明、批量签发、延迟签发、凭证要约（附录 H.1/H.2/H.3）、带 tx_code 的预授权码授权、credential_identifiers、请求和响应加密（第 10 节），以及通知端点（第 11 节）。jwt 证明标头中以及作为 attestation 证明类型的密钥证明（附录 D），针对已配置的证书进行验证；每个凭证都有状态列表；凭证可用后量子算法签名。没有钱包证明（附录 E）。"
+    "en": "15dc78bbb604ec84",
+    "text": "partial：但范围广泛：颁发者元数据、nonce、持有证明、批量签发、延迟签发、凭证要约（附录 H.1/H.2/H.3）、带 tx_code 的预授权码授权、credential_identifiers、请求和响应加密（第 10 节），以及通知端点（第 11 节）。jwt 证明标头中以及作为 attestation 证明类型的密钥证明（附录 D），针对已配置的证书进行验证；每个凭证都有状态列表；凭证可用后量子算法签名。签发 mso_mdoc（IdentityCredentialMdoc，#1862）：COSE ES256（-7）或 ESP256（-9），证明仍为 ES256 的 jwt。没有钱包证明（附录 E）。"
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "7b2694beee176000",
-    "text": "partial：按值传递以及作为按引用传递的已签名请求对象的授权请求，response_mode=direct_post，DCQL 查询（包括 credential_sets），以及对返回的全部四种格式内容的完整验证——密钥绑定 JWT、带 nonce、aud 和 iat 的 VP JWT、带 Data Integrity 证明的 VerifiablePresentation（B.1.3.2.5），以及自 #935 起的 ISO mdoc（B.2：文档签名者链接到 oid4vp.mdocTrustAnchors、MSO、每个元素的摘要、设备对 B.2.6.1 会话记录的签名；拒绝 deviceMac）——以及每个凭证的状态，每个出示的凭证都必须指明其状态（oid4vp.requireStatusReference，默认全部；ldp_vc 查询会请求 credentialStatus，不提供它的凭证会被拒绝）。自 2026-09-17 起，展示可以在 /authn/wallet 上让某人登录——通过 Digital Credentials API（附录 A：openid4vp-v1-signed、expected_origins、dc_api.jwt 或 dc_api、origin: 受众）、通过带第 8.2 节 response_code 的同设备方式，以及仅在 oid4vp.signInCrossDevice 开启时通过普通二维码——但只限本领域签发的、绑定持有者的凭证，三种格式中任意一种均可，并且只能以该凭证所签发给的目录条目身份登录；其他任何展示都会验证但不会让任何人登录。没有 presentation_definition（DIF PE）——仅限 DCQL；没有未签名或多重签名的 DC API 请求；不通过 DC API 或为登录接受 mdoc；没有钱包证明；没有 transaction_data。自 #129 起，已签名的请求按 oid4vp.clientIdPrefix 所选的前缀指明其客户端标识符（第 5.9 节）：pre-registered、decentralized_identifier（本领域的 did:web，kid 为 DID URL）、verifier_attestation（`jwt` 标头中的验证方证明 JWT，已配置或自证明），或 openid_federation（本领域的实体配置），以及自 #230 起的 x509_san_dns 和 x509_hash（第 5.9.3 节：x5c 中来自本领域 JOSE 签发 CA 的验证方自身证书、作为响应 URI 主机的 dNSName，或叶证书的 SHA-256），按领域或按请求选择；未签名的请求使用 redirect_uri。不提供 origin 前缀（它是 Digital Credentials API 自己的前缀，由浏览器设置）。"
+    "en": "65e427209cdba492",
+    "text": "partial：按值传递以及作为按引用传递的已签名请求对象的授权请求，response_mode=direct_post，DCQL 查询（包括 credential_sets），以及对返回的全部四种格式内容的完整验证——密钥绑定 JWT、带 nonce、aud 和 iat 的 VP JWT、带 Data Integrity 证明的 VerifiablePresentation（B.1.3.2.5），以及自 #935 起的 ISO mdoc（B.2：文档签名者链接到 oid4vp.mdocTrustAnchors、MSO、每个元素的摘要、设备对 B.2.6.1 会话记录的签名；拒绝 deviceMac）——以及每个凭证的状态，每个出示的凭证都必须指明其状态（oid4vp.requireStatusReference，默认全部；ldp_vc 查询会请求 credentialStatus，不提供它的凭证会被拒绝）。自 2026-09-17 起，展示可以在 /authn/wallet 上让某人登录——通过 Digital Credentials API（附录 A：openid4vp-v1-signed、expected_origins、dc_api.jwt 或 dc_api、origin: 受众）、通过带第 8.2 节 response_code 的同设备方式，以及仅在 oid4vp.signInCrossDevice 开启时通过普通二维码——但只限本领域签发的、绑定持有者的凭证，四种格式中任意一种均可，并且只能以该凭证所签发给的目录条目身份登录；其他任何展示都会验证但不会让任何人登录。没有 presentation_definition（DIF PE）——仅限 DCQL；没有未签名或多重签名的 DC API 请求；不通过 DC API 接受 mdoc（附录 A）；只有本领域签发的 mso_mdoc 才能让人登录（#1862）；没有钱包证明；没有 transaction_data。自 #129 起，已签名的请求按 oid4vp.clientIdPrefix 所选的前缀指明其客户端标识符（第 5.9 节）：pre-registered、decentralized_identifier（本领域的 did:web，kid 为 DID URL）、verifier_attestation（`jwt` 标头中的验证方证明 JWT，已配置或自证明），或 openid_federation（本领域的实体配置），以及自 #230 起的 x509_san_dns 和 x509_hash（第 5.9.3 节：x5c 中来自本领域 JOSE 签发 CA 的验证方自身证书、作为响应 URI 主机的 dNSName，或叶证书的 SHA-256），按领域或按请求选择；未签名的请求使用 redirect_uri。不提供 origin 前缀（它是 Digital Credentials API 自己的前缀，由浏览器设置）。"
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -640,8 +640,8 @@
     "text": "partial: 签发者（issue）、持有者（prove、derive）、验证者（凭证和出示）和状态服务，基于本服务自己的密码套件、状态列表和 VC API 专用密钥；在领域开启之前处于关闭状态（vcApi.enabled），在所有模式下都需要带有 vc-api:issue 或 vc-api:verify 的 OAuth 2.0 访问令牌，按客户端限速，不理解的选项会被拒绝。尚未构建：zcap 授权、工作流和交换、挑战、凭证和出示的存储（/credentials/{id} 的 GET 和 DELETE）、VCALM 的 operation:path 范围，以及按领域配置的签发者实例（实例是固定的，每种加固机制和曲线各一个）。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "b7932392e5841ca6",
-    "text": "partial：每个领域一个列表，每个凭证两位（VALID、INVALID、SUSPENDED），根据 Accept 以 JWT 和 CWT 形式作为 Status List Token 提供，带有 ttl 和 exp，一个聚合端点，以及每个 SD-JWT VC 和 jwt_vc_json 凭证中的 status 声明；验证方会解析受信任的外部颁发者的列表，并在无法给出任何陈述时拒绝。此外，每个领域还有第二个用于访问令牌的列表（#432）：每个令牌一位，每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都携带其 status 声明，并在授权服务器元数据中以 status_list_aggregation_endpoint（第 9.1 节）公布。不支持历史解析（501），不跟随重定向。不签发任何 mdoc；验证方会解析出示的 mdoc 的 Mobile Security Object 所指明的 CWT 列表，该列表由其 x5chain 中链接到 oid4vp.mdocTrustAnchors 的证书签名（#935）。"
+    "en": "1159352758ad21d3",
+    "text": "partial：每个领域一个列表，每个凭证两位（VALID、INVALID、SUSPENDED），根据 Accept 以 JWT 和 CWT 形式作为 Status List Token 提供，带有 ttl 和 exp，一个聚合端点，以及每个 SD-JWT VC 和 jwt_vc_json 凭证中的 status 声明；验证方会解析受信任的外部颁发者的列表，并在无法给出任何陈述时拒绝。此外，每个领域还有第二个用于访问令牌的列表（#432）：每个令牌一位，每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都携带其 status 声明，并在授权服务器元数据中以 status_list_aggregation_endpoint（第 9.1 节）公布。不支持历史解析（501），不跟随重定向。已签发的 mdoc 指明位于 /oid4vci/status-lists/mdoc 的 CWT，由文档签名者以 x5chain 签名（#1862）。验证方依据 oid4vp.mdocTrustAnchors 以及本领域已生成的 IACA 解析出示的 mdoc 的 CWT（#935）。"
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",
@@ -1622,6 +1622,10 @@
   "stsmetadata.endpoints./admin-api/keys/:action.what": {
     "en": "959c608dca54eb96",
     "text": "非规范。`rotate` 和 `emergency`（#48）是 /admin/keys/rotate 的两种形式：`{ \"units\": [...] }`（为空或 \"all\" 表示所有单元），紧急情况下还需 `\"confirm\": \"compromised\"`；每种都以 202 应答，并附带已排队的 signing.rotate-now 运行的 runId，可在 /admin-api/scheduler?run= 跟踪。`export`：此操作返回私钥材料，以 base64 放在 JSON 回复中，因为此 API 在其他所有地方都以 JSON 应答。接收密钥 id、格式（pem、der、jwk、pkcs12）和密码——pkcs12 必需，其他格式可选，用于加密私钥部分。此 API 完全不设关卡，这与此处每个操作的如实后果相同，对这个操作值得强调两遍。对应 POST /admin/keys/export。"
+  },
+  "stsmetadata.endpoints./admin-api/mdoc-iaca.what": {
+    "en": "371ef1954001d46d",
+    "text": "NON-SPEC (#1862)。GET /oid4vci/mdoc-iaca 发布的证书，以 JSON 形式：PEM、其主体、notBefore 和 notAfter。在首次调用时生成，方式与该公开读取相同。没有私钥。生成失败时以纯文本应答 500。"
   },
   "stsmetadata.endpoints./admin-api/pki.what": {
     "en": "83b11af065a98038",
@@ -3428,12 +3432,20 @@
     "text": "用于持有证明的新 c_nonce。一次性使用。"
   },
   "stsmetadata.endpoints./oid4vci/credential.what": {
-    "en": "183d47a992f2e527",
-    "text": "按所请求的配置签发 dc+sd-jwt、jwt_vc_json 或 ldp_vc，每个都携带其状态列表引用。验证钱包的证明——jwt 证明（在发送或要求时，其标头中带有密钥证明），或 attestation 证明类型——支持批量颁发，并接受加密请求和/或返回加密响应。"
+    "en": "691a18d16548af3b",
+    "text": "按所请求的配置签发 dc+sd-jwt、jwt_vc_json、ldp_vc 或 mso_mdoc，每个都携带其状态列表引用。验证钱包的证明——jwt 证明（在发送或要求时，其标头中带有密钥证明），或 attestation 证明类型——支持批量颁发，并接受加密请求和/或返回加密响应。"
   },
   "stsmetadata.endpoints./oid4vci/status-lists/1.what": {
     "en": "0f0ea3feaea47fa8",
     "text": "本领域的 Status List Token：application/statuslist+jwt，或在 Accept 要求时为 application/statuslist+cwt（COSE_Sign1，不带 CWT 标签）。每个凭证两位；ttl 为 oid4vci.statusListTtlS，exp 为 oid4vci.statusListLifetimeS，使用凭证密钥签名。?time= 应答 501：不保留历史列表。"
+  },
+  "stsmetadata.endpoints./oid4vci/status-lists/mdoc.what": {
+    "en": "635d4fa4e34ca898",
+    "text": "与 /oid4vci/status-lists/1 相同的位串，以 application/statuslist+cwt 形式，由本领域的 mdoc 文档签名者签名。x5chain 即该证书。Cache-Control 为列表 ttl 的 max-age，Vary 为 Accept。?time= 应答 501。"
+  },
+  "stsmetadata.endpoints./oid4vci/mdoc-iaca.what": {
+    "en": "ef6376b2dcb0c9f8",
+    "text": "本领域的 mdoc 签发机构 CA，PEM，application/pem-certificate-chain，Cache-Control no-store。在首次调用时生成。没有私钥。"
   },
   "stsmetadata.endpoints./oid4vci/status-lists.what": {
     "en": "76f52e390d2c1987",

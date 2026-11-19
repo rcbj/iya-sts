@@ -7,9 +7,9 @@ title: OpenID4VP
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all
-three credential formats its [issuer](oid4vci.md) mints, and in a fourth it
-does not mint: an ISO/IEC 18013-5 mdoc (`mso_mdoc`) from an issuer you trust. A
-verified presentation is also **a way to sign in**: *Sign in with a wallet* on
+four credential formats its [issuer](oid4vci.md) mints, including an
+ISO/IEC 18013-5 mdoc (`mso_mdoc`). A foreign mdoc is accepted from an issuer
+you trust. A verified presentation is also **a way to sign in**: *Sign in with a wallet* on
 the sign-in screen, including through the
 [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/). The
 issuer has a [DID](https://www.w3.org/TR/did-core/) of its own, published as a
@@ -139,6 +139,11 @@ document:
   refused;
 * a device-signed element is accepted only where the issuer authorized it;
 * every element the query asked for, in `oid4vp.mdocNamespace`, is present.
+
+With `oid4vp.mdocTrustAnchors` empty, a presentation is trusted only once
+this realm's own Issuing Authority CA has been minted (the first issuance,
+or `GET /oid4vci/mdoc-iaca`). A wallet sign-in accepts an mdoc only when
+this realm issued it. The Digital Credentials API does not carry an mdoc.
 
 The Key Binding JWT accepts every asymmetric algorithm the issuer binds
 credentials to. A holder may bind a credential to an ML-DSA-44 key, and this
@@ -647,9 +652,9 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims the Verifier request page lets a request name. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:iya:sts:sd-jwt-vc:identity` | yes | The `vct` required of a presented SD-JWT VC. |
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | *(empty)* | yes | PEM certificates of other issuers whose signatures are accepted. |
-| `oid4vp.mdocTrustAnchors` | `OID4VP_MDOC_TRUST_ANCHORS` | *(empty)* | yes | IACA certificates an mdoc's document signer must chain to. |
-| `oid4vp.expectedDoctype` | `OID4VP_EXPECTED_DOCTYPE` | `org.iso.18013.5.1.mDL` | yes | The `docType` an mso_mdoc request asks for and requires. |
-| `oid4vp.mdocNamespace` | `OID4VP_MDOC_NAMESPACE` | `org.iso.18013.5.1` | yes | The namespace an mso_mdoc request's claims are asked for in. |
+| `oid4vp.mdocTrustAnchors` | `OID4VP_MDOC_TRUST_ANCHORS` | *(empty)* | yes | IACA certificates an mdoc's document signer must chain to. Empty trusts nobody, except this realm's own IACA once it has been minted. |
+| `oid4vp.expectedDoctype` | `OID4VP_EXPECTED_DOCTYPE` | `urn:iya:sts:mdoc:identity` | yes | The `docType` an mso_mdoc request asks for and requires. The default is the type this realm issues. |
+| `oid4vp.mdocNamespace` | `OID4VP_MDOC_NAMESPACE` | `urn:iya:sts:mdoc` | yes | The namespace an mso_mdoc request's claims are asked for in. The default is the namespace this realm issues. |
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request waits for a wallet's response. |
 | `oid4vp.maxTransactions` | `OID4VP_MAX_TRANSACTIONS` | `5000` | yes | How many waiting requests a realm keeps; past it the oldest is dropped. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The longest a foreign issuer's status list is kept; `0` fetches every time. |
@@ -659,7 +664,7 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 | `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet and for the browser to collect the session. |
 | `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page's script asks `POST /authn-api/wallet/{state}/status` whether the wallet has answered; the page does not reload. |
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain, relayable QR code for a wallet on another device. |
-| `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The formats a sign-in asks for, in order of preference. |
+| `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc,mso_mdoc` | yes | The formats a sign-in asks for, in order of preference. An mso_mdoc signs somebody in only when this realm issued it. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | Whether a Digital Credentials API answer is encrypted (`dc_api.jwt`) or in the clear (`dc_api`). |
 | `oid4vp.responseEncryptionKeyAlgs` | `OID4VP_RESPONSE_ENCRYPTION_KEY_ALGS` | `HPKE-10-KE,ECDH-ES` | yes | The ephemeral keys a `direct_post.jwt` or `dc_api.jwt` request offers, one per algorithm, in order. Leaving out `ECDH-ES` refuses every wallet that has only it; empty is read as `ECDH-ES` alone. |
 | `oid4vp.signInClientIdPrefix` | `OID4VP_SIGN_IN_CLIENT_ID_PREFIX` | `x509_hash` | yes | The Client Identifier prefix of a sign-in's signed request (HAIP 1.0 requires `x509_hash`). |

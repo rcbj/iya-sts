@@ -1,0 +1,2274 @@
+{
+  "audit.categories.authentication.label": {
+    "en": "66880d2d8216260d",
+    "text": "प्रमाणीकरण"
+  },
+  "audit.categories.authentication.what": {
+    "en": "8daae95bb7977a6c",
+    "text": "यहाँ के सोलह प्रोटोकॉल परिवारों में से किसी में भी एक क्रेडेंशियल स्वीकार किया गया। यह उस एकल फ़नल पर दर्ज होता है जिससे उनमें से प्रत्येक पहले ही गुज़रता है, इसलिए यह सोलह स्थान नहीं बल्कि एक स्थान है। SCIM देर से शामिल हुआ और SPIFFE उसके भी बाद। SCIM: जिन स्कीमों को उसके एंडपॉइंट स्वीकार करते हैं उनमें से तीन — Basic, Digest और HOBA — हर अनुरोध पर एक क्रेडेंशियल प्रस्तुत करते हैं, और एक को स्वीकार करना प्रमाणीकरण है। उसके अन्य तीन यहाँ दिखाई नहीं देते, क्योंकि प्रत्येक कहीं और दर्ज प्रमाणीकरण को जारी रखता है: एक एक्सेस टोकन तब स्वीकार हुआ जब उसे जारी किया गया, एक सत्र कुकी तब जब उसका सत्र शुरू हुआ, और एक क्लाइंट प्रमाणपत्र प्रति कनेक्शन एक बार, प्रति अनुरोध एक बार नहीं। SPIFFE सोलहवाँ है और यहाँ तीन तरीकों से पहुँचता है: SPIRE Server API पर म्यूचुअल TLS के माध्यम से प्रस्तुत एक X509-SVID (प्रति कनेक्शन एक बार, उसी कारण से जिस कारण एक क्लाइंट प्रमाणपत्र है), अनुप्रमाणन करता एक एजेंट, और ValidateJWTSVID पर सत्यापित एक JWT-SVID। SVID जारी किया जाना इनमें से एक नहीं है। किसी प्रयास का अस्वीकार स्वीकृति के साथ-साथ `authentication.refused` है: वही विवरण, परिणाम अस्वीकृत, और कोई काउंटर नहीं बढ़ा (#954)। अनुप्रयोग पृष्ठ दोनों को सूचीबद्ध करता है, और जब वे उसका नाम लेते हैं तो `session.refuse` तथा `session.refused` को भी।"
+  },
+  "audit.categories.session.label": {
+    "en": "6fa3cbf451b2a1d5",
+    "text": "सत्र"
+  },
+  "audit.categories.session.what": {
+    "en": "da2cf9fdd76b22ff",
+    "text": "एक ब्राउज़र साइन-ऑन सत्र बनाया गया या समाप्त किया गया। OAuth 2.0 / OIDC और WS-Federation के बीच साझा, इसलिए एक WS-Federation साइन-आउट और /oauth2/logout एक ही पंक्ति देते हैं।"
+  },
+  "audit.categories.directory.label": {
+    "en": "c8f84c3c5378b920",
+    "text": "निर्देशिका"
+  },
+  "audit.categories.directory.what": {
+    "en": "1783abc24177bf60",
+    "text": "एम्बेडेड LDAP निर्देशिका: प्रविष्टियाँ बनाई गईं, हटाई गईं, अद्यतन की गईं, पुनर्नामित की गईं और क्वेरी की गईं, सादे 389 पर और LDAPS 636 पर समान रूप से।"
+  },
+  "audit.categories.admin.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "व्यवस्थापक कंसोल"
+  },
+  "audit.categories.admin.what": {
+    "en": "84e06d85d9c8036d",
+    "text": "देखा गया /admin का हर पृष्ठ और पोस्ट किया गया हर फ़ॉर्म। इसमें वह अनुरोध भी शामिल है जिसने वह पृष्ठ बनाया जिसे आप पढ़ रहे हैं।"
+  },
+  "audit.categories.api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "प्रबंधन API"
+  },
+  "audit.categories.api.what": {
+    "en": "71c007163c40d555",
+    "text": "/admin-api में हर कॉल, पठन और लेखन समान रूप से।"
+  },
+  "audit.categories.application.label": {
+    "en": "98e33b0f3104fcf1",
+    "text": "अनुप्रयोग"
+  },
+  "audit.categories.application.what": {
+    "en": "8a3b5678fb8d56d1",
+    "text": "एक अनुप्रयोग — एक OAuth क्लाइंट, एक OIDC रिलाइंग पार्टी, एक SAML सेवा प्रदाता, एक WS-Federation अनुप्रयोग, एक WS-Trust रिलाइंग पार्टी, एक Kerberos सेवा — पहली बार देखा गया, या उसने कुछ नया दर्ज किया। ऊपर की प्रमाणीकरण पंक्ति का प्रतिरूप: वह बताती है कौन, यह बताती है वे किसमें साइन इन कर रहे थे। एक कार्य आमतौर पर दोनों लिखता है।"
+  },
+  "audit.categories.protocol.label": {
+    "en": "00052adcbc9e9b70",
+    "text": "प्रोटोकॉल एंडपॉइंट"
+  },
+  "audit.categories.protocol.what": {
+    "en": "8a7c104883a4462f",
+    "text": "हर अन्य HTTP एंडपॉइंट: टोकन एंडपॉइंट, KDC प्रॉक्सी, क्रेडेंशियल एंडपॉइंट, मेटाडेटा दस्तावेज़, यह सब।"
+  },
+  "audit.categories.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "audit.categories.spiffe.what": {
+    "en": "a3485b52ee7b4222",
+    "text": "तीन सर्वर-पक्ष SPIFFE सतहें: एक SVID का निर्माण, एक पंजीकरण प्रविष्टि का बनना, बदलना या हटना, एक एजेंट का अनुप्रमाणन, और ट्रस्ट बंडल का प्राप्त होना या फ़ेडरेट होना। एक SVID पंक्ति प्रमाणीकरण पंक्ति नहीं है — क्रेडेंशियल जारी किया जाना उसे प्रस्तुत करना नहीं है — इसलिए जारी करना यहाँ है और कभी `authentication` में नहीं। दोनों में जो है, वह इनमें से किसी सतह पर प्रस्तुत किया गया और स्वीकार किया गया क्रेडेंशियल है: म्यूचुअल TLS पर एक X509-SVID, अनुप्रमाणन करता एक एजेंट, सत्यापित एक JWT-SVID। वे फ़नल पर एक प्रमाणीकरण पंक्ति भी लिखते हैं, उसी तरह जैसे एक कार्य यहाँ अन्यत्र कई परतों पर पंक्तियाँ लिखता है।"
+  },
+  "audit.categories.signals.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "audit.categories.signals.what": {
+    "en": "a6fc952d57a89b4d",
+    "text": "Shared Signals Framework: एक स्ट्रीम पर सहमति, उसका बदलना या हटना, एक विषय का जोड़ा या हटाया जाना, एक स्थिति का बदलना, और हर Security Event Token जिसे इस सेवा ने प्रेषित या प्राप्त किया — जिनमें वे भी शामिल हैं जिन्हें एक रिसीवर ने अस्वीकार किया, और वही पंक्ति सबसे महत्वपूर्ण है, क्योंकि अस्वीकृत पुश परिभाषा से प्राप्त करने वाले सिरे पर अदृश्य होता है।"
+  },
+  "audit.categories.authorization.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "audit.categories.authorization.what": {
+    "en": "4180c00619794c80",
+    "text": "प्राधिकरण निर्णय: PDP से क्या पूछा गया, उसने क्या उत्तर दिया, और — अलग से — एम्बेडेड PEP ने उस उत्तर के साथ क्या किया। दोनों जानबूझकर अलग पंक्तियाँ हैं: Indeterminate कहने वाला एक PDP और अस्वीकार करने वाला एक deny-biased PEP उपयोगकर्ता के लिए एक घटना हैं और दो घटकों के दो निर्णय, और जब वे किसी की अपेक्षा से भिन्न पड़ते हैं तो हमेशा इसलिए कि उनमें से केवल एक को देखा जा रहा था। नीति परिवर्तन ou=policies के विरुद्ध LDAP पंक्तियाँ हैं, यहाँ की पंक्तियाँ नहीं, क्योंकि रिपॉज़िटरी निर्देशिका है।"
+  },
+  "audit.categories.service.label": {
+    "en": "d677190e0a9990e7",
+    "text": "सेवा"
+  },
+  "audit.categories.service.what": {
+    "en": "a7f7b67a23b45276",
+    "text": "किसी ऐसी चीज़ की विफलताएँ जो यह सेवा एक अनुरोध के उत्तर में नहीं बल्कि स्वयं करती है: स्थायित्व, प्रक्रियाओं के बीच समन्वय, वर्कर पूल, कुंजी और सीक्रेट प्रबंधन, पृष्ठभूमि कार्य और आउटबाउंड अनुरोध। हर पंक्ति एक त्रुटि कोड रखती है।"
+  },
+  "audit.categories.mail.label": {
+    "en": "07ed6ccf6bf6393d",
+    "text": "मेल"
+  },
+  "audit.categories.mail.what": {
+    "en": "8e53272332ff4aba",
+    "text": "एक संदेश कतारबद्ध किया गया, भेजा गया, कैप्चर किया गया, डेड-लेटर किया गया या अस्वीकार किया गया (एक दर सीमा, एक ऑप्ट-आउट, कोई पता नहीं), और मेल चैनल के अपने कार्य: एक पुनः प्रयास, एक परीक्षण संदेश, एक सहेजा गया टेम्पलेट। एक पंक्ति प्राप्तकर्ता और श्रेणी का नाम लेती है, कभी मुख्य भाग का नहीं।"
+  },
+  "audit.actions.authentication.label": {
+    "en": "579808c825684965",
+    "text": "एक क्रेडेंशियल स्वीकार किया गया"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "एक क्रेडेंशियल अस्वीकार किया गया"
+  },
+  "audit.actions.portal.activate.label": {
+    "en": "979387f5c20ade32",
+    "text": "किसी ने एक सक्रियण लिंक से खाता सेटअप पूरा किया"
+  },
+  "audit.actions.portal.activate.refused.label": {
+    "en": "b70b90f7c094681b",
+    "text": "एक सक्रियण लिंक अस्वीकार किया गया"
+  },
+  "audit.actions.portal.password.changed.label": {
+    "en": "f1da75066d25fade",
+    "text": "किसी ने अपना पासवर्ड बदला"
+  },
+  "audit.actions.authn.password.changed.label": {
+    "en": "d386485290b35131",
+    "text": "किसी ने वह पासवर्ड बदला जिसे साइन इन पर बदलना आवश्यक था"
+  },
+  "audit.actions.portal.password.refused.label": {
+    "en": "47f69cc67c7ed68a",
+    "text": "एक पासवर्ड परिवर्तन अस्वीकार किया गया"
+  },
+  "audit.actions.portal.password.csrf.label": {
+    "en": "d0d17a1db73fc8e9",
+    "text": "एक खराब CSRF टोकन के कारण एक पोर्टल फ़ॉर्म अस्वीकार किया गया"
+  },
+  "audit.actions.portal.signout.label": {
+    "en": "3cacdea93eb86a99",
+    "text": "किसी ने उपयोगकर्ता पोर्टल से साइन आउट किया"
+  },
+  "audit.actions.portal.signout.csrf.label": {
+    "en": "5c6a2c095c428958",
+    "text": "एक खराब CSRF टोकन के कारण पोर्टल साइन-आउट अस्वीकार किया गया"
+  },
+  "audit.actions.portal.key.enrolled.label": {
+    "en": "a3f3da7733b18c08",
+    "text": "किसी ने अपने खाते पर एक सुरक्षा कुंजी नामांकित की"
+  },
+  "audit.actions.portal.key.removed.label": {
+    "en": "9df626538a846900",
+    "text": "किसी ने अपने खाते से एक सुरक्षा कुंजी हटाई"
+  },
+  "audit.actions.portal.key.renamed.label": {
+    "en": "60304bcfd89153d4",
+    "text": "किसी ने अपनी किसी पासकी का नाम बदला"
+  },
+  "audit.actions.portal.tls-client.issued.label": {
+    "en": "76a5695181ec00c2",
+    "text": "किसी ने स्वयं को एक TLS क्लाइंट प्रमाणपत्र जारी किया"
+  },
+  "audit.actions.portal.tls-client.revoked.label": {
+    "en": "e21ff5a6b5510412",
+    "text": "किसी ने अपने किसी TLS क्लाइंट प्रमाणपत्र को निरस्त किया"
+  },
+  "audit.actions.activation.issued.label": {
+    "en": "5889a60b1396424b",
+    "text": "एक व्यवस्थापक ने एक सक्रियण लिंक जारी किया"
+  },
+  "audit.actions.portal.password-reset.label": {
+    "en": "92c286943e08eabe",
+    "text": "किसी ने पासवर्ड रीसेट लिंक से एक नया पासवर्ड सेट किया"
+  },
+  "audit.actions.portal.password-reset.refused.label": {
+    "en": "23968f6638f00db4",
+    "text": "एक पासवर्ड रीसेट लिंक अस्वीकार किया गया"
+  },
+  "audit.actions.authn.mfa.enrolment.required.label": {
+    "en": "7c0e0aaea8f8b2c4",
+    "text": "एक साइन इन से आवश्यक दूसरा कारक सेट करने को कहा गया"
+  },
+  "audit.actions.authn.mfa.enrolment.started.label": {
+    "en": "209d46dc07311972",
+    "text": "साइन इन पर एक प्रमाणक ऐप सीक्रेट दिखाया गया"
+  },
+  "audit.actions.authn.mfa.enrolment.offered.label": {
+    "en": "1ed9cdf1827f2e5b",
+    "text": "बिना दूसरे कारक वाले एक व्यवस्थापक को एक की पेशकश की गई"
+  },
+  "audit.actions.authn.mfa.enrolment.declined.label": {
+    "en": "ba0e0e725746bbf3",
+    "text": "एक व्यवस्थापक ने पेशकश की अनदेखी की और पासवर्ड से साइन इन किया"
+  },
+  "audit.actions.authn.second-factor.skipped.label": {
+    "en": "8ea4bca1ff36014e",
+    "text": "एक याद रखा गया ब्राउज़र दूसरे कारक के स्थान पर रहा (#265)"
+  },
+  "audit.actions.authn.mfa.enrolment.at-risk.label": {
+    "en": "c9d54d1c53954c0d",
+    "text": "उन्नत जोखिम वाले साइन इन पर एक दूसरा कारक सेट किया गया"
+  },
+  "audit.actions.authn.mfa.enrolled.label": {
+    "en": "9f66bf08890386c9",
+    "text": "किसी ने साइन इन पर एक आवश्यक दूसरा कारक सेट किया"
+  },
+  "audit.actions.authn.recovery.refused.label": {
+    "en": "d8ba643a9e0a83b8",
+    "text": "पासकी नीति ने स्व-सेवा खाता पुनर्प्राप्ति अस्वीकार कर दी"
+  },
+  "audit.actions.authn.recovery.limited.label": {
+    "en": "497fee88cee8044f",
+    "text": "खाता पुनर्प्राप्ति के बाद एक साइन इन पासकी पंजीकृत करने तक सीमित था"
+  },
+  "audit.actions.authn.recovery.completed.label": {
+    "en": "6c8028e5950a3cd4",
+    "text": "एक पासकी ने खाता पुनर्प्राप्ति के बाद किसी को साइन इन कराया"
+  },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "किसी ने एक साइन इन चरण छोड़ा और साइन इन फिर से शुरू किया"
+  },
+  "audit.actions.portal.mfa.started.label": {
+    "en": "d51f6daad15168fd",
+    "text": "किसी को एक नया प्रमाणक-ऐप सीक्रेट दिखाया गया"
+  },
+  "audit.actions.portal.mfa.enrolled.label": {
+    "en": "06603e0b57ab3156",
+    "text": "किसी ने अपने खाते पर एक प्रमाणक ऐप सेट किया"
+  },
+  "audit.actions.portal.mfa.refused.label": {
+    "en": "2118006526a28182",
+    "text": "एक प्रमाणक-ऐप सेटअप की पुष्टि नहीं हुई"
+  },
+  "audit.actions.portal.mfa.removed.label": {
+    "en": "5bb7d0985ef3e565",
+    "text": "किसी ने अपने खाते से प्रमाणक ऐप हटाया"
+  },
+  "audit.actions.portal.mfa.csrf.label": {
+    "en": "228f7d738861aa3c",
+    "text": "एक खराब CSRF टोकन के कारण प्रमाणक-ऐप परिवर्तन अस्वीकार किया गया"
+  },
+  "audit.actions.portal.activate.mfa.started.label": {
+    "en": "df561a24375c8165",
+    "text": "एक सक्रियण लिंक खर्च किए जाते समय एक प्रमाणक-ऐप सीक्रेट दिखाया गया"
+  },
+  "audit.actions.portal.activate.mfa.refused.label": {
+    "en": "7a566c67501c3cbf",
+    "text": "सक्रियण के दौरान एक प्रमाणक ऐप की पुष्टि नहीं हुई"
+  },
+  "audit.actions.portal.activate.key.started.label": {
+    "en": "df93eecfc112a97a",
+    "text": "एक सक्रियण लिंक खर्च किए जाते समय एक सुरक्षा कुंजी समारोह शुरू किया गया"
+  },
+  "audit.actions.portal.activate.key.enrolled.label": {
+    "en": "6f06ac6bc8ba305b",
+    "text": "एक सक्रियण लिंक खर्च किए जाते समय एक सुरक्षा कुंजी पंजीकृत की गई"
+  },
+  "audit.actions.portal.activate.key.refused.label": {
+    "en": "0a96c72ca7f0d27e",
+    "text": "सक्रियण के दौरान एक सुरक्षा कुंजी पंजीकृत नहीं हुई"
+  },
+  "audit.actions.session.start.label": {
+    "en": "e88b0f8f798c2f1f",
+    "text": "एक साइन-ऑन सत्र बनाया गया"
+  },
+  "audit.actions.session.end.label": {
+    "en": "4edfa53f58db7a9b",
+    "text": "एक साइन-ऑन सत्र समाप्त किया गया"
+  },
+  "audit.actions.session.renew.label": {
+    "en": "0bfd5e67a3f0fdc2",
+    "text": "एक होस्ट की गई सतह ने उसी सत्र के भीतर अपने टोकन नवीनीकृत किए"
+  },
+  "audit.actions.authn.session.bound.label": {
+    "en": "027a6091ae35ff05",
+    "text": "एक साइन-ऑन सत्र उस कुंजी से बाध्य किया गया जिसे उसका ब्राउज़र रखता है"
+  },
+  "audit.actions.authn.session.refreshed.label": {
+    "en": "bbbad25d367ffcdf",
+    "text": "एक उपकरण-बद्ध सत्र की कुकी उसकी कुंजी के प्रमाण पर नवीनीकृत की गई"
+  },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "एक साइन-ऑन सत्र ने उपकरण बंधन छोड़ दिया"
+  },
+  "audit.actions.logout.global.label": {
+    "en": "db32c1466e054343",
+    "text": "एक पहचान के लिए रखी हर चीज़ समाप्त की गई, हर प्रोटोकॉल में"
+  },
+  "audit.actions.logout.selective.label": {
+    "en": "e291d5be7d6ee6b6",
+    "text": "एक पहचान के लिए नामित सत्र या क्रेडेंशियल समाप्त किए गए"
+  },
+  "audit.actions.logout.backchannel.label": {
+    "en": "8814d3131ad9808b",
+    "text": "एक बैक-चैनल Logout Token एक रिलाइंग पार्टी तक पहुँचा, या अंततः नहीं पहुँचा"
+  },
+  "audit.actions.mail.queued.label": {
+    "en": "b3de8ca7af29b8f6",
+    "text": "एक संदेश एक प्राप्तकर्ता के लिए कतारबद्ध किया गया"
+  },
+  "audit.actions.mail.sent.label": {
+    "en": "fa6f816945723d59",
+    "text": "एक संदेश ट्रांसपोर्ट द्वारा स्वीकार किया गया, या कैप्चर किया गया"
+  },
+  "audit.actions.mail.dead.label": {
+    "en": "9af6832caf6ce8ab",
+    "text": "एक संदेश वितरित नहीं हुआ और एक डेड लेटर है"
+  },
+  "audit.actions.mail.refused.label": {
+    "en": "ad552eb0de5cd96e",
+    "text": "एक संदेश कतारबद्ध नहीं किया गया (दर सीमा, ऑप्ट-आउट, कोई पता नहीं, कोई ट्रांसपोर्ट नहीं)"
+  },
+  "audit.actions.mail.reset-requested.label": {
+    "en": "96d00a4e43d335ab",
+    "text": "एक व्यक्ति ने स्व-सेवा पासवर्ड रीसेट लिंक माँगा; पंक्ति बताती है कि एक भेजा गया या नहीं, और फ़ॉर्म कभी नहीं बताता"
+  },
+  "audit.actions.mail.retry.label": {
+    "en": "bf173570a8065c71",
+    "text": "एक डेड लेटर को एक व्यवस्थापक ने फिर से कतारबद्ध किया"
+  },
+  "audit.actions.mail.template.label": {
+    "en": "e647419ca1d6ef3f",
+    "text": "एक विश्वास क्षेत्र का संदेश टेम्पलेट सहेजा गया या रीसेट किया गया"
+  },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "एक विश्वास क्षेत्र का साइन-इन लोगो अपलोड या हटाया गया"
+  },
+  "audit.actions.mail.verified.label": {
+    "en": "3b2f440c71a1db39",
+    "text": "एक व्यक्ति ने अपनी प्रविष्टि पर पता सत्यापित किया"
+  },
+  "audit.actions.mail.preferences.label": {
+    "en": "3bcffd401e71abf8",
+    "text": "एक व्यक्ति ने बदला कि वे कौन से वैकल्पिक संदेश प्राप्त करते हैं"
+  },
+  "audit.actions.scheduler.run.label": {
+    "en": "cd8826405462df3b",
+    "text": "एक अनुसूचित कार्य चला, हाथ से कतारबद्ध किया गया, या ले लिया गया"
+  },
+  "audit.actions.scheduler.step-down.label": {
+    "en": "c632cf6ff6fe1c5f",
+    "text": "अनुसूचक के लीडर को पद छोड़ने को कहा गया"
+  },
+  "audit.actions.keys.rotate.label": {
+    "en": "d6193043627c50dd",
+    "text": "एक विश्वास क्षेत्र की हस्ताक्षर कुंजियाँ घुमाई गईं"
+  },
+  "audit.actions.keys.rotate.emergency.label": {
+    "en": "d17d27c22826e4ce",
+    "text": "एक विश्वास क्षेत्र की हस्ताक्षर कुंजियाँ आपात स्थिति में घुमाई गईं: keyCompromise के लिए प्रमाणपत्र निरस्त, सत्र समाप्त"
+  },
+  "audit.actions.application.secret-expiring.label": {
+    "en": "cb6de4ce226bc1a6",
+    "text": "एक अनुप्रयोग का क्लाइंट सीक्रेट जल्द समाप्त होता है"
+  },
+  "audit.actions.application.secret-expired.label": {
+    "en": "5f2e200ae7ddf231",
+    "text": "एक अनुप्रयोग का क्लाइंट सीक्रेट समाप्त हो चुका है"
+  },
+  "audit.actions.keys.retire.label": {
+    "en": "04a39be278dba264",
+    "text": "अपनी अनुग्रह अवधि के बाद सेवानिवृत्त हस्ताक्षर कुंजियाँ हटा दी गईं"
+  },
+  "audit.actions.keys.data-key-rotate.label": {
+    "en": "a92aef70eea08562",
+    "text": "डेटा एन्क्रिप्शन कुंजियाँ घुमाई गईं"
+  },
+  "audit.actions.keys.data-key-reencrypt.label": {
+    "en": "d0f2b55086c5b0cc",
+    "text": "प्रतिस्थापित डेटा एन्क्रिप्शन कुंजियों के अंतर्गत मान पुनः सील किए गए"
+  },
+  "audit.actions.keys.data-key-destroy.label": {
+    "en": "2cd8ec4e418d90bd",
+    "text": "वे प्रतिस्थापित डेटा एन्क्रिप्शन कुंजियाँ नष्ट कर दी गईं जिनके अंतर्गत कुछ भी सील नहीं है"
+  },
+  "audit.actions.keys.kek-rotate.label": {
+    "en": "45a347f68e6cd67b",
+    "text": "कुंजी-एन्क्रिप्शन कुंजी को उसकी कुंजी प्रबंधन सेवा में घुमाया गया और डेटा कुंजियाँ पुनः लपेटी गईं"
+  },
+  "audit.actions.keys.pin.label": {
+    "en": "d76686444b21987a",
+    "text": "एक कुंजी युग्म को एक एल्गोरिथ्म के लिए एक विश्वास क्षेत्र की हस्ताक्षर कुंजी के रूप में पिन किया गया"
+  },
+  "audit.actions.keys.unpin.label": {
+    "en": "54192b081654a36e",
+    "text": "एक पिन की गई हस्ताक्षर कुंजी अनपिन की गई; उत्पन्न कुंजी फिर से हस्ताक्षर करती है"
+  },
+  "audit.actions.oidfed.key-minted.label": {
+    "en": "757374057c690128",
+    "text": "एक विश्वास क्षेत्र की पहली Federation Entity Key बनाई गई"
+  },
+  "audit.actions.oidfed.key-rotated.label": {
+    "en": "421ae5fd8aeff013",
+    "text": "एक विश्वास क्षेत्र की Federation Entity Key घुमाई गई"
+  },
+  "audit.actions.oidfed.key-revoked.label": {
+    "en": "d44e60f7c3b5dfd2",
+    "text": "एक Federation Entity Key निरस्त की गई"
+  },
+  "audit.actions.oidfed.subordinate-set.label": {
+    "en": "9bed214a635cd3f6",
+    "text": "एक इकाई को फ़ेडरेशन अधीनस्थ के रूप में पंजीकृत किया गया"
+  },
+  "audit.actions.oidfed.subordinate-removed.label": {
+    "en": "0c067c73e73448f8",
+    "text": "एक फ़ेडरेशन अधीनस्थ हटाया गया"
+  },
+  "audit.actions.oidfed.anchor-set.label": {
+    "en": "ead499e281c4e6de",
+    "text": "एक फ़ेडरेशन Trust Anchor कॉन्फ़िगर किया गया"
+  },
+  "audit.actions.oidfed.anchor-removed.label": {
+    "en": "2b7251797963c5ef",
+    "text": "एक फ़ेडरेशन Trust Anchor हटाया गया"
+  },
+  "audit.actions.oidfed.mark-type-set.label": {
+    "en": "9e9372675eaa32ad",
+    "text": "जारी करने के लिए एक Trust Mark प्रकार पंजीकृत किया गया"
+  },
+  "audit.actions.oidfed.remove-mark-type.label": {
+    "en": "835f965dca447e5d",
+    "text": "एक Trust Mark प्रकार का जारी होना बंद हुआ"
+  },
+  "audit.actions.oidfed.mark-policy-set.label": {
+    "en": "d5ab1ca537a13651",
+    "text": "एक Trust Mark प्रकार के लिए एक Trust Anchor की नीति सेट की गई"
+  },
+  "audit.actions.oidfed.remove-mark-policy.label": {
+    "en": "9dccb0790296dce2",
+    "text": "एक Trust Mark प्रकार के लिए एक Trust Anchor की नीति हटाई गई"
+  },
+  "audit.actions.oidfed.mark-issued.label": {
+    "en": "e64f13f3406e1762",
+    "text": "एक Trust Mark जारी किया गया"
+  },
+  "audit.actions.oidfed.mark-revoked.label": {
+    "en": "6f2328d050fa14d0",
+    "text": "एक Trust Mark निरस्त किया गया"
+  },
+  "audit.actions.oidfed.held-mark-added.label": {
+    "en": "c74d829506487db2",
+    "text": "विश्वास क्षेत्र को जारी एक Trust Mark उसकी Entity Configuration में जोड़ा गया"
+  },
+  "audit.actions.oidfed.held-mark-removed.label": {
+    "en": "95a2ca1dbc9523c2",
+    "text": "एक वहन किया गया Trust Mark हटाया गया"
+  },
+  "audit.actions.oidfed.act-refused.label": {
+    "en": "401bfc3383109058",
+    "text": "एक OpenID Federation कार्य उसके इनपुट के लिए अस्वीकार किया गया"
+  },
+  "audit.actions.oidfed.resolved.label": {
+    "en": "f143a7ceda9e1a0a",
+    "text": "एक व्यवस्थापक ने एक इकाई की Trust Chain हल की"
+  },
+  "audit.actions.device.create.label": {
+    "en": "3db68946dc0a58b8",
+    "text": "एक उपकरण पंजीकृत किया गया"
+  },
+  "audit.actions.device.browser.remembered.label": {
+    "en": "49ff1994e426c867",
+    "text": "एक व्यक्ति ने इस ब्राउज़र को याद रखने को कहा (#265)"
+  },
+  "audit.actions.device.update.label": {
+    "en": "3bc1ce21da5ded97",
+    "text": "एक उपकरण बदला गया: उसका लेबल, स्वामी, अनुप्रयोग या स्थिति"
+  },
+  "audit.actions.device.delete.label": {
+    "en": "65e418409a57cb08",
+    "text": "एक उपकरण हटाया गया"
+  },
+  "audit.actions.device.evict.label": {
+    "en": "b1cb118450f0fbef",
+    "text": "अपने व्यक्ति की सीमा पर जगह बनाने के लिए एक उपकरण हटाया गया"
+  },
+  "audit.actions.device.attestation-revoked.label": {
+    "en": "3571d30810b2d9c7",
+    "text": "एक उपकरण कुंजी अब अनुप्रमाणित नहीं है: Google की Android अनुप्रमाणन स्थिति सूची उसकी श्रृंखला को निरस्त करती है"
+  },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "एक WebAuthn पंजीकरण या अभिकथन चला, पूरा हुआ या नहीं"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "पोस्ट-क्वांटम पासकी रखने वाले एक व्यक्ति ने शास्त्रीय पासकी से साइन इन किया"
+  },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "पासकी पंजीकरण पर एक क्लाइंट को ML-DSA की पेशकश बंद कर दी गई"
+  },
+  "audit.actions.webauthn.attestation-revoked.label": {
+    "en": "0be46b8b29aaf446",
+    "text": "एक सुरक्षा कुंजी का अनुप्रमाणन अब विश्वसनीय नहीं है: Google की Android अनुप्रमाणन स्थिति सूची उसकी श्रृंखला को निरस्त करती है"
+  },
+  "audit.actions.device.key-add.label": {
+    "en": "6c1b2513c20532ef",
+    "text": "एक उपकरण में एक कुंजी जोड़ी गई"
+  },
+  "audit.actions.device.key-remove.label": {
+    "en": "edae701aed965cc2",
+    "text": "एक उपकरण से एक कुंजी हटाई गई"
+  },
+  "audit.actions.device.compliance.label": {
+    "en": "60bbcc3da44c2094",
+    "text": "एक उपकरण का अनुपालन सेट किया गया"
+  },
+  "audit.actions.device.enrol.refused.label": {
+    "en": "9dd9615a103316c6",
+    "text": "बिना सत्यापित अनुप्रमाणन वाली एक उपकरण कुंजी अस्वीकार की गई"
+  },
+  "audit.actions.user.create.label": {
+    "en": "3598d15a7df16d24",
+    "text": "एक उपयोगकर्ता बनाया गया"
+  },
+  "audit.actions.user.delete.label": {
+    "en": "6577ec900f17cf27",
+    "text": "एक उपयोगकर्ता हटाया गया"
+  },
+  "audit.actions.user.update.label": {
+    "en": "49d84d7d40f82651",
+    "text": "एक उपयोगकर्ता अद्यतन किया गया"
+  },
+  "audit.actions.user.rename.label": {
+    "en": "13b017cf352d6b64",
+    "text": "एक उपयोगकर्ता का नाम बदला गया"
+  },
+  "audit.actions.user.export.label": {
+    "en": "13bfbf4853070b8e",
+    "text": "एक उपयोगकर्ता को एक LDIF फ़ाइल में निर्यात किया गया"
+  },
+  "audit.actions.user.import.label": {
+    "en": "9afa273a898e8879",
+    "text": "एक उपयोगकर्ता को एक LDIF फ़ाइल से आयात किया गया"
+  },
+  "audit.actions.cells.rehome.label": {
+    "en": "5d1b93eaa6c979c6",
+    "text": "एक व्यक्ति को दूसरे cell में ले जाया गया"
+  },
+  "audit.actions.user.query.label": {
+    "en": "e3ae11dd4e3fe2c4",
+    "text": "एक खोज ने कम से कम एक उपयोगकर्ता लौटाया"
+  },
+  "audit.actions.group.create.label": {
+    "en": "58d10c676bac86f0",
+    "text": "एक समूह बनाया गया"
+  },
+  "audit.actions.group.delete.label": {
+    "en": "c09f3ad40bb637a6",
+    "text": "एक समूह हटाया गया"
+  },
+  "audit.actions.group.update.label": {
+    "en": "7b8bdc21120a364b",
+    "text": "एक समूह अद्यतन किया गया"
+  },
+  "audit.actions.group.rename.label": {
+    "en": "7249c5235cd5c992",
+    "text": "एक समूह का नाम बदला गया"
+  },
+  "audit.actions.entry.create.label": {
+    "en": "d15a6deade1530ee",
+    "text": "ट्री में अन्यत्र एक प्रविष्टि बनाई गई"
+  },
+  "audit.actions.entry.delete.label": {
+    "en": "7c1e5a26bd61edeb",
+    "text": "ट्री में अन्यत्र एक प्रविष्टि हटाई गई"
+  },
+  "audit.actions.entry.update.label": {
+    "en": "a04e6a7c2bb7c122",
+    "text": "ट्री में अन्यत्र एक प्रविष्टि अद्यतन की गई"
+  },
+  "audit.actions.entry.rename.label": {
+    "en": "ca4b7726b4ea6fc4",
+    "text": "ट्री में अन्यत्र एक प्रविष्टि का नाम बदला गया"
+  },
+  "audit.actions.directory.search.label": {
+    "en": "1846cbca767766ec",
+    "text": "एक खोज जिसने कोई उपयोगकर्ता नहीं लौटाया"
+  },
+  "audit.actions.directory.compare.label": {
+    "en": "3045c116ef8b9c13",
+    "text": "एक विशेषता मान की तुलना की गई"
+  },
+  "audit.actions.directory.bind.label": {
+    "en": "df3057c73cc1b56c",
+    "text": "एक bind"
+  },
+  "audit.actions.application.create.label": {
+    "en": "24f5ef2da42260cf",
+    "text": "एक अनुप्रयोग पहली बार देखा गया"
+  },
+  "audit.actions.application.secret-revealed.label": {
+    "en": "8f3f50eb41e457f1",
+    "text": "एक अनुप्रयोग का क्रेडेंशियल एक व्यवस्थापक को दिखाया गया"
+  },
+  "audit.actions.application.export.label": {
+    "en": "6cf3b675c20a94b9",
+    "text": "एक अनुप्रयोग को एक LDIF फ़ाइल में निर्यात किया गया"
+  },
+  "audit.actions.application.import.label": {
+    "en": "11baa5a45c403972",
+    "text": "एक अनुप्रयोग को एक LDIF फ़ाइल से आयात किया गया"
+  },
+  "audit.actions.application.add-owner.label": {
+    "en": "5fb5f4fb1a5e6255",
+    "text": "एक अनुप्रयोग में एक स्वामी जोड़ा गया"
+  },
+  "audit.actions.application.remove-owner.label": {
+    "en": "74db31f6ed42d060",
+    "text": "एक अनुप्रयोग से एक स्वामी हटाया गया"
+  },
+  "audit.actions.application.update.label": {
+    "en": "fdd9e6c7aff9da36",
+    "text": "एक अनुप्रयोग ने कुछ नया दर्ज किया"
+  },
+  "audit.actions.consent.grant.label": {
+    "en": "b293aef893d9084c",
+    "text": "एक व्यक्ति ने एक अनुप्रयोग के स्कोप के लिए सहमति दी"
+  },
+  "audit.actions.consent.deny.label": {
+    "en": "39e3064d53842768",
+    "text": "एक व्यक्ति ने एक अनुप्रयोग के स्कोप अस्वीकार किए"
+  },
+  "audit.actions.consent.revoke.label": {
+    "en": "3f62e1d9194a46d3",
+    "text": "एक दर्ज सहमति वापस ली गई"
+  },
+  "audit.actions.application.delete.label": {
+    "en": "d0041a29161906a3",
+    "text": "एक अनुप्रयोग रजिस्ट्री से हटाया गया"
+  },
+  "audit.actions.oidfed.registered.label": {
+    "en": "477befa37c2832e8",
+    "text": "एक रिलाइंग पार्टी OpenID Federation के माध्यम से पंजीकृत की गई"
+  },
+  "audit.actions.oidfed.registration-refused.label": {
+    "en": "da4aeca7dea3666c",
+    "text": "OpenID Federation के माध्यम से एक पंजीकरण अस्वीकार किया गया"
+  },
+  "audit.actions.admin.view.label": {
+    "en": "0e19d702f1b129e8",
+    "text": "एक कंसोल पृष्ठ देखा गया"
+  },
+  "audit.actions.admin.change.label": {
+    "en": "cfd6adfa05969133",
+    "text": "एक कंसोल फ़ॉर्म पोस्ट किया गया"
+  },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "कॉन्फ़िगरेशन निर्यात किया गया"
+  },
+  "audit.actions.claims.change.label": {
+    "en": "34e69552072a4ab5",
+    "text": "एक टोकन या अभिकथन क्लेम सेट बदला गया"
+  },
+  "audit.actions.admin.role.change.label": {
+    "en": "01b01e9a91df66f7",
+    "text": "एक व्यवस्थापक कंसोल भूमिका दी गई या छीन ली गई"
+  },
+  "audit.actions.admin.console.bootstrap.label": {
+    "en": "fb5ea855b492ffb3",
+    "text": "बूटस्ट्रैप व्यवस्थापक आरंभिक रूप से स्थापित किया गया, या पहली बार कंसोल में साइन इन हुआ"
+  },
+  "audit.actions.admin.mail.set.label": {
+    "en": "00a6e30371abdc2d",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का पता सेट किया"
+  },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के साइन-इन नाम बदले"
+  },
+  "audit.actions.admin.mfa.totp.cleared.label": {
+    "en": "478c7ee15248637f",
+    "text": "एक ऑपरेटर ने किसी का प्रमाणक ऐप साफ़ किया"
+  },
+  "audit.actions.admin.mfa.key.cleared.label": {
+    "en": "d62700d9f7751e8b",
+    "text": "एक ऑपरेटर ने किसी की सुरक्षा कुंजी हटाई"
+  },
+  "audit.actions.admin.mfa.key.renamed.label": {
+    "en": "c179dbd3cb227763",
+    "text": "एक ऑपरेटर ने किसी की पासकी का नाम बदला"
+  },
+  "audit.actions.admin.password.reset.label": {
+    "en": "079b0b2fbe1a3633",
+    "text": "एक ऑपरेटर ने किसी का पासवर्ड रीसेट किया"
+  },
+  "audit.actions.admin.password.reset-link.label": {
+    "en": "852a4863afb8c14c",
+    "text": "एक ऑपरेटर ने किसी को एक पासवर्ड रीसेट लिंक जारी किया"
+  },
+  "audit.actions.admin.mfa.primary-keys.removed.label": {
+    "en": "862aab6d15756275",
+    "text": "एक ऑपरेटर ने किसी का पासवर्ड-रहित साइन इन अक्षम किया"
+  },
+  "audit.actions.admin.mfa.disabled.label": {
+    "en": "3173c5ea3812f14e",
+    "text": "एक ऑपरेटर ने किसी के पास मौजूद हर दूसरा कारक हटाया"
+  },
+  "audit.actions.admin.mfa.required.label": {
+    "en": "26c5d8ef5b36a4ad",
+    "text": "एक ऑपरेटर ने किसी के लिए दूसरा कारक आवश्यक किया"
+  },
+  "audit.actions.admin.mfa.unrequired.label": {
+    "en": "e9ee0fbe15904e35",
+    "text": "एक ऑपरेटर ने किसी के लिए दूसरा कारक आवश्यक करना बंद किया"
+  },
+  "audit.actions.admin.delegation.not-delegated.label": {
+    "en": "305dc1462bc75cc4",
+    "text": "एक ऑपरेटर ने किसी को ऐसा चिह्नित किया जिसे प्रत्यायोजित नहीं किया जा सकता, या वह चिह्न हटाया"
+  },
+  "audit.actions.admin.delegation.may-act.label": {
+    "en": "2d5a617736d0c319",
+    "text": "एक ऑपरेटर ने उस पक्ष का नाम लिया या हटाया जो किसी की ओर से कार्य कर सकता है"
+  },
+  "audit.actions.admin.delegation.semantics.label": {
+    "en": "370cb73f7a19a60b",
+    "text": "एक ऑपरेटर ने वे प्रत्यायोजन अर्थ सेट किए जिन्हें एक व्यक्ति अनुमति देता है, या उनका डिफ़ॉल्ट (#186)"
+  },
+  "audit.actions.portal.delegation.may-act.label": {
+    "en": "faa7f1245749fea5",
+    "text": "एक व्यक्ति ने उस पक्ष का नाम लिया या हटाया जो उनकी ओर से कार्य कर सकता है"
+  },
+  "audit.actions.portal.delegation.search.label": {
+    "en": "ce14f3c18b0c3f60",
+    "text": "एक व्यक्ति ने किसी ऐसे की खोज की जो उनकी ओर से कार्य कर सकता है"
+  },
+  "audit.actions.admin.password-policy.change.label": {
+    "en": "3919c9c6efb6ee77",
+    "text": "एक पासवर्ड नीति प्रोफ़ाइल बदली गई"
+  },
+  "audit.actions.admin.policies.export.label": {
+    "en": "b4c871ea9e88127c",
+    "text": "एक विश्वास क्षेत्र की नीतियाँ निर्यात की गईं, हस्ताक्षरित"
+  },
+  "audit.actions.admin.policies.import.label": {
+    "en": "18769044ecea4c1c",
+    "text": "एक हस्ताक्षरित नीति निर्यात आयात किया गया"
+  },
+  "audit.actions.admin.policies.trust-signer.label": {
+    "en": "ba7acd0fc8b6667f",
+    "text": "दूसरे विश्वास क्षेत्र के नीति निर्यात हस्ताक्षरकर्ता पर विश्वास किया गया"
+  },
+  "audit.actions.admin.authn-policy.change.label": {
+    "en": "be6362a1a19bae26",
+    "text": "एक प्रमाणीकरण नीति प्रोफ़ाइल बदली गई"
+  },
+  "audit.actions.admin.locale-policy.change.label": {
+    "en": "4dfe507526bb6dd5",
+    "text": "एक लोकेल नीति प्रोफ़ाइल बदली गई"
+  },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "एक लॉगिन-पश्चात गतिविधि नीति प्रोफ़ाइल बदली गई"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "एक व्यक्ति से एक लॉगिन-पश्चात गतिविधि करने को कहा गया"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "एक व्यक्ति ने एक लॉगिन-पश्चात गतिविधि छोड़ दी"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "एक व्यक्ति ने एक लॉगिन-पश्चात गतिविधि की"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "एक साइन इन रोका गया: एक लॉगिन-पश्चात गतिविधि अतिदेय है"
+  },
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "एक लॉगिन-पश्चात गतिविधि शुरू, विराम, पुनः आरंभ या समाप्त की गई"
+  },
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "एक शुरू की गई लॉगिन-पश्चात गतिविधि ने अपने अनुस्मारक मेल किए"
+  },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "एक उपकरण वह पासकी नहीं बना सका जिसे एक लॉगिन-पश्चात गतिविधि ने माँगा"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "एक पासकी अपने प्रमाणक पर प्रतिस्थापित हो सकती है"
+  },
+  "audit.actions.authn.mail-factor.change.label": {
+    "en": "4f4ca73f8a45e801",
+    "text": "एक ईमेल किया गया दूसरा कारक चालू या बंद किया गया"
+  },
+  "audit.actions.authn.mail-factor.sent.label": {
+    "en": "995183f127e13d83",
+    "text": "एक ईमेल किया गया साइन-इन कोड या लिंक भेजा गया"
+  },
+  "audit.actions.authn.mail-factor.accepted.label": {
+    "en": "4efa82bd5d58ca32",
+    "text": "एक ईमेल किया गया साइन-इन कोड या लिंक स्वीकार किया गया"
+  },
+  "audit.actions.authn.mail-factor.refused.label": {
+    "en": "7c4eb49623da157f",
+    "text": "एक ईमेल किया गया साइन-इन कोड या लिंक अस्वीकार किया गया"
+  },
+  "audit.actions.admin.truststore.change.label": {
+    "en": "feb59a61d26db396",
+    "text": "एक क्लाइंट-प्रमाणपत्र trust anchor जोड़ा या हटाया गया"
+  },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "हस्ताक्षरकर्ता ट्रस्टस्टोर या एक पैरानॉयड PKI सेटिंग बदली गई"
+  },
+  "audit.actions.krb5.keys.derived.label": {
+    "en": "048452fd758565c6",
+    "text": "एक व्यक्ति की Kerberos कुंजियाँ उनके पासवर्ड से व्युत्पन्न की गईं"
+  },
+  "audit.actions.krb5.trust.sid-filtered.label": {
+    "en": "0cb1d7c8c214f1f1",
+    "text": "एक टिकट जो Kerberos ट्रस्ट पार कर गया SID-filtered किया गया"
+  },
+  "audit.actions.admin.krb5.keys.cleared.label": {
+    "en": "a9405f7ee523fd30",
+    "text": "एक ऑपरेटर ने किसी की Kerberos कुंजियाँ साफ़ कीं"
+  },
+  "audit.actions.admin.krb5.service.created.label": {
+    "en": "c81b1d8c217579ec",
+    "text": "एक Kerberos सेवा प्रिंसिपल एक यादृच्छिक कुंजी के साथ बनाया गया"
+  },
+  "audit.actions.admin.krb5.service.rotated.label": {
+    "en": "322d960ee729793c",
+    "text": "एक Kerberos सेवा प्रिंसिपल की कुंजी घुमाई गई"
+  },
+  "audit.actions.admin.krb5.service.deleted.label": {
+    "en": "e9d7662a459d7ad5",
+    "text": "एक Kerberos सेवा प्रिंसिपल की संग्रहीत कुंजी हटाई गई"
+  },
+  "audit.actions.admin.krb5.previous.dropped.label": {
+    "en": "1016d50b8a7601b9",
+    "text": "एक ऑपरेटर ने पिछले Kerberos कुंजी संस्करण हटा दिए जिन्हें एक व्यक्ति या एक सेवा प्रिंसिपल अभी भी रख रहा था"
+  },
+  "audit.actions.api.read.label": {
+    "en": "5d856ba543153b94",
+    "text": "एक प्रबंधन API पठन"
+  },
+  "audit.actions.api.change.label": {
+    "en": "258c82b64e15408a",
+    "text": "एक प्रबंधन API लेखन"
+  },
+  "audit.actions.protocol.call.label": {
+    "en": "9f6c67e10d66e597",
+    "text": "एक प्रोटोकॉल एंडपॉइंट कॉल किया गया"
+  },
+  "audit.actions.oauth.token.revoke.label": {
+    "en": "b95aa059ba49c87d",
+    "text": "एक क्लाइंट ने /oauth2/revoke पर एक OAuth 2.0 टोकन निरस्त किया, या दूसरे क्लाइंट का टोकन निरस्त करने पर अस्वीकार किया गया"
+  },
+  "audit.actions.protocol.failure.label": {
+    "en": "7a4b45f0a9763acd",
+    "text": "एक प्रोटोकॉल संचालन अस्वीकार किया गया या विफल हुआ"
+  },
+  "audit.actions.service.failure.label": {
+    "en": "20f1fa365cfbca21",
+    "text": "कुछ जो यह सेवा स्वयं करती है विफल हुआ"
+  },
+  "audit.actions.spiffe.svid.issue.label": {
+    "en": "f6a1c6d754b03f45",
+    "text": "एक SVID जारी किया गया"
+  },
+  "audit.actions.spiffe.svid.validate.label": {
+    "en": "2985e02244f967c8",
+    "text": "एक JWT-SVID सत्यापित किया गया"
+  },
+  "audit.actions.spiffe.entry.create.label": {
+    "en": "9949b94180356b54",
+    "text": "एक पंजीकरण प्रविष्टि बनाई गई"
+  },
+  "audit.actions.spiffe.entry.update.label": {
+    "en": "4d768a07aee4e2c9",
+    "text": "एक पंजीकरण प्रविष्टि बदली गई"
+  },
+  "audit.actions.spiffe.entry.delete.label": {
+    "en": "53297b800cad6afc",
+    "text": "एक पंजीकरण प्रविष्टि हटाई गई"
+  },
+  "audit.actions.spiffe.agent.create.label": {
+    "en": "3d5c2896da415cbe",
+    "text": "एक एजेंट ने पहली बार अनुप्रमाणन किया"
+  },
+  "audit.actions.spiffe.agent.attest.label": {
+    "en": "2878b0a388b202ab",
+    "text": "एक एजेंट ने फिर से अनुप्रमाणन किया"
+  },
+  "audit.actions.spiffe.agent.ban.label": {
+    "en": "da40021ba677279f",
+    "text": "एक एजेंट पर प्रतिबंध लगाया गया"
+  },
+  "audit.actions.spiffe.agent.unban.label": {
+    "en": "77326a7c253442bb",
+    "text": "एक एजेंट से प्रतिबंध हटाया गया"
+  },
+  "audit.actions.spiffe.agent.delete.label": {
+    "en": "d7b8483047ba641e",
+    "text": "एक एजेंट हटाया गया"
+  },
+  "audit.actions.spiffe.bundle.read.label": {
+    "en": "7f6e38b4ab094630",
+    "text": "ट्रस्ट बंडल प्राप्त किया गया"
+  },
+  "audit.actions.spiffe.bundle.change.label": {
+    "en": "61fe1f3cbe80f39c",
+    "text": "एक प्राधिकरण घुमाया गया, या एक फ़ेडरेटेड बंडल सेट या हटाया गया"
+  },
+  "audit.actions.spiffe.call.refuse.label": {
+    "en": "40d52233dda92cda",
+    "text": "एक SPIRE Server API कॉल इस आधार पर अस्वीकार की गई कि कॉल कौन कर रहा था"
+  },
+  "audit.actions.xacml.decision.label": {
+    "en": "8930a657b99988a7",
+    "text": "PDP एक निर्णय पर पहुँचा"
+  },
+  "audit.actions.xacml.enforcement.label": {
+    "en": "d9fe267d0aae76d6",
+    "text": "एम्बेडेड PEP ने एक निर्णय लागू किया"
+  },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "एक AuthZEN पहुँच मूल्यांकन तय किया गया"
+  },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "एक दूरस्थ PEP ने एक निर्णय लागू किया"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "एक दूरस्थ PEP ने एक AuthZEN पहुँच मूल्यांकन तय किया"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "एक दूरस्थ PEP के रिवर्स प्रॉक्सी ने एक अनुरोध तय किया"
+  },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "एक AuthZEN खोज का उत्तर दिया गया"
+  },
+  "audit.actions.fga.decision.label": {
+    "en": "c2696096c0749879",
+    "text": "जारीकरण के समय एक सूक्ष्म-स्तरीय प्राधिकरण निर्णय लिया गया"
+  },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "एक AuthZEN विशेषता कैटलॉग पंक्ति जोड़ी या प्रतिस्थापित की गई"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "एक AuthZEN विशेषता कैटलॉग पंक्ति हटाई गई"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "एक AuthZEN कॉलर का अनुप्रयोग स्कोप सेट किया गया"
+  },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "सूक्ष्म-स्तरीय प्राधिकरण लागू करने वाले एक अनुप्रयोग तक AuthZEN पहुँच एक दूरस्थ PEP को दी गई"
+  },
+  "audit.actions.admin.authzen.callbacks.set.label": {
+    "en": "e8439c3ddb41d93f",
+    "text": "एक AuthZEN कॉलर के पहुँच अनुरोध कॉलबैक URL सेट किए गए"
+  },
+  "audit.actions.authzen.access-request.submitted.label": {
+    "en": "ce6c6f5f15939b8e",
+    "text": "एक AuthZEN पहुँच अनुरोध प्रस्तुत किया गया"
+  },
+  "audit.actions.authzen.access-request.approved.label": {
+    "en": "5148eda4f7a84802",
+    "text": "एक AuthZEN पहुँच अनुरोध स्वीकृत किया गया"
+  },
+  "audit.actions.authzen.access-request.denied.label": {
+    "en": "22560158f5a3aaca",
+    "text": "एक AuthZEN पहुँच अनुरोध अस्वीकृत किया गया"
+  },
+  "audit.actions.authzen.access-request.expired.label": {
+    "en": "2ced214d20f8f301",
+    "text": "एक AuthZEN पहुँच अनुरोध समाप्त हो गया"
+  },
+  "audit.actions.authzen.access-request.cancelled.label": {
+    "en": "f00e80626f3daa82",
+    "text": "एक AuthZEN पहुँच अनुरोध रद्द किया गया"
+  },
+  "audit.actions.authzen.access-request.revoked.label": {
+    "en": "fdf6095a2de11ed6",
+    "text": "एक AuthZEN पहुँच अनुरोध की स्वीकृति निरस्त की गई"
+  },
+  "audit.actions.authzen.access-request.approver-refused.label": {
+    "en": "fbeebe0256b7890e",
+    "text": "नीति ने एक व्यक्ति को AuthZEN पहुँच अनुरोध का निर्णय अस्वीकार कर दिया"
+  },
+  "audit.actions.authzen.access-request.callback.label": {
+    "en": "432e877d55af1913",
+    "text": "एक AuthZEN पहुँच अनुरोध का कॉलबैक भेजा गया या विफल हुआ"
+  },
+  "audit.actions.xacml.issuance.refused.label": {
+    "en": "f1b5bcbea74861a0",
+    "text": "जारीकरण PEP ने इस सेवा को कुछ निर्मित करने नहीं दिया"
+  },
+  "audit.actions.xacml.access.refused.label": {
+    "en": "82838f9e909973d8",
+    "text": "पहुँच PEP ने एक गेटेड सतह के अनुरोध को अस्वीकार किया"
+  },
+  "audit.actions.xacml.issuance.alarm.label": {
+    "en": "38060f35597fa37d",
+    "text": "जारीकरण PEP ने एक उन्नत जोखिम को जाने दिया, स्टेप-अप के लिए कोई कारक न होने पर, ऐसे अनुप्रयोग के लिए जिसे जोखिम कभी लॉक आउट नहीं कर सकता"
+  },
+  "audit.actions.xacml.pep.register.label": {
+    "en": "f6687cc2fa5b3bac",
+    "text": "एक दूरस्थ Policy Enforcement Point पंजीकृत हुआ"
+  },
+  "audit.actions.xacml.pep.certificate.label": {
+    "en": "419007622035492d",
+    "text": "एक दूरस्थ PEP को एक HTTPS श्रोता प्रमाणपत्र जारी किया गया"
+  },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "एक दूरस्थ PEP की अभिकथन कुंजी उसके अनुरोध से प्रमाणित की गई"
+  },
+  "audit.actions.xacml.pip.query.label": {
+    "en": "af3eace9dacb68c6",
+    "text": "एक दूरस्थ PEP ने PIP से एक विषय की विशेषताएँ माँगीं"
+  },
+  "audit.actions.saml2.request.signature.label": {
+    "en": "2c3788ba6491a142",
+    "text": "एक SAML 2.0 सेवा प्रदाता के अनुरोध हस्ताक्षर की जाँच की गई"
+  },
+  "audit.actions.gnap.grant.request.label": {
+    "en": "76968511df03acf3",
+    "text": "एक GNAP अनुदान का अनुरोध किया गया"
+  },
+  "audit.actions.gnap.grant.consent.label": {
+    "en": "c353731b459990c0",
+    "text": "एक संसाधन स्वामी ने एक GNAP अनुदान स्वीकृत किया"
+  },
+  "audit.actions.gnap.grant.deny.label": {
+    "en": "55de39fc99dc456d",
+    "text": "एक संसाधन स्वामी ने एक GNAP अनुदान स्वीकृत नहीं किया"
+  },
+  "audit.actions.gnap.grant.approve.label": {
+    "en": "d2aa94094296bd99",
+    "text": "एक GNAP अनुदान स्वीकृत किया गया और उसके टोकन जारी किए गए"
+  },
+  "audit.actions.gnap.grant.revoke.label": {
+    "en": "5fb758cf8f654e10",
+    "text": "एक GNAP अनुदान निरस्त किया गया"
+  },
+  "audit.actions.gnap.grant.owner-queued.label": {
+    "en": "27d7c634cbbfeeca",
+    "text": "एक GNAP अनुदान पोर्टल पर अपने अनुपस्थित संसाधन स्वामी की स्वीकृति की प्रतीक्षा करता है (#432 चरण 6)"
+  },
+  "audit.actions.gnap.grant.forward.label": {
+    "en": "9756220c110d11f1",
+    "text": "GNAP स्वीकृति पृष्ठ पर उपस्थित व्यक्ति वह उपयोगकर्ता नहीं था जिसका नाम अनुरोध में था, और अनुदान उस उपयोगकर्ता के पोर्टल पर भेज दिया गया (#432 चरण 6)"
+  },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "एक UMA संसाधन सर्वर ने एक स्वामी की ओर से एक संसाधन पंजीकृत किया"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "एक UMA संसाधन सर्वर ने एक पंजीकृत संसाधन अद्यतन किया"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "एक UMA संसाधन सर्वर ने एक पंजीकृत संसाधन हटाया"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "एक UMA संसाधन सर्वर को एक अनुमति टिकट जारी किया गया"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "एक UMA अनुमति उसकी किसी नीति द्वारा तय की गई"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "एक UMA uma-ticket अनुदान का उत्तर दिया गया"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "एक UMA स्थायी क्लेम्स टोकन निरस्त किया गया"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "एक UMA अनुरोध उसके संसाधन स्वामी की स्वीकृति के लिए कतारबद्ध किया गया"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "एक संसाधन स्वामी ने एक UMA अनुरोध स्वीकृत या अस्वीकार किया"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "एक अनुरोध करने वाला पक्ष UMA क्लेम्स इंटरैक्शन एंडपॉइंट पर साइन इन किया गया"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "एक संसाधन स्वामी ने UMA के माध्यम से एक संसाधन साझा किया"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "एक संसाधन स्वामी ने एक UMA साझा हटाया"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "एक संसाधन स्वामी ने अपनी UMA नीति ALFA के रूप में फिर से लिखी"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "कंसोल पर एक अनुप्रयोग को UMA संसाधन सर्वर बनाया गया"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "कंसोल पर एक अनुप्रयोग का UMA संसाधन सर्वर होना बंद हुआ, और उसके RPT निरस्त कर दिए गए"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "कंसोल पर यह बदला गया कि कोई अनुप्रयोग UMA संसाधनों का स्वामी हो सकता है या नहीं"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "कंसोल पर एक UMA RPT निरस्त किया गया"
+  },
+  "audit.actions.gnap.grant.finalize.label": {
+    "en": "fee9afbd448956f2",
+    "text": "एक GNAP अनुदान अंतिम किया गया, कारण सहित: जारी, निरस्त, अस्वीकृत या समाप्त"
+  },
+  "audit.actions.gnap.token.issue.label": {
+    "en": "01a8a01e0a6de666",
+    "text": "एक GNAP एक्सेस टोकन जारी किया गया"
+  },
+  "audit.actions.gnap.token.rotate.label": {
+    "en": "2577dadbfe39e706",
+    "text": "एक GNAP एक्सेस टोकन घुमाया गया"
+  },
+  "audit.actions.gnap.token.revoke.label": {
+    "en": "400717d57ee49589",
+    "text": "एक GNAP एक्सेस टोकन निरस्त किया गया"
+  },
+  "audit.actions.gnap.rs.introspect.label": {
+    "en": "95163051792199f3",
+    "text": "एक संसाधन सर्वर ने एक GNAP एक्सेस टोकन का इंट्रोस्पेक्ट किया"
+  },
+  "audit.actions.gnap.rs.register.label": {
+    "en": "616528ec363696a9",
+    "text": "एक संसाधन सर्वर ने एक GNAP संसाधन सेट पंजीकृत किया"
+  },
+  "audit.actions.ssf.stream.create.label": {
+    "en": "3d4873ca2f3e8a95",
+    "text": "एक Shared Signals स्ट्रीम बनाई गई"
+  },
+  "audit.actions.ssf.stream.update.label": {
+    "en": "153bad40b9661b0f",
+    "text": "एक Shared Signals स्ट्रीम बदली गई"
+  },
+  "audit.actions.ssf.stream.delete.label": {
+    "en": "ab202e818b58bb83",
+    "text": "एक Shared Signals स्ट्रीम हटाई गई"
+  },
+  "audit.actions.ssf.stream.status.label": {
+    "en": "b7b5eb76ca067916",
+    "text": "एक स्ट्रीम सक्षम, विराम या अक्षम की गई"
+  },
+  "audit.actions.ssf.subject.change.label": {
+    "en": "b5aedc901f3aa327",
+    "text": "एक विषय एक स्ट्रीम में जोड़ा गया या उससे हटाया गया"
+  },
+  "audit.actions.ssf.event.transmit.label": {
+    "en": "3a3cd80f6d3a215a",
+    "text": "एक Security Event Token एक रिसीवर को वितरित किया गया"
+  },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "साइन इन किए अनुप्रयोगों को एक घोषणा प्रसारित की गई"
+  },
+  "audit.actions.ssf.event.refused.label": {
+    "en": "29910e5a49b21a0c",
+    "text": "एक रिसीवर ने एक Security Event Token अस्वीकार किया"
+  },
+  "audit.actions.ssf.stream.dead.label": {
+    "en": "06c053574e130b1a",
+    "text": "केवल विफल पुशों के बाद एक पुश स्ट्रीम को मृत घोषित किया गया"
+  },
+  "audit.actions.ssf.stream.revived.label": {
+    "en": "bb572a202bd6c70a",
+    "text": "एक मृत पुश स्ट्रीम पुनर्जीवित की गई"
+  },
+  "audit.actions.ssf.stream.delivery.label": {
+    "en": "3df44dec0e09a7e4",
+    "text": "एक रिसीवर स्ट्रीम पुश वितरण से पोल वितरण पर चली गई"
+  },
+  "audit.actions.ssf.deadletter.clear.label": {
+    "en": "1caaf3043e122f70",
+    "text": "एक स्ट्रीम की डेड-लेटर कतार हाथ से खाली की गई"
+  },
+  "audit.actions.ssf.event.receive.label": {
+    "en": "12ab6669f5a136e8",
+    "text": "एक Security Event Token इस सेवा पर पुश किया गया"
+  },
+  "audit.actions.caep.event.auto.label": {
+    "en": "b5f40accc5e9e150",
+    "text": "एक सत्र बदलने के कारण एक CAEP घटना देय हुई"
+  },
+  "audit.actions.caep.event.emit.label": {
+    "en": "b0c8137c489493d5",
+    "text": "एक CAEP घटना हाथ से उत्सर्जित की गई"
+  },
+  "audit.actions.caep.session.reset.label": {
+    "en": "dc5cd9a8d40da255",
+    "text": "एक सत्र की CAEP स्थिति रीसेट की गई"
+  },
+  "audit.actions.caep.session.clear.label": {
+    "en": "5d7001f86cd8a1e9",
+    "text": "CAEP सत्र रजिस्टर साफ़ किया गया"
+  },
+  "audit.actions.risc.event.auto.label": {
+    "en": "1ce902ca9f8e640a",
+    "text": "निर्देशिका बदलने के कारण एक RISC घटना देय हुई"
+  },
+  "audit.actions.risc.event.emit.label": {
+    "en": "b1167bf71ee133e2",
+    "text": "एक RISC घटना हाथ से उत्सर्जित की गई"
+  },
+  "audit.actions.risc.account.reset.label": {
+    "en": "94728541aaba5150",
+    "text": "एक खाते की RISC स्थिति रीसेट की गई"
+  },
+  "audit.actions.risc.account.clear.label": {
+    "en": "38e9f05ac95fd655",
+    "text": "RISC खाता रजिस्टर साफ़ किया गया"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "एक निर्मित पंक्ति जिसे कभी कमिट नहीं किया जा सकता था हटा दी गई"
+  },
+  "audit.actions.admin.aud-sub.set.label": {
+    "en": "67489d67e805ecfd",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति की aud_sub सेटिंग बदली"
+  },
+  "audit.actions.admin.mfa.backup-codes.cleared.label": {
+    "en": "ea84314da98659bf",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के पुनर्प्राप्ति कोड साफ़ किए"
+  },
+  "audit.actions.admin.password.reset-keytab.label": {
+    "en": "b038ba117b4de668",
+    "text": "एक व्यवस्थापक ने पासवर्ड रीसेट किया और व्यक्ति की keytab सौंप दी"
+  },
+  "audit.actions.admin.user.attribute.label": {
+    "en": "52f81d95b080366d",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति की विशेषता सेट, जोड़ी या हटाई"
+  },
+  "audit.actions.admin.service-account.set.label": {
+    "en": "5f269de6647c621b",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति को सेवा खाता बनाया, या उसका स्वामी अथवा गंतव्य बदला"
+  },
+  "audit.actions.admin.service-account.cleared.label": {
+    "en": "b2581e6ddce1f837",
+    "text": "एक व्यवस्थापक ने एक सेवा खाते को फिर से सामान्य व्यक्ति बना दिया"
+  },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "एक व्यवस्थापक ने एक सेवा खाते में एक स्वामी जोड़ा"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "एक व्यवस्थापक ने एक सेवा खाते से एक स्वामी हटाया"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "एक व्यवस्थापक ने एक सेवा खाते का पुश गंतव्य सेट या साफ़ किया"
+  },
+  "audit.actions.admin.service-account.rotate.label": {
+    "en": "9eab836b051b0346",
+    "text": "एक व्यवस्थापक ने एक सेवा खाते का पासवर्ड घुमाने को कहा"
+  },
+  "audit.actions.admin.app-password.created.label": {
+    "en": "39ab2dba96dcf58b",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के लिए एक ऐप पासवर्ड बनाया"
+  },
+  "audit.actions.admin.app-password.revoked.label": {
+    "en": "0509990ff43e2d9e",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का ऐप पासवर्ड निरस्त किया"
+  },
+  "audit.actions.admin.ciba.answered.label": {
+    "en": "0f2e483fa60b8d8f",
+    "text": "एक व्यवस्थापक ने एक CIBA अनुरोध स्वीकृत या अस्वीकृत किया (परीक्षण नियंत्रण)"
+  },
+  "audit.actions.admin.device.removed.label": {
+    "en": "893a2ce1d871ed95",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का उपकरण हटाया"
+  },
+  "audit.actions.admin.ida.recorded.label": {
+    "en": "b68f52de80751f43",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के लिए एक पहचान सत्यापन दर्ज किया"
+  },
+  "audit.actions.admin.ida.removed.label": {
+    "en": "071852997fcc15ca",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का पहचान सत्यापन हटाया"
+  },
+  "audit.actions.admin.siop.enrolled.label": {
+    "en": "f6e33546d3d23472",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के लिए एक स्व-जारी (SIOPv2) विषय नामांकित किया"
+  },
+  "audit.actions.admin.siop.removed.label": {
+    "en": "f6af7681f3d25fd7",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का स्व-जारी (SIOPv2) विषय हटाया"
+  },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के सिद्ध किए गए DID को पसंदीदा चिह्नित किया, या चिह्न हटाया"
+  },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के लिए पासकी नामांकन शुरू किया"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "एक व्यक्ति के लिए एक व्यवस्थापक का पासकी नामांकन अस्वीकार किया गया"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति के लिए एक पासकी नामांकित की"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति की पासकी का उन्नयन शुरू किया"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "एक व्यवस्थापक का पासकी उन्नयन अस्वीकार किया गया"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति की शास्त्रीय पासकी सिद्ध की"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का पासकी उन्नयन रद्द किया"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति की पासकी को ML-DSA में उन्नत किया"
+  },
+  "audit.actions.ssf.signals.discover.label": {
+    "en": "55d2d7d9682c339a",
+    "text": "एक फ़ेडरेशन साझेदार का Shared Signals कॉन्फ़िगरेशन खोजा गया"
+  },
+  "audit.actions.ssf.signals.stream.label": {
+    "en": "737beffd42f5852e",
+    "text": "एक फ़ेडरेशन साझेदार के Shared Signals ट्रांसमीटर पर एक स्ट्रीम बनाई गई"
+  },
+  "audit.actions.ssf.signals.unblock.label": {
+    "en": "5219dcbe14570844",
+    "text": "वे साइन इन फिर से अनुमत किए गए जिन्हें एक फ़ेडरेशन साझेदार के सिग्नल ने रोक दिया था"
+  },
+  "audit.actions.ssf.signals.read-stream.label": {
+    "en": "ffea29094f8154a0",
+    "text": "एक फ़ेडरेशन साझेदार की स्ट्रीम पढ़ी गई"
+  },
+  "audit.actions.ssf.signals.update-stream.label": {
+    "en": "9450fed407b4c350",
+    "text": "एक फ़ेडरेशन साझेदार की स्ट्रीम अद्यतन की गई"
+  },
+  "audit.actions.ssf.signals.delete-stream.label": {
+    "en": "b15530168632eb08",
+    "text": "एक फ़ेडरेशन साझेदार की स्ट्रीम हटाई गई"
+  },
+  "audit.actions.ssf.signals.set-status.label": {
+    "en": "285b162026e85285",
+    "text": "एक फ़ेडरेशन साझेदार की स्ट्रीम स्थिति सेट की गई"
+  },
+  "audit.actions.ssf.signals.add-subject.label": {
+    "en": "b63bb92d96373ae3",
+    "text": "एक फ़ेडरेशन साझेदार की स्ट्रीम में एक विषय जोड़ा गया"
+  },
+  "audit.actions.ssf.signals.remove-subject.label": {
+    "en": "c316b73a1a06cc62",
+    "text": "एक फ़ेडरेशन साझेदार की स्ट्रीम से एक विषय हटाया गया"
+  },
+  "audit.actions.ssf.signals.verify.label": {
+    "en": "d9dca81bc6808ffa",
+    "text": "एक फ़ेडरेशन साझेदार की स्ट्रीम से एक सत्यापन घटना माँगी गई"
+  },
+  "audit.actions.application.key-issued.label": {
+    "en": "03ad47a14907e857",
+    "text": "एक होस्ट की गई सतह का क्लाइंट कुंजी युग्म CA द्वारा जारी किया गया"
+  },
+  "audit.actions.enrollment.acme.account.create.label": {
+    "en": "3e069a334b19666a",
+    "text": "एक ACME खाता बनाया गया"
+  },
+  "audit.actions.enrollment.acme.account.deactivate.label": {
+    "en": "72423ecca6d7a8d3",
+    "text": "एक ACME खाता निष्क्रिय किया गया"
+  },
+  "audit.actions.enrollment.acme.account.key-change.label": {
+    "en": "45caca51b10836c9",
+    "text": "एक ACME खाते की कुंजी बदली गई"
+  },
+  "audit.actions.enrollment.eab.create.label": {
+    "en": "02cae811cec833c3",
+    "text": "एक ACME External Account Binding कुंजी बनाई गई"
+  },
+  "audit.actions.enrollment.eab.delete.label": {
+    "en": "c8aa53e6726431da",
+    "text": "एक ACME External Account Binding कुंजी हटाई गई"
+  },
+  "audit.actions.enrollment.challenge.create.label": {
+    "en": "28c2f31734c71daf",
+    "text": "एक SCEP चैलेंज पासवर्ड बनाया गया"
+  },
+  "audit.actions.enrollment.challenge.delete.label": {
+    "en": "f6ccc4485e9cef99",
+    "text": "एक SCEP चैलेंज पासवर्ड हटाया गया"
+  },
+  "audit.actions.enrollment.issue.label": {
+    "en": "3727fd2f52338653",
+    "text": "ACME, EST या SCEP के माध्यम से एक प्रमाणपत्र जारी किया गया"
+  },
+  "audit.actions.enrollment.issue.refused.label": {
+    "en": "41f6f9d7815ffff2",
+    "text": "एक प्रमाणपत्र नामांकन अस्वीकार किया गया"
+  },
+  "audit.actions.enrollment.revoke.label": {
+    "en": "c3925444750a1015",
+    "text": "एक नामांकित प्रमाणपत्र निरस्त किया गया"
+  },
+  "audit.actions.federation.signal-block.label": {
+    "en": "0f06883b0dbb2366",
+    "text": "एक फ़ेडरेशन साझेदार के Shared Signals ने उस साझेदार पर एक व्यक्ति के साइन इन रोक दिए (#373)"
+  },
+  "audit.actions.federation.signal-unblock.label": {
+    "en": "f1b6331059f472d3",
+    "text": "एक फ़ेडरेशन साझेदार के Shared Signals ने एक व्यक्ति पर अपना अवरोध हटाया (#373)"
+  },
+  "audit.actions.federation.signout.label": {
+    "en": "2e6c01e23921383f",
+    "text": "एक फ़ेडरेशन साझेदार के साइन-आउट ने एक सत्र समाप्त किया"
+  },
+  "audit.actions.federation.signout-answered.label": {
+    "en": "156d4e2f462e9126",
+    "text": "एक फ़ेडरेशन साझेदार ने इस सेवा द्वारा भेजे साइन-आउट की पुष्टि की"
+  },
+  "audit.actions.federation.unlink.label": {
+    "en": "a5c85407fff2c148",
+    "text": "एक व्यक्ति से एक फ़ेडरेशन लिंक हटाया गया"
+  },
+  "audit.actions.federation.connected.label": {
+    "en": "3466387fa24f3d55",
+    "text": "एक व्यक्ति ने एक उपभोक्ता या सामाजिक प्रदाता को अपने खाते से जोड़ा"
+  },
+  "audit.actions.federation.provider-notification.label": {
+    "en": "bf89c99cd7734f16",
+    "text": "एक उपभोक्ता प्रदाता की अपने किसी व्यक्ति के बारे में अधिसूचना स्वीकार की गई"
+  },
+  "audit.actions.federation.group-ignored.label": {
+    "en": "a64e9612670b278c",
+    "text": "एक साझेदार का समूह नाम लागू नहीं किया गया, क्योंकि वह ऐसे समूह का नाम लेता है जिसे उस संबंध ने नहीं बनाया, या ऐसे समूह का जो धारण किए जाने से कुछ प्रदान करता है (#358)"
+  },
+  "audit.actions.group.add-member.label": {
+    "en": "37da254923cef1b6",
+    "text": "एक समूह में एक सदस्य जोड़ा गया"
+  },
+  "audit.actions.group.add-owner.label": {
+    "en": "6ba2e67208b445ff",
+    "text": "एक समूह में एक स्वामी जोड़ा गया"
+  },
+  "audit.actions.group.remove-owner.label": {
+    "en": "e5e65ad85891ab58",
+    "text": "एक समूह से एक स्वामी हटाया गया"
+  },
+  "audit.actions.group.owner-protected.label": {
+    "en": "872bbc2dca2a5974",
+    "text": "एक समूह अपने स्वामियों के लिए बंद किया गया, या उनके लिए फिर से खोला गया"
+  },
+  "audit.actions.group.set-mail.label": {
+    "en": "39413bc03154f800",
+    "text": "एक समूह को एक पता दिया गया, या उसका पता हटा लिया गया"
+  },
+  "audit.actions.group.set-policy.label": {
+    "en": "7ca8946df0f9aee5",
+    "text": "एक समूह को एक नामित नीति दी गई, या नाम साफ़ किया गया"
+  },
+  "audit.actions.krb5.keytab.person.label": {
+    "en": "7f9ec638380e53d7",
+    "text": "हाथ में मौजूद पासवर्ड से एक व्यक्ति की keytab बनाई गई"
+  },
+  "audit.actions.logout.backchannel.retry.label": {
+    "en": "48c1b798cbbd16cc",
+    "text": "एक मृत बैक-चैनल Logout Token वितरण का पुनः प्रयास किया गया"
+  },
+  "audit.actions.oauth.device-secret.revoke.label": {
+    "en": "f382e451311ceacd",
+    "text": "एक Native SSO उपकरण सीक्रेट निरस्त किया गया"
+  },
+  "audit.actions.oauth2.ciba.notify.label": {
+    "en": "40247d2486a53b3f",
+    "text": "एक CIBA पिंग या पुश अधिसूचना वितरित हुई या विफल हुई"
+  },
+  "audit.actions.oauth2.claim-source-linked.label": {
+    "en": "378743408d814c69",
+    "text": "एक व्यक्ति ने एक Claims Provider जोड़ा"
+  },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "एक Claims Provider का कॉलबैक अस्वीकार किया गया: लिंक अज्ञात था, या वह दूसरे साइन-ऑन सत्र में आया (#568)"
+  },
+  "audit.actions.oauth2.claims-providers.add-provider.label": {
+    "en": "32689eddc489b284",
+    "text": "एक Claims Provider पंजीकृत किया गया"
+  },
+  "audit.actions.oauth2.claims-providers.update-provider.label": {
+    "en": "47c730b95278173b",
+    "text": "एक Claims Provider बदला गया"
+  },
+  "audit.actions.oauth2.claims-providers.remove-provider.label": {
+    "en": "be1f28b2db7c1656",
+    "text": "एक Claims Provider हटाया गया"
+  },
+  "audit.actions.oauth2.claims-providers.revoke-link.label": {
+    "en": "a320d071faf639f1",
+    "text": "एक व्यक्ति का Claims Provider लिंक निरस्त किया गया"
+  },
+  "audit.actions.oauth2.command.label": {
+    "en": "e00f7bb85d9450bc",
+    "text": "एक OpenID Provider Command प्राप्त हुआ"
+  },
+  "audit.actions.oauth2.command.tenant.label": {
+    "en": "9615a82791bf97fd",
+    "text": "एक OpenID Provider टेनेंट कमांड निष्पादित किया गया"
+  },
+  "audit.actions.oauth2.grant-revoked.label": {
+    "en": "822d13c8d94685a0",
+    "text": "एक Grant Management अनुदान निरस्त किया गया"
+  },
+  "audit.actions.oauth2.par.withdraw.label": {
+    "en": "f3413ee65719b6eb",
+    "text": "एक पुश किया गया प्राधिकरण अनुरोध वापस लिया गया"
+  },
+  "audit.actions.password.set.label": {
+    "en": "2a1b07a8ecbc1d84",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का पासवर्ड सेट किया"
+  },
+  "audit.actions.service-account.rotated.label": {
+    "en": "260f3e0c6496aafe",
+    "text": "एक सेवा खाते का पासवर्ड घुमाया गया और उसके गंतव्य पर पुश किया गया"
+  },
+  "audit.actions.service-account.rotation-failed.label": {
+    "en": "e37cc3c875768aba",
+    "text": "एक सेवा खाते का पासवर्ड नहीं घुमा; कुछ नहीं बदला"
+  },
+  "audit.actions.portal.app-password.created.label": {
+    "en": "1128ac83789c2235",
+    "text": "एक व्यक्ति ने एक ऐप पासवर्ड बनाया"
+  },
+  "audit.actions.portal.app-password.revoked.label": {
+    "en": "cc585fef9d245590",
+    "text": "एक व्यक्ति ने एक ऐप पासवर्ड निरस्त किया"
+  },
+  "audit.actions.portal.app-password.csrf.label": {
+    "en": "e77bbbd5f3d6480d",
+    "text": "एक ऐप पासवर्ड फ़ॉर्म उसके CSRF टोकन के कारण अस्वीकार किया गया"
+  },
+  "audit.actions.portal.certificates.csrf.label": {
+    "en": "13f12b8682b65338",
+    "text": "एक प्रमाणपत्र फ़ॉर्म उसके CSRF टोकन के कारण अस्वीकार किया गया"
+  },
+  "audit.actions.portal.device.remove.label": {
+    "en": "a23e3b91423c45b6",
+    "text": "एक व्यक्ति ने एक Native SSO उपकरण हटाया"
+  },
+  "audit.actions.portal.device.remember-browser.label": {
+    "en": "3e6dd7c211c0de5a",
+    "text": "एक व्यक्ति ने /portal/devices पर उपयोग किए जा रहे ब्राउज़र को याद रखा (#265)"
+  },
+  "audit.actions.portal.kerberos.keytab.label": {
+    "en": "d228ad6c8de67f3a",
+    "text": "एक व्यक्ति ने अपनी keytab डाउनलोड की"
+  },
+  "audit.actions.portal.kerberos.refused.label": {
+    "en": "06c1bf49bafd77aa",
+    "text": "एक व्यक्ति का keytab अनुरोध अस्वीकार किया गया"
+  },
+  "audit.actions.portal.kerberos.csrf.label": {
+    "en": "45607efabeb88b85",
+    "text": "एक Kerberos फ़ॉर्म उसके CSRF टोकन के कारण अस्वीकार किया गया"
+  },
+  "audit.actions.portal.key.started.label": {
+    "en": "94d7c38c91fd3cbe",
+    "text": "एक व्यक्ति ने एक सुरक्षा कुंजी का नामांकन शुरू किया"
+  },
+  "audit.actions.portal.key.refused.label": {
+    "en": "6679aa8b834badee",
+    "text": "एक व्यक्ति का सुरक्षा कुंजी नामांकन अस्वीकार किया गया"
+  },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "एक व्यक्ति ने एक शास्त्रीय पासकी को ML-DSA में उन्नत करना शुरू किया"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "एक व्यक्ति का पासकी उन्नयन अस्वीकार किया गया"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "एक व्यक्ति ने एक शास्त्रीय पासकी को ML-DSA में उन्नत किया"
+  },
+  "audit.actions.portal.mfa.backup-codes.generated.label": {
+    "en": "18ec89def789c4a2",
+    "text": "एक व्यक्ति ने पुनर्प्राप्ति कोड का एक सेट उत्पन्न किया"
+  },
+  "audit.actions.portal.mfa.backup-codes.confirmed.label": {
+    "en": "d00909f08b87672d",
+    "text": "एक व्यक्ति ने पुष्टि की कि उन्होंने अपने पुनर्प्राप्ति कोड रख लिए हैं"
+  },
+  "audit.actions.portal.mfa.backup-codes.discarded.label": {
+    "en": "6dd158a3c30ffda1",
+    "text": "एक व्यक्ति ने पुनर्प्राप्ति कोड का एक उत्पन्न सेट छोड़ दिया"
+  },
+  "audit.actions.portal.risc.optOutInitiated.label": {
+    "en": "5ab0bc8a8b2b737e",
+    "text": "एक व्यक्ति ने RISC से बाहर निकलना शुरू किया"
+  },
+  "audit.actions.portal.risc.optOutCancelled.label": {
+    "en": "b84e60c2060ee85e",
+    "text": "एक व्यक्ति ने RISC से बाहर निकलना रद्द किया"
+  },
+  "audit.actions.portal.risc.optIn.label": {
+    "en": "fddad4840e8f7000",
+    "text": "एक व्यक्ति ने RISC में फिर से शामिल होना चुना"
+  },
+  "audit.actions.portal.signing-key.issued.label": {
+    "en": "ef02d14e5ec6fe11",
+    "text": "एक व्यक्ति ने अपना हस्ताक्षर कुंजी युग्म जारी किया"
+  },
+  "audit.actions.portal.signing-key.removed.label": {
+    "en": "cc45482e315cf6a0",
+    "text": "एक व्यक्ति ने अपना हस्ताक्षर कुंजी युग्म हटाया"
+  },
+  "audit.actions.portal.signing-key.csrf.label": {
+    "en": "51cd295b713684de",
+    "text": "एक हस्ताक्षर कुंजी फ़ॉर्म उसके CSRF टोकन के कारण अस्वीकार किया गया"
+  },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "एक व्यक्ति ने अपने किसी हस्ताक्षर कुंजी युग्म को निरस्त किया"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "एक व्यक्ति ने अपना did:web प्रकाशित किया"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "एक व्यक्ति के प्रकाशित DID दस्तावेज़ को एक नया संस्करण मिला"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "एक व्यक्ति ने अपने प्रकाशित DID पर एक कुंजी अधिकृत की"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "एक व्यक्ति ने अपना प्रकाशित DID निष्क्रिय किया"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "एक व्यवस्थापक ने एक व्यक्ति का प्रकाशित DID निष्क्रिय किया"
+  },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "एक व्यक्ति ने वॉलेट से सिद्ध करके एक स्व-जारी विषय नामांकित किया"
+  },
+  "audit.actions.portal.siop.remove.label": {
+    "en": "b6f77328c0b99b89",
+    "text": "एक व्यक्ति ने एक स्व-जारी विषय हटाया"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "एक व्यक्ति ने एक सिद्ध DID को अपना पसंदीदा चिह्नित किया, या चिह्न हटाया"
+  },
+  "audit.actions.portal.siop.view.label": {
+    "en": "e7a28d6d72970a6f",
+    "text": "एक व्यक्ति को उनके स्व-जारी विषय नहीं दिखाए जा सके"
+  },
+  "audit.actions.portal.siop.did.label": {
+    "en": "7fa86b94eee6535e",
+    "text": "एक व्यक्ति को एक स्व-जारी विषय का DID दस्तावेज़ नहीं दिखाया जा सका"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "पिन की गई कुंजी के बिना नामांकित एक did:web स्व-जारी विषय उस कुंजी से पिन कर दिया गया जिससे उसने साइन इन किया (केवल विकास में)"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "एक did:web स्व-जारी साइन इन अस्वीकार किया गया: कुंजी वह नहीं थी जो नामांकन के समय पिन की गई थी, या कोई पिन की ही नहीं गई थी"
+  },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "एक व्यक्ति ने अपने वॉलेट के लिए एक Credential Offer बनाया"
+  },
+  "audit.actions.portal.vc.remove.label": {
+    "en": "bc144eaf5bf2222e",
+    "text": "एक व्यक्ति ने वह क्रेडेंशियल हटाया जो इस विश्वास क्षेत्र ने उन्हें जारी किया था"
+  },
+  "audit.actions.risk.feedback.label": {
+    "en": "e244d70b4d5a8c39",
+    "text": "एक जोखिम आकलन पर प्रतिक्रिया दर्ज की गई"
+  },
+  "audit.actions.risk.response.label": {
+    "en": "36887af166b69ed0",
+    "text": "एक जोखिम प्रतिक्रिया निष्पादित की गई"
+  },
+  "audit.actions.risk.terms.accept.label": {
+    "en": "68438e41825d8a4d",
+    "text": "एक जोखिम डेटासेट प्रदाता की शर्तें स्वीकार की गईं"
+  },
+  "audit.actions.attribute-sources.add.label": {
+    "en": "7723c84bf547c28f",
+    "text": "एक विशेषता स्रोत जोड़ा गया"
+  },
+  "audit.actions.attribute-sources.update.label": {
+    "en": "3b252df30382723d",
+    "text": "एक विशेषता स्रोत बदला गया"
+  },
+  "audit.actions.attribute-sources.remove.label": {
+    "en": "ba337c73fb4dc623",
+    "text": "एक विशेषता स्रोत हटाया गया"
+  },
+  "audit.actions.attribute-sources.refresh.label": {
+    "en": "9b6a000459343ab3",
+    "text": "एक विशेषता स्रोत से लोग हाथ से पढ़े गए"
+  },
+  "audit.actions.scim-client.change.label": {
+    "en": "64156684e8c56596",
+    "text": "एक आउटबाउंड SCIM क्लाइंट जोड़ा, बदला या हटाया गया"
+  },
+  "audit.actions.scim-client.delivery.label": {
+    "en": "daca3d57491288f9",
+    "text": "एक परिवर्तन एक SCIM सेवा प्रदाता को वितरित किया गया, या डेड-लेटर किया गया"
+  },
+  "audit.actions.scim-client.reconcile.label": {
+    "en": "737369e31fa0ff1f",
+    "text": "एक आउटबाउंड SCIM क्लाइंट ने अपने सेवा प्रदाता के साथ सामंजस्य बिठाया"
+  },
+  "audit.actions.scim-client.queue.label": {
+    "en": "91401140d4bddd06",
+    "text": "एक आउटबाउंड SCIM क्लाइंट का डेड लेटर पुनः आज़माया गया या मिटाया गया"
+  },
+  "audit.actions.secret-destination.push.label": {
+    "en": "184a296748506865",
+    "text": "एक सेवा खाते का पासवर्ड एक सीक्रेट गंतव्य पर पुश किया गया"
+  },
+  "audit.actions.secret-destination.test-push.label": {
+    "en": "38f7979ecec34d0a",
+    "text": "एक कैनरी संस्करण एक सीक्रेट गंतव्य के परीक्षण सीक्रेट पर पुश किया गया"
+  },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "एक भूमिका में एक स्वामी जोड़ा गया"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "एक भूमिका से एक स्वामी हटाया गया"
+  },
+  "audit.actions.roles.confer.label": {
+    "en": "5a52f4105ae28f80",
+    "text": "एक क्लाइंट को ऐसा बनाया गया कि वह उसके ज़रिए साइन इन करने वाले हर व्यक्ति पर एक भूमिका प्रदान करे"
+  },
+  "audit.actions.roles.unconfer.label": {
+    "en": "f4487269d3051eb8",
+    "text": "एक क्लाइंट अब उसके ज़रिए साइन इन करने वाले हर व्यक्ति पर भूमिका प्रदान नहीं करता"
+  },
+  "audit.actions.roles.create.label": {
+    "en": "a510e6ae7b1a9adb",
+    "text": "एक भूमिका बनाई गई"
+  },
+  "audit.actions.roles.delete.label": {
+    "en": "2426599aa1c52b19",
+    "text": "एक भूमिका हटाई गई"
+  },
+  "audit.actions.roles.describe.label": {
+    "en": "896007dff32a6824",
+    "text": "एक भूमिका का विवरण, प्रदर्शन नाम या सदस्य प्रकार सेट किए गए"
+  },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "एक नोड की किसी प्रक्रिया या वर्कर थ्रेड में पूर्ण कचरा संग्रहण चलाया गया"
+  },
+  "audit.actions.saml2.authnrequest.label": {
+    "en": "8d29d93421323443",
+    "text": "एक SAML 2.0 AuthnRequest अस्वीकार किया गया"
+  },
+  "audit.actions.saml2.artifact.resolve.label": {
+    "en": "0f9a2c3b3c7b36ea",
+    "text": "एक SAML 2.0 आर्टिफ़ैक्ट समाधान अस्वीकार किया गया"
+  },
+  "audit.actions.saml2.attribute-query.label": {
+    "en": "c93dbc04d8c0ead5",
+    "text": "एक SAML 2.0 विशेषता क्वेरी का उत्तर दिया गया या अस्वीकार किया गया"
+  },
+  "audit.actions.saml2.metadata.mdq.label": {
+    "en": "a151672004b5a83f",
+    "text": "एक SAML मेटाडेटा MDQ लुकअप किया गया या अस्वीकार किया गया"
+  },
+  "audit.actions.saml2.metadata.refresh.label": {
+    "en": "775ac5b1f475f76f",
+    "text": "एक सेवा प्रदाता का SAML मेटाडेटा ताज़ा किया गया"
+  },
+  "audit.actions.account.add.label": {
+    "en": "0fc7d9b61dee994d",
+    "text": "एक सत्र एक ब्राउज़र के खाता सेट में शामिल हुआ"
+  },
+  "audit.actions.account.select.label": {
+    "en": "1fcc762640b7ba22",
+    "text": "खाता चयनकर्ता पर एक खाता चुना गया"
+  },
+  "audit.actions.account.switch.label": {
+    "en": "0b9681ea51a0edfa",
+    "text": "एक ब्राउज़र का डिफ़ॉल्ट खाता बदला"
+  },
+  "audit.actions.account.forget.label": {
+    "en": "17a75cbf0a350b17",
+    "text": "एक ब्राउज़र एक साइन-आउट किए खाते को भूल गया"
+  },
+  "audit.actions.account.ambiguous.label": {
+    "en": "cc103c68ea2f6ef9",
+    "text": "एक अनुरोध ने नहीं बताया कि वह ब्राउज़र के किन खातों में से किसके लिए था"
+  },
+  "audit.actions.session.reauthenticate.label": {
+    "en": "f6867c3c6a1d35bd",
+    "text": "वही व्यक्ति एक चल रहे सत्र पर फिर से साइन इन हुआ"
+  },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "एक मौजूदा साइन-ऑन सत्र एक अनुप्रयोग को प्रस्तुत किया गया"
+  },
+  "audit.actions.session.refuse.label": {
+    "en": "c8703bfa89913b23",
+    "text": "एक सत्र उसके साइन-इन तंत्र के कारण अस्वीकार किया गया"
+  },
+  "audit.actions.session.refused.label": {
+    "en": "9422128afb69d8ad",
+    "text": "एक होस्ट की गई सतह ने एक सत्र अस्वीकार किया"
+  },
+  "audit.actions.ssf.event.act.label": {
+    "en": "bf25b2c0497d20f6",
+    "text": "एक प्राप्त Security Event पर कार्रवाई की गई"
+  },
+  "audit.actions.ssf.stream.swept.label": {
+    "en": "a5277d5fd80dfb8e",
+    "text": "एक बासी रिसीवर स्ट्रीम साफ़ कर दी गई"
+  },
+  "audit.actions.xacml.pep.enable.label": {
+    "en": "4584cff2d4f455e6",
+    "text": "एक दूरस्थ PEP सक्षम किया गया"
+  },
+  "audit.actions.xacml.pep.disable.label": {
+    "en": "1ca5e416c1bfdf45",
+    "text": "एक दूरस्थ PEP अक्षम किया गया"
+  },
+  "audit.actions.xacml.pep.forget.label": {
+    "en": "82df232dbe72d709",
+    "text": "एक दूरस्थ PEP भुला दिया गया"
+  },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "एक दूरस्थ PEP का रिवर्स-प्रॉक्सी कॉन्फ़िगरेशन सेट किया गया"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "एक दूरस्थ PEP का रिवर्स-प्रॉक्सी कॉन्फ़िगरेशन हटाया गया"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "एक दूरस्थ PEP के प्रॉक्सी ने क्रेडेंशियल के सत्यापन की माँग की"
+  },
+  "audit.actions.xacml.pep.sync.label": {
+    "en": "a1e3feab83951fcf",
+    "text": "एक दूरस्थ PEP से अभी अपना पूरा कॉन्फ़िगरेशन खींचने को कहा गया"
+  },
+  "audit.actions.xacml.pep.listener.certificate.label": {
+    "en": "be45d48c8c187916",
+    "text": "एक दूरस्थ PEP के HTTPS लिस्नर को प्रमाणपत्र जारी किया गया"
+  },
+  "audit.actions.xacml.pep.cluster.create.label": {
+    "en": "6f6a985e3173c03a",
+    "text": "एक दूरस्थ PEP क्लस्टर बनाया गया"
+  },
+  "audit.actions.xacml.pep.cluster.delete.label": {
+    "en": "65ee97f601bfa789",
+    "text": "एक दूरस्थ PEP क्लस्टर हटाया गया"
+  },
+  "audit.actions.xacml.pep.cluster.member.add.label": {
+    "en": "dc0f84c7fa737cee",
+    "text": "एक दूरस्थ PEP को क्लस्टर में जोड़ा गया"
+  },
+  "audit.actions.xacml.pep.cluster.member.set.label": {
+    "en": "f40e76a089d7b7e1",
+    "text": "एक दूरस्थ PEP क्लस्टर के सदस्य के पते सेट किए गए"
+  },
+  "audit.actions.xacml.pep.cluster.member.remove.label": {
+    "en": "a59512e4ad700e39",
+    "text": "एक दूरस्थ PEP को क्लस्टर से हटाया गया"
+  },
+  "audit.actions.xacml.policy.write.label": {
+    "en": "29b7a729b51d40c7",
+    "text": "एक XACML नीति लिखी गई"
+  },
+  "audit.actions.xacml.policy.delete.label": {
+    "en": "90274c33f8a0cbe3",
+    "text": "एक XACML नीति हटाई गई"
+  },
+  "audit.actions.report.definition.create.label": {
+    "en": "8afc9b8a912421fa",
+    "text": "एक रिपोर्ट परिभाषा बनाई गई"
+  },
+  "audit.actions.report.definition.update.label": {
+    "en": "c00aee36399477bb",
+    "text": "एक रिपोर्ट परिभाषा अद्यतन की गई"
+  },
+  "audit.actions.report.definition.share.label": {
+    "en": "02777829b1842fad",
+    "text": "एक रिपोर्ट परिभाषा एक समूह के साथ साझा की गई"
+  },
+  "audit.actions.report.definition.delete.label": {
+    "en": "eab7ce893f26b998",
+    "text": "एक रिपोर्ट परिभाषा हटाई गई"
+  },
+  "audit.actions.report.job.submit.label": {
+    "en": "3a48a543fc6fd27e",
+    "text": "एक रिपोर्ट कार्य जमा किया गया"
+  },
+  "audit.actions.report.job.start.label": {
+    "en": "c2145542f6189d5c",
+    "text": "एक रिपोर्ट कार्य आरंभ हुआ"
+  },
+  "audit.actions.report.job.complete.label": {
+    "en": "0df392f7d726487c",
+    "text": "एक रिपोर्ट कार्य पूरा हुआ"
+  },
+  "audit.actions.report.job.fail.label": {
+    "en": "d342e8699921dd5d",
+    "text": "एक रिपोर्ट कार्य विफल हुआ"
+  },
+  "audit.actions.report.job.cancel.label": {
+    "en": "0ead0c5eaedc5eb1",
+    "text": "एक रिपोर्ट कार्य रद्द किया गया"
+  },
+  "audit.actions.report.notify.label": {
+    "en": "98a351693fca3699",
+    "text": "एक रिपोर्ट पूर्णता सूचना भेजी गई"
+  },
+  "audit.actions.report.query.label": {
+    "en": "0de138fe9e778bd8",
+    "text": "एक रिपोर्ट क्वेरी चलाई गई"
+  },
+  "audit.actions.report.job.retrieve.label": {
+    "en": "2f81320658ea37b8",
+    "text": "एक रिपोर्ट परिणाम प्राप्त किया गया"
+  },
+  "audit.actions.admin.audit-export.add.label": {
+    "en": "8c0a46b4a7286c31",
+    "text": "एक ऑडिट निर्यात गंतव्य जोड़ा गया"
+  },
+  "audit.actions.admin.audit-export.update.label": {
+    "en": "5dffabe5c58492fb",
+    "text": "एक ऑडिट निर्यात गंतव्य अद्यतन किया गया"
+  },
+  "audit.actions.admin.audit-export.remove.label": {
+    "en": "a1ce8547b7eb7431",
+    "text": "एक ऑडिट निर्यात गंतव्य हटाया गया"
+  },
+  "audit.actions.admin.audit-export.enable.label": {
+    "en": "8b7b2ef9c33fe419",
+    "text": "एक ऑडिट निर्यात गंतव्य सक्षम किया गया"
+  },
+  "audit.actions.admin.audit-export.disable.label": {
+    "en": "7dbb1b1d2bdf4aec",
+    "text": "एक ऑडिट निर्यात गंतव्य अक्षम किया गया"
+  },
+  "audit.actions.admin.audit-export.test.label": {
+    "en": "e523fcd6d4957e6d",
+    "text": "एक ऑडिट निर्यात गंतव्य का परीक्षण किया गया"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "एक परीक्षण घटना एक ऑडिट निर्यात गंतव्य को भेजी गई"
+  },
+  "audit.actions.certificate.stored.label": {
+    "en": "fcec1bd6f10fd5cc",
+    "text": "एक प्रमाणपत्र किसी व्यक्ति या अनुप्रयोग की प्रविष्टि पर संग्रहीत किया गया"
+  },
+  "audit.actions.certificate.unstored.label": {
+    "en": "6e2d0aef72c7b82c",
+    "text": "एक प्रमाणपत्र किसी व्यक्ति या अनुप्रयोग की प्रविष्टि से हटाया गया"
+  },
+  "audit.actions.federation.link.add.label": {
+    "en": "5e6953235158adac",
+    "text": "एक व्यवस्थापक ने किसी व्यक्ति को भागीदार के विषय से जोड़ा"
+  },
+  "audit.actions.federation.link.remove.label": {
+    "en": "4a6ebcf9e0c4f69e",
+    "text": "एक व्यवस्थापक ने किसी व्यक्ति को भागीदार के विषय से अलग किया"
+  },
+  "audit.actions.roles.grant.label": {
+    "en": "6e1aacb692156ad2",
+    "text": "एक भूमिका किसी व्यक्ति, समूह या अनुप्रयोग को दी गई"
+  },
+  "audit.actions.roles.revoke.label": {
+    "en": "d4772fbd49ab2048",
+    "text": "एक भूमिका किसी व्यक्ति, समूह या अनुप्रयोग से वापस ली गई"
+  },
+  "audit.actions.roles.authorize.label": {
+    "en": "190dc5bd1b682898",
+    "text": "एक भूमिका को एक अनुमति अधिकृत करने के लिए बनाया गया"
+  },
+  "audit.actions.roles.unauthorize.label": {
+    "en": "633291edd4fb6eba",
+    "text": "एक भूमिका अब एक अनुमति अधिकृत नहीं करती"
+  },
+  "audit.actions.krb5.trust.add.label": {
+    "en": "35ee62b7c98a22a0",
+    "text": "एक Kerberos विश्वास जोड़ा गया"
+  },
+  "audit.actions.krb5.trust.update.label": {
+    "en": "91295a7233165143",
+    "text": "एक Kerberos विश्वास बदला गया"
+  },
+  "audit.actions.krb5.trust.enable.label": {
+    "en": "be6b3132d857d428",
+    "text": "एक Kerberos विश्वास सक्षम किया गया"
+  },
+  "audit.actions.krb5.trust.disable.label": {
+    "en": "689c9295e8a342c1",
+    "text": "एक Kerberos विश्वास अक्षम किया गया"
+  },
+  "audit.actions.krb5.trust.rotate-key.label": {
+    "en": "cea8ab994f72f176",
+    "text": "एक Kerberos विश्वास की कुंजी घुमाई गई"
+  },
+  "audit.actions.krb5.trust.remove.label": {
+    "en": "c7be95e7265a0f91",
+    "text": "एक Kerberos विश्वास हटाया गया"
+  },
+  "audit.actions.krb5.trust.pair.label": {
+    "en": "5aaa9caed768fb99",
+    "text": "एक Kerberos विश्वास को दूसरे विश्वास क्षेत्र के साथ जोड़ा गया"
+  },
+  "audit.actions.admin.authn-policy.save-named.label": {
+    "en": "ae73731a4c9b5201",
+    "text": "एक नामित प्रमाणीकरण नीति बनाई या प्रतिस्थापित की गई"
+  },
+  "audit.actions.admin.authn-policy.delete-named.label": {
+    "en": "20cf17485f5112f0",
+    "text": "एक नामित प्रमाणीकरण नीति हटाई गई"
+  },
+  "audit.actions.admin.service-account-policy.change.label": {
+    "en": "c43377ee4ee62d65",
+    "text": "एक सेवा खाता नीति प्रोफ़ाइल बदली गई"
+  },
+  "audit.actions.admin.passkey-policy.change.label": {
+    "en": "d6cd0159f9f4f42f",
+    "text": "एक पासकी नीति प्रोफ़ाइल बदली गई"
+  },
+  "audit.actions.admin.passkey-client.clear.label": {
+    "en": "caac9fcf2aacd596",
+    "text": "ML-DSA एक सीखे हुए पासकी क्लाइंट को, या प्रत्येक को, पुनः प्रस्तावित किया गया"
+  },
+  "audit.actions.admin.attribute-policy.change.label": {
+    "en": "def95fa5be84d974",
+    "text": "एक विशेषता नीति प्रोफ़ाइल बदली गई"
+  },
+  "audit.actions.admin.attribute-policy.define.label": {
+    "en": "efb3c94b0f679855",
+    "text": "एक विश्वास क्षेत्र में एक कस्टम विशेषता परिभाषित की गई"
+  },
+  "audit.actions.admin.attribute-policy.update.label": {
+    "en": "2ac2f1f56a0abb78",
+    "text": "एक विश्वास क्षेत्र की कस्टम विशेषता बदली गई"
+  },
+  "audit.actions.admin.attribute-policy.undefine.label": {
+    "en": "f86e0a469574ebc8",
+    "text": "एक विश्वास क्षेत्र की कस्टम विशेषता हटाई गई"
+  },
+  "audit.actions.authn.session.registration.refused.label": {
+    "en": "be4013bf84068a75",
+    "text": "साइन-ऑन सत्र को उसके ब्राउज़र की कुंजी से बाँधना अस्वीकार किया गया"
+  },
+  "audit.actions.authn.session.refresh.refused.label": {
+    "en": "9e63e887ac8bc909",
+    "text": "डिवाइस-बाउंड सत्र की कुकी का नवीकरण अस्वीकार किया गया"
+  },
+  "audit.actions.account.disable.label": {
+    "en": "46bd2589fcc45fc9",
+    "text": "किसी व्यक्ति का खाता अक्षम किया गया"
+  },
+  "audit.actions.account.enable.label": {
+    "en": "8e93f6c58f12f275",
+    "text": "किसी व्यक्ति का खाता सक्षम किया गया"
+  },
+  "audit.actions.enrollment.hostname.add.label": {
+    "en": "d87645d47198c4be",
+    "text": "प्रमाणपत्र नामांकन के लिए एक प्रविष्टि पर होस्ट नाम पंजीकृत किया गया"
+  },
+  "audit.actions.enrollment.hostname.remove.label": {
+    "en": "6741b0eed245a1e4",
+    "text": "प्रमाणपत्र नामांकन के लिए एक प्रविष्टि से होस्ट नाम हटाया गया"
+  },
+  "audit.actions.device.risk.label": {
+    "en": "229ae42804651e11",
+    "text": "एक पंजीकृत डिवाइस का जोखिम स्तर सेट किया गया"
+  },
+  "audit.actions.federation.create.label": {
+    "en": "d39349db65bbbeac",
+    "text": "एक फ़ेडरेशन संबंध बनाया गया"
+  },
+  "audit.actions.federation.update.label": {
+    "en": "e42d4ad8c054a018",
+    "text": "एक फ़ेडरेशन संबंध बदला गया"
+  },
+  "audit.actions.federation.delete.label": {
+    "en": "a2446b9385d97441",
+    "text": "एक फ़ेडरेशन संबंध हटाया गया"
+  },
+  "audit.actions.federation.encryption-key.label": {
+    "en": "f1edb957b2f0924b",
+    "text": "एक फ़ेडरेशन संबंध की एन्क्रिप्शन कुंजियाँ बदलीं"
+  },
+  "audit.actions.federation.client-certificate.label": {
+    "en": "43510962ed549172",
+    "text": "एक फ़ेडरेशन संबंध को क्लाइंट प्रमाणपत्र दिया गया"
+  },
+  "audit.actions.federation.refused.label": {
+    "en": "ec3bda0f9fafeef9",
+    "text": "एक संबंध के माध्यम से फ़ेडरेटेड साइन इन अस्वीकार किया गया"
+  },
+  "audit.actions.krb5.krbtgt.created.label": {
+    "en": "b7cafb8b01f4edf5",
+    "text": "एक विश्वास क्षेत्र की krbtgt कुंजी बनाई गई"
+  },
+  "audit.actions.krb5.krbtgt.rotated.label": {
+    "en": "44b713e96a2117cb",
+    "text": "एक विश्वास क्षेत्र की krbtgt कुंजी घुमाई गई"
+  },
+  "audit.actions.krb5.krbtgt.invalidated.label": {
+    "en": "eb890adb9a5d4927",
+    "text": "एक विश्वास क्षेत्र की krbtgt कुंजी प्रतिस्थापित की गई और प्रत्येक पुरानी अमान्य की गई"
+  },
+  "audit.actions.admin.krb5.krbtgt.created.label": {
+    "en": "094c69cb63255f7f",
+    "text": "एक ऑपरेटर ने एक विश्वास क्षेत्र की krbtgt कुंजी बनाई"
+  },
+  "audit.actions.admin.krb5.krbtgt.rotated.label": {
+    "en": "da65e2043c944e92",
+    "text": "एक ऑपरेटर ने एक विश्वास क्षेत्र की krbtgt कुंजी घुमाई"
+  },
+  "audit.actions.admin.krb5.krbtgt.invalidated.label": {
+    "en": "3f717cdcd547e8fa",
+    "text": "एक ऑपरेटर ने एक विश्वास क्षेत्र की krbtgt कुंजी प्रतिस्थापित की और प्रत्येक पुरानी अमान्य की"
+  },
+  "audit.actions.ciba.approved.label": {
+    "en": "bf1e09c296b342d8",
+    "text": "एक व्यक्ति ने बैकचैनल साइन इन अनुरोध स्वीकृत किया"
+  },
+  "audit.actions.ciba.denied.label": {
+    "en": "ef1a7cf6cc1d03c9",
+    "text": "एक व्यक्ति ने बैकचैनल साइन इन अनुरोध अस्वीकार किया"
+  },
+  "audit.actions.oidfed.subordinate-suspended.label": {
+    "en": "6675877d77c0566f",
+    "text": "एक OpenID Federation अधीनस्थ निलंबित किया गया"
+  },
+  "audit.actions.oidfed.subordinate-reinstated.label": {
+    "en": "7986bb422295e58b",
+    "text": "एक OpenID Federation अधीनस्थ बहाल किया गया"
+  },
+  "audit.actions.oidfed.collection-crawled.label": {
+    "en": "7607eb6d5f234343",
+    "text": "एक OpenID Federation Entity Collection क्रॉल किया गया"
+  },
+  "audit.actions.portal.device.approve.label": {
+    "en": "b3f3ad8f3bef6764",
+    "text": "एक व्यक्ति ने पोर्टल पर डिवाइस साइन इन स्वीकृत किया"
+  },
+  "audit.actions.portal.device.deny.label": {
+    "en": "b6ec1ec11487f09e",
+    "text": "एक व्यक्ति ने पोर्टल पर डिवाइस साइन इन अस्वीकार किया"
+  },
+  "audit.actions.portal.device.prove.label": {
+    "en": "18f9f5e553c02d46",
+    "text": "एक व्यक्ति ने पोर्टल पर डिवाइस की कुंजी सिद्ध की"
+  },
+  "audit.actions.portal.device.link.label": {
+    "en": "981a3df836380a9f",
+    "text": "एक व्यक्ति ने पोर्टल पर एक डिवाइस को पासकी से जोड़ा"
+  },
+  "audit.actions.portal.vc.view.label": {
+    "en": "5bf708d5ba3e1335",
+    "text": "किसी व्यक्ति को प्रस्तावित हो सकने वाले क्रेडेंशियल देखना अस्वीकार किया गया"
+  },
+  "audit.actions.risk.dataset.import.label": {
+    "en": "a6752612f66f4e39",
+    "text": "एक जोखिम डेटासेट आयात किया गया"
+  },
+  "audit.actions.risk.dataset.activate.label": {
+    "en": "91fef9a13928d970",
+    "text": "एक जोखिम डेटासेट का एक संस्करण सक्रिय बनाया गया"
+  },
+  "audit.actions.risk.dataset.delete.label": {
+    "en": "160c256ebf676ac4",
+    "text": "एक जोखिम डेटासेट का एक संस्करण हटाया गया"
+  },
+  "audit.actions.ssf.signals.replace-stream.label": {
+    "en": "34f7435fe1e7831e",
+    "text": "एक भागीदार की Shared Signals स्ट्रीम प्रतिस्थापित की गई"
+  },
+  "audit.actions.ssf.signals.read-status.label": {
+    "en": "8836857266e386f3",
+    "text": "एक भागीदार की Shared Signals स्ट्रीम की स्थिति पढ़ी गई"
+  },
+  "audit.actions.xacml.pep.listener.set.label": {
+    "en": "e6d3d068edd0c700",
+    "text": "एक दूरस्थ PEP का लिस्नर परिभाषित किया गया"
+  },
+  "audit.actions.xacml.pep.listener.remove.label": {
+    "en": "22371f2d5a219bd9",
+    "text": "एक दूरस्थ PEP का लिस्नर हटाया गया"
+  },
+  "audit.actions.xacml.pep.listener.renew.label": {
+    "en": "e2fadf6c2e12e48a",
+    "text": "एक दूरस्थ PEP से एक लिस्नर के लिए नया प्रमाणपत्र माँगा गया"
+  },
+  "audit.actions.xacml.pep.listener.environment.label": {
+    "en": "bbc3fa7f73024a89",
+    "text": "एक दूरस्थ PEP के परिवेश लिस्नर की ट्यूनिंग सेट की गई"
+  },
+  "audit.actions.xacml.pep.settings.set.label": {
+    "en": "67e23ea4e64903a9",
+    "text": "एक दूरस्थ PEP की प्रबंधित सेटिंग सेट की गईं"
+  },
+  "audit.actions.xacml.pep.settings.clear.label": {
+    "en": "e3d844d8e92ded2e",
+    "text": "एक दूरस्थ PEP की प्रबंधित सेटिंग साफ़ की गईं"
+  },
+  "audit.actions.xacml.pep.cluster.listener.set.label": {
+    "en": "5b7e185e98dfd54a",
+    "text": "एक दूरस्थ PEP क्लस्टर का लिस्नर परिभाषित किया गया"
+  },
+  "audit.actions.xacml.pep.cluster.listener.remove.label": {
+    "en": "7b2dcfb3707fb0ab",
+    "text": "एक दूरस्थ PEP क्लस्टर का लिस्नर हटाया गया"
+  },
+  "audit.actions.xacml.pep.cluster.listener.renew.label": {
+    "en": "0516e0cae2b0cffd",
+    "text": "एक दूरस्थ PEP क्लस्टर से एक लिस्नर के लिए नया प्रमाणपत्र माँगा गया"
+  },
+  "audit.actions.xacml.pep.cluster.listener.environment.label": {
+    "en": "54c7af5c001fd2d3",
+    "text": "एक दूरस्थ PEP क्लस्टर के परिवेश लिस्नर की ट्यूनिंग सेट की गई"
+  },
+  "audit.actions.xacml.pep.cluster.settings.set.label": {
+    "en": "fddab35861f79541",
+    "text": "एक दूरस्थ PEP क्लस्टर की प्रबंधित सेटिंग सेट की गईं"
+  },
+  "audit.actions.xacml.pep.cluster.settings.clear.label": {
+    "en": "cfb6935d3e45461e",
+    "text": "एक दूरस्थ PEP क्लस्टर की प्रबंधित सेटिंग साफ़ की गईं"
+  },
+  "audit.actions.xacml.pep.cluster.proxy.set.label": {
+    "en": "0990d52a28561ed0",
+    "text": "एक दूरस्थ PEP क्लस्टर का रिवर्स-प्रॉक्सी कॉन्फ़िगरेशन सेट किया गया"
+  },
+  "audit.actions.xacml.pep.cluster.proxy.clear.label": {
+    "en": "c2812e5d21fb6dd4",
+    "text": "एक दूरस्थ PEP क्लस्टर का रिवर्स-प्रॉक्सी कॉन्फ़िगरेशन हटाया गया"
+  }
+}

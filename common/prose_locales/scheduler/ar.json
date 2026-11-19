@@ -1,0 +1,746 @@
+{
+  "sched.jobs.attribute-sources.refresh.title": {
+    "en": "f3af7a728e869ac5",
+    "text": "مصادر السمات: التحديث المجدول"
+  },
+  "sched.jobs.attribute-sources.refresh.describe": {
+    "en": "e753a576c8530ce3",
+    "text": "يقرأ الصفحة التالية من أشخاص نطاق الثقة من كل مصدر سمات حلّ موعد فترته المجدولة، إلى مدخلاتهم (#94). attributeSources.refreshBatch شخصًا لكل مصدر في كل تشغيل."
+  },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "تصدير التدقيق"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "في كل عملية، ولكل نطاق ثقة: يسلّم أحداث التدقيق الجديدة الخاصة بهذه العملية إلى الوجهات المفعّلة لذلك النطاق. فشل وجهة واحدة لا يوقف الوجهات الأخرى. التسليم مرة واحدة على الأقل."
+  },
+  "sched.jobs.authn.account-set-expiry.title": {
+    "en": "849356c9b70cc0f3",
+    "text": "انتهاء صلاحية مجموعة الحسابات"
+  },
+  "sched.jobs.authn.account-set-expiry.describe": {
+    "en": "d643d71a0089a802",
+    "text": "يحدّث مجموعة حسابات كل متصفح (#561): يُتذكَّر الحساب الذي انتهت جلسته على أنه سجّل الخروج، ويُسقَط الحساب المتذكَّر لمدة أطول من authn.rememberedAccountDays، وتُحذَف المجموعة الفارغة."
+  },
+  "sched.jobs.authn.session-expiry.title": {
+    "en": "0d2b2447af869e65",
+    "text": "انتهاء صلاحية الجلسة"
+  },
+  "sched.jobs.authn.session-expiry.describe": {
+    "en": "5631096a0aa7c62f",
+    "text": "يُنهي كل جلسة تسجيل دخول انتهت مدة حياتها أو مهلة خمولها، وفي كل نطاق ثقة، ما لا يزيد على authn.sessionShedPerSweep من الجلسات الفائضة الخاصة بموضوع واحد في ذلك النطاق."
+  },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "انتهاء صلاحية طلب وصول AuthZEN"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "ينقل كل طلب وصول AuthZEN معلّق (#1180) تجاوز expires_at الخاص به إلى منتهٍ — مع كتابة صف التدقيق الخاص به وإرسال رد النداء — ويزيل الطلب المنتهي بعد يوم من انتهائه، أو عند نفاد موافقته إذا كان ذلك لاحقًا. تطبق القراءة المهلة بنفسها، فهذا هو السجل والتنظيف، وليس ما يقرر."
+  },
+  "sched.jobs.caches.eject-expired.title": {
+    "en": "0cd05b8d7db4c75b",
+    "text": "طرد مدخلات الذاكرة المؤقتة المنتهية"
+  },
+  "sched.jobs.caches.eject-expired.describe": {
+    "en": "1ae2468f3087d86b",
+    "text": "يحذف، في هذه العملية، كل مدخلة ذاكرة مؤقتة ومدخلة مخزن إعادة انتهت مدة حياتها — تدبير منزلي فقط: ما زال كل مخزن يرفض المدخلة المنتهية حيث يقرأها."
+  },
+  "sched.jobs.cluster.claims-purge.title": {
+    "en": "263ab3366839b277",
+    "text": "مسح المطالبات المنتهية"
+  },
+  "sched.jobs.cluster.claims-purge.describe": {
+    "en": "b3ee8feee29a65c0",
+    "text": "يحذف المطالبات أحادية الاستخدام التي انتهت مدة حياتها من الجدول الذي تتشاركه كل العقد."
+  },
+  "sched.jobs.cluster.node-snapshot.title": {
+    "en": "8be187108d31777e",
+    "text": "لقطة العقدة"
+  },
+  "sched.jobs.cluster.node-snapshot.describe": {
+    "en": "2831c3d3902f9ad4",
+    "text": "يكتب عرضَي هذه العقدة المراقبة → تجمعات العمال و→ صحة العقدة إلى المخزن المشترك، صفًا واحدًا لكل اسم عقدة، حتى ترسم كل عقدة كل العقد على تلك الصفحات (#332)."
+  },
+  "sched.jobs.cluster.node-snapshot-purge.title": {
+    "en": "83b1b328de6501ab",
+    "text": "تطهير لقطات العقد"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.describe": {
+    "en": "d94b5f29e1a3b672",
+    "text": "يحذف لقطة تجمعات العمال وصحة العقدة لعقدة لم تعد عضوًا حيًا في العنقود بمجرد أن يتجاوز عمرها cluster.nodeSnapshotRetentionHours؛ ولا يحذف أبدًا لقطة عضو حي، ولا شيئًا ما دام لا يمكن قراءة العضوية (#332)."
+  },
+  "sched.jobs.cluster.rate-window-purge.title": {
+    "en": "10451e2a1990b97a",
+    "text": "مسح نوافذ حد المعدل المنتهية"
+  },
+  "sched.jobs.cluster.rate-window-purge.describe": {
+    "en": "772463775db370a2",
+    "text": "يحذف نوافذ حد المعدل التي انقضت من الجدول الذي تتشاركه كل العقد."
+  },
+  "sched.jobs.devices.android-status-recheck.title": {
+    "en": "fe97755c55eeb3e2",
+    "text": "إعادة التحقق من إقرار Android"
+  },
+  "sched.jobs.devices.android-status-recheck.describe": {
+    "en": "610a48914c017400",
+    "text": "يسأل قائمة حالة إقرار Android النشطة عن كل سلسلة Android مخزّنة — مفاتيح الأجهزة وبيانات اعتماد WebAuthn، في كل نطاق ثقة — ويخفّض ما تلغيه أو تعلّقه: إقرار ذاتي، وتدقيق، وCAEP credential-change. يقرأ فقط الأشخاص والأجهزة المعلَّمة بأنها تحمل واحدة، صفحة في كل مرة، ويتخطى نطاق الثقة الذي لم تتحرك فيه القائمة ولا التسجيلات منذ آخر إعادة تحقق. يُشغَّل عند تفعيل قائمة، ويوميًا."
+  },
+  "sched.jobs.devices.android-status-refresh.title": {
+    "en": "95d19bd56eac78af",
+    "text": "تنزيل قائمة حالة إقرار Android"
+  },
+  "sched.jobs.devices.android-status-refresh.describe": {
+    "en": "af65a7bf379c0b71",
+    "text": "ينزّل قائمة حالة إقرار مفاتيح Android من Google من devices.androidStatusUrl ويحمّلها كمجموعة بيانات المخاطر android.attestation-status: أي شهادات إقرار ملغاة أو معلّقة. يوميًا (devices.androidStatusRefreshS)؛ والقائمة المطابقة للقائمة النشطة لا تحمّل شيئًا."
+  },
+  "sched.jobs.federation.client-certificate-renew.title": {
+    "en": "f37b7eff9973c660",
+    "text": "تجديد شهادة عميل الاتحاد"
+  },
+  "sched.jobs.federation.client-certificate-renew.describe": {
+    "en": "655fd604e686a4d3",
+    "text": "يُصدر شهادة عميل TLS لكل علاقة اتحاد FAPI 1.0 Advanced لا تحمل واحدة، وشهادة جديدة بالموضوع نفسه لكل علاقة تنتهي شهادتها خلال federation.clientCertificateRenewDays."
+  },
+  "sched.jobs.federation.encryption-key-retire.title": {
+    "en": "0c323ec372941184",
+    "text": "إيقاف مفتاح تشفير الاتحاد"
+  },
+  "sched.jobs.federation.encryption-key-retire.describe": {
+    "en": "c8990a4ca5b5163e",
+    "text": "يزيل من كل علاقة اتحاد مفتاح التشفير الذي استبدلته عملية تدوير، بمجرد انقضاء federation.encryptionKeyGraceS. كان المفتاح قد توقف عن فك التشفير في تلك اللحظة أصلًا؛ وهذا يزيله من المدخلة."
+  },
+  "sched.jobs.federation.partner-refresh.title": {
+    "en": "5354cb5ed3b1e58f",
+    "text": "تحديث شريك جلسات الاتحاد"
+  },
+  "sched.jobs.federation.partner-refresh.describe": {
+    "en": "6fc466ab1fe4b653",
+    "text": "لعلاقة OpenID Connect يكون fedRefreshTokens فيها مفعّلًا: يجدّد رموز الشريك لكل جلسة تحمل واحدًا عندما يحين موعدها، ويتحقق من أن ID Token وUserInfo الجديدين ما زالا يسمّيان الشخص، ويُنهي الجلسة عندما يرفض الشريك أو عندما لا تسمّي الإجابة الشخص (#930)."
+  },
+  "sched.jobs.federation.provision-idle.title": {
+    "en": "20200542bb3c76b9",
+    "text": "مسح خمول تزويد الاتحاد"
+  },
+  "sched.jobs.federation.provision-idle.describe": {
+    "en": "94bd34c4b59a85a1",
+    "text": "يعطّل الشخص الذي يكون مسار تسجيل دخوله الوحيد علاقة اتحاد واحدة، بمجرد أن يصبح federationLastSeen أقدم من fedProvisionIdleMinutes لتلك العلاقة. القيمة الفارغة أو 0 تُبقي الجميع. تُحفَظ المدخلة والرابط. تُترك كلمة المرور المحلية، أو رابط عبر علاقة أخرى، دون مساس."
+  },
+  "sched.jobs.gnap.grant-expiry.title": {
+    "en": "ed1bb7e24484e928",
+    "text": "GNAP: المنح المنتهية"
+  },
+  "sched.jobs.gnap.grant-expiry.describe": {
+    "en": "7e87c3407b68cee0",
+    "text": "يُنهي كل منحة GNAP انتهت مدة تفاعلها أو مدة حياة المنحة (gnap.grantLifetimeS) ولم يلمسها أي طلب منذ ذلك، مع تسجيل السبب (#432)، ويحذف كل سجل مثيل غير مستخدم لتلك المدة (#1221)."
+  },
+  "sched.jobs.gnap.spend-purge.title": {
+    "en": "cefadb9704ec0cd1",
+    "text": "GNAP: حدود المنح المنتهية"
+  },
+  "sched.jobs.gnap.spend-purge.describe": {
+    "en": "71471822b228b1b8",
+    "text": "يحذف المجاميع الجارية المحفوظة لحدود كل منحة GNAP بمجرد انتهاء المنحة، عندما لا يمكن تقديم أي رمز منها (#432)."
+  },
+  "sched.jobs.keys.data-key-count.title": {
+    "en": "c6e6cb1a17fd0095",
+    "text": "أعداد قيم مفاتيح تشفير البيانات"
+  },
+  "sched.jobs.keys.data-key-count.describe": {
+    "en": "1563aab7487de8a6",
+    "text": "يعدّ القيم المختومة تحت كل مفتاح تشفير بيانات، في مرور واحد على المخزن، ويُبقي كل عدد على مفتاحه من أجل /admin/encryption."
+  },
+  "sched.jobs.keys.data-key-reencrypt.title": {
+    "en": "e83b2a80fc8ab721",
+    "text": "إعادة تشفير البيانات وإتلاف المفاتيح"
+  },
+  "sched.jobs.keys.data-key-reencrypt.describe": {
+    "en": "b8460307f2319fea",
+    "text": "يعيد ختم كل قيمة ما زالت مختومة تحت مفتاح تشفير بيانات مُستبدَل تحت المفتاح الحالي، ويُتلف المفتاح المستبدَل بمجرد ألا يبقى شيء مختومًا تحته ويكون قد استُبدل منذ keys.dataKeyRetireAfterDays."
+  },
+  "sched.jobs.keys.data-key-rotate.title": {
+    "en": "7e230b0aa64dfb58",
+    "text": "تدوير مفتاح تشفير البيانات"
+  },
+  "sched.jobs.keys.data-key-rotate.describe": {
+    "en": "afd86bfabb1a98ab",
+    "text": "يمنح كل مفتاح تشفير بيانات ختم قيمًا جديدة طوال keys.dataKeyRotationDays خلفًا، يُنشر قبل keys.dataKeyActivationLeadSeconds من ختم أي شيء تحته؛ ثم تعيد مهمة إعادة التشفير ختم ما ختمه المفتاح القديم."
+  },
+  "sched.jobs.keys.data-key-rotate-now.title": {
+    "en": "13aab83fb56f4e4f",
+    "text": "تدوير مفتاح تشفير البيانات، يدويًا"
+  },
+  "sched.jobs.keys.data-key-rotate-now.describe": {
+    "en": "a4d23163545ebff6",
+    "text": "يدوّر كل مفتاح تشفير بيانات مخزّن الآن — أو مفاتيح نطاق ثقة واحد، أو صنف واحد؛ وتستمر المفاتيح التي تستبدلها في فتح ما ختمته إلى أن يُعاد ختمه."
+  },
+  "sched.jobs.keys.kek-rotate-now.title": {
+    "en": "56ce4e44eba4fdbf",
+    "text": "تدوير مفتاح تشفير المفاتيح، يدويًا"
+  },
+  "sched.jobs.keys.kek-rotate-now.describe": {
+    "en": "57116faef542211d",
+    "text": "ينشئ إصدارًا جديدًا من مفتاح تشفير المفاتيح في خدمة إدارة المفاتيح الخاصة به ويعيد تغليف كل مفتاح تشفير بيانات تحته. لمفتاح في KMS فقط."
+  },
+  "sched.jobs.krb5.krbtgt-rotate.title": {
+    "en": "fa4e83114be4d14c",
+    "text": "تدوير مفتاح krbtgt"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.describe": {
+    "en": "c85b767fff8efbb2",
+    "text": "يستبدل مفتاح krbtgt لكل نطاق ثقة — المفتاح الذي يُختَم تحته كل TGT — بمفتاح عشوائي جديد عند kvno التالي بمجرد أن يبلغ عمره krb5.krbtgtRotationIntervalDays، ويُبقي المفتاح الذي يستبدله لأطول مدة يمكن أن يعيشها TGT تحته، ولا يفعل ذلك أبدًا ما دام الإصدار الذي أبقته آخر عملية تدوير ما زال في نافذته. يمنح نطاق ثقة في وضع product لا يملك مفتاحًا مفتاحه الأول. تسمّي نتيجة كل تشغيل kvno، وآخر تدوير، وموعد استحقاق التالي."
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.title": {
+    "en": "09f54cab8475d618",
+    "text": "تدوير مفتاح krbtgt، يدويًا"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.describe": {
+    "en": "6fffa44535aa160d",
+    "text": "يدوّر مفتاح krbtgt لنطاق الثقة الآن. مع invalidate، لا يُبقي أي إصدار سابق: يُرفَض كل TGT أُصدر قبله ويقول حدث Shared Signals ذلك."
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "صيانة مرآة اتصالات LDAP"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "يحذف اتصالات LDAP المنسوخة مرآتيًا للعقد التي لم تعد أعضاء، وتعليمات تسجيل الخروج التي تجاوزت مدة حياتها."
+  },
+  "sched.jobs.mail.deliver.title": {
+    "en": "2bb1b3533e3e44d6",
+    "text": "تسليم صندوق صادر البريد"
+  },
+  "sched.jobs.mail.deliver.describe": {
+    "en": "b1ea77995ea52a10",
+    "text": "يرسل كل رسالة منتظرة مستحقة — إعادة محاولة انقضى تراجعها، أو عقد إيجار انقضى، أو صف استُعيد بعد إعادة تشغيل — ويحيل إلى الرسائل الميتة ما بقي معلّقًا بعد mail.retentionS، ويزيل الصفوف المنتهية بعد ذلك."
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.title": {
+    "en": "4cbeb4551a77fd01",
+    "text": "مسح تسجيل الخروج عبر القناة الخلفية"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.describe": {
+    "en": "0b2f79f86bc38003",
+    "text": "يرسل كل تسليم Logout Token مستحق — إعادة محاولة انقضى تراجعها، أو عقد إيجار انقضى، أو صف استُعيد بعد إعادة تشغيل — ويحيل إلى الرسائل الميتة ما بقي معلّقًا بعد oauth2.backchannelLogoutRetentionS."
+  },
+  "sched.jobs.oauth2.ciba-sweep.title": {
+    "en": "f971b3b6fdbe4dff",
+    "text": "مسح CIBA"
+  },
+  "sched.jobs.oauth2.ciba-sweep.describe": {
+    "en": "89f25abc272e9c08",
+    "text": "يحاول كل CIBA ping وpush مستحق، ويحيل إلى الرسائل الميتة ما بقي معلّقًا بعد oauth2.cibaNotifyRetentionS، ويُنهي صلاحية طلبات المصادقة عبر القناة الخلفية التي لم يجب عنها أحد في الوقت، ويُسقط ما اكتمل منذ أكثر من ساعة."
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.title": {
+    "en": "fa4263e54da3a7de",
+    "text": "Claims Providers: تحديث الرموز المرتبطة"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.describe": {
+    "en": "72166ea059d3fc98",
+    "text": "يجدّد، قبل انتهاء الصلاحية، رمز كل شخص لدى Claims Provider ربطه، ويُسقط طلبات الربط التي لم يُكملها أحد (#147)."
+  },
+  "sched.jobs.oauth2.client-secret-expiry.title": {
+    "en": "e4f6d805130bd62e",
+    "text": "انتهاء صلاحية سر العميل"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.describe": {
+    "en": "bf894947ce420111",
+    "text": "يفحص كل سر عميل لكل تطبيق: صف تدقيق للتطبيق الذي يحمل سرًا تنتهي صلاحيته خلال oauth2.clientSecretExpiryWarningDays، ولمن انتهت صلاحية كل أسراره؛ ويزيل الأسرار المنتهية التي يحتفظ التطبيق إلى جانبها بسر غير منتهٍ — ولا يزيل آخر سر أبدًا، فهو يبقى ويُرفَض في وضع product."
+  },
+  "sched.jobs.oauth2.command-sweep.title": {
+    "en": "e200c4ae261a2eb6",
+    "text": "مسح OpenID Provider Commands"
+  },
+  "sched.jobs.oauth2.command-sweep.describe": {
+    "en": "fb4789a8030f5374",
+    "text": "يرسل كل تسليم Command Token مستحق — إعادة محاولة انقضى تراجعها، أو عقد إيجار انقضى، أو صف استُعيد بعد إعادة تشغيل — ويحيل إلى الرسائل الميتة ما بقي معلّقًا بعد oauth2.commandRetentionS، ويُسقط رموز رد النداء المنتهية وتشغيلات المستأجر المنتهية."
+  },
+  "sched.jobs.oauth2.device-code-sweep.title": {
+    "en": "d3bada4835d70dba",
+    "text": "تفويض الجهاز: الرموز المنتهية"
+  },
+  "sched.jobs.oauth2.device-code-sweep.describe": {
+    "en": "9c1da47db8a08725",
+    "text": "يُنهي صلاحية رموز أجهزة RFC 8628 التي لم يوافق عليها أحد في الوقت، ويزيل تلك التي اكتملت منذ أكثر من ساعة (#150)."
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.title": {
+    "en": "3a8c69653b6b768b",
+    "text": "الموضوعات المؤقتة: التعيينات المنتهية"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.describe": {
+    "en": "86f9e46ec5a00f92",
+    "text": "يزيل كل معرّف موضوع مؤقت لم يعد يمكن لرموزه وجلسته أن تكون قيد الاستخدام (#149)."
+  },
+  "sched.jobs.oauth2.expired-token-purge.title": {
+    "en": "9ae64452fa61c48d",
+    "text": "تطهير الرموز المتتبَّعة المنتهية"
+  },
+  "sched.jobs.oauth2.expired-token-purge.describe": {
+    "en": "f3b55c35762b6af1",
+    "text": "يحذف سجلات الرموز التي تجاوزت انتهاء صلاحيتها وoauth2.expiredTokenRetentionS، وإلغاءات الرموز التي انتهت صلاحيتها."
+  },
+  "sched.jobs.oauth2.grant-management-purge.title": {
+    "en": "38d564339874ba6d",
+    "text": "Grant Management: المنح المنتهية"
+  },
+  "sched.jobs.oauth2.grant-management-purge.describe": {
+    "en": "46dabea2677465d2",
+    "text": "يزيل كل منحة OAuth انتهت صلاحية آخر رمز لها، وسجل كل رمز أُصدر تحت منحة بمجرد انتهاء صلاحيته (#142)."
+  },
+  "sched.jobs.oauth2.used-assertion-purge.title": {
+    "en": "1b76c505917f3b58",
+    "text": "مسح التأكيدات المستخدمة المنتهية"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.describe": {
+    "en": "e47edb491dd535ca",
+    "text": "يحذف تأكيدات RFC 7523 وRFC 7522 التي انتهت مدة حياتها من سجل المرة الواحدة الذي تتشاركه كل العقد."
+  },
+  "sched.jobs.oidfed.collection-crawl.title": {
+    "en": "6853316e0728d95d",
+    "text": "زحف مجموعة كيانات OpenID Federation"
+  },
+  "sched.jobs.oidfed.collection-crawl.describe": {
+    "en": "7c517525f3e272f7",
+    "text": "يجتاز كل كيان تحت نطاق الثقة — يُحَل كل واحد إلى نطاق الثقة قبل جلب قائمته الخاصة — ويُبقي ما يجده لنقطة نهاية المجموعة (#136)."
+  },
+  "sched.jobs.oidfed.key-rotate.title": {
+    "en": "f6185cae95e3ee7c",
+    "text": "تدوير مفاتيح OpenID Federation"
+  },
+  "sched.jobs.oidfed.key-rotate.describe": {
+    "en": "d896be46e875fb02",
+    "text": "يُبقي Federation Entity Keys لكل نطاق ثقة متقدمة بتدوير واحد — مفتاح تالٍ يُنشر قبل أن يوقّع — ويدوّر بمجرد أن يصبح المفتاح الحالي أقدم من oidfed.keyRotationDays ويكون التالي قد نُشر طوال oidfed.keyOverlapDays."
+  },
+  "sched.jobs.oidfed.key-rotate-now.title": {
+    "en": "cd07acae980819dc",
+    "text": "تدوير مفاتيح OpenID Federation، يدويًا"
+  },
+  "sched.jobs.oidfed.key-rotate-now.describe": {
+    "en": "22011c13ae57b8ff",
+    "text": "يدوّر Federation Entity Key لنطاق الثقة الآن — أو، في حالة طارئة، يلغي المفتاح الحالي والتالي بصفتهما مخترقين ويستبدلهما."
+  },
+  "sched.jobs.oidfed.registrations-expire.title": {
+    "en": "44fe44470d028a2d",
+    "text": "تسجيلات OpenID Federation التي انتهت"
+  },
+  "sched.jobs.oidfed.registrations-expire.describe": {
+    "en": "183fddf95526a70b",
+    "text": "يزيل كل عميل سُجِّل عبر OpenID Federation Trust Chain وانتهى تسجيله (12.3). كل نقطة نهاية تجيب أصلًا مثل هذا العميل بأنه غير معروف؛ وهذا يمنع المدخلة من البقاء فحسب."
+  },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "مسح عملاء مفتاح المرور المتعلَّمين"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "يزيل عملاء مفتاح المرور المتعلَّمين (#1112) الذين خرجت إخفاقاتهم كلها من webauthn.clientLearningWindowHours ولم يُتعلَّموا قط. يُبقى العميل المتعلَّم أصلًا إلى أن ينجح تسجيل منه أو يُمسح."
+  },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "إعادة عدّ تقرير مفاتيح المرور"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "يعدّ مفاتيح مرور نطاق الثقة من أجل المراقبة → مفاتيح المرور (#942): حسب الخوارزمية والمسار، والأشخاص الذين يحملون ما بعد الكم فقط، أو الكلاسيكي فقط، أو كليهما، وأي نماذج مصادقة تحمل أي خوارزميات. يقرأ فقط الأشخاص الذين يحملون مفتاح مرور، صفحة في كل مرة؛ وتُضاف التغييرات التي تُجرى بعده كلما كُتبت."
+  },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "استكمال فهرس مجموعة المنح"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "يمنح كل مدخلة دليل كُتبت قبل #1306 مفاتيح فهرس grantinggroup لسمات المنح الخاصة بها، صفحة من المخزن في كل مرة، حتى يجد سؤال مخزن تزويد الاتحاد مجموعة تسمّيها مثل هذه المدخلة؛ ويعلّم المخزن مكتملًا مرة واحدة، ويتوقف من ذلك الحين فصاعدًا (#1311)."
+  },
+  "sched.jobs.persistence.minted-expiry-purge.title": {
+    "en": "2e5c5abaf78a47c9",
+    "text": "تطهير الصفوف المُصدَرة المنتهية"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.describe": {
+    "en": "51b75ecbc03ac6ba",
+    "text": "يحذف من مخزن هذا العنقود (في خدمة منشورة كخلايا، قاعدة بيانات هذه الخلية نفسها)، على دفعات من 5000 وبحد أقصى 20 دفعة من كل نوع في كل تشغيل، الصفوف المُصدَرة التي لن تقرأها أي بداية مرة أخرى: التي تجاوزت انتهاء صلاحيتها، والخاصة بنطاق ثقة لم يعد معرّفًا (كُتبت منذ أكثر من ساعة)، وصفوف مخزن قصير العمر بلا انتهاء صلاحية وأقدم من persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "تطهير الصفوف المُصدَرة المنتهية، الطبقة العامة"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "في خدمة منشورة كخلايا، يحذف من قاعدة بيانات الطبقة العامة الأنواع الثلاثة نفسها من الصفوف المُصدَرة، وبالدفعات نفسها؛ تُطالَب تشغيلته في الطبقة العامة، فتشغّل خلية واحدة كل خانة. متوقف في خدمة ذات قاعدة بيانات واحدة، حيث يغطيها التطهير الآخر."
+  },
+  "sched.jobs.persistence.tombstone-purge.title": {
+    "en": "1eba3997d260e28f",
+    "text": "مسح شواهد الحذف المنتهية"
+  },
+  "sched.jobs.persistence.tombstone-purge.describe": {
+    "en": "56aed2e95604a1b4",
+    "text": "يحذف شواهد حذف الصفوف المُصدَرة المنتهية الأقدم من persistence.mintedRetention من مخزن هذا العنقود، على دفعات من 5000 وبحد أقصى 20 دفعة في كل تشغيل (في خدمة منشورة كخلايا، قاعدة بيانات هذه الخلية نفسها)."
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "مسح شواهد الحذف المنتهية، الطبقة العامة"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "في خدمة منشورة كخلايا، يحذف من قاعدة بيانات الطبقة العامة شواهد حذف الصفوف المُصدَرة المنتهية الأقدم من persistence.mintedRetention، وبالدفعات نفسها؛ تُطالَب تشغيلته في الطبقة العامة، فتشغّل خلية واحدة كل خانة. متوقف في خدمة ذات قاعدة بيانات واحدة، حيث يغطيها المسح الآخر."
+  },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "تدقيق الشهادات المثبتة"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "يُخضع كل شهادة مثبتة وكل مدخلة في مخزن ثقة الموقّعين لنطاق الثقة لفحوصات وضع PKI المرتاب، ويُبقي النتيجة التي يرسمها /admin/pki/trust، ويسجّل ويرسل بالبريد ما تغيّر."
+  },
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
+    "text": "بريد نشاط ما بعد تسجيل الدخول"
+  },
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "يرسل بالبريد إلى الأشخاص الذين يبلغهم نشاط ما بعد تسجيل الدخول الجاري (#1111) تذكيرًا بتسجيل الدخول، حيث يطلب منهم النشاط بعد ذلك تسجيل مفتاح مرور ما بعد الكم. يقرأ شريحة واحدة من جمهور كل نشاط بدأ (نطاق الثقة، أو اتحاد مجموعاته) بعد مؤشر في كل تشغيل، ويرسل البريد فقط إلى الأشخاص الذين استحق لهم النشاط، وليس أبدًا داخل فترة التذكير أو بعد حدها الأقصى، ويكتب صف تدقيق واحدًا لكل نشاط بدأ في كل تشغيل."
+  },
+  "sched.jobs.process.memory-report.title": {
+    "en": "b84bcf99d45e1ee1",
+    "text": "تقرير الذاكرة"
+  },
+  "sched.jobs.process.memory-report.describe": {
+    "en": "d4a21d654747ddc9",
+    "text": "يسجّل، في هذه العملية، ملخص التشغيل مع دوره وذاكرته: الحجم المقيم، والكومة المستخدمة والإجمالي، وحد الكومة، والذاكرة الخارجية ومخازن المصفوفات. سطر السجل هو debug (#341)."
+  },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "تنظيف بناء التقارير"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "في كل عملية: يُبقي ملفات التقارير التي تبنيها هذه العملية حديثة، ويحذف من risk.uploadDirectory بناء تقرير لم تلمسه أي عملية حية طوال report.asyncMaxMs وخمس عشرة دقيقة — ما خلّفته عملية توقفت في منتصف البناء."
+  },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "مهام التقارير"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "يطالب بمهام التقارير المنتظرة لنطاق الثقة هذا، حتى سقوف التزامن، ويكتب كل مُخرَج."
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "مهام التقارير على هذه العقدة"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "نسخة عقدة التقارير من report.drain. لا تفعل شيئًا ما لم تحز هذه العملية ops.reporting."
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "الاحتفاظ بالتقارير"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "يحذف مُخرَجات التقارير التي تجاوزت مدة الاحتفاظ بها، ويُسقط صفوف المهام المنتهية التي تجاوزت مدتها، ويُفشل مهمة جارية زال سياجها."
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "الاحتفاظ بالتقارير على هذه العقدة"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "نسخة عقدة التقارير من report.retention. لا تفعل شيئًا ما لم تحز هذه العملية ops.reporting."
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "جداول التقارير"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "يُدرج في قائمة الانتظار مهمة لكل تعريف تقرير مستحق، بصفة مالكه، ما دام ذلك المالك يستطيع تشغيل الاستعلام. تُستخدَم القيم الافتراضية المخزّنة للمعاملات. القيمة المفقودة تُبقي الخانة."
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "جداول التقارير على هذه العقدة"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "نسخة عقدة التقارير من report.schedule. لا تفعل شيئًا ما لم تحز هذه العملية ops.reporting."
+  },
+  "sched.jobs.risc.opt-out-effective.title": {
+    "en": "04bdbc25402e8321",
+    "text": "إلغاءات اشتراك RISC التي تصبح سارية"
+  },
+  "sched.jobs.risc.opt-out-effective.describe": {
+    "en": "8aeeb2e505277a9f",
+    "text": "يرسل RISC opt-out-effective لكل حساب ألغى حامله الاشتراك على /portal/signals منذ risc.optOutDelayHours على الأقل ولم يتراجع (RISC 1.0 section 2.8)، وهو ما ينقل الحساب إلى حالة إلغاء الاشتراك."
+  },
+  "sched.jobs.risk.dataset-directory.title": {
+    "en": "73f11f291cb6c096",
+    "text": "استيراد دليل مجموعات بيانات المخاطر"
+  },
+  "sched.jobs.risk.dataset-directory.describe": {
+    "en": "8dfa5a10279b18b3",
+    "text": "يستورد كل مجموعة بيانات وضعها مشغّل في risk.datasetsDirectory، وفق بيانها، فيتحقق منها ويفعّلها؛ ولا يُحمَّل مرة أخرى إصدار مسجَّل أصلًا."
+  },
+  "sched.jobs.risk.mds-refresh.title": {
+    "en": "e7e41553eb6e60e0",
+    "text": "تنزيل البيانات الوصفية لـ FIDO"
+  },
+  "sched.jobs.risk.mds-refresh.describe": {
+    "en": "86a8a6e4f0464f5a",
+    "text": "ينزّل FIDO MDS3 BLOB من risk.mdsUrl ويستورده عندما يكون رقمه التسلسلي أحدث من النشط — موثَّقًا حتى جذر FIDO، مع فحص إلغاء سلسلته، بموجب قبول مسجَّل لشروط fido-mds3. يوميًا (risk.mdsRefreshS)، وكل ساعة بمجرد أن يتجاوز BLOB النشط nextUpdate الخاص به."
+  },
+  "sched.jobs.risk.rescore.title": {
+    "en": "73f6fff62d4516f9",
+    "text": "إعادة فحص مخاطر الجلسات الحية"
+  },
+  "sched.jobs.risk.rescore.describe": {
+    "en": "b0d47f656c2b3bf8",
+    "text": "يعيد فحص كل جلسة تسجيل دخول حية مقابل مجموعات البيانات النشطة وسجل الإخفاقات، ويرفع خطر الجلسة التي أصبحت أخطر — عنوان أصبح الآن في قائمة Tor أو قائمة رفض، أو كلمة مرور تُخمَّن — حتى يُحسَم كل رمز عليها وفق الخطر الجديد، وتُجيب سياسة الاستجابة للمخاطر الشخص الذي يعبر إلى HIGH."
+  },
+  "sched.jobs.risk.retention.title": {
+    "en": "649264448d64d03c",
+    "text": "الاحتفاظ ببيانات المخاطر"
+  },
+  "sched.jobs.risk.retention.describe": {
+    "en": "fbb862c0e9dfc9d1",
+    "text": "يحذف صفوف إصدارات مجموعات البيانات التي استُبدلت منذ أكثر من risk.supersededRetentionDays وصفوف الإصدارات المرفوضة، والإخفاقات الأقدم من risk.failureRetentionDays، والتقييمات وتاريخ النموذج التي تجاوزت risk.assessmentRetentionDays وrisk.historyRetentionDays."
+  },
+  "sched.jobs.risk.stalled-imports.title": {
+    "en": "752cf482464d7ae2",
+    "text": "استيرادات المخاطر المتوقفة"
+  },
+  "sched.jobs.risk.stalled-imports.describe": {
+    "en": "92f0f81938bbebfd",
+    "text": "يعلّم بالرفض (STS-RISK-0035) كل إصدار مجموعة بيانات بقي يُحمَّل بلا تقدّم طوال risk.importStallMinutes — استيراد توقفت عمليته في منتصف الطريق — ويُسقط الصفوف التي كان قد كتبها أيًا كانت."
+  },
+  "sched.jobs.risk.upload-cleanup.title": {
+    "en": "13380873b2cfb982",
+    "text": "تنظيف مرفوعات المخاطر"
+  },
+  "sched.jobs.risk.upload-cleanup.describe": {
+    "en": "758dfacad5326b05",
+    "text": "في كل عملية: يُبقي رفعات مجموعات البيانات التي تستوردها هذه العملية حديثة، ويحذف من risk.uploadDirectory رفعًا لم تلمسه أي عملية حية طوال risk.importStallMinutes — ما خلّفته عملية توقفت في منتصف الاستيراد."
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "محدّث البيانات الوصفية لموفّر خدمة SAML"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "يجلب مرة أخرى البيانات الوصفية لكل موفّر خدمة تجاوزت cacheDuration الخاصة بها، من samlSpMetadataUrl الخاص به أو من مستجيب MDQ؛ ويُرفَض المستند الذي تجاوز validUntil."
+  },
+  "sched.jobs.scheduler.history.title": {
+    "en": "90b5d921c8c2f750",
+    "text": "تاريخ تشغيلات المجدول"
+  },
+  "sched.jobs.scheduler.history.describe": {
+    "en": "395a5d6b46d20680",
+    "text": "يُبقي، لكل مهمة، آخر scheduler.runHistoryCount تشغيلات أو آخر scheduler.runHistoryHours، أيهما أكثر، ودائمًا آخر تشغيل لها؛ ويحذف الباقي — وكل صف يسمّي نطاق ثقة أُزيل — على دفعات من 2000، بحد أقصى 25 في التشغيل الواحد."
+  },
+  "sched.jobs.scim-client.deliver.title": {
+    "en": "a61c6de73b133149",
+    "text": "تسليمات SCIM الصادرة"
+  },
+  "sched.jobs.scim-client.deliver.describe": {
+    "en": "0f6f8f579a0da361",
+    "text": "يرسل تسليمات كل عميل SCIM صادر المستحقة — التغييرات الجديدة وإعادات المحاولة على السواء — إلى موفّر خدمته، بمقدار scimClient.concurrency في المرة، ويتخطى العميل ما دام متوقفًا بسبب تراجعه، ويُبقي قوائم الانتظار ضمن مدة الاحتفاظ بها (#552)."
+  },
+  "sched.jobs.scim-client.reconcile.title": {
+    "en": "6c7875103a7e0df5",
+    "text": "تسويات SCIM الصادرة"
+  },
+  "sched.jobs.scim-client.reconcile.describe": {
+    "en": "f7662303b08a899d",
+    "text": "يسوّي كل عميل SCIM صادر حلّ دور scimClientReconcileMinutes له: يُدفع كل شخص وكل مجموعة في نطاقه، وما يحتفظ به موفّر خدمته تحت externalId تابع لهذا النطاق ولم يعد ضمن النطاق يُلغى تزويده (#552)."
+  },
+  "sched.jobs.service-accounts.previous-cleanup.title": {
+    "en": "64baab64578fd68f",
+    "text": "تنظيف كلمة المرور السابقة لحساب الخدمة"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.describe": {
+    "en": "ea76ac1aa4f768fc",
+    "text": "يمسح كلمة المرور السابقة لحساب خدمة تم تدويره بمجرد انتهاء تداخله. يُفحَص التداخل عند قراءة كلمة المرور، فهذا تدبير منزلي."
+  },
+  "sched.jobs.service-accounts.rotate.title": {
+    "en": "6a7f6e4e2a5b87f5",
+    "text": "تدوير كلمة مرور حساب الخدمة"
+  },
+  "sched.jobs.service-accounts.rotate.describe": {
+    "en": "c0a19d2107a20be6",
+    "text": "يمنح كل حساب خدمة يسمّي وجهة دفع كلمة مرور جديدة بمجرد انقضاء فترته (سياسة حساب الخدمة): تُدفع إلى الوجهة أولًا، ولا تُثبَّت إلا بعد نجاح الدفع، وتُقبَل كلمة المرور السابقة طوال التداخل. الدفع الفاشل لا يغيّر شيئًا."
+  },
+  "sched.jobs.service-accounts.rotate-now.title": {
+    "en": "f07e35fb1b7ff49c",
+    "text": "تدوير كلمة مرور حساب الخدمة، يدويًا"
+  },
+  "sched.jobs.service-accounts.rotate-now.describe": {
+    "en": "1a51777caf07724c",
+    "text": "يدوّر كلمة مرور حساب خدمة واحد الآن، كما تفعل المهمة كل ساعة: الدفع أولًا، ثم التثبيت."
+  },
+  "sched.jobs.signing.retire.title": {
+    "en": "18591df12ae7ddce",
+    "text": "تنظيف مفاتيح التوقيع المتوقفة"
+  },
+  "sched.jobs.signing.retire.describe": {
+    "en": "34bd339dcd1027c2",
+    "text": "يُسقط كل مفتاح توقيع متوقف انقضت مهلة سماحته، ويُعلّم شهادته مستبدَلة في قائمة CA المُصدِر الخاص به."
+  },
+  "sched.jobs.signing.rotate.title": {
+    "en": "63864371a41c9128",
+    "text": "تدوير مفتاح التوقيع"
+  },
+  "sched.jobs.signing.rotate.describe": {
+    "en": "e5971267a8efd579",
+    "text": "يمنح كل وحدة توقيع في نطاق الثقة مفتاحًا تاليًا يُنشر قبل أن يوقّع أي شيء، ويرقّي كل مفتاح تالٍ بمجرد نشره لفترة كاملة (signing.rotationIntervalDays)؛ ويستمر المفتاح الذي يستبدله في التحقق طوال مهلة سماحته."
+  },
+  "sched.jobs.signing.rotate-now.title": {
+    "en": "a78325432e1f3ccd",
+    "text": "تدوير مفتاح التوقيع، يدويًا"
+  },
+  "sched.jobs.signing.rotate-now.describe": {
+    "en": "1eb024ca4b66e471",
+    "text": "يدوّر وحدات التوقيع المسماة في نطاق الثقة — أو كل واحدة منها — الآن: يصبح كل مفتاح تالٍ هو الحالي ويُوقَف المفتاح الذي يستبدله، مع استمراره في التحقق طوال مهلة سماحته."
+  },
+  "sched.jobs.spiffe.authority-rotation.title": {
+    "en": "1fb758bdc13d49a3",
+    "text": "تدوير سلطة SPIFFE"
+  },
+  "sched.jobs.spiffe.authority-rotation.describe": {
+    "en": "4f47ccc2e2ee9287",
+    "text": "يدوّر سلطة SPIFFE X.509 لنطاق الثقة بمجرد تجاوزها نصف مدة حياتها، وسلطة JWT بمجرد أن يتجاوز عمرها نصف spiffe.caTtl؛ وتبقى القديمة منشورة (spiffe.retainedAuthorities)."
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.title": {
+    "en": "6111c578fd8cd145",
+    "text": "تحديث sigstore TUF"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
+    "en": "23ca3d0e22f4d09a",
+    "text": "يجلب جذر ثقة sigstore (Fulcio CAs، ومفاتيح سجل Rekor وCT) عبر TUF لفحوصات توقيع صور مُقر أحمال عمل docker؛ والتحديث الذي يفشل يُبقي آخر مجموعة تم التحقق منها."
+  },
+  "sched.jobs.spiffe.target-reconcile.title": {
+    "en": "da689365a5c7e0b8",
+    "text": "تسوية أهداف SPIFFE"
+  },
+  "sched.jobs.spiffe.target-reconcile.describe": {
+    "en": "42a6fe3359b6cc70",
+    "text": "يسجّل العنوان الخاص لكل مهمة قيد التشغيل في مجموعات أهداف SPIFFE لهذا العنقود، ويلغي تسجيل العنوان الذي لم تعد أي مهمة قيد التشغيل تحمله (#323)."
+  },
+  "sched.jobs.ssf.dead-letter-sweep.title": {
+    "en": "825439e56379bcb0",
+    "text": "مسح الرسائل الميتة لـ Shared Signals"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.describe": {
+    "en": "e88db26ddb6a4159",
+    "text": "يحذف الرسائل الميتة المنتهية لهذه العملية، ويسبر التدفقات الميتة المستحقة (عقدة واحدة فقط)، ويسجّل ملخص ما أُحيل إلى الرسائل الميتة منذ المسح الأخير."
+  },
+  "sched.jobs.ssf.foreign-poll.title": {
+    "en": "aca9d362728fd7b0",
+    "text": "استطلاع Shared Signals لشركاء الاتحاد"
+  },
+  "sched.jobs.ssf.foreign-poll.describe": {
+    "en": "51871a2d4ac5a3aa",
+    "text": "يستطلع كل علاقة اتحاد يكون تدفق Shared Signals لدى شريكها تدفق استطلاع (RFC 8936): يُتحقَّق من Security Event Tokens التي يحملها، ويُتصرَّف بناءً عليها، ويُقرّ بها."
+  },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "استطلاع Shared Signals لوحدة التحكم والبوابة"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "تجمع وحدة تحكم المسؤول وبوابة المستخدم الخاصتان بهذه الخدمة Security Event Tokens المنتظرة على تدفقاتهما، في كل نطاق ثقة، عبر استطلاع RFC 8936 من /ssf/poll — متحققًا منها ومسجَّلة ويُتصرَّف بناءً عليها ويُقرّ بها (#771)."
+  },
+  "sched.jobs.ssf.stream-maintenance.title": {
+    "en": "7b2875452b588faa",
+    "text": "صيانة تدفقات Shared Signals"
+  },
+  "sched.jobs.ssf.stream-maintenance.describe": {
+    "en": "bd4794eda9c5d2d2",
+    "text": "يوقف مؤقتًا تدفقًا أو يعطّله أو يحذفه إذا ظل مستقبله غير نشط لمدة ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1)، معلنًا الإيقاف المؤقت أو التعطيل بحدث stream-updated أولًا، ويرسل حدث تحقق إلى كل تدفق مفعّل لم يصله أي حدث من هذا المرسِل لمدة ssf.verificationEveryS (section 8.1.4)."
+  },
+  "sched.jobs.tls.ticket-key-rotate.title": {
+    "en": "8bb62416b0f1932c",
+    "text": "تدوير مفتاح تذكرة جلسة TLS"
+  },
+  "sched.jobs.tls.ticket-key-rotate.describe": {
+    "en": "d685d1a2ff40e09e",
+    "text": "يستبدل مفتاح تذكرة الجلسة الذي تتشاركه مستمعات TLS لكل عقدة في عنقود active-active، حتى تُستأنف تذكرة أصدرتها عقدة على عقدة أخرى. يُحذَف المفتاح الذي يستبدله، وهو ما يحدّ المدة التي يمكن فيها استرداد أسرار جلسة مستأنفة من تذكرة."
+  },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "انتهاء صلاحية UMA"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "يزيل كل تذكرة إذن User-Managed Access، ورمز مطالبات محفوظ، وسجل RPT، وموافقة مالك معلّقة تجاوزت عمرها (#1168). تطبق القراءة المهلة بنفسها، فهذا هو التنظيف، وليس ما يقرر."
+  },
+  "sched.sentence.onDemand": {
+    "en": "92e0ecb68dc6ec36",
+    "text": "عند الطلب فقط"
+  },
+  "sched.sentence.cron": {
+    "en": "1514dcdd2f8d083f",
+    "text": "cron {{cron}} (UTC)"
+  },
+  "sched.sentence.every": {
+    "en": "cad7aff2b61c1a2d",
+    "text": "كل {{span}} (فترة ثابتة)"
+  },
+  "sched.sentence.everyFrom": {
+    "en": "e3f70e78d2f74d9a",
+    "text": "كل {{span}} (من {{setting}})"
+  },
+  "sched.sentence.noInterval": {
+    "en": "ea9235468f83c6bf",
+    "text": "بلا فترة (0)"
+  },
+  "sched.sentence.noIntervalFrom": {
+    "en": "d63051687e6eb040",
+    "text": "بلا فترة (0)، من {{setting}}"
+  },
+  "sched.sentence.overdueTicking": {
+    "en": "e886381cac5c2371",
+    "text": "القائد يدق؛ قد يكون تشغيل سابق ما زال جاريًا، أو لم تنقض مطالبته"
+  },
+  "sched.sentence.overdueSilent": {
+    "en": "6abb814e0bba89e8",
+    "text": "لم يدق أي قائد منذ {{since}}"
+  },
+  "sched.sentence.offScheduler": {
+    "en": "b6e1b2eac4850f35",
+    "text": "scheduler.enabled متوقف"
+  },
+  "sched.sentence.offListed": {
+    "en": "bccf1db17ab66560",
+    "text": "مسمى في scheduler.disabledJobs"
+  },
+  "sched.sentence.offZero": {
+    "en": "59bff00c7aa224e7",
+    "text": "{{setting}} قيمته 0، فالمهمة متوقفة"
+  },
+  "sched.sentence.offZeroFixed": {
+    "en": "81110f1e46dc1b16",
+    "text": "فترته 0، فالمهمة متوقفة"
+  },
+  "sched.sentence.clockProcess": {
+    "en": "bd7af0544bafb825",
+    "text": "هذه العملية"
+  },
+  "sched.sentence.clockDatabase": {
+    "en": "4510afc0b42a97bf",
+    "text": "قاعدة البيانات"
+  },
+  "sched.param.sinceStart": {
+    "en": "0712f841eae1cd73",
+    "text": "بدء هذه الخدمة"
+  },
+  "schedAdmin.message.steppedDown": {
+    "en": "26017997a3d259cf",
+    "text": "طُلب من قائد المجدول التنحي. يفعل ذلك عند دقته التالية، وتتولى عقدة أخرى القيادة عند نبضها التالي."
+  },
+  "schedAdmin.message.queued": {
+    "en": "651740d298354de6",
+    "text": "وُضع تشغيل {{job}} في قائمة الانتظار. يبدأه قائد المجدول عند دقته التالية."
+  },
+  "schedAdmin.message.queuedAgain": {
+    "en": "29c8136a0695fb5e",
+    "text": "وُضع تشغيل {{job}} في قائمة الانتظار (كان واحد في الانتظار أصلًا؛ وهذا هو). يبدأه قائد المجدول عند دقته التالية."
+  }
+}

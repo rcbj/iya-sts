@@ -1,0 +1,70 @@
+{
+  "workerpools.s.surfaceOff": {
+    "en": "89db9dc12a565277",
+    "text": "Aus: {{setting}} ist 0, daher gehen /admin und /portal dorthin, wohin der Rest von workers.dispatch geht — zum Anfragepool oder hier vom Frontprozess beantwortet."
+  },
+  "workerpools.s.requestOffByDefault": {
+    "en": "8d2e889154ed3266",
+    "text": "Aus: {{setting}} steht auf seinem Standard {{value}}, was keines bedeutet, wo der Speicher nicht koordinieren kann (persistence.mode ist nicht postgres, oder persistence.coordinate ist aus), daher wird jede Anfrage vom Frontprozess selbst beantwortet, auf einem Thread."
+  },
+  "workerpools.s.requestOff": {
+    "en": "8cd5b7da234116fb",
+    "text": "Aus: {{setting}} ist 0, daher wird jede Anfrage vom Frontprozess selbst beantwortet, auf einem Thread."
+  },
+  "workerpools.s.givenUpSurface": {
+    "en": "db7b7ee1f099024a",
+    "text": "Aufgegeben: {{failed}} Worker-Thread(s) konnten nicht starten, und der Pool hat aufgehört, sie zu starten. Die gehosteten Oberflächen gehen zum Anfragepool."
+  },
+  "workerpools.s.givenUpRequest": {
+    "en": "ced50089d8744adc",
+    "text": "Aufgegeben: {{failed}} Worker-Thread(s) konnten nicht starten, und der Pool hat aufgehört, sie zu starten. Jede Anfrage wird vom Frontprozess beantwortet."
+  },
+  "workerpools.s.givenUpSurfaceRetry": {
+    "en": "2bd6c8a7d6d36521",
+    "text": "Aufgegeben: {{failed}} Worker-Thread(s) konnten nicht starten, und der Pool hat aufgehört, sie zu starten. Die gehosteten Oberflächen gehen zum Anfragepool. Ein weiterer Worker wird in {{retryS}} Sekunden versucht."
+  },
+  "workerpools.s.givenUpRequestRetry": {
+    "en": "58247b5d1f427501",
+    "text": "Aufgegeben: {{failed}} Worker-Thread(s) konnten nicht starten, und der Pool hat aufgehört, sie zu starten. Jede Anfrage wird vom Frontprozess beantwortet. Ein weiterer Worker wird in {{retryS}} Sekunden versucht."
+  },
+  "workerpools.s.givenUpSurfaceProbing": {
+    "en": "1a1aea378ae79a4f",
+    "text": "Aufgegeben: {{failed}} Worker-Thread(s) konnten nicht starten, und der Pool hat aufgehört, sie zu starten. Die gehosteten Oberflächen gehen zum Anfragepool. Ein weiterer Worker wird gerade versucht."
+  },
+  "workerpools.s.givenUpRequestProbing": {
+    "en": "7df55ed536d4e065",
+    "text": "Aufgegeben: {{failed}} Worker-Thread(s) konnten nicht starten, und der Pool hat aufgehört, sie zu starten. Jede Anfrage wird vom Frontprozess beantwortet. Ein weiterer Worker wird gerade versucht."
+  },
+  "workerpools.s.notStarted": {
+    "en": "62c83c1852ddfcd4",
+    "text": "Nicht gestartet: {{setting}} ist {{configured}}, und dieser Prozess hat keinen Worker-Thread gestartet — er wurde nicht als Frontprozess eines Dienstes gestartet, oder der Pool wurde beim Start stillgelegt."
+  },
+  "workerpools.s.notStartedWhy": {
+    "en": "21c3b07178851dd0",
+    "text": "Nicht gestartet: {{setting}} ist {{configured}}, und dieser Prozess hat keinen Worker-Thread gestartet — er wurde nicht als Frontprozess eines Dienstes gestartet, oder der Pool wurde beim Start stillgelegt. {{why}}"
+  },
+  "workerpools.s.notDispatching": {
+    "en": "93ee662a7d76b08e",
+    "text": "Läuft und ist durch die Konfiguration untätig: workers.dispatch nennt nichts, daher wird keine Anfrage an diese Worker-Threads gesendet."
+  },
+  "workerpools.s.running": {
+    "en": "742f55125a4f9bfa",
+    "text": "{{ready}} von {{configured}} Worker-Thread(s) sind im Dienst."
+  },
+  "workerpools.s.surfaceTitle": {
+    "en": "e1b28d262c05bf45",
+    "text": "Pool der gehosteten Oberflächen (/admin und /portal)"
+  },
+  "workerpools.s.requestTitle": {
+    "en": "a93d7fece665e6d4",
+    "text": "Anfragepool"
+  },
+  "workerpools.s.scope": {
+    "en": "e553a4af2d93d7e2",
+    "text": "Dies sind die Pools des Knotens {{node}}, gehalten von seinem Frontprozess, pid {{pid}}. Jeder Worker ist ein Thread dieses Prozesses (#364), benannt mit seiner Thread-Id, mit einem eigenen V8-Heap sowie dem Speicher und der CPU des Prozesses. Jeder Knoten eines Clusters hat eigene Pools. Post-Quantum-Signierung und scrypt haben seit #363 keinen Prozesspool mehr: sie laufen auf dem Thread-Pool von libuv, in dem Prozess, der angefragt hat."
+  },
+  "workerpools.s.clusterTotals": {
+    "en": "c7214064fa26397e",
+    "text": "Über die {{count}} Knoten, die nicht verschwunden sind und einen Schnappschuss haben, veraltete eingeschlossen und gekennzeichnet."
+  }
+}

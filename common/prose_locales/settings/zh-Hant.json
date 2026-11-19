@@ -6220,8 +6220,56 @@
     "text": "簽署認證所用的演算法"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 所使用的演算法。中繼資料的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，本服務的 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。oid4vc.walletCompatibility 會在此拒絕後量子或複合演算法。"
+    "en": "3ed3ccddb91c589b",
+    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 所使用的演算法。中繼資料的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，本服務的 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。oid4vc.walletCompatibility 會在此拒絕後量子或複合演算法。mso_mdoc 以 COSE ES256（-7）或 ESP256（-9）簽署，而非此演算法。"
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "mdoc 文件類型"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "此領域簽發之 mso_mdoc 的 docType（ISO/IEC 18013-5）。錢包登入要求的也是此類型。Verifier 的獨立端點使用 oid4vp.expectedDoctype，其預設值與此相同。"
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "mdoc 資料命名空間"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "已簽發 mdoc 的元素所在的命名空間。登入時在此命名空間中要求 issuing_authority。Verifier 的獨立端點使用 oid4vp.mdocNamespace，其預設值與此相同。"
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "mdoc 有效期（天）"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "已簽發 mdoc 的 validityInfo 自簽署時起涵蓋的天數。文件簽署者憑證比簽發機構 CA 短，可能早於此期間結束；Verifier 依憑證檢查簽署時間，而非文件的到期時間。"
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "mdoc 年齡門檻"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "當此人有出生日期時，mdoc 攜帶的 age_over_NN 布林值，以整年計。依出生日期計算。不會虛構肖像與駕駛資格。"
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "mdoc 簽發國家"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "簽發機構 CA 之主體所指名的 ISO 3166-1 alpha-2 國家，也是每個 mdoc 的 issuing_country 元素。兩個字母。"
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "mdoc 簽發機構"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "簽發機構 CA 通用名稱中的名稱，也是每個 mdoc 的 issuing_authority 元素。錢包登入會要求此元素，它一律存在。"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6748,24 +6796,24 @@
     "text": "受信任的 mdoc 簽發機構（IACA 憑證，PEM）"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "PEM 憑證，串接在一起：出示之 mdoc 的文件簽署者憑證必須鏈結到的簽發機構 CA 憑證（ISO/IEC 18013-5 附錄 B）。憑證鏈依 RFC 5280 的規定建立與檢查，會查詢文件簽署者的撤銷狀態（pki.revocationCheck），簽署者未鏈結到其中任何一張的 mdoc 會被拒絕。空白（預設值）時不信任任何 mdoc 簽發者，因此在指名一個之前，mso_mdoc 呈現都會被拒絕。"
+    "en": "725416403bc17a75",
+    "text": "PEM 憑證，串接在一起：出示之 mdoc 的文件簽署者憑證必須鏈結到的簽發機構 CA 憑證（ISO/IEC 18013-5 附錄 B）。憑證鏈依 RFC 5280 的規定建立與檢查，會查詢文件簽署者的撤銷狀態（pki.revocationCheck），簽署者未鏈結到其中任何一張的 mdoc 會被拒絕。空白（預設值）時，除此領域自己的簽發機構 CA（一旦已產生，GET /oid4vci/mdoc-iaca）外，不信任任何 mdoc 簽發者。"
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "預期的 mdoc 文件類型（docType）"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "mso_mdoc 請求所要求的 `docType`（`meta.doctype_value`），也是驗證者要求出示之文件及其 Mobile Security Object 所具有的類型。預設值是 ISO/IEC 18013-5 的行動駕照。"
+    "en": "dcb6e8f85158b0a1",
+    "text": "mso_mdoc 請求所要求的 `docType`（`meta.doctype_value`），也是驗證者要求出示之文件及其 Mobile Security Object 所具有的類型。預設值是此領域簽發的類型（oid4vci.mdocDoctype）。ISO 行動駕照為 org.iso.18013.5.1.mDL，須在此處與簽發端同時設定。"
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "讀取所要求宣告的 mdoc 命名空間"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "mso_mdoc 請求之宣告路徑所指名的命名空間（`[namespace, element]`，OpenID4VP 1.0 附錄 B.2.3）。每個要求的宣告都以同名的資料元素要求，但 birthdate（birth_date）與 address（resident_address）除外，ISO/IEC 18013-5 對它們的命名不同。預設值是行動駕照的命名空間。"
+    "en": "0ad347251f9b7a85",
+    "text": "mso_mdoc 請求之宣告路徑所指名的命名空間（`[namespace, element]`，OpenID4VP 1.0 附錄 B.2.3）。每個要求的宣告都以同名的資料元素要求，但 birthdate（birth_date）與 address（resident_address）除外，ISO/IEC 18013-5 對它們的命名不同。預設值是此領域簽發時使用的命名空間（oid4vci.mdocNamespace）。"
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6828,8 +6876,8 @@
     "text": "錢包登入憑證格式"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "錢包登入依偏好順序要求的憑證格式：每種一個 DCQL 憑證查詢，並以一個憑證集合表示任一種皆可。每種都只有在為此要求提供新的持有者證明——Key Binding JWT、VP JWT 或 Data Integrity 證明——時才會登入。未知的名稱會被忽略；完全沒有則表示三者全部。只回應其讀到之第一個查詢的錢包，會以此處的第一種格式回應。"
+    "en": "53a49b652b8fa682",
+    "text": "錢包登入依偏好順序要求的憑證格式：每種一個 DCQL 憑證查詢，並以一個憑證集合表示任一種皆可。每種都只有在為此要求提供新的持有者證明——Key Binding JWT、VP JWT、Data Integrity 證明或 mdoc 裝置簽章——時才會登入。未知的名稱會被忽略；完全沒有則表示四者全部。只回應其讀到之第一個查詢的錢包，會以此處的第一種格式回應。只有此領域簽發的 mso_mdoc 才能讓人登入。"
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",

@@ -17,6 +17,9 @@ and the admin console. English is the source language. These are shipped:
 | Chinese (Traditional) | `zh-HK`, `zh-TW` | `zh-Hant`, and `zh-Hant-HK` for Hong Kong wording |
 | Filipino (Tagalog) | `fil-PH` | `fil` |
 | Swedish | `sv-SE` | `sv` |
+| German | `de-DE`, `de-AT`, `de-CH` | `de` |
+| Arabic | `ar-EG`, `ar-SA` | `ar` |
+| Hindi | `hi-IN` | `hi` |
 
 [User-facing pages](user-facing-pages.md) lists every page a person sees, and
 whether each is translated yet.
@@ -57,7 +60,7 @@ The first of these that a catalog answers wins:
    application the page is drawn for.
 
 A language with no catalog is skipped in favour of the next one. A reader whose
-browser asks for German, then French, reads French.
+browser asks for Japanese, then French, reads French.
 
 Dates and numbers are formatted for the locale that won, even where the words
 come from a broader catalog. `es-PA` reads the Spanish catalog and gets
@@ -88,19 +91,26 @@ Canada. The region decides three things:
   guess which zone a page means.
 - **Plurals.** Plural forms follow the language's own rules (Unicode CLDR).
   Chinese has one form, French counts 0 and 1 as singular, and English does
-  not.
+  not. Arabic has more forms than English. The shipped Arabic messages keep
+  the English branches (`one`, `other`, and any exact match), and a form
+  they do not name is drawn from `other`.
 
-A locale with no catalog at all, `de-CH` for instance, is passed over in
+A locale with no catalog at all, `ja-JP` for instance, is passed over in
 favour of the reader's next preference. If nothing answers, the realm's
 default is used. The realm's default can itself be a locale with no catalog,
-such as `de-CH`. Pages are then English but format dates and numbers for that
+such as `ja-JP`. Pages are then English but format dates and numbers for that
 locale.
+
+`de-AT` and `de-CH` read the German catalog. `ar-EG` and `ar-SA` read the
+Arabic catalog. A region with no overlay of its own still formats dates and
+numbers for that region.
 
 ## Right-to-left languages
 
 The page's direction is set from the locale (`dir="rtl"` for Arabic, Hebrew,
 Persian, Urdu and the other right-to-left scripts). No code changes when a
-right-to-left catalog is added. None is shipped yet.
+right-to-left catalog is added. Arabic is shipped and is drawn right to left.
+Hebrew, Persian and Urdu are not.
 
 ## The language chooser
 

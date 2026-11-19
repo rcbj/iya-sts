@@ -1,0 +1,1714 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "कैश से उत्तर दिया गया एक लुकअप"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "लुकअप एक ऐसी फ़ाइल में है जिसे यह रिपॉज़िटरी संपादित नहीं करती"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "ACME नॉन्स"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "ACME सर्वर को पहले ही प्रस्तुत Replay-Nonce मान (RFC 8555 अनुभाग 6.5), ताकि प्रत्येक केवल एक बार स्वीकार हो।"
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "प्रवर्तित: प्रति क्षेत्र acme.maxSpentNonces खर्च हो चुके नॉन्स। सीमा पर समाप्त नॉन्स साफ़ होते हैं; अभी भी भरा इतिहास अगले खर्च को अस्वीकार करता है (उत्तर badNonce) किसी जीवित नॉन्स को भूलने के बजाय।"
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "जब तक नॉन्स समाप्त न हो; सीमा पहुँचने पर समाप्त नॉन्स साफ़ होते हैं।"
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "पहले ही खर्च हो चुका नॉन्स, इसलिए अनुरोध अस्वीकार हुआ"
+  },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "कंसोल सूचकांक के योग, रखे गए"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "कंसोल सूचकांक के योग — कॉल, टोकन, आर्टिफ़ैक्ट, सत्र, ज्ञात उपयोगकर्ता और यहाँ साइन इन किए उपयोगकर्ता — जिनका उत्तर /admin-api/status देता है। उपयोगकर्ताओं की गिनती हर रजिस्टर पहचान का समाधान है, इसलिए योग कुछ सेकंड तक रखे जाते हैं।"
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "संरचनात्मक: प्रति क्षेत्र योगों का एक सेट, एक समय में अधिक से अधिक एक बार बनाया गया।"
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "पंद्रह सेकंड।"
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "उपयोगकर्ता पृष्ठ की जनसंख्या, रखी गई"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "रजिस्टर की हर पहचान और निर्देशिका का हर व्यक्ति, प्रत्येक के क्रेडेंशियल की जनगणना सहित: वही जिस पर /admin/users और /admin-api/users पृष्ठ, फ़िल्टर और गिनती करते हैं। इसे बनाना हर रजिस्टर विषय का समाधान और हर व्यक्ति की प्रविष्टि का पठन है, इसलिए पृष्ठ-विभाजन इसे रखता है, प्रत्येक पृष्ठ के लिए नया बनाने के बजाय।"
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक जनसंख्या, एक समय में अधिक से अधिक एक बार बनाई गई।"
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "पंद्रह सेकंड, और तुरंत जब क्षेत्र के ou=users के अंतर्गत कुछ भी लिखा जाए, यहाँ या किसी अन्य प्रक्रिया से लागू।"
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "अनुप्रयोग रजिस्ट्री की सूची"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "एक क्षेत्र की हर अनुप्रयोग प्रविष्टि, पार्स की हुई, client_id, audience, AppliesTo और अनुमति प्रत्येक के लिए एक लुकअप के साथ — ताकि कोई पृष्ठ या टोकन अनुरोध हर प्रश्न पर पूरी रजिस्ट्री पार्स न करे।"
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक सूची, ou=applications के आकार की (जो स्वयं applications.max से सीमित है)।"
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "जब तक क्षेत्र के ou=applications के अंतर्गत कुछ न बदले; अगला पठन तब इसे फिर पार्स करता है।"
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "पहचानकर्ता से पढ़ी गई अनुप्रयोग प्रविष्टियाँ"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "एक अनुप्रयोग की प्रविष्टि और उसका पार्स किया रिकॉर्ड, पहचानकर्ता के अनुसार, ताकि साइन इन की जाँचें हर प्रश्न पर प्रविष्टि को पढ़ें और पार्स न करें।"
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "प्रवर्तित: प्रति क्षेत्र MAX_LOAD_MEMO (256) पहचानकर्ता; उसके आगे रखे उत्तर हटा दिए जाते हैं।"
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "जब तक क्षेत्र के ou=applications के अंतर्गत कुछ न बदले; अगला पठन तब निर्देशिका से फिर पूछता है।"
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "Shared Signals प्राप्तकर्ता अनुमतियाँ"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "कौन सा अनुप्रयोग किसी Shared Signals स्ट्रीम का स्वामी है और कौन से इवेंट वह प्राप्त कर सकता है, प्रति प्रिंसिपल, ताकि सत्र का इवेंट हर पंजीकृत अनुप्रयोग पर न चले।"
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "प्रवर्तित: प्रति क्षेत्र 4096 उत्तर; सबसे पुराना हटा दिया जाता है और अगली आवश्यकता पर फिर खोजा जाता है।"
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "जब तक क्षेत्र के ou=applications के अंतर्गत कुछ न बदले; अगला लुकअप तब उस क्षेत्र के उत्तर खाली कर देता है।"
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "विशेषता स्रोत लुकअप"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "एक व्यक्ति की कुंजी के लिए विशेषता स्रोत द्वारा लौटाई गई पंक्ति, थोड़े समय के लिए रखी जाती है ताकि साइन इन की झड़ी एक ही क्वेरी हो (#94)।"
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "प्रवर्तित: प्रति प्रक्रिया 2000 पंक्तियाँ; सबसे पुरानी हटा दी जाती है।"
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "कुछ सेकंड पहले किए लुकअप से उत्तर दिया गया साइन इन"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "लुकअप के {{seconds}} s बाद; स्रोत में परिवर्तन उसकी पंक्तियाँ हटा देता है।"
+  },
+  "caches.store.authn.session-window.title": {
+    "en": "c7d3b3347696bed7",
+    "text": "साइन-ऑन सत्र विंडो"
+  },
+  "caches.store.authn.session-window.description": {
+    "en": "7a7d9e762890fe35",
+    "text": "वे साइन-ऑन सत्र जो एक प्रक्रिया तब रखती है जब authn.sessionWindow चालू हो (#350)। चूक सीलबंद पंक्ति से पढ़ी जाती है। निष्कासन अपसर्ट के कमिट होने के बाद मेमोरी प्रति भूल जाता है और सत्र समाप्त नहीं करता।"
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "पार्स किए प्रमाणपत्र तथ्य"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "विषय, जारीकर्ता और notAfter जो प्रमाणपत्र सूची दिखाती है, और यह कि प्रमाणपत्र पोस्ट-क्वांटम कुंजी रखता है या नहीं; /admin/pki और GET /admin-api/certificates के लिए प्रति प्रमाणपत्र एक बार पार्स। प्रमाणपत्र के अपने SHA-256 से कुंजीकृत।"
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "प्रवर्तित: 4,096 प्रमाणपत्र; सबसे पुराना हटा दिया जाता है और अगली बार दिखाए जाने पर फिर पार्स होता है।"
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "कोई समाप्ति नहीं: प्रमाणपत्र की सामग्री से कुंजीकृत, जिसके तथ्य कभी नहीं बदलते। भरा होने पर सबसे पुराना पहले जाता है।"
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "प्रमाणक रहस्य के निर्णय"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "यह कि इस प्रक्रिया से पूछा गया प्रत्येक सीलबंद प्रमाणक (TOTP) रहस्य अपनी कुंजी-एन्क्रिप्शन कुंजी से खुलता है या नहीं (#352), ताकि उपयोगकर्ता सूची और द्वितीय-कारक रोस्टर हर अनुरोध पर उसे अनसील किए बिना नामांकन को पठनीय या नहीं बता सकें। सीलबंद पाठ से कुंजीकृत; मान yes या no होता है, कभी रहस्य नहीं।"
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "प्रवर्तित: 20000 निर्णय; भरा होने पर सबसे पुराना हटा दिया जाता है और उस रहस्य को अगली बार पूछे जाने पर फिर खोला जाता है।"
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "जब तक कुंजी-एन्क्रिप्शन कुंजियाँ न बदलें, या जगह बनाने के लिए इसे हटाया न जाए। नया नामांकन नया सीलबंद पाठ है और नए सिरे से पूछा जाता है।"
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "सीलबंद रहस्य जिसका निर्णय पहले से ज्ञात था, इसलिए उसे नहीं खोला गया"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "अंतर्निहित डिबगर की स्थिर फ़ाइलें"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "अंतर्निहित डिबगर की क्लाइंट फ़ाइलें, जिनमें इस सेवा का पता बैठा दिया गया है; प्रति फ़ाइल संस्करण और पते के अनुसार रखी जाती हैं ताकि डिबगर श्रोता हर अनुरोध पर फ़ाइल फिर न लिखे।"
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "प्रवर्तित: 400 फ़ाइलें; सबसे पुरानी हटा दी जाती है और अगली बार परोसे जाने पर फिर पढ़ी जाती है।"
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "जब तक डिस्क पर फ़ाइल न बदले (नया संशोधन समय नई प्रविष्टि है); भरा होने पर सबसे पुराना पहले जाता है।"
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "डिवाइस नामांकन चुनौतियाँ"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "वे चुनौतियाँ जो /portal/devices ने कुंजी प्रमाण, App Attest कथन या WebAuthn लिंक के लिए जारी की हैं, और वे ताज़गी नॉन्स जो EST /nonce ने TPM कुंजी सत्यापन के लिए जारी किए हैं; प्रत्येक उस सत्र (या EST कुकी) से बंधा है जिसके लिए जारी हुआ, और एक बार उत्तर दिया जाता है।"
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "प्रवर्तित: प्रति क्षेत्र devices.maxChallenges; सम्मिलन पर सबसे पुराना हटा दिया जाता है; प्रति सत्र और उद्देश्य एक।"
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "इस क्षेत्र द्वारा जारी चुनौती, इसलिए प्रमाण की जाँच हुई"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "डिवाइस रजिस्टर इवेंट"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "इस क्षेत्र में किसी व्यक्ति की सीमा पर बनाए, हटाए या निकाले गए प्रति डिवाइस एक पंक्ति — जिसे निगरानी → डिवाइस समय के साथ दिखाता है। कभी कोई कुंजी, रहस्य या स्वामी का नाम नहीं।"
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "प्रवर्तित: प्रति क्षेत्र devices.eventsKept; सम्मिलन पर सबसे पुराना इवेंट हटा दिया जाता है।"
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "जब तक devices.eventsKept नए इवेंट इसे बाहर न धकेल दें।"
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "DPoP नॉन्स"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "सर्वर द्वारा जारी DPoP नॉन्स (RFC 9449 अनुभाग 8), ताकि एक को ले जाने वाले प्रमाण की जाँच उसके विरुद्ध हो सके जो सौंपा गया था।"
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.dpopNonceCacheSize; सबसे पुराना नॉन्स हटा दिया जाता है, और उसे प्रस्तुत करने वाले क्लाइंट को नया नॉन्स सौंपा जाता है।"
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "वर्तमान पाया गया नॉन्स, इसलिए प्रमाण स्वीकार हुआ"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "DPoP प्रमाण ID"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "स्वीकार किए हर DPoP प्रमाण का jti, ताकि एक प्रमाण एक अनुरोध के लिए मान्य हो (RFC 9449 अनुभाग 11.1)।"
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.dpopReplayCacheSize जीवित ID। भरा इतिहास अगले प्रमाण को अस्वीकार करता है (STS-OAUTH-0554), किसी जीवित को भूलने के बजाय, जिससे उसका रीप्ले फिर खुल जाता।"
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "पहले ही उपयोग हो चुका प्रमाण, इसलिए अनुरोध अस्वीकार हुआ"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "फ़ेडरेशन विशेषता-रिलीज़ सूचकांक"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "किस भागीदार की रिलीज़ सूची किस अनुप्रयोग पर लागू होती है; ou=federations से बना ताकि टोकन जारी करते समय रजिस्टर पर न चलना पड़े। प्रति क्षेत्र एक सूचकांक।"
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक सूचकांक, रिलीज़ सूची वाले प्रत्येक अनुप्रयोग के लिए एक प्रविष्टि।"
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "बनने के federation.releaseIndexTtlMs ({{ms}} ms) बाद, या तुरंत जब इस सेवा के माध्यम से कोई फ़ेडरेशन संबंध लिखा जाए।"
+  },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "CDN एज रेंज"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies, BlockList में पार्स, ताकि अनुरोध यह तय करने के लिए सेटिंग फिर न पार्स करे कि वह ऐसे CDN एज से आया है जिसे इस परिनियोजन का रहस्य ले जाना अनिवार्य है।"
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "संरचनात्मक: सेटिंग की एक पार्स की हुई प्रति।"
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "जब तक global.edgeProxies का पाठ न बदले।"
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "विश्वसनीय प्रॉक्सी रेंज"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "global.trustedProxies, BlockList में पार्स, ताकि अनुरोध यह तय करने के लिए सेटिंग फिर न पार्स करे कि किसके अग्रेषित पते पर विश्वास करना है।"
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "संरचनात्मक: सेटिंग की एक पार्स की हुई प्रति।"
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "जब तक global.trustedProxies का पाठ न बदले।"
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "निरस्त biscuit"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "प्रत्येक निरस्त biscuit एक्सेस टोकन के निरस्तीकरण पहचानकर्ता, /gnap/biscuit/revocations पर प्रकाशित, उस संसाधन सर्वर के लिए जो biscuit स्वयं सत्यापित करता है।"
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.maxRevokedJtis — निरस्तीकरण रजिस्टर की अपनी सीमा, उन्हीं टोकन के बारे में उसी वचन के लिए। सीमा पर समाप्त पंक्ति पहले जाती है; अन्यथा सबसे पुराना निरस्तीकरण भुला दिया जाता है (STS-GNAP-0752), और वह biscuit केवल इस सूची जाँचने वाले संसाधन सर्वर द्वारा अपनी समाप्ति तक फिर स्वीकार होता है।"
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "निरस्त टोकन के अपने exp तक।"
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "प्रकाशित सूची पढ़ी गई"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "खोजे गए संसाधन स्वामी"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "वह स्वामी जिसे संसाधन सर्वर के gnapOwnerLookupUri ने किसी पहचानकर्ता के लिए नाम दिया, ताकि ग्रांट का अनुरोध, अनुमोदन पृष्ठ और जारी करना संसाधन सर्वर से एक बार पूछें (#432 चरण 5)।"
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "प्रवर्तित: प्रति क्षेत्र 1024 स्वामी; सबसे पुराना हटा दिया जाता है और अगली आवश्यकता पर फिर खोजा जाता है।"
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "GNAP हस्ताक्षर"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "स्वीकार किया गया प्रत्येक हस्ताक्षरित GNAP अनुरोध (HTTP संदेश हस्ताक्षर तथा संलग्न या विलग JWS), ताकि कैप्चर किया अनुरोध फिर न भेजा जा सके।"
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "प्रवर्तित: प्रति क्षेत्र gnap.replayCacheSize जीवित हस्ताक्षर। भरा इतिहास अगले हस्ताक्षरित अनुरोध को अस्वीकार करता है (STS-GNAP-0718), किसी जीवित को भूलने के बजाय, जिससे उसका रीप्ले फिर खुल जाता।"
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "देखे जाने के बाद gnap.signatureMaxAgeS का दोगुना।"
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "पहले ही देखा गया हस्ताक्षर, इसलिए अनुरोध अस्वीकार हुआ"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "RFC 9278 कुंजी पहचानकर्ता"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "keys.kidFormat=jwk-thumbprint-uri के अंतर्गत kid के रूप में प्रकाशित JWK Thumbprint URI, आंतरिक kid से कुंजीकृत, ताकि टोकन हस्ताक्षर प्रमाणपत्र से कुंजी फिर न पढ़े।"
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "प्रवर्तित: 512 कुंजी ID; सबसे पुराना हटा दिया जाता है और अगली माँग पर फिर व्युत्पन्न होता है।"
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "कोई समाप्ति नहीं: आंतरिक kid कुंजी से व्युत्पन्न होता है, इसलिए उसका उत्तर कभी नहीं बदलता। भरा होने पर सबसे पुराना पहले जाता है।"
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "Root के अंतर्गत समाप्त प्रमाणपत्र शृंखलाएँ"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "यह कि रजिस्टर पंक्ति की संग्रहीत शृंखला वर्तमान सेवा Root के अंतर्गत समाप्त होती है या नहीं, जिससे तय होता है कि Root को x5c हेडर में जोड़ा जाए। पंक्ति के थंबप्रिंट और Root के थंबप्रिंट से कुंजीकृत।"
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "प्रवर्तित: 512 उत्तर; सबसे पुराना हटा दिया जाता है और अगली माँग पर फिर निकाला जाता है।"
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "कोई समाप्ति नहीं: प्रमाणपत्र थंबप्रिंट और kid से कुंजीकृत, जिसका उत्तर कभी नहीं बदलता। भरा होने पर सबसे पुराना पहले जाता है।"
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "प्रमाणपत्र से हस्ताक्षर कुंजी का मिलान"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "यह कि प्रमाणपत्र रजिस्टर पंक्ति हस्ताक्षर कुंजी रखती है या नहीं; टोकन पर x5c या x5t#S256 हेडर लगाने से पहले पूछा जाता है। पंक्ति के थंबप्रिंट और कुंजी के kid से कुंजीकृत।"
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "प्रवर्तित: 512 उत्तर; सबसे पुराना हटा दिया जाता है और अगली माँग पर फिर निकाला जाता है।"
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "कोई समाप्ति नहीं: प्रमाणपत्र थंबप्रिंट और kid से कुंजीकृत, जिसका उत्तर कभी नहीं बदलता। भरा होने पर सबसे पुराना पहले जाता है।"
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "प्रमाणपत्र प्राधिकरण"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "प्रत्येक दायरे का प्रमाणपत्र प्राधिकरण पदानुक्रम — सेवा Root, क्षेत्र का Intermediate और उसके जारीकर्ता CA — हस्ताक्षर के लिए डिक्रिप्ट करके रखा गया; प्रारंभ में स्टोर से पढ़ा गया या किसी अन्य प्रक्रिया से अपनाया गया।"
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "संरचनात्मक: प्रति दायरा एक पदानुक्रम (सेवा Root, प्रक्रिया शाखा, और प्रति क्षेत्र एक), जोड़ने के बजाय प्रतिस्थापित।"
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "कोई समाप्ति नहीं: जब पदानुक्रम यहाँ या किसी अन्य नोड पर बदले तो प्रतिस्थापित, और अपने क्षेत्र के साथ हटा दिया जाता है।"
+  },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "व्युत्पन्न डाइजेस्ट कुंजियाँ"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "वह HMAC कुंजी जिससे प्रत्येक कुंजीयुक्त डाइजेस्ट लेबल व्युत्पन्न होता है, ताकि डाइजेस्ट हर कॉल पर HKDF न चलाए। जिस कुंजी से वह बनी उसके पास रखी जाती है, और हर उपयोग पर उसकी तुलना होती है।"
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "प्रवर्तित: MAX_DERIVED_DIGEST_KEYS (64) लेबल; उसके आगे हर व्युत्पन्न कुंजी हटा दी जाती है।"
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "जब तक वह कुंजी न बदले जिससे यह बनी (नई डाइजेस्ट कुंजी या कुंजी-एन्क्रिप्शन कुंजी); हर उपयोग पर जाँच होती है।"
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "डिक्रिप्ट हस्ताक्षर कुंजियाँ"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "क्षेत्र की हस्ताक्षर-कुंजी सामग्री, कुंजी-एन्क्रिप्शन कुंजी के अंतर्गत स्थायित्व स्टोर से डिक्रिप्ट की गई और एक निष्क्रिय विंडो तक रखी गई, ताकि निरंतर हस्ताक्षर हर बार डिक्रिप्शन की कीमत न चुकाए। केवल product मोड; development कुंजियाँ कभी एन्क्रिप्ट करके संग्रहीत नहीं होतीं।"
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक क्षेत्र की कुंजी सामग्री, अवधारण नीति जो भी हो; नीति केवल यह तय करती है कि इसे कितनी देर रखा जाए।"
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "पोस्ट-क्वांटम कुंजी सेट"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "प्रत्येक क्षेत्र की ML-DSA और SLH-DSA कुंजियाँ, पहली बार जब किसी चीज़ को उनकी ज़रूरत हो तब उत्पन्न (या संग्रहीत सेट से पढ़ी गईं), और उसके बाद क्षेत्र के कुंजी सेट के साथ रखी जाती हैं।"
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक पोस्ट-क्वांटम सेट, क्षेत्र के कुंजी सेट के साथ रखा गया।"
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "क्षेत्र के कुंजी सेट की तरह: कोई समाप्ति नहीं; क्षेत्र हटने या उसकी कुंजियाँ बदलने पर हटा दिया जाता है।"
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "हस्ताक्षर कुंजी सेट"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "प्रत्येक विश्वास क्षेत्र की हस्ताक्षर कुंजियाँ (RSA, EC, और माँगने पर पोस्ट-क्वांटम सेट), पहले उपयोग पर कुंजी स्टोर से बनाई या पढ़ी गईं और उसके बाद हर हस्ताक्षर के लिए रखी जाती हैं।"
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक कुंजी सेट; क्षेत्र के साथ हटा दिया जाता है, या कुंजियों के रोटेट होने या अपनाए जाने पर प्रतिस्थापित।"
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "कोई समाप्ति नहीं: क्षेत्र हटने, उसकी कुंजियों के रोटेट होने, या किसी अन्य प्रक्रिया की संग्रहीत कुंजियाँ अपनाए जाने पर हटा दिया जाता है। हस्ताक्षर कर चुके प्रत्येक क्षेत्र के लिए एक प्रविष्टि।"
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "Kerberos प्रमाणक"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "संरक्षित सेवा द्वारा स्वीकार किया गया प्रत्येक प्रमाणक, ताकि कैप्चर किया AP-REQ दो बार प्रस्तुत न हो। प्रति विश्वास क्षेत्र: वह क्षेत्र जिसके Kerberos realm ने टिकट जारी किया।"
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "प्रवर्तित: प्रति क्षेत्र krb5.replayCacheMaxEntries। भरा कैश अगले प्रमाणक को अस्वीकार करता है, किसी जीवित को भूलने के बजाय, जिससे उसका रीप्ले फिर खुल जाता।"
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "पहले ही देखा गया प्रमाणक, इसलिए अनुरोध अस्वीकार हुआ"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "Kerberos दीर्घकालिक कुंजियाँ"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "प्रत्येक पंजीकृत प्रिंसिपल की दीर्घकालिक कुंजियाँ, उसके पासवर्ड से string-to-key द्वारा (या कुंजी स्रोत से पढ़कर) प्रति एन्क्रिप्शन प्रकार एक बार व्युत्पन्न, और उसके बाद हर टिकट के लिए रखी जाती हैं।"
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "प्रवर्तित: एक साथ अधिकतम 4096 प्रिंसिपल कुंजियाँ रखते हैं, प्रति एन्क्रिप्शन प्रकार एक पंक्ति; सबसे कम हाल में प्रयुक्त की कुंजियाँ साफ़ होती हैं, और वह अपने अगले टिकट पर उन्हें फिर व्युत्पन्न या पढ़ता है।"
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "कोई समाप्ति नहीं: प्रिंसिपल के साथ हटाई जाती हैं, जब उसका रिकॉर्ड बदले (पासवर्ड परिवर्तन या पुनर्स्थापना), या जब वह सीमा के पार सबसे कम हाल में प्रयुक्त हो; कभी स्थायी नहीं की जातीं।"
+  },
+  "caches.store.krb5.trust-keys.title": {
+    "en": "9e19b75405074ba3",
+    "text": "Kerberos अंतर-क्षेत्र विश्वास कुंजियाँ"
+  },
+  "caches.store.krb5.trust-keys.description": {
+    "en": "44c86730ace05ee9",
+    "text": "इस क्षेत्र के विश्वास रिकॉर्ड (ou=kerberosTrusts) से बने अंतर-क्षेत्र krbtgt प्रिंसिपल, प्रत्येक उन कुंजियों के साथ जो उसके साझा पासवर्ड से बनी हैं या उसकी मुहर से खुली हैं; पहले के बाद हर रेफ़रल के लिए रखे जाते हैं।"
+  },
+  "caches.store.krb5.trust-keys.bound": {
+    "en": "c9282e1e84dbe9e3",
+    "text": "प्रवर्तित: प्रति क्षेत्र अधिकतम 512 (अधिकतम 256 रिकॉर्ड में से प्रत्येक के लिए दो कुंजियाँ); सबसे पुराना हटा दिया जाता है और अगले उपयोग पर फिर बनता है।"
+  },
+  "caches.store.krb5.trust-keys.lifetime": {
+    "en": "37ee5778f968cdd3",
+    "text": "कोई समाप्ति नहीं: जिस क्षण उसका रिकॉर्ड बदले, प्रतिस्थापित (रिकॉर्ड के बाइट की तुलना हर उपयोग पर होती है), और रिकॉर्ड के साथ हटा दिया जाता है; कभी स्थायी नहीं किया जाता।"
+  },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "लोग और क्रेडेंशियल धारक, गिने हुए"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "क्षेत्र कितने लोगों को परिभाषित करता है, कितने पासवर्ड रखते हैं, क्रेडेंशियल विशेषता रखने वाला हर व्यक्ति (कच्चा रूप), और साइन इन करते देखे नामों में से कितने यहाँ के लोग हैं: पूरी निर्देशिका पर /admin/users की टाइलें, उसे सूचीबद्ध किए बिना (#610)।"
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक गणना और एक नाम-गिनती; गणना क्रेडेंशियल रखने वाले लोगों को रखती है, हर किसी को नहीं।"
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "जब तक क्षेत्र के ou=users के अंतर्गत कुछ न लिखा जाए, और स्टोर पर विंडो के रूप में निर्देशिका रखने वाली प्रक्रिया में अधिकतम दस सेकंड तक।"
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "निर्देशिका डिवाइस सूचकांक"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "प्रत्येक डिवाइस प्रविष्टि की id, कुंजी थंबप्रिंट और Native SSO रहस्य हैश, ou=devices के अंतर्गत उसकी प्रविष्टि तक, ताकि टोकन एंडपॉइंट पर डिवाइस पहचानने से रजिस्टर की प्रति न बने (#164)।"
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "जब तक ou=devices के अंतर्गत कुछ न लिखा जाए और कोई लुकअप चूक न जाए; वर्तमान प्रविष्टि पर हिट पुनर्निर्माण की प्रतीक्षा नहीं करता। प्रति क्षेत्र एक सूचकांक।"
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "निर्देशिका entryUUID सूचकांक"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "प्रत्येक प्रविष्टि का entryUUID (और उसके उपनाम) उसके DN तक; इसी से विषय पहचानकर्ता और SCIM id व्यक्ति को ढूँढते हैं।"
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "जब तक निर्देशिका न बदले और कोई लुकअप चूक न जाए; वर्तमान प्रविष्टि पर हिट पुनर्निर्माण की प्रतीक्षा नहीं करता। प्रति क्षेत्र एक सूचकांक।"
+  },
+  "caches.store.ldap.gate-usernames.title": {
+    "en": "689e1e6184e6baf0",
+    "text": "कंसोल गेट उपयोगकर्ता नाम"
+  },
+  "caches.store.ldap.gate-usernames.description": {
+    "en": "06f13f021c4a27e4",
+    "text": "निर्देशिका विंडो रखने वाली प्रक्रिया में, इस बात का उत्तर कि उपयोगकर्ता नाम किसके पास है (किसी के नहीं, सहित), जिसे /admin-api गेट ने इवेंट लूप से हटकर पूछा, ताकि उसकी समकालिक जाँचें स्टोर से न पूछें। केवल उन्हीं जाँचों द्वारा पढ़ा जाता है; निर्माण हमेशा स्टोर से पूछता है।"
+  },
+  "caches.store.ldap.gate-usernames.bound": {
+    "en": "953882a7c140627a",
+    "text": "प्रवर्तित: प्रति क्षेत्र 64 उपयोगकर्ता नाम; सबसे कम हाल में पूछा गया पहले हटाया जाता है।"
+  },
+  "caches.store.ldap.gate-usernames.lifetime": {
+    "en": "43a85e1731c71231",
+    "text": "जब तक क्षेत्र के ou=users पर, उसके अंतर्गत या उसके ऊपर कुछ भी यहाँ न लिखा जाए या किसी अन्य प्रक्रिया से प्रतिकृत न हो; गेट का अगला वार्म फिर पूछता है।"
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "निर्देशिका समूह सूचकांक"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "सदस्य के अनुसार और समूह DN के अनुसार समूह सदस्यता, ताकि groups क्लेम और हर भूमिका जाँच ou=groups पर न चले।"
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "जब तक निर्देशिका ऐसे रूप में न लिखी जाए जिसे सूचकांक समेट न सके; अगला लुकअप तब उसे फिर बनाता है। प्रति क्षेत्र एक सूचकांक।"
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "memberOf क्लेम, समूह के अनुसार"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "प्रत्येक समूह के लिए वे प्रविष्टियाँ जिनका अपना memberOf उसे नामित करता है, ताकि समूह और रोस्टर पृष्ठ प्रति समूह एक बार क्षेत्र पर न चलें (#352)।"
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक सूचकांक, प्रति memberOf मान एक पंक्ति।"
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "जब तक निर्देशिका अगली बार कहीं भी न लिखी जाए।"
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "लोग, क्रमबद्ध कुंजियों के रूप में"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "प्रत्येक व्यक्ति का सामान्यीकृत DN और उपयोगकर्ता नाम, उसी क्रम में जिसमें allPersons() उन्हें सूचीबद्ध करता है, ताकि लोगों का पृष्ठ प्रति अनुरोध क्षेत्र पर न चले, न सामान्यीकृत करे और न छाँटे (#352)।"
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक सूची, ou=users के आकार की।"
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "जब तक क्षेत्र के ou=users के अंतर्गत कुछ न लिखा जाए।"
+  },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "निर्देशिका सेवा खाते"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "क्षेत्र के सेवा खातों के नाम, ताकि यह पूछने वाला स्कोप निर्णय कि किसी व्यक्ति के पास कोई खाता है या नहीं, उन सभी के लिए निर्देशिका से न पूछे।"
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक सूची, उसके सेवा खातों के आकार की।"
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "जब तक कोई लेखन ऐसी प्रविष्टि को न छुए जो सेवा खाता है या थी; अगला पठन तब निर्देशिका से फिर पूछता है।"
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "निर्देशिका कंटेनर सूचियाँ"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "किसी कंटेनर के अंतर्गत प्रविष्टियाँ (अनुप्रयोग, फ़ेडरेशन, नीतियाँ और इसी तरह), जब तक उसके अंतर्गत कुछ न लिखा जाए तब तक रखी जाती हैं।"
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "प्रवर्तित: प्रति क्षेत्र 64 कंटेनर सूचियाँ; सबसे पुरानी हटा दी जाती है और अगली माँग पर फिर चली जाती है।"
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "जब तक कंटेनर के अंतर्गत कोई प्रविष्टि जोड़ी, हटाई, या स्थान बताए बिना लिखी न जाए; सूचीबद्ध प्रत्येक कंटेनर के लिए एक प्रविष्टि।"
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "निर्देशिका उपयोगकर्ता नाम सूचकांक"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "हर नाम जिस पर कोई व्यक्ति उत्तर देता है (uid और RDN), ou=users के अंतर्गत उसकी प्रविष्टि तक, ताकि साइन इन निर्देशिका पर न चले।"
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "जब तक निर्देशिका ऐसे रूप में न लिखी जाए जिसे सूचकांक समेट न सके; अगला लुकअप तब उसे फिर बनाता है। प्रति क्षेत्र एक सूचकांक।"
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "विंडोबद्ध entryUUID"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "निर्देशिका विंडो रखने वाली प्रक्रिया में, वह कुंजी जिस पर प्रत्येक व्यक्ति या डिवाइस का entryUUID अंतिम बार मिला, ताकि विषय स्टोर से फिर पूछे बिना उस प्रविष्टि तक पहुँचे जिसे विंडो रखती है (#773)। हर उपयोग पर प्रविष्टि के अपने entryUUID से जाँचा जाता है।"
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "प्रवर्तित: प्रति क्षेत्र ldap.workerCacheEntries; सबसे पुराना पहले हटाया जाता है।"
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "जब तक नामित प्रविष्टि विंडो न छोड़े, उसका नाम न बदले या वह उस entryUUID को न रखे; हर उपयोग पर जाँच होती है।"
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "मेल आउटबॉक्स"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "इस सेवा द्वारा भेजे प्रत्येक संदेश के लिए एक पंक्ति: उसका प्राप्तकर्ता, उसकी स्थिति, उसके प्रयास, वह अगली बार कब देय है — और उसका मुख्य भाग जब वह लंबित, मृत या कैप्चर हो, भेजे जाने के बाद कभी नहीं। वह टिकाऊ कतार जिसे mail.deliver कार्य झाड़ता है।"
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "प्रवर्तित: प्रति क्षेत्र mail.maxRows; सबसे पुराना FINISHED संदेश पहले हटाया जाता है; जगह बनाने के लिए लंबित संदेश कभी नहीं हटाया जाता।"
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "कतारबद्ध होने के mail.retentionS बाद तक; प्रति क्षेत्र mail.maxRows के पार सबसे पुराना समाप्त संदेश पहले।"
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "mail.dedupWindowS में उसी कार्य के लिए पहले से कतारबद्ध संदेश का डुप्लिकेट मानकर दबाया गया संदेश"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "एक्सेस-टोकन स्थिति प्रविष्टियाँ"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "इस क्षेत्र की एक्सेस-टोकन स्थिति सूची में प्रत्येक जीवित एक्सेस टोकन का सूचकांक — OAuth RFC 9068 टोकन और GNAP के दो JWT प्रारूप — उसके jti के साथ, ताकि बिट निरस्तीकरण रजिस्टर से निकाला जा सके।"
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "89d41edd17bc8817",
+    "text": "प्रवर्तित: सूची प्रति क्षेत्र 16777216 सूचकांक रखती है; बिना मुक्त सूचकांक वाली सूची एक्सेस टोकन जारी करना अस्वीकार करती है (STS-OAUTH-0817), किसी जीवित के पुन: उपयोग के बजाय।"
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "जब तक वह एक्सेस टोकन रहे जिसका यह वर्णन करता है; उसके बाद उसका सूचकांक फिर मुक्त होता है।"
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "किसी टोकन की स्थिति यहाँ मिली"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "हस्ताक्षरित एक्सेस-टोकन स्थिति सूचियाँ"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "वह अंतिम एक्सेस-टोकन Status List Token जिस पर इस प्रक्रिया ने प्रत्येक क्षेत्र के लिए हस्ताक्षर किए, जब तक सूची न बदले तब तक पुन: उपयोग किया जाता है।"
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "प्रवर्तित: प्रक्रिया के लिए 1024 हस्ताक्षरित सूचियाँ; सबसे पुरानी हटा दी जाती है और अगली माँग पर फिर हस्ताक्षरित होती है।"
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "जब तक सूची न बदले, या oauth2.accessTokenStatusListTtlS का आधा।"
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "सूची फिर से हस्ताक्षर किए बिना परोसी गई"
+  },
+  "caches.store.oauth2.access-token-status-packed.title": {
+    "en": "41a83d2bb80a2918",
+    "text": "पैक की गई एक्सेस-टोकन स्थिति सूचियाँ"
+  },
+  "caches.store.oauth2.access-token-status-packed.description": {
+    "en": "b67a46cbdc14089f",
+    "text": "वह संपीड़ित एक्सेस-टोकन स्थिति सूची जिसे इस प्रक्रिया ने प्रत्येक क्षेत्र के लिए अंतिम बार बनाई, जब तक कोई अमान्य बिट न बदले या सबसे पहला समाप्त न हो तब तक पुन: उपयोग की जाती है।"
+  },
+  "caches.store.oauth2.access-token-status-packed.bound": {
+    "en": "93bd023bcc902515",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक संपीड़ित सूची। जो क्षेत्र जा चुका हो, या जिस सूची का सबसे पहला अमान्य बिट समाप्त हो चुका हो, उसे caches कार्य हटा देता है।"
+  },
+  "caches.store.oauth2.access-token-status-packed.lifetime": {
+    "en": "86b51b8d0239fd45",
+    "text": "जब तक कोई अमान्य बिट न बदले, या सबसे पहला समाप्त न हो।"
+  },
+  "caches.store.oauth2.access-token-status-packed.hitMeaning": {
+    "en": "29707643b235dbd9",
+    "text": "सूची फिर पैक या संपीड़ित किए बिना परोसी गई"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "क्लाइंट सत्यापन चुनौतियाँ"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "OAuth 2.0 Attestation-Based Client Authentication (draft-ietf-oauth-attestation-based-client-auth-11 अनुभाग 6) के लिए सौंपी गई चुनौतियाँ, ताकि एक को ले जाने वाले Client Attestation PoP की जाँच उसके विरुद्ध हो सके जो जारी किया गया था।"
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.clientAttestationChallengeCacheSize; सबसे पुरानी चुनौती हटा दी जाती है, और उसे प्रस्तुत करने वाले क्लाइंट को use_attestation_challenge के साथ नई चुनौती सौंपी जाती है।"
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "वर्तमान पाई गई चुनौती, इसलिए PoP स्वीकार हुआ"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "जारी होने के oauth2.clientAttestationChallengeTtlS ({{seconds}} s) बाद।"
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "पार्स किए authorization_details प्रकार"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "संसाधन अनुप्रयोगों पर घोषित RFC 9396 प्रकार परिभाषाएँ, पार्स की हुईं और उनके JSON Schema प्रति भिन्न परिभाषा-पाठ एक बार संकलित। हर क्षेत्र द्वारा साझा, क्योंकि पाठ ही कुंजी है।"
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "प्रवर्तित: 512 पार्स की गई परिभाषाएँ; सबसे पुरानी हटा दी जाती है और अगले उपयोग पर फिर पार्स होती है।"
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "कोई समाप्ति नहीं: परिभाषा-पाठ से कुंजीकृत, इसलिए संपादित परिभाषा नई प्रविष्टि है। भरा होने पर सबसे पुराना पहले जाता है।"
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "बैक-चैनल लॉगआउट डिलीवरी"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "प्रति रिलाइंग पार्टी एक पंक्ति जिसे बताया गया कि सत्र समाप्त हुआ (OpenID Connect Back-Channel Logout 1.0): उसकी स्थिति, उसके प्रयास, वह अगली बार कब देय है और हस्ताक्षरित Logout Token। वह टिकाऊ कतार जिसे हर प्रक्रिया झाड़ती है; मृत पत्र तब तक रहता है जब तक पुनः प्रयास न हो या अवधारण उसे हटा न दे।"
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.backchannelLogoutMaxRows; सबसे पुरानी FINISHED डिलीवरी पहले हटाई जाती है; जगह बनाने के लिए लंबित डिलीवरी कभी नहीं हटाई जाती।"
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "कतारबद्ध होने के oauth2.backchannelLogoutRetentionS बाद तक (समाप्त हो या नहीं); प्रति क्षेत्र oauth2.backchannelLogoutMaxRows के पार सबसे पुरानी समाप्त डिलीवरी पहले।"
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "उस सत्र और क्लाइंट के लिए पहले से कतारबद्ध डिलीवरी, इसलिए उसी सत्र को समाप्त करती दूसरी प्रक्रिया ने कुछ कतारबद्ध नहीं किया"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "प्राप्त क्लाइंट कुंजी सेट"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "वह JSON Web Key Set जिससे क्लाइंट के पंजीकृत jwks_uri ने उत्तर दिया, ताकि उसके क्लाइंट अभिकथन, अनुरोध ऑब्जेक्ट और एन्क्रिप्टेड उत्तर प्रति अनुरोध प्राप्ति के बिना उसकी कुंजियाँ पाएँ (#120)।"
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "प्रवर्तित: प्रति क्षेत्र 256 कुंजी सेट; सबसे पुराना हटा दिया जाता है और अगली आवश्यकता पर फिर प्राप्त होता है।"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "घोषित authorization_details प्रकार"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "वे RFC 9396 प्रकार जो क्षेत्र के अनुप्रयोग घोषित करते हैं, प्रत्येक उस संसाधन के साथ जो उसके लिए उत्तर देता है, ताकि प्राधिकरण उन्हें खोजने के लिए हर अनुप्रयोग का दृश्य न बनाए।"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "संरचनात्मक: प्रति क्षेत्र एक उत्तर, उन प्रकारों के आकार का जिन्हें उसके अनुप्रयोग घोषित करते हैं।"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "जब तक क्षेत्र के ou=applications के अंतर्गत कुछ न बदले; अगला पठन तब इसे फिर बनाता है।"
+  },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "अपारदर्शी एक्सेस टोकन"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "इस क्षेत्र द्वारा जारी प्रत्येक अपारदर्शी एक्सेस टोकन के क्लेम, उसके हैंडल के SHA-256 से कुंजीकृत। हैंडल स्वयं संग्रहीत नहीं होता।"
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "प्रवर्तित: भरा स्टोर जीवित टोकन निकालने के बजाय जारी करना अस्वीकार करता है (STS-OAUTH-0979)। ऊपरी सीमा oauth2.maxOpaqueAccessTokens है।"
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "एक्सेस टोकन के exp तक; समाप्त पंक्ति पढ़े जाने पर और caches.eject-expired द्वारा हटा दी जाती है।"
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "हैंडल उसके डाइजेस्ट से मिला"
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "भुनाए गए प्राधिकरण कोड"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "टोकन एंडपॉइंट पर पहले ही बदला जा चुका प्रत्येक प्राधिकरण कोड, ताकि दूसरा विनिमय रीप्ले माना जाए (RFC 9700 अनुभाग 4.5, RFC 6749 अनुभाग 4.1.2)।"
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.redeemedCodeCacheSize; सबसे पुराना भुनावा भुला दिया जाता है। कोड स्वयं भुनाने पर जा चुका था, इसलिए भूले हुए की पुनरावृत्ति अभी भी अस्वीकार होती है, अज्ञात कोड के रूप में।"
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "कोड के समाप्त होने के एक कोड-जीवनकाल बाद।"
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "पहले भुनाया गया कोड, फिर प्रस्तुत"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "रिफ़्रेश टोकन रोटेशन रिकॉर्ड"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "प्रति रिफ़्रेश टोकन और प्रति परिवार एक रिकॉर्ड, ताकि फिर चलाया गया रिफ़्रेश टोकन अपने परिवार को निरस्त करे (RFC 9700), और प्रत्येक ग्रांट ने क्या जारी किया, ताकि रिफ़्रेश टोकन का निरस्तीकरण उसके साथ के एक्सेस टोकन को भी निरस्त करे (RFC 7009)।"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.maxRefreshTokenFamilies रिफ़्रेश-टोकन रिकॉर्ड, और ग्रांट द्वारा जारी किए गए के लिए उसका दोगुना; उसके आगे सेवानिवृत्त पहले जाते हैं, फिर सबसे पुराने, चेतावनी के साथ।"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "जब तक टोकन जारी होने के बाद की परिवार विंडो न बीत जाए; caches.eject-expired कार्य तब रिकॉर्ड हटा देता है।"
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "प्राप्त अनुरोध ऑब्जेक्ट"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "पंजीकृत RFC 9101 request_uri की सामग्री, ताकि वही URI फिर भेजने वाले क्लाइंट को फिर प्राप्त न करना पड़े (OpenID Connect Core अनुभाग 6.2)। oauth2.requestUriCacheS सेट होने तक बंद।"
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "प्रवर्तित: प्रति क्षेत्र 256 प्राप्त अनुरोध ऑब्जेक्ट; सबसे पुराना हटा दिया जाता है और अगले उपयोग पर फिर प्राप्त होता है।"
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "प्रति क्षेत्र, प्राप्ति के oauth2.requestUriCacheS ({{seconds}} s) बाद; भरा होने पर सबसे पुराना पहले जाता है।"
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "बंद: oauth2.requestUriCacheS 0 है, इसलिए कुछ भी नहीं रखा जाता।"
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "हस्ताक्षरित प्राधिकरण सर्वर मेटाडेटा"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "RFC 8414 signed_metadata JWT, जब तक वह मेटाडेटा और हस्ताक्षर सेटिंग जिनसे वे बने अपरिवर्तित रहें तब तक पुन: उपयोग, ताकि व्यस्त डिस्कवरी एंडपॉइंट हर प्राप्ति पर हस्ताक्षर न करे।"
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.maxSignedMetadataEntries; सबसे पुराना हटा दिया जाता है और अगली माँग पर फिर हस्ताक्षरित होता है।"
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "प्रयुक्त अभिकथन"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "स्वीकार किया गया हर RFC 7523 JWT और RFC 7522 SAML अभिकथन, ग्रांट के लिए या क्लाइंट प्रमाणीकरण के लिए, ताकि प्रत्येक हमेशा केवल एक बार स्वीकार हो।"
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "प्रवर्तित: प्रति क्षेत्र oauth2.assertionReplayCacheSize। भरा इतिहास अगले अभिकथन को अस्वीकार करता है, किसी जीवित को भूलने के बजाय, जिससे उसका रीप्ले फिर खुल जाता।"
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "जब तक अभिकथन स्वयं समाप्त न हो। भरा होने पर किसी एक को भूलने के बजाय नए अभिकथन अस्वीकार करता है। डेटाबेस स्टोर पर पंक्तियाँ डेटाबेस में होती हैं और यहाँ कोई सूचीबद्ध नहीं होती।"
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "पहले ही उपयोग हो चुका अभिकथन, इसलिए अनुरोध अस्वीकार हुआ"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "OID4VCI नॉन्स"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "वॉलेट को सौंपे गए c_nonce मान, ताकि क्रेडेंशियल अनुरोध का प्रमाण ऐसे नॉन्स का नाम ले जिसे इस जारीकर्ता ने जारी किया, और उसका एक बार उपयोग करे।"
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "प्रवर्तित: प्रति क्षेत्र oid4vci.cNonceCacheSize; सबसे पुराना नॉन्स हटा दिया जाता है, और उसे उद्धृत करने वाले प्रमाण को invalid_nonce उत्तर मिलता है।"
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "जारी होने के oid4vci.cNonceTtlS बाद, या जब उसका उपयोग हो।"
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "इस जारीकर्ता द्वारा सौंपा गया नॉन्स, इसलिए प्रमाण की जाँच हुई"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "क्रेडेंशियल स्थिति प्रविष्टियाँ"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "इस क्षेत्र की स्थिति सूचियों में प्रत्येक जारी क्रेडेंशियल का सूचकांक, और वह स्थिति जो किसी व्यवस्थापक या साइन-आउट ने उसके लिए रखी।"
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "प्रवर्तित: स्थिति सूची प्रति क्षेत्र 131072 सूचकांक रखती है; बिना मुक्त सूचकांक वाली सूची क्रेडेंशियल जारी करना अस्वीकार करती है (STS-VC-0075), किसी जीवित के पुन: उपयोग के बजाय।"
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "जब तक वह क्रेडेंशियल रहे जिसका यह वर्णन करता है; उसके बाद उसका सूचकांक फिर मुक्त होता है।"
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "किसी क्रेडेंशियल की स्थिति यहाँ मिली"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "हस्ताक्षरित स्थिति सूचियाँ"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "वह अंतिम Status List Token और Bitstring Status List क्रेडेंशियल जिस पर इस प्रक्रिया ने प्रत्येक क्षेत्र के लिए हस्ताक्षर किए, जब तक सूची न बदले तब तक पुन: उपयोग किया जाता है।"
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "प्रवर्तित: प्रक्रिया के लिए 1024 हस्ताक्षरित दस्तावेज़; सबसे पुराना हटा दिया जाता है और अगली माँग पर फिर हस्ताक्षरित होता है।"
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "जब तक सूची न बदले, या oid4vci.statusListTtlS का आधा।"
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "सूची फिर से हस्ताक्षर किए बिना परोसी गई"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "वॉलेट साइन इन रजिस्टर"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "979c99c562007a1c",
+    "text": "वे क्रेडेंशियल जो इस क्षेत्र ने किसी व्यक्ति के लिए उस एक्सेस टोकन पर जारी किए जिसे उसने सत्यापित किया; केवल इन्हीं से वॉलेट साइन इन कर सकता है — जारीकर्ता द्वारा हस्ताक्षरित JWT के डाइजेस्ट (mdoc के लिए, issuerAuth के पेलोड के) से कुंजीकृत, या ldp_vc के लिए धारक कुंजी और व्यक्ति से।"
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "प्रवर्तित: प्रति क्षेत्र oid4vp.signInRegisterMaxEntries; सबसे पहले जारी पंक्ति हटा दी जाती है। असफलता बंद रूप में होती है — बिना पंक्ति वाला क्रेडेंशियल किसी को साइन इन नहीं कराता।"
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "जब तक पंक्ति का अंतिम क्रेडेंशियल समाप्त न हो; त्यागी गई पंक्ति भी तब तक रखी जाती है, ताकि वह अस्वीकार करती रहे।"
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "प्रस्तुत क्रेडेंशियल जिसे इस क्षेत्र ने ऐसा दर्ज किया जो अपने व्यक्ति को साइन इन करा सकता है"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "प्राप्त स्थिति सूचियाँ"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "किसी विश्वसनीय विदेशी जारीकर्ता द्वारा प्रकाशित Status List Token और Bitstring Status List क्रेडेंशियल, जब उसका कोई क्रेडेंशियल Verifier को प्रस्तुत हुआ तब प्राप्त किए गए।"
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "प्रवर्तित: प्रक्रिया के लिए 256 प्राप्त सूचियाँ; सबसे पुरानी हटा दी जाती है और अगली आवश्यकता पर फिर प्राप्त होती है।"
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "सूची का अपना ttl (और कभी उसके exp के पार नहीं), अधिकतम oid4vp.statusListMaxCacheS; विफल प्राप्ति 30 सेकंड।"
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "प्रस्तुत क्रेडेंशियल की स्थिति बिना प्राप्ति के उत्तर दी गई"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "OpenID4VP लेनदेन"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "हर प्रस्तुति अनुरोध जिसकी यह Verifier प्रतीक्षा कर रहा है — बार-द्वार का और वॉलेट साइन इन का; बाद वाला Digital Credentials API अनुरोध, उसका प्रतिक्रिया मोड और वह कुंजी रखता है जिसके लिए उत्तर एन्क्रिप्ट होता है।"
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "प्रवर्तित: प्रति क्षेत्र oid4vp.maxTransactions; सबसे पुराना प्रतीक्षारत अनुरोध हटा दिया जाता है (federation.maxContexts का नियम), क्योंकि अस्वीकार करने से कोई भी सभी के लिए अनुरोध एंडपॉइंट रोक सकता है।"
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS, या साइन इन के लिए oid4vp.signInTtlS; अगला अनुरोध बनने पर झाड़ा जाता है।"
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "वॉलेट के उत्तर को वह अनुरोध मिला जिसके लिए वह बना था"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "OpenID Federation संग्रह, प्रक्रिया में बनाए गए"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "Entity Collection जैसा यह प्रक्रिया बिना कुछ प्राप्त किए बनाती है — इस सेवा के अपने क्षेत्र, और पहले से हल अधीनस्थ — जहाँ कोई क्रॉल नहीं रखा गया वहाँ उपयोग, ताकि अनाम अनुरोध हर बार हर क्षेत्र के लिए कथनों पर हस्ताक्षर न करें (#136)।"
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "प्रवर्तित: प्रति क्षेत्र 8 (प्रति होस्ट एक, जिससे क्षेत्र तक पहुँचा जाता है); सबसे पुराना पहले निकाला जाता है।"
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS."
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "OpenID Federation रिज़ॉल्यूशन"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "वे Trust Chain जिन्हें इस क्षेत्र ने हल किया — किसी व्यवस्थापक के कार्य से, या अपने क्षेत्रों के लिए प्रक्रिया में — हल किए मेटाडेटा और सत्यापित Trust Mark के साथ, ताकि resolve एंडपॉइंट अप्रमाणित कॉलर के लिए फ़ेडरेशन पर चले बिना उत्तर दे सके (18.1)।"
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "प्रवर्तित: प्रति क्षेत्र oidfed.resolveCacheMax; सबसे पुराना पहले निकाला जाता है।"
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "जब तक शृंखला समाप्त न हो (उसका न्यूनतम exp, 10.4), और अधिकतम oidfed.resolveCacheS।"
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "भंग पासवर्ड रेंज"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "Pwned Passwords रेंज उत्तर, माँगे गए पाँच-अक्षर SHA-1 उपसर्ग के अनुसार (#62 P6): उसके अंतर्गत कौन से पासवर्ड डाइजेस्ट भंग होना ज्ञात है, और कितनी बार।"
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "प्रवर्तित: risk.breachCacheSize उपसर्ग; भरा होने पर सबसे पुराना हटा दिया जाता है और अगली आवश्यकता पर फिर पूछा जाता है।"
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "प्राप्त होने के risk.breachCacheMinutes बाद।"
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "पहले ही पूछा गया उपसर्ग, इसलिए कोई अनुरोध नहीं हुआ"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "भंग पासवर्ड निर्णय"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "यह कि जिस पासवर्ड को किसी द्वार ने अभी जाँचा वह भंग है या नहीं, ताकि समकालिक पासवर्ड नियम उसी अनुरोध में पढ़ सकें (#62 P6)। पासवर्ड के डाइजेस्ट से कुंजीकृत, कभी पासवर्ड से नहीं।"
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "प्रवर्तित: 1000 निर्णय; भरा होने पर सबसे पुराना हटा दिया जाता है।"
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "पासवर्ड की जाँच के पाँच मिनट बाद।"
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "सेट हो रहे पासवर्ड के लिए मिला निर्णय"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "अवलोकन-स्टोर घोषणाएँ"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "यह कि प्रत्येक स्थायी स्टोर को अवलोकन घोषित किया गया था या नहीं (ऐसी गणना जिसकी पठन अवरोध प्रतीक्षा नहीं करती); प्रति स्टोर हैंडल एक बार पढ़ा जाता है, क्योंकि जाँच हर स्टोर लेखन के पथ पर है।"
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "संरचनात्मक: इस बिल्ड द्वारा घोषित प्रत्येक स्थायी स्टोर के लिए एक ध्वज।"
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "प्रक्रिया के पूरे जीवन तक: चलते समय घोषणा नहीं बदल सकती।"
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "अपरिवर्तित लेखन की छाया"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "प्रत्येक निर्देशिका प्रविष्टि और क्षेत्र रिकॉर्ड की वह अंतिम प्रति जिसे इस प्रक्रिया ने स्थायित्व स्टोर में लिखा, ताकि फ्लश केवल बदला हुआ लिखे।"
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "संरचनात्मक: लिखी प्रत्येक निर्देशिका प्रविष्टि के लिए एक पंक्ति और क्षेत्र रिकॉर्ड के लिए एक, इसलिए एक क्षेत्र में अधिकतम ldap.maxEntries + 1।"
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "कोई समाप्ति नहीं: हर फ्लश पर ताज़ा; लिखी प्रत्येक निर्देशिका प्रविष्टि और क्षेत्र के लिए एक प्रविष्टि। memory मोड में खाली।"
+  },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "पिन किए प्रमाणपत्रों का निरस्तीकरण"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "पिन किए प्रमाणपत्र के बारे में अंतिम बार क्या प्राप्त हुआ, उन द्वारों के लिए जो paranoid PKI मोड में एक टिक में उत्तर देते हैं। प्रमाणपत्र के फ़िंगरप्रिंट से कुंजीकृत।"
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "प्रवर्तित: 1024 प्रविष्टियाँ; सबसे पुराना लेखन हटा दिया जाता है और अगली आवश्यकता पर फिर प्राप्त होता है।"
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 मिनट"
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "प्राप्त जारीकर्ता प्रमाणपत्र"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "निरस्तीकरण जाँच का पथ बनाने के लिए Authority Information Access caIssuers URL या LDAP cACertificate विशेषता से प्राप्त प्रमाणपत्र। प्राप्त होने मात्र से कभी विश्वसनीय नहीं।"
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "प्रवर्तित: pki.revocationCrlCacheEntries; सबसे पुराना लेखन हटा दिया जाता है और अगली आवश्यकता पर फिर प्राप्त होता है।"
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "प्रमाणपत्र निरस्तीकरण सूचियाँ"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "प्रस्तुत प्रमाणपत्र की जाँच के लिए प्राप्त CRL, पार्स और सत्यापित; वितरण बिंदु URL और उन हस्ताक्षरकर्ताओं के फ़िंगरप्रिंट से कुंजीकृत जिनके विरुद्ध सत्यापन हुआ।"
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "प्रवर्तित: pki.revocationCrlCacheEntries; सबसे पुराना लेखन हटा दिया जाता है और अगली आवश्यकता पर फिर प्राप्त होता है।"
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "विफल निरस्तीकरण प्राप्तियाँ"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "नकारात्मक कैश: विफल CRL, OCSP या प्रमाणपत्र प्राप्ति अपनी पुनःप्रयास विंडो बीतने तक फिर नहीं आज़माई जाती, और याद रखी विफलता इस बीच उत्तर होती है। हिट पुन: प्रयुक्त विफलता है।"
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "प्रवर्तित: pki.revocationCrlCacheEntries; सबसे पुराना हटा दिया जाता है; हटाई गई विफलता का अर्थ केवल यह है कि पते से जल्दी फिर पूछा जा सकता है।"
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "OCSP उत्तर"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "प्रत्येक एक प्रमाणपत्र के बारे में OCSP उत्तर, रेस्पॉन्डर URL, जारीकर्ता फ़िंगरप्रिंट और क्रमांक से कुंजीकृत।"
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "प्रवर्तित: pki.revocationCrlCacheEntries; सबसे पुराना लेखन हटा दिया जाता है और अगली आवश्यकता पर फिर पूछा जाता है।"
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "पार्स किए विश्वास-एंकर प्रमाणपत्र"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "इस सेवा के अपने CA प्रमाणपत्र, निरस्तीकरण रजिस्टर के चलने के लिए प्रति PEM एक बार पार्स। PEM स्वयं से कुंजीकृत; प्रतिस्थापित CA का PEM भिन्न होता है और प्रविष्टि नई होती है।"
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "प्रवर्तित: 8192 पार्स; भरा होने पर पूरा मेमो खाली कर दिया जाता है और जैसे-जैसे उपयोग हो फिर बनाया जाता है।"
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "कोई समाप्ति नहीं: सामग्री से कुंजीकृत। भरा होने पर पूरा मेमो एक साथ खाली कर दिया जाता है।"
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "डिस्क से पढ़ी विश्वास फ़ाइलें"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "निरस्तीकरण सेटिंग द्वारा नामित PEM फ़ाइलें, एक बार पढ़ी जाती हैं और फ़ाइल का संशोधन समय बदलने तक रखी जाती हैं।"
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "संरचनात्मक: फ़ाइल का नाम देने वाली प्रत्येक सेटिंग के लिए एक प्रविष्टि (pki.revocationCrlIssuersFile, pki.revocationLdapCaFile)।"
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "जब तक नामित फ़ाइल डिस्क पर न बदले, या सेटिंग किसी दूसरी फ़ाइल का नाम न दे। प्रति सेटिंग एक प्रविष्टि।"
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "क्लाइंट प्रमाणपत्र शृंखलाएँ, पुनः आरंभ सत्रों के लिए"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "वह पथ जो सत्यापित क्लाइंट प्रमाणपत्र ने पूर्ण TLS हैंडशेक पर बनाया, लीफ से कुंजीकृत, जब वह सत्र RESUMED हो तब लौटाया जाता है — node पुनः आरंभ सत्र को अकेले लीफ देता है, और इसके बिना निरस्तीकरण चलना ऐसे प्रमाणपत्र को अस्वीकार कर देता है जो सत्यापित हो चुका था।"
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "प्रवर्तित: 1024 लीफ; सबसे पुराना पहले भुला दिया जाता है।"
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "हर नोड द्वारा साझा और प्रतिकृत (#406): एक घंटा, या अधिक लंबा होने पर मुख्य पोर्ट का सत्र जीवनकाल और एक मिनट, लीफ के अगले पूर्ण हैंडशेक से नवीनीकृत; भरा होने पर सबसे पुराना हटा दिया जाता है।"
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "जोखिम डेटासेट लुकअप"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "किसी पते के बारे में सक्रिय भू-स्थान, ASN और IP-सूची डेटासेटों ने क्या कहा, प्रति विश्वास क्षेत्र। जब भी किसी नोड पर कोई डेटासेट संस्करण सक्रिय किया जाता है, साफ़ कर दिया जाता है।"
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "प्रवर्तित: 10000 लुकअप, सबसे पुराना पहले हटाया जाता है।"
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "जब तक कोई डेटासेट संस्करण सक्रिय न किया जाए, या सीमा उसे हटा न दे।"
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "जोखिम अंक: प्रत्येक विश्वास क्षेत्र की उपयोगकर्ता संख्या"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "प्रत्येक विश्वास क्षेत्र में कितने लोगों ने साइन इन किया है, जोखिम मॉडल के समकरण पद का भाजक, इसलिए रखा जाता है कि एक साइन-इन उन सभी लोगों को न गिने जिन्होंने कभी साइन इन किया हो।"
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "संरचनात्मक: कम से कम 1000 लोगों वाले प्रत्येक विश्वास क्षेत्र के लिए एक गिनती (सीलबंद हो या न हो), और डिफ़ॉल्ट के अतिरिक्त अधिकतम realms.maxCount विश्वास क्षेत्र होते हैं।"
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "जोखिम स्थितियाँ"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "प्रत्येक व्यक्ति का अंतिम आकलित जोखिम (स्तर, अंक, संकेत), ऐसे जारीकरण के लिए जिसके पास उसे पढ़ने का कोई सत्र न हो — एक Kerberos टिकट, एक WS-Trust टोकन (#62 P3)।"
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "प्रवर्तित: प्रति प्रक्रिया risk.standingCacheSize लोग; भर जाने पर सबसे पुराना हटा दिया जाता है, जिससे उस व्यक्ति का अगला बिना-सत्र जारीकरण केवल भूमिकाओं पर तय होता है।"
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "उस आकलन के risk.standingValidMinutes बाद जिसे यह दर्ज करता है।"
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "एक स्थिति जो रखी गई है और अभी भी मान्य है, इसलिए जारीकरण उसके साथ तय किया गया"
+  },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "SAML 1.1 आर्टिफैक्ट"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "वे अभिकथन जिनके लिए SAML 1.1 आर्टिफैक्ट खड़े होते हैं, जब तक प्रत्येक SAML उत्तरदाता पर एक बार हल न हो जाए। आर्टिफैक्ट के SHA-256 से कुंजीबद्ध, कभी आर्टिफैक्ट से नहीं।"
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र saml11.maxArtifacts। समाप्त आर्टिफैक्ट सीमा पर साफ़ किए जाते हैं; अभी भी भरा भंडार अगले आर्टिफैक्ट को अस्वीकार करता है, किसी अनसुलझे को भूलने के बजाय।"
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "एक बार हल होने तक, या जब तक saml11.artifactTtlS न बीत जाए।"
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "एक आर्टिफैक्ट हल हुआ"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "SAML 1.1 अभिकथन"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "जारी किए गए SAML 1.1 अभिकथन, इसलिए रखे जाते हैं कि AssertionIDReference से किसी एक को नाम देने वाला विशेषता-प्राधिकरण अनुरोध उत्तर दिया जा सके।"
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र saml11.assertionCacheMax, सबसे पुराना हटाया जाता है; हटाए गए अभिकथन को नाम देने वाले आर्टिफैक्ट का उत्तर अज्ञात के रूप में दिया जाता है।"
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "b163f4a46cb87b30",
+    "text": "अभिकथन के NotOnOrAfter तक, या saml11.assertionCacheTtlS जब वह कोई न रखे; saml11.assertionCacheMax के पार सबसे पुराना हटा दिया जाता है।"
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "एक AssertionIDReference का उत्तर दिया गया"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "SAML 2.0 आर्टिफैक्ट"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "वे संदेश जिनके लिए SAML 2.0 आर्टिफैक्ट खड़े होते हैं, जब तक प्रत्येक Artifact Resolution Service पर एक बार हल न हो जाए। आर्टिफैक्ट के SHA-256 से कुंजीबद्ध, कभी आर्टिफैक्ट से नहीं।"
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र saml2.maxArtifacts। समाप्त आर्टिफैक्ट सीमा पर साफ़ किए जाते हैं; अभी भी भरा भंडार अगले आर्टिफैक्ट को अस्वीकार करता है, किसी अनसुलझे को भूलने के बजाय।"
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "एक बार हल होने तक, या जब तक saml2.artifactTtlS न बीत जाए।"
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "एक आर्टिफैक्ट हल हुआ"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "SCIM Digest नॉन्स गिनतियाँ"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "प्रत्येक Digest नॉन्स के अंतर्गत पहले से स्वीकार किए गए nonce-count (nc) मान, ताकि एक उत्तर दो बार न भेजा जा सके।"
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र scim.maxDigestNonces नॉन्स, सबसे पुराना हटाया जाता है (नॉन्स तब बासी हो जाता है, और क्लाइंट को नया दे दिया जाता है); तथा प्रति नॉन्स 1024 गिनतियाँ, जिसके बाद नॉन्स उसी तरह सेवानिवृत्त होता है।"
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "अपने नॉन्स के साथ भुला दिया जाता है। स्थायी है, इसलिए पुन: प्रारंभ हुई प्रक्रिया उस गिनती को फिर भी अस्वीकार करती है जिसे उसने स्वीकार किया था; किसी खर्च का दावा ही जीवित नोडों के बीच पुनरावृत्ति तय करता है।"
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "एक नॉन्स गिनती पहले से उपयोग की गई, इसलिए अनुरोध अस्वीकार किया गया"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "SCIM Digest नॉन्स"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "वे HTTP Digest चुनौतियाँ जो /scim/v2 ने दी हैं (RFC 7616), ताकि कोई उत्तर उसमें से एक को नाम दे जिसे इस सेवा ने जारी किया।"
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र scim.maxDigestNonces, सबसे पुराना हटाया जाता है; उसका उपयोग करने वाले क्लाइंट को stale=true के साथ एक नया उत्तर दिया जाता है।"
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "एक नॉन्स जिसे इस सेवा ने जारी किया, इसलिए उत्तर की जाँच की गई"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "SCIM HOBA चुनौतियाँ"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "वे HOBA चुनौतियाँ जो /scim/v2 ने दी हैं (RFC 7486), ताकि कोई हस्ताक्षर उसमें से एक को नाम दे जिसे इस सेवा ने जारी किया।"
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र scim.maxHobaChallenges, सबसे पुराना हटाया जाता है; उसका उपयोग करने वाले क्लाइंट को एक नई चुनौती भेजी जाती है।"
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "एक चुनौती जिसे इस सेवा ने जारी किया, इसलिए हस्ताक्षर की जाँच की गई"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "SCIM HOBA हस्ताक्षर"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "प्रत्येक (kid, challenge, nonce) जिसके साथ एक HOBA हस्ताक्षर आया, ताकि प्रतिलिपि किया गया क्रेडेंशियल अस्वीकार हो।"
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र scim.maxHobaSeen, सबसे पुराना उस चुनौती के साथ हटाया जाता है जिसके लिए वह बनाया गया था, ताकि उसे किसी जीवित चुनौती के विरुद्ध पुनः न चलाया जा सके।"
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "जब तक उसकी चुनौती समाप्त न हो; सीमा के पार सबसे पुराने अपनी चुनौती के साथ जाते हैं।"
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "एक हस्ताक्षर पहले से देखा गया, इसलिए अनुरोध अस्वीकार किया गया"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "अनपैक किए गए SPIFFE X.509 प्राधिकारी"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "प्रत्येक विश्वास क्षेत्र के संग्रहीत X.509 प्राधिकारी, अपने संग्रहीत रूप से एक बार प्रमाणपत्रों में बदले गए, हस्ताक्षरित हर SVID और परोसे गए हर बंडल के लिए।"
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "संरचनात्मक: प्रति विश्वास क्षेत्र एक अनपैक प्राधिकारी सूची, संग्रहीत सूची बदलने पर प्रतिस्थापित।"
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "जब तक विश्वास क्षेत्र के प्राधिकारी घुमाए या पुनर्स्थापित न हों, जो उस संग्रहीत सूची को प्रतिस्थापित करता है जिससे प्रविष्टि अनपैक की गई थी।"
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "Shared Signals डेड-लेटर गिनतियाँ"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "प्रत्येक स्ट्रीम के डेड लेटर का एक अनुमान, इसलिए रखा जाता है कि नए की जाँच प्रति-स्ट्रीम सीमा से कतार गिने बिना हो सके। किसी अन्य प्रक्रिया द्वारा लिखे गए पत्र अगले स्वीप तक इसमें नहीं होते।"
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "संरचनात्मक: प्रति स्ट्रीम एक गिनती, और एक विश्वास क्षेत्र अधिकतम ssf.maxStreams स्ट्रीम रखता है।"
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "कोई समाप्ति नहीं: प्रत्येक डेड-लेटर स्वीप पर पुन: गिना जाता है, प्रति स्ट्रीम एक प्रविष्टि।"
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "क्लाइंट प्रमाणपत्र पहचान"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "एक सत्यापित TLS क्लाइंट प्रमाणपत्र किस पर मैप हुआ — किसी विश्वास क्षेत्र में एक व्यक्ति या अनुप्रयोग, या एक अस्वीकृति — पत्ती के डाइजेस्ट और पथ चलाए जाने के समय रखे गए प्राधिकारियों से कुंजीबद्ध।"
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "प्रवर्तित: 256 उत्तर; भर जाने पर पूरा मेमो खाली कर दिया जाता है और उपयोग के साथ फिर से बनाया जाता है।"
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "कोई समाप्ति नहीं: प्रतिस्थापित जारीकर्ता CA कुंजी बदल देता है। भर जाने पर पूरा मेमो एक साथ खाली कर दिया जाता है।"
+  },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "TLS 1.2 टिकट नाम, फिर से शुरू सत्रों के लिए"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "वह सर्वर नाम जिसके अंतर्गत पूर्ण TLS 1.2 हैंडशेक हुआ, सत्र के master secret के डाइजेस्ट से कुंजीबद्ध, जब वह सत्र टिकट द्वारा फिर से शुरू होता है तब तुलना की जाती है (#507, RFC 6066 अनुभाग 3): node OpenSSL के भीतर बिना किसी घटना के टिकट फिर से शुरू करता है, और OpenSSL नाम की तुलना नहीं करता। किसी अन्य नाम के अंतर्गत फिर से शुरू करना, या वह जिसके लिए कोई अभिलेख प्रमाण न दे, हैंडशेक के बाद बंद कर दिया जाता है। प्रत्येक श्रोता अपनी प्रति भी रखता है, उसी तरह सीमाबद्ध।"
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "प्रवर्तित: 4096 सत्र; समाप्त पंक्तियाँ पहले जाती हैं, फिर सबसे पुरानी।"
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "हर नोड द्वारा साझा और प्रतिकृत: श्रोता का सत्र जीवनकाल (tls.sessionTimeoutS), जो उतना ही लंबा है जितना एक टिकट जीवित रहता है।"
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "स्थिति वाली VC-API क्रेडेंशियल"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "6276c639d08ac2a7",
+    "text": "प्रत्येक क्रेडेंशियल जिसे W3C VC API ने एक स्थिति प्रविष्टि के साथ जारी किया, और वह स्थिति-सूची सूचकांक जो उसने लिया, ताकि कोई स्थिति परिवर्तन उसे ढूँढ सके।"
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र 4096 क्रेडेंशियल, सबसे पुराना पहले भुलाया जाता है (उसकी स्थिति फिर यहाँ नहीं बदली जा सकती; सूची प्रविष्टि स्वयं vc_status.ts की है और रहती है)।"
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "क्रेडेंशियल का validUntil, या एक वर्ष।"
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "एक स्थिति परिवर्तन को क्रेडेंशियल मिला"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "संस्करण मुहर"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "version.json से एक बार पढ़ा गया बिल्ड अभिलेख (M.N.O, कमिट, बिल्ड क्षण), जिसे संस्करण चित्रित करने वाली हर सतह पढ़ती है।"
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "संरचनात्मक: एक अभिलेख।"
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "प्रक्रिया के जीवन भर: बिल्ड चलते समय नहीं बदल सकता।"
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "common/version.js दूरस्थ PEP कंटेनर में भी चलता है और रजिस्ट्री की आवश्यकता नहीं कर सकता"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "अनुरोध वर्कर बंधुता"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "कोई ब्राउज़र सत्र, क्रेडेंशियल या प्रवाह किस अनुरोध वर्कर पर पिन किया गया है, प्रति पूल एक मानचित्र (प्रोटोकॉल और सतहें), ताकि बहु-चरण प्रवाह उस वर्कर पर रहे जो उसे रखता है।"
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "प्रवर्तित: प्रति पूल 5000, सबसे पुराना हटाया जाता है; हटाया गया पिन बस नए सिरे से रूट किया जाता है।"
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "कोई समाप्ति नहीं: जब उसका वर्कर निकलता है तब भुला दिया जाता है; जब कोई पूल {{max}} रखता है तो सबसे पुराना पहले जाता है। केवल अग्र प्रक्रिया।"
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "पार्स की गई XACML नीतियाँ"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "ou=policies से नीतियाँ और नीति समुच्चय, प्रति दस्तावेज़ पाठ एक बार पार्स और स्थिर रूप से मान्य किए गए, उस पाठ के SHA-256 से कुंजीबद्ध ताकि किसी भी द्वार से परिवर्तन एक नई प्रविष्टि हो।"
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "प्रवर्तित: 1024 पार्स, सबसे कम हाल में उपयोग किया गया हटाया जाता है; हटाई गई नीति अगली बार माँगे जाने पर फिर से पार्स की जाती है।"
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "कोई समाप्ति नहीं: सामग्री से कुंजीबद्ध, इसलिए संपादित नीति एक नई प्रविष्टि है और उसका पुराना पार्स तब जाता है जब वह सबसे कम हाल में उपयोग किया गया हो।"
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "दूरस्थ PEP Basic टिकट"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "वे टिकट जो एक मान्य POST /xacml/pep/basic ने किसी दूरस्थ PEP को दिए, प्रत्येक के SHA-256 से कुंजीबद्ध; टिकट स्वयं संग्रहीत नहीं है।"
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "प्रवर्तित: प्रति विश्वास क्षेत्र 10000, सबसे पुराना हटाया जाता है; PEP Basic क्रेडेंशियल को फिर से मान्य करता है।"
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "एक टिकट उसके डाइजेस्ट से मिला"
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "सबसे-कम-हाल-में-उपयोग क्रम में एक परिबद्ध कैश।"
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "प्रवर्तित: सीमा के पार एक सम्मिलन सबसे कम हाल में उपयोग की गई अनपिन प्रविष्टियों को निकालता है।"
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "एक पठन जिसने भंडार पर जाए बिना कैश से उत्तर दिया"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "जब तक सीमा द्वारा निकाला न जाए या उसके स्वामी द्वारा हटाया न जाए।"
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "SAML सेवा प्रदाता मेटाडेटा"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "प्राप्त रूप में अनुप्रयोग प्रविष्टि पर संग्रहीत, स्मृति में नहीं रखा जाता; अनुप्रयोग के पृष्ठ से ताज़ा किया जाता है"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "एक दूरस्थ PEP की नीति"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "दूरस्थ PEP कंटेनर के पास है, इस प्रक्रिया के पास नहीं"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "एक सीक्रेट-स्टोर लॉगिन"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "एक /admin/secrets रिपोर्ट का स्थानीय, ताकि एक भंडार प्रति रिपोर्ट एक बार लॉग इन हो; रिपोर्ट बनते ही यह चला जाता है, और अनुरोधों के बीच कुछ भी इसे नहीं रखता"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "{{span}} पहले समाप्त"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "कोई समाप्ति नहीं (सामग्री से कुंजीबद्ध)"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "बासी"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "जब तक {{basis}} न बदले"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "बासी: {{basis}} बदल चुका है"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "जब तक सीमा इसे सबसे कम हाल में प्रयुक्त के रूप में न हटा दे"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "जब तक सीमा इसे न हटा दे"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "जब तक कोई डेटासेट संस्करण सक्रिय न किया जाए"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "जब तक यह निष्क्रिय समय-सीमा तक अप्रयुक्त न रहे"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "बासी: इसका नॉन्स समाप्त हो चुका है"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "बासी: इसकी चुनौती समाप्त हो चुकी है"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "बासी: क्रेडेंशियल को त्याग दिया गया"
+  }
+}

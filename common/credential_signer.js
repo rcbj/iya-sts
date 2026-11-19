@@ -476,9 +476,14 @@ function membersOf(keys) {
       return slots.indexOf(one.slot) < 0;
     }).map(function (one) {
       const kid = one.publicJwk && one.publicJwk.kid;
-      const view = { group: GROUP, slot: one.slot, alg: one.alg,
-                     kind: one.kind, pairedSlot: null,
+      // An mdoc row keeps its own group (#1862). Hardcoding `vc-issuer`
+      // here republished the IACA as a JOSE credential signer.
+      const view = { group: one.group || GROUP, slot: one.slot,
+                     alg: one.alg, kind: one.kind, pairedSlot: null,
                      publicJwk: one.publicJwk };
+      if (one.certPem) {
+        view.certPem = one.certPem;
+      }
       Object.defineProperty(view, 'privateKey', {
         enumerable: true, configurable: true,
         get: function () {
@@ -631,7 +636,11 @@ function trustedMembersOf(keys) {
   log.debug("Entering trustedMembersOf().");
   const realmId = String((keys && keys.realm) || '');
   const out = membersOf(keys).filter(function (one) {
-    return trustOf(realmId, one).state !== 'distrusted';
+    // The mdoc IACA and document signer are not JOSE keys (#1862).
+    // They stay on the key set so a restart keeps them, and they are
+    // not published in the credential-signer JWKS.
+    return one.group !== 'mdoc' &&
+           trustOf(realmId, one).state !== 'distrusted';
   });
   log.debug("Leaving trustedMembersOf(). " + out.length + ".");
   return out;

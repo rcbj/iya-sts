@@ -107,6 +107,7 @@ function childMain() {
   // The `spnego` catalog of one base locale, as the page's translator.
   function spnegoIn(lang) {
     const messages = require(ROOT_DIR + '/common/web_messages');
+    const i18n = require(ROOT_DIR + '/common/i18n');
     const flat = {};
     const own = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'common',
       'locales', 'spnego', lang + '.json'), 'utf8'));
@@ -115,9 +116,12 @@ function childMain() {
     });
     const catalogs = {};
     catalogs[lang] = flat;
+    // Direction is the tag's, from Intl, so an Arabic page is not drawn
+    // left to right in this double.
+    const direction = i18n.chainFor(lang).direction;
     return messages.WebTranslator.fromData({ catalogs: catalogs,
       negotiated: { locale: lang, chain: [lang], catalog: lang,
-                    direction: 'ltr', matched: true } });
+                    direction: direction, matched: true } });
   }
 
   (async function () {
@@ -380,9 +384,16 @@ function childMain() {
          '6d. the closed state says the ticket was not accepted',
          closedPage.slice(0, 300));
     // 6e (#896's review): both pages are in the page's language. Every
-    // base catalog: the heading, the sentence and the title are its own,
-    // no English sentence is left, and the principal is escaped.
-    ['es', 'fil', 'fr', 'sv', 'zh-Hans', 'zh-Hant'].forEach(function (lang) {
+    // base catalog but English (checked above): the heading, the sentence
+    // and the title are its own, no English sentence is left, and the
+    // principal is escaped. The list is catalogs.json, so a language
+    // added there is checked here.
+    const index = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'common',
+      'locales', 'catalogs.json'), 'utf8'));
+    index.catalogs.filter(function (c) {
+      return c.tag !== 'en' && !c.base;
+    }).forEach(function (c) {
+      const lang = c.tag;
       const own = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'common',
         'locales', 'spnego', lang + '.json'), 'utf8'));
       const tl = spnegoIn(lang);

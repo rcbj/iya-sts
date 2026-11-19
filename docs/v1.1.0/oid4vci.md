@@ -48,7 +48,7 @@ An issued credential's `nbf` is rounded down to the hour and its `exp` up to
 the hour, so the credentials of one batch do not share a precise issuance
 instant that would let verifiers link them (RFC 9901 section 10.1).
 
-### Five credential configurations, three formats
+### Six credential configurations
 
 | Configuration | Format | Scope | Holder binding |
 |---|---|---|---|
@@ -57,6 +57,7 @@ instant that would let verifiers link them (RFC 9901 section 10.1).
 | `IdentityCredentialLdpVc` | `ldp_vc`, secured with `bbs-2023` | `identity_credential_ldp` | `did:jwk` |
 | `IdentityCredentialDid` | `dc+sd-jwt`, issuer named by `did:web` | `identity_credential_did` | `jwk` |
 | `IdentityCredentialLdpVcDid` | `ldp_vc`, issuer named by `did:web` | `identity_credential_ldp_did` | `did:jwk` |
+| `IdentityCredentialMdoc` | `mso_mdoc`, `docType` `urn:iya:sts:mdoc:identity` | `identity_credential_mdoc` | `cose_key` |
 
 The two `…Did` configurations are cloned from their plain siblings and differ
 only in how the issuer names itself, so both routes can be compared against
@@ -66,6 +67,15 @@ The holder binding in the table is the default. Any configuration named in
 `oid4vci.didHolderBinding` binds instead to a DID the person proved
 (`did:jwk`, `did:key`), as described in
 [Bound to the person's DID](#bound-to-the-persons-did).
+
+An `mso_mdoc` is signed by this realm's document signer, COSE ES256 (`-7`)
+or ESP256 (`-9`), and the proof a wallet presents at issuance stays a `jwt`
+of ES256. The document signer chains to an ECDSA Issuing Authority CA minted
+on first use and published at `GET /oid4vci/mdoc-iaca`. The credential names
+its status at `GET /oid4vci/status-lists/mdoc`. `oid4vci.mdocDoctype`,
+`oid4vci.mdocNamespace`, `oid4vci.mdocValidityDays`,
+`oid4vci.mdocAgeThresholds`, `oid4vci.mdocIssuingCountry` and
+`oid4vci.mdocIssuingAuthority` are that configuration's settings.
 
 `dc+sd-jwt` and `jwt_vc_json` credentials are signed with
 `oid4vci.credentialSigningAlgorithm` (RS256 by default; ML-DSA, SLH-DSA and
@@ -122,8 +132,10 @@ decoder's trusted-list URL) anchors the credentials and their status lists.
 
 A credential carries claims chosen from a catalogue of **LDAP attribute
 types**, and each value is read from the person's own directory entry. What
-the Credential claims tab at `/admin/vc#vc-tab-claims` selects applies to all
-five configurations. An `ldp_vc` credential
+the Credential claims tab at `/admin/vc#vc-tab-claims` selects applies to the
+five configurations other than the mdoc. An `mso_mdoc` reads a fixed set of
+that entry (given name, family name, birth date, document number, and the
+configured `age_over_NN` thresholds). An `ldp_vc` credential
 can carry only the terms its JSON-LD context defines, and the page names the
 claims it cannot express.
 
@@ -585,8 +597,8 @@ See [Configuration](configuration.md) for how a value is resolved. Every
   which authorization server is advertised, the batch size, deferred timings,
   encryption, and the DID choices. API: `GET /admin-api/oid4vci-settings`.
 * Its **Credential claims** tab selects which claims an issued credential
-  carries, from the LDAP attribute catalogue, for all five configurations at
-  once. Saving also populates the directory. API:
+  carries, from the LDAP attribute catalogue, for the five configurations
+  other than the mdoc. Saving also populates the directory. API:
   `GET /admin-api/credential-claims` and
   `POST /admin-api/credential-claims/select`.
 * **Monitoring → Verifiable Credentials** (`/admin/vc/monitor`) shows this

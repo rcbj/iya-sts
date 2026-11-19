@@ -28,8 +28,8 @@
 //
 // The first that a catalog answers wins (`I18n.negotiate()`); a preference no
 // catalog answers is passed over rather than ending the search, so a reader
-// whose entry says `de` and whose browser says `fr` reads French until a
-// German catalog exists.
+// whose entry says `ja` and whose browser says `fr` reads French until a
+// Japanese catalog exists.
 //
 // A signed-in person's choice in the chooser ALSO writes their
 // `preferredLanguage` (the endpoint, `authn/authn.ts`'s `POST

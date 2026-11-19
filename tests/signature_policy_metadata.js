@@ -38,10 +38,12 @@ const PINS = {
     'lists': 12,
     'pin': 'b48c5bfdc4f95de7a137a15c3eab659d'
   },
+  // #1862 adds IdentityCredentialMdoc: the COSE signing list and the
+  // two proof-signing lists, three lists this pin did not count.
   'credentialIssuer': {
     'path': '/.well-known/openid-credential-issuer',
-    'lists': 16,
-    'pin': '254bca2e4730829edb5445152b747a22'
+    'lists': 19,
+    'pin': '13de1632046344d7bfcfb0791e83b3a9'
   }
 };
 

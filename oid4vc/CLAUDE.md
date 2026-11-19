@@ -1020,10 +1020,12 @@ ISO/IEC 18013-5:2021 section 9.3.1), because OpenID4VC HAIP 1.0 names it
 beside the SD-JWT VC and the conformance suite's HAIP verifier plan
 (`oid4vp-1final-verifier-haip-test-plan`) has an `iso_mdl` variant. rcbj's
 standing rule (spec compliance including the optional parts) made building it
-the answer rather than recording it as a gap. **This realm issues no mdoc**:
-the format is a row of `vc_verifier_config.ts`'s `FORMATS` with `configs: []`,
-the start's format list is the issuer's formats plus the Verifier's
-(`START_FORMATS`), and the issuer is untouched.
+the answer rather than recording it as a gap. **This realm issues an mdoc**
+(`IdentityCredentialMdoc`, #1862): `mso_mdoc`, COSE ES256 (`-7`) or ESP256
+(`-9`), proof still a `jwt` of ES256. The format is a row of
+`vc_verifier_config.ts`'s `FORMATS` whose `configs` names that configuration,
+and the start's format list is the issuer's formats plus the Verifier's
+(`START_FORMATS`).
 
 * **`vc_mdoc.ts` is the whole check**, a library the composition root builds
   after the codec. Its header lists the steps; the ones a reader would get
@@ -1032,7 +1034,9 @@ the start's format list is the issuer's formats plus the Verifier's
   IACA, and the document signer rotates (the suite mints a new one at run
   time) — which is why it is a setting of its own rather than more rows of
   `oid4vp.trustedIssuerCertificates`, whose certificates ARE the keys. Empty
-  trusts nobody.
+  trusts nobody except this realm's own IACA once one has been minted
+  (`GET /oid4vci/mdoc-iaca`). `VcMdoc.verify` itself does not append that
+  IACA; `verifyMdoc` and the status check do.
 * **Digests and the device signature are over the bytes RECEIVED.** The
   codec's decoder keeps every tag's encoding on `Tagged.raw`, and its encoder
   writes it back unchanged; re-encoding an IssuerSignedItemBytes or the
@@ -1062,11 +1066,16 @@ the start's format list is the issuer's formats plus the Verifier's
   `oid4vp.requireStatusReference` as for any foreign credential; the issuer
   is exempted by its ANCHOR's thumbprint in `oid4vp.statusOptionalIssuers`,
   the document signer's being useless for a key that rotates.
-* **Not for a sign-in or the Digital Credentials API**: a foreign mdoc names
-  no entry of this realm to sign in, and the DC API's transcript is a
-  different handover (B.2.6.2). A SIOPv2 `vp_token id_token` answer that
-  carries an mdoc over `direct_post.jwt` is refused (`answerSelfIssued()`
-  passes no `kid`); nothing asks for that combination.
+* **A sign-in of an mdoc this realm issued** (#1862): the register is keyed
+  by the base64url of `issuerAuth`'s `#6.24` payload, and the sign-in
+  requires the presented device key's thumbprint to be the one recorded.
+  It does not require an OIDC `sub`. A foreign mdoc still signs nobody in.
+  The Digital Credentials API (OpenID4VP Appendix A, ISO 18013-7 Annex C)
+  and post-quantum COSE ML-DSA signing of the Mobile Security Object stay
+  later. The verifier already offers `-48` and `-49`; that accept list is
+  unchanged. A SIOPv2 `vp_token id_token` answer that carries an mdoc over
+  `direct_post.jwt` is refused (`answerSelfIssued()` passes no `kid`);
+  nothing asks for that combination.
 * **An accepted mdoc records nobody** on `/admin/users`: it carries no
   subject (`verified.sub` is empty), which the funnel already treats as
   nothing to record.

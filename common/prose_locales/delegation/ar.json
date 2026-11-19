@@ -1,0 +1,262 @@
+{
+  "delegation.modes.impersonation.label": {
+    "en": "0595515700012854",
+    "text": "انتحال الهوية"
+  },
+  "delegation.modes.impersonation.what": {
+    "en": "0abf4e622a5f3af4",
+    "text": "ما يخرج يسمّي الهوية الأولية ولا شيء غيرها. لا تستطيع الخدمة في الطرف البعيد أن تعرف أن وسيطًا كان طرفًا، ولا يستطيع ذلك من يقرأ بيانات الاعتماد بعدئذ — ولهذا فالمُصدر هو المكان الوحيد الذي يظهر فيه هذا أبدًا."
+  },
+  "delegation.modes.delegation.label": {
+    "en": "a6d910ba93b7f894",
+    "text": "التفويض"
+  },
+  "delegation.modes.delegation.what": {
+    "en": "701b2586c236706c",
+    "text": "ما يخرج يحمل السلسلة: مطالبة `act`، أو ActAs مركَّب، أو S4U_DELEGATION_INFO في PAC. يستطيع الطرف البعيد أن يرى من يسأل فعلًا، وأن يقرر على نحو مختلف بسبب ذلك."
+  },
+  "delegation.types.krb5-s4u2self.label": {
+    "en": "3227b5f96dc73440",
+    "text": "S4U2Self (انتقال البروتوكول)"
+  },
+  "delegation.types.krb5-s4u2self.what": {
+    "en": "7cf298da49f12a6c",
+    "text": "طلبت خدمة تذكرة إلى نفسها تسمّي مستخدمًا لم يكن طرفًا في الأمر أصلًا — بلا كلمة مرور، وبلا تذكرة تخصه، وبلا شيء وافق عليه. هكذا تحصل خدمة صادقت على أحد بوسائل أخرى على هوية Kerberos له، وليست امتيازًا: التذكرة إلى نفسك. يسمّيها [MS-SFU] انتقال البروتوكول، وهي حالة انتحال الهوية الوحيدة في سلسلة Kerberos: قفزات S4U2Proxy بعدها تفويض (#491)."
+  },
+  "delegation.types.krb5-s4u2proxy-classic.label": {
+    "en": "beee369772174369",
+    "text": "S4U2Proxy — التفويض المقيَّد الكلاسيكي"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.what": {
+    "en": "7baf7337ca414a29",
+    "text": "ثم وصل الطرف الأمامي إلى خدمة أخرى بذلك المستخدم. يُصرَّح بذلك عبر msDS-AllowedToDelegateTo على حساب الطرف الأمامي، ولا يستطيع ضبطه إلا مسؤول المجال، ويُشترط أن تكون تذكرة الدليل قابلة لإعادة التوجيه. تفويض حتى حين جاء دليله من S4U2Self: تحمل التذكرة السلسلة في S4U_DELEGATION_INFO الخاصة بـ PAC ([MS-SFU] التفويض المقيَّد، #491)."
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.label": {
+    "en": "54906f258baae283",
+    "text": "S4U2Proxy — قائم على المورد (RBCD)"
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.what": {
+    "en": "e8498b3165cb32f2",
+    "text": "الرسائل نفسها، يُصرَّح بها من الاتجاه المعاكس: msDS-AllowedToActOnBehalfOfOtherIdentity على حساب الطرف الخلفي، ويستطيع من يتحكم في ذلك الكائن أن يضبطه بنفسه. تلك هي قصة أمن RBCD كلها. يحتاج إلى PA-PAC-OPTIONS، ومنذ تحديث CVE-2020-16996 ([MS-SFU] 3.2.5.2.3) إلى دليل قابل لإعادة التوجيه أيضًا (#492). تفويض، كالكلاسيكي (#491)."
+  },
+  "delegation.types.krb5-forwarded.label": {
+    "en": "6302b3aa3f095a40",
+    "text": "TGT مُعاد توجيهه (تفويض غير مقيَّد)"
+  },
+  "delegation.types.krb5-forwarded.what": {
+    "en": "1068f04ad0a2b516",
+    "text": "سلّم العميل تذكرة منح التذاكر الخاصة به كاملة. من يحملها يستطيع الوصول إلى أي شيء بصفته ذلك العميل حتى انتهاء صلاحيتها، من غير رجوع آخر إلى KDC هذا — فلا قائمة بالأهداف المسموح بها، لأنه لا قيد. الضابط الوحيد عند الإصدار، وهو على الحساب الذي تجري حمايته (NOT_DELEGATED) لا على أي خدمة."
+  },
+  "delegation.types.wstrust-onbehalfof.label": {
+    "en": "097ac27476ff2f74",
+    "text": "WS-Trust OnBehalfOf"
+  },
+  "delegation.types.wstrust-onbehalfof.what": {
+    "en": "035f53a2a0d579d2",
+    "text": "طلب مقدِّم الطلب رمزًا عن شخص آخر. يسمّي الرمز ذلك الشخص ولا يسمّي مقدِّم الطلب، فيرى الطرف المعتمد تسجيل دخول عاديًا."
+  },
+  "delegation.types.wstrust-actas.label": {
+    "en": "6198e8f30a16a507",
+    "text": "WS-Trust ActAs (مركَّب)"
+  },
+  "delegation.types.wstrust-actas.what": {
+    "en": "09402014c2ba9b4b",
+    "text": "إضافة 1.4، وهو مركَّب بالتعريف: الرمز عن الموضوع المسمّى ويقول إن مقدِّم الطلب يتصرف. هو العنصر الذي يُلجأ إليه حين يجب أن يستطيع الطرف البعيد التمييز."
+  },
+  "delegation.types.oauth-impersonation.label": {
+    "en": "0faea9c66541845d",
+    "text": "تبادل الرموز — انتحال الهوية"
+  },
+  "delegation.types.oauth-impersonation.what": {
+    "en": "a3c3326ffc08702e",
+    "text": "subject_token ومن غير actor_token. ما يعود رمز للموضوع بلا سجل لمن بادله."
+  },
+  "delegation.types.oauth-delegation.label": {
+    "en": "00dfa35ca43f5f5d",
+    "text": "تبادل الرموز — التفويض"
+  },
+  "delegation.types.oauth-delegation.what": {
+    "en": "3575eb791d8ae545",
+    "text": "subject_token وactor_token. ما يعود يحمل مطالبة `act` تسمّي الفاعل — وتتشعّب `act`، فتظهر قفزة ثانية تحت الأولى بدلًا من أن تحل محلها."
+  },
+  "delegation.types.oauth-assertion-grant.label": {
+    "en": "e8d42c687f71ad96",
+    "text": "منحة تأكيد الحامل JWT"
+  },
+  "delegation.types.oauth-assertion-grant.what": {
+    "en": "1406839ec28888cb",
+    "text": "يوقّع طرف موثوق JWT يقول لمن يكون الرمز، ويصدر خادم التفويض هذا واحدًا. بلا متصفح، وبلا كلمة مرور، وبلا خطوة موافقة: التوقيع هو التفويض كله، ولهذا يجب الإعلان عن المُصدر على مدخل التطبيق بصفة `oauthAssertionIssuer` قبل أن يُصدَّق شيء من ذلك."
+  },
+  "delegation.types.oauth-saml-assertion-grant.label": {
+    "en": "4ea51ffb0d6de32b",
+    "text": "منحة تأكيد الحامل SAML 2.0"
+  },
+  "delegation.types.oauth-saml-assertion-grant.what": {
+    "en": "ae3da4b1ba10b743",
+    "text": "يوقّع طرف موثوق تأكيد SAML 2.0 يقول لمن يكون الرمز، ويصدر خادم التفويض هذا واحدًا. بلا متصفح، وبلا كلمة مرور، وبلا خطوة موافقة: XML Signature هو التفويض كله، ولهذا يجب الإعلان عن Issuer على مدخل التطبيق بصفة `oauthSamlAssertionIssuer` وتسجيل الشهادة هناك قبل أن يُصدَّق شيء من ذلك. هو شقيق RFC 7523 وليس الآلية نفسها — يحتفظ الملفان بزوجي مفاتيح منفصلين، ولا يستطيع أيهما أن يوقّع عن الآخر."
+  },
+  "delegation.types.gnap-impersonation.label": {
+    "en": "bc3d8b66ed9bd3b7",
+    "text": "منحة GNAP بتأكيد المستخدم، من غير تفاعل"
+  },
+  "delegation.types.gnap-impersonation.what": {
+    "en": "999928d9b84010b9",
+    "text": "قدّم عميل موثوق به لتخطي التفاعل (gnapSkipInteraction) تأكيدًا تم التحقق منه عن شخص، وصدرت له رموز عن ذلك الشخص. لم يُسأل الشخص: التأكيد هو كل نصيبه في الأمر، والرمز له من غير سجل للعميل فيه."
+  },
+  "delegation.types.gnap-derivation.label": {
+    "en": "7441b7b960ae3a04",
+    "text": "اشتقاق رمز GNAP (من خادم الموارد إلى اللاحق)"
+  },
+  "delegation.types.gnap-derivation.what": {
+    "en": "d160cc26eabf4540",
+    "text": "قدّم خادم موارد رمزًا سُلّم إليه وطلب رمزًا للوصول إلى خادم موارد لاحق بصفته الشخص نفسه. لا يحمل الرمز المشتق وصولًا يزيد على ما جاء منه، ويسمّي خادم الموارد الذي اشتقه في سلسلة act."
+  },
+  "delegation.roles.initial.label": {
+    "en": "e28c5dfe701033ab",
+    "text": "الهوية الأولية"
+  },
+  "delegation.roles.initial.what": {
+    "en": "9ab21122a5f78d50",
+    "text": "عمّن تكون بيانات الاعتماد. الشخص الذي سجّل الدخول في مكان آخر، أو الذي لم يسجّل الدخول قط — تحت S4U2Self وOnBehalfOf لم يكونوا حاضرين ولم يثبتوا شيئًا."
+  },
+  "delegation.roles.intermediary.label": {
+    "en": "cbf2c59661b0c067",
+    "text": "الوسيط"
+  },
+  "delegation.roles.intermediary.what": {
+    "en": "26b5aa6ecacdf551",
+    "text": "من يتصرف نيابة عنهم: الخدمة الأمامية، ومقدِّم الطلب، والعميل الذي يجري التبادل. هذا هو الطرف الذي قدّم بيانات اعتماد تخصه، وتحت انتحال الهوية هو الطرف الذي لن يراه الطرف البعيد أبدًا."
+  },
+  "delegation.roles.target.label": {
+    "en": "978354db0c00fc78",
+    "text": "الهدف"
+  },
+  "delegation.roles.target.what": {
+    "en": "d21e8125ace1bfed",
+    "text": "ما يجري الوصول إليه — الخدمة الخلفية، أو AppliesTo، أو الجمهور أو المورد. هو تطبيق لا شخص، وهو الطبقة التي تقرر إن كان لأي من هذا أثر."
+  },
+  "delegation.mapKey.table": {
+    "en": "4db151f5c8c7b7ac",
+    "text": "<table class=\"key\"><tr><th>الشكل</th><th>ما يعنيه</th></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}</td></tr><tr><td class=\"art\">{{art3}}</td><td>{{what3}}</td></tr><tr><td class=\"art\">{{art4}}</td><td>{{what4}}</td></tr><tr><td class=\"art\">{{art5}}</td><td>{{what5}}</td></tr><tr><td class=\"art\">{{art6}}</td><td>{{what6}}</td></tr><tr><td class=\"art\">{{art7}}</td><td>{{what7}}</td></tr><tr><td class=\"art\">{{art8}}</td><td>{{what8}}</td></tr><tr><td class=\"art\">{{art9}}</td><td>{{what9}}</td></tr><tr><td class=\"art\">{{art10}}</td><td>{{what10}}</td></tr><tr><td class=\"art\">{{art11}}</td><td>{{what11}}</td></tr><tr><td class=\"art\">{{art12}}</td><td>{{what12}}</td></tr><tr><td class=\"art\">{{art13}}</td><td>{{what13}}</td></tr></table>"
+  },
+  "delegation.mapKey.tail": {
+    "en": "f364a7825f8f3e5f",
+    "text": "{{last}}</td></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}"
+  },
+  "delegation.federationKey.table": {
+    "en": "dde23dd944f3bc36",
+    "text": "<h3>المربعات</h3><table><tr><th>يُرسم كـ</th><th>ما هو</th></tr><tr><td>{{box0}}</td><td>{{boxWhat0}}</td></tr><tr><td>{{box1}}</td><td>{{boxWhat1}}</td></tr><tr><td>{{box2}}</td><td>{{boxWhat2}}</td></tr><tr><td>{{box3}}</td><td>{{boxWhat3}}</td></tr></table><h3>الخطوط</h3>{{note}}<table><tr><th>اللون</th><th>ما يعنيه</th></tr><tr><td>{{line0}}</td><td>{{lineWhat0}}</td></tr><tr><td>{{line1}}</td><td>{{lineWhat1}}</td></tr><tr><td>{{line2}}</td><td>{{lineWhat2}}</td></tr><tr><td>{{line3}}</td><td>{{lineWhat3}}</td></tr></table>"
+  },
+  "delegation.federationKey.fold": {
+    "en": "2ebcf71641b4acc2",
+    "text": "<details class=\"note fold\"><summary>{{summary}}</summary><div class=\"foldbody\">{{body}}</div></details>"
+  },
+  "delegation.mapKey.param.row0": {
+    "en": "9dcdf27572f0fd6c",
+    "text": "<strong>شخص.</strong> شيء له مدخل تحت <code>ou=users</code> — أي شخص صادقت عليه هذه الخدمة، في أي من العائلات الست عشرة."
+  },
+  "delegation.mapKey.param.row1": {
+    "en": "0011b3f302f63292",
+    "text": "<strong>تطبيق.</strong> شيء له مدخل تحت <code>ou=applications</code> — عميل OAuth، أو مزوّد خدمة، أو خدمة Kerberos، أو طرف معتمد في WS-Trust."
+  },
+  "delegation.mapKey.param.row2": {
+    "en": "974ae8fb2049ef51",
+    "text": "<strong>كلاهما، وهو ما تكونه الطبقة الوسطى عادة.</strong> يصادق <code>HTTP/frontend.example.com</code> (فيصنّفه القمع مع الأشخاص) وتُصدر له تذاكر (فيكون في السجل). مدخلان، وطرف واحد."
+  },
+  "delegation.mapKey.param.row3": {
+    "en": "5e08092d0d84020a",
+    "text": "<strong>هذه الخدمة، في نطاق ثقة واحد.</strong> كل خط هنا موجود لأنها أصدرت بيانات اعتماد أو رفضتها. نطاق الثقة على المربع لأن نطاق الثقة نسخة منطقية كاملة من هذه الخدمة."
+  },
+  "delegation.mapKey.param.row4": {
+    "en": "863933eca45014e5",
+    "text": "<strong>السطران الصغيران تحت الاسم جملتان مختلفتان.</strong> الأول هو ما يكونه المربع &mdash; أي المخزنين يعرفه، أو الدور الذي خُمّن شكله منه. والثاني هو <strong>المعرّف الذي على بروتوكول أن يقدّمه للوصول إليه، بكلمة ذلك البروتوكول نفسها له</strong>: <code>client_id</code> لـ OAuth 2.0 وOpenID Connect، و<code>entityID</code> لأي من ملفي تعريف SAML، و<code>wtrealm</code> لـ WS-Federation، و<code>AppliesTo</code> لـ WS-Trust، و<code>SPN</code> لـ Kerberos. الاسم على المربع هو ما أطلقه أحد على هذا الشيء &mdash; <code>cn</code> أو <code>appName</code> &mdash; ولا نفع له في طلب أنت على وشك بنائه، ولهذا فالمعرّف على الصورة وليس في التلميح فقط. حيث تكون السلسلتان سلسلة واحدة لا تُرسم إلا الكلمة، لأن القيمة هي التسمية أصلًا؛ وحيث تكون سلسلة واحدة معرّف عائلتين تُرسم الكلمتان (<code>AppliesTo / entityID</code>)؛ وحيث يجيب التطبيق عن عدة أسماء مختلفة، فالمرسوم هو الذي حمله هذا الفعل فعلًا &mdash; أو، إن حمل الفعل شيئًا لا تحمله أي سمة معرّف، فالأول المُعلَن، ويقول التلميح ذلك. كل اسم يجيب عنه موجود في ذلك التلميح في الحالتين."
+  },
+  "delegation.mapKey.param.row5": {
+    "en": "4954aa8673157fa8",
+    "text": "<strong>الإطار المتقطع شيء لا يعرفه أي من المخزنين.</strong> يُرسم بالشكل الذي يقتضيه دوره وليس خطأ: <code>audience</code> في RFC 8693 لم يذكره أحد بخلاف ذلك هو هذا بعينه."
+  },
+  "delegation.mapKey.param.row6": {
+    "en": "87f079ab380e9f00",
+    "text": "<strong>اتجاه الخط معلوم عند طرفيه كليهما.</strong> يغادر المربع بالطرف المستدير ويصل إلى المربع برأس السهم &mdash; فالسؤال الذي يسأله القارئ فعلًا، واقفًا عند مربع: <em>هل هذا الخط لي، أم خط أحد عليّ؟</em>، يُجاب حيث يقف لا عند الطرف البعيد لمنحنًى يعبر ثلاثة غيره في الطريق. كل خط هنا يحمل العلامتين، ولا خط هنا ذو اتجاهين: تطبيقان يصل كل منهما إلى الآخر يُرسمان خطين."
+  },
+  "delegation.mapKey.param.row7": {
+    "en": "22997b6d1c902ee3",
+    "text": "<strong>يتصرف نيابة عن &mdash; انتحال هوية.</strong> ما خرج يسمّي الهوية الأولية ولا شيء غيرها، فلا شيء في الطرف البعيد يستطيع أن يعرف أن وسيطًا كان طرفًا. لونه كهرماني لأن هذه الصورة هي المكان الوحيد الذي سيوجد فيه ذلك أبدًا."
+  },
+  "delegation.mapKey.param.row8": {
+    "en": "94664ec3a3f92920",
+    "text": "<strong>يتصرف نيابة عن &mdash; تفويض.</strong> ما خرج يحمل السلسلة: مطالبة <code>act</code>، و<code>ActAs</code> مركَّب، و<code>S4U_DELEGATION_INFO</code> في PAC."
+  },
+  "delegation.mapKey.param.row9": {
+    "en": "932da9e5324d3417",
+    "text": "<strong>يصل إلى &mdash; علاقة الثقة.</strong> ما تكون بيانات الاعتماد من أجله: الخدمة الخلفية، أو <code>AppliesTo</code>، أو الجمهور أو المورد. تقول التسمية اسم من تحمله."
+  },
+  "delegation.mapKey.param.row10": {
+    "en": "bbc1db8c9b1f7797",
+    "text": "<strong>خط منكسر يقفز طرفًا لم يسمّه أحد.</strong> تذكرة منح تذاكر مُعاد توجيهها بلا وسيط ولا يمكن أن يكون لها واحد — يعطيها العميل لأي خدمة يختارها ولا يُخبَر KDC هذا أيها."
+  },
+  "delegation.mapKey.param.row11": {
+    "en": "d10f0a35aeebc729",
+    "text": "<strong>يجوز أن يفوّض &mdash; علاقة مُعدَّة، متقطعة إلى أن يستخدمها فعل.</strong> خط واحد لكل زوج يسمح به مدخل: <code>appAllowedToDelegateTo</code> على المصدر (مقيَّد) أو <code>appAllowedToActOnBehalfOf</code> على الهدف (قائم على المورد) &mdash; الضوابط نفسها لتبادل رموز OAuth 2.0 ولـ WS-Trust ولـ Kerberos. يصير متصلًا ما إن يعبره فعل. يُرسم ما لم تُضيَّق الأفعال بالنتيجة أو النوع أو النص."
+  },
+  "delegation.mapKey.param.row12": {
+    "en": "9344a1085b5a8403",
+    "text": "<strong>الأحمر سلسلة لم يُصدر شيء على أساسها قط.</strong> يحمل التلميح كلمات KDC نفسها في السبب، وهي الجملة نفسها التي أُرسلت إلى العميل."
+  },
+  "delegation.mapKey.param.row13": {
+    "en": "98bf6ee6df94528f",
+    "text": "<strong>رمادي ومتقطع، من السداسي: أصدرت هذه الخدمة لذلك الطرف.</strong> يذهب إلى من سأل — الوسيط حيث للسلسلة وسيط، والهوية الأولية حيث لا وسيط."
+  },
+  "delegation.mapKey.param.issuance0": {
+    "en": "03efeb293124715d",
+    "text": "<strong>منقَّط، إلى داخل السداسي: صادق هذا الشخص هنا.</strong> التسمية هي عائلة البروتوكول والتلميح هو الأسلوب — شاشة تسجيل الدخول، أو AS-REQ، أو UsernameToken، أو تأكيد اتحادي. ولهذا سُمح بكل ما عدا ذلك على الصورة."
+  },
+  "delegation.mapKey.param.issuance1": {
+    "en": "d8370d518b229ac4",
+    "text": "<strong>نيلي متصل: منحة عادية، والتسمية هي تلك بعينها</strong> — <code>authorization_code</code> و<code>refresh_token</code> و<code>client_credentials</code>، مع قسم المواصفة في التلميح. خروجه من الشخص يعني أن بيانات اعتماد تسمّيه ذهبت إلى ذلك التطبيق؛ وخروجه من السداسي يعني أن لا أحد غيره يحملها — فرمز <code>client_credentials</code> عن العميل نفسه، وليس لـ X509-SVID جمهور، فالموضوع والحامل مربع واحد وهناك خط واحد لا خطان. لا يأخذ الكهرماني ولا الأخضر، لأن انتحال الهوية والتفويض خاصيتان لآلية تفويض، والمنحة لا تدّعي أيًا منهما."
+  },
+  "delegation.mapKey.param.issuance2": {
+    "en": "45f720e187b11ba4",
+    "text": "<strong>النيلي المتصل الخارج من تطبيق هو تلك العلاقة نفسها بعد خطوة: ما تُعنون إليه بيانات الاعتماد التي يحملها.</strong> هو خط <em>يصل إلى</em> أعلاه، مقولًا عن منحة عادية لا عن تفويض — فرمز وصول صدر لواجهة ويب أمامية وعُنون إلى بوابة API هو قول هذه الخدمة إن الأولى يجوز لها أن تصل إلى الثانية باسم هذا الشخص، من غير أن يُتبادل شيء للوصول إلى هناك. الآلية على التسمية هي ما يفرّق بينهما: منحة، أو <code>Token exchange</code>. الجمهور الذي يحمله الرمز فعلًا موجود في التلميح، لأن المربع يُسمّى باسم التطبيق الذي سجّل ذلك الجمهور. <strong>الخط الذي تحته يسمّي الأذونات المفوَّضة على ذلك الرمز</strong> — القيم على مطالبة <code>scope</code> التي عرّفها المورد في الطرف البعيد، وهو ما يطلبه العميل بإرسال معرّف الإذن كاملًا (URI الأساس للمورد متبوعًا بالاسم) بوصفه نطاقًا. <strong><code>default permissions</code> يعني أن الرمز سمّى المورد ولم يطلب أيًا منها</strong>: ذلك ما ينتجه نطاق يسمّي <code>client_id</code> الخاص بالمورد نفسه، إذ تصبح تلك القيمة الجمهور وتُنزع من مطالبة scope. يقول ما أُصدر لا ما مُنح — <a href=\"/admin/delegation/allowed\">السجل المُعدّ</a> هو السؤال الآخر، وفي development يكون <code>oauth2.delegatedPermissionsEnforced</code> متوقفًا افتراضيًا، فيجوز أن يحمل رمز إذنًا لم يُمنح لعميله قط (وضع product يرفضه)."
+  },
+  "delegation.federationKey.param.box0": {
+    "en": "4c914ed78ba82e25",
+    "text": "نطاق الثقة الذي تنظر إليه. كل خط على الصورة يبدأ هنا أو ينتهي هنا، لأن كل علاقة بين نطاق الثقة هذا وطرف آخر."
+  },
+  "delegation.federationKey.param.box1": {
+    "en": "c7665e3dec149b4a",
+    "text": "تطبيق مسجَّل هنا يُصادَق على مستخدميه في مكان آخر. ما يوجّهه إلى شريك هو <code>appFederationRelationship</code> على مدخله تحت <code>ou=applications</code>."
+  },
+  "delegation.federationKey.param.box2": {
+    "en": "26b7b7ae72e14cd3",
+    "text": "مزوّد خدمة أجنبي. يطلب من هذه الخدمة أن تصادق على شخص. متقطع، لأنه ليس هذه الخدمة ولا يستطيع شيء هنا أن يرى داخله."
+  },
+  "delegation.federationKey.param.box3": {
+    "en": "882c09b8e23c53ac",
+    "text": "مزوّد هوية أجنبي. يصادق على الشخص وتستهلك هذه الخدمة ما يصدره. متقطع للسبب نفسه — وسداسي لا مستطيل لأنه خدمة هوية، وهو ما تكونه هذه الخدمة أيضًا."
+  },
+  "delegation.federationKey.param.line0": {
+    "en": "7b7e2aed4da51756",
+    "text": "<strong>جاهز</strong> — مُفعَّل ومُعدّ بالكامل. سيعمل."
+  },
+  "delegation.federationKey.param.line1": {
+    "en": "42faa997275831ac",
+    "text": "<strong>معطَّل</strong> — وهكذا تبدأ كل علاقة. هذه الحالة العادية لشيء لم يُتم أحد إعداده، لا عطل."
+  },
+  "delegation.federationKey.param.line2": {
+    "en": "55067642229aee17",
+    "text": "<strong>مُفعَّل وغير مُعدّ</strong> — الصاخب، ويستحق أن يكون الأحمر الوحيد في هذه الصفحة: سيرفض في اللحظة التي يحاول فيها أحد استخدامه، ويبدو منجزًا من كل زاوية عدا هذه."
+  },
+  "delegation.federationKey.param.line3": {
+    "en": "774b03ad7183a842",
+    "text": "<strong>وسيط لا يستطيع الوساطة</strong> — العلاقة سليمة والعلاقة التي يصادق عبرها ليست كذلك، فيلقى الشخص شاشة تسجيل الدخول بدل الشريك. تلك الشاشة لا تفحص كلمة المرور، ولهذا يستحق الأمر لونًا يخصه: هو الإخفاق الوحيد هنا الذي ينتج تسجيل دخول يعمل."
+  },
+  "delegation.federationKey.param.noteSummary": {
+    "en": "1d497e16c1a376ab",
+    "text": "السهم طلب وليس تأكيدًا، وهو الشيء الوحيد في هذه الصورة الذي&hellip;"
+  },
+  "delegation.federationKey.param.note": {
+    "en": "67dc19dd12a069bd",
+    "text": "<strong>السهم طلب وليس تأكيدًا</strong>، وهو الشيء الوحيد في هذه الصورة الذي يبدو معكوسًا إلى أن يُقال. كل ما على اليسار يصل وهو يريد شخصًا قد سجّل دخوله؛ وكل ما على اليمين يُطلب منه إجراء تسجيل الدخول. لذا فعلاقة من جانب مزوّد الهوية — حيث تؤكّد هذه الخدمة للشريك — تتجه إلى الداخل، لأن ما فعله الشريك هو الطلب. لو رُسمت بالاتجاه الآخر لكان وسيط الهوية سهمين يغادران المربع نفسه ولا شيء يصل بينهما؛ ومرسومة هكذا تكون خطًا مستقيمًا واحدًا عبر الوسط، وهذا ما يكونه الجسر."
+  }
+}

@@ -1,0 +1,262 @@
+{
+  "delegation.modes.impersonation.label": {
+    "en": "0595515700012854",
+    "text": "Identitätswechsel"
+  },
+  "delegation.modes.impersonation.what": {
+    "en": "0abf4e622a5f3af4",
+    "text": "Was herauskommt, benennt die anfängliche Identität und sonst nichts. Der Dienst am anderen Ende kann nicht erkennen, dass ein Vermittler beteiligt war, und ebenso wenig jemand, der die Anmeldedaten danach liest — weshalb der Aussteller der einzige Ort ist, an dem das je sichtbar ist."
+  },
+  "delegation.modes.delegation.label": {
+    "en": "a6d910ba93b7f894",
+    "text": "Delegierung"
+  },
+  "delegation.modes.delegation.what": {
+    "en": "701b2586c236706c",
+    "text": "Was herauskommt, TRÄGT die Kette: einen `act`-Claim, ein zusammengesetztes ActAs oder S4U_DELEGATION_INFO im PAC. Das andere Ende kann sehen, wer wirklich anfragt, und deshalb anders entscheiden."
+  },
+  "delegation.types.krb5-s4u2self.label": {
+    "en": "3227b5f96dc73440",
+    "text": "S4U2Self (Protokollübergang)"
+  },
+  "delegation.types.krb5-s4u2self.what": {
+    "en": "7cf298da49f12a6c",
+    "text": "Ein Dienst hat ein Ticket AN SICH SELBST verlangt, das einen Benutzer benennt, der überhaupt nicht beteiligt war — kein Passwort, kein Ticket von ihm, nichts, dem er zugestimmt hat. So kommt ein Dienst, der jemanden auf anderem Wege authentifiziert hat, zu einer Kerberos-Identität für ihn, und es ist kein Privileg: Das Ticket geht an sich selbst. [MS-SFU] nennt das Protokollübergang, und es ist der einzige Identitätswechsel in einer Kerberos-Kette: Die S4U2Proxy-Sprünge danach sind Delegierung (#491)."
+  },
+  "delegation.types.krb5-s4u2proxy-classic.label": {
+    "en": "beee369772174369",
+    "text": "S4U2Proxy — klassische eingeschränkte Delegierung"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.what": {
+    "en": "7baf7337ca414a29",
+    "text": "Das Frontend hat dann einen ANDEREN Dienst als dieser Benutzer erreicht. Autorisiert durch msDS-AllowedToDelegateTo auf dem FRONTEND-Konto, das nur ein Domänenadministrator setzen kann, und es verlangt, dass das Nachweis-Ticket weiterleitbar ist. Delegierung auch dann, wenn der Nachweis aus S4U2Self stammt: Das Ticket trägt die Kette in S4U_DELEGATION_INFO des PAC ([MS-SFU] eingeschränkte Delegierung, #491)."
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.label": {
+    "en": "54906f258baae283",
+    "text": "S4U2Proxy — ressourcenbasiert (RBCD)"
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.what": {
+    "en": "e8498b3165cb32f2",
+    "text": "Dieselben Nachrichten, autorisiert aus der Gegenrichtung: msDS-AllowedToActOnBehalfOfOtherIdentity auf dem BACKEND-Konto, das jeder selbst setzen kann, der dieses Objekt beherrscht. Das ist die gesamte Sicherheitsgeschichte von RBCD. Es braucht PA-PAC-OPTIONS und seit der Aktualisierung zu CVE-2020-16996 ([MS-SFU] 3.2.5.2.3) auch einen weiterleitbaren Nachweis (#492). Delegierung, wie die klassische (#491)."
+  },
+  "delegation.types.krb5-forwarded.label": {
+    "en": "6302b3aa3f095a40",
+    "text": "Weitergeleitetes TGT (uneingeschränkte Delegierung)"
+  },
+  "delegation.types.krb5-forwarded.what": {
+    "en": "1068f04ad0a2b516",
+    "text": "Der Client hat sein ganzes Ticket-Granting-Ticket hergegeben. Wer es hält, kann bis zum Ablauf ALLES als dieser Client erreichen, ohne dieses KDC noch einmal zu befragen — es gibt also keine Liste erlaubter Ziele, weil es keine Einschränkung gibt. Die einzige Kontrolle liegt bei der Ausstellung, und sie liegt auf dem geschützten KONTO (NOT_DELEGATED), nicht auf irgendeinem Dienst."
+  },
+  "delegation.types.wstrust-onbehalfof.label": {
+    "en": "097ac27476ff2f74",
+    "text": "WS-Trust OnBehalfOf"
+  },
+  "delegation.types.wstrust-onbehalfof.what": {
+    "en": "035f53a2a0d579d2",
+    "text": "Der Anforderer hat ein Token ÜBER jemand anderen verlangt. Das Token benennt diese Person und benennt den Anforderer nicht, sodass die Relying Party eine gewöhnliche Anmeldung sieht."
+  },
+  "delegation.types.wstrust-actas.label": {
+    "en": "6198e8f30a16a507",
+    "text": "WS-Trust ActAs (zusammengesetzt)"
+  },
+  "delegation.types.wstrust-actas.what": {
+    "en": "09402014c2ba9b4b",
+    "text": "Die Ergänzung aus 1.4, und per Definition zusammengesetzt: Das Token handelt vom benannten Subjekt UND sagt, dass der Anforderer handelt. Es ist das Element, nach dem man greift, wenn das andere Ende es erkennen können muss."
+  },
+  "delegation.types.oauth-impersonation.label": {
+    "en": "0faea9c66541845d",
+    "text": "Token Exchange — Identitätswechsel"
+  },
+  "delegation.types.oauth-impersonation.what": {
+    "en": "a3c3326ffc08702e",
+    "text": "Ein subject_token und kein actor_token. Was zurückkommt, ist ein Token für das Subjekt ohne Vermerk darüber, wer es getauscht hat."
+  },
+  "delegation.types.oauth-delegation.label": {
+    "en": "00dfa35ca43f5f5d",
+    "text": "Token Exchange — Delegierung"
+  },
+  "delegation.types.oauth-delegation.what": {
+    "en": "3575eb791d8ae545",
+    "text": "Ein subject_token UND ein actor_token. Was zurückkommt, trägt einen `act`-Claim, der den Akteur benennt — und `act` verschachtelt sich, sodass ein zweiter Sprung unter dem ersten erscheint, statt ihn zu ersetzen."
+  },
+  "delegation.types.oauth-assertion-grant.label": {
+    "en": "e8d42c687f71ad96",
+    "text": "JWT-Bearer-Assertion-Grant"
+  },
+  "delegation.types.oauth-assertion-grant.what": {
+    "en": "1406839ec28888cb",
+    "text": "Eine vertraute Stelle signiert ein JWT, das sagt, für wen das Token bestimmt ist, und dieser Autorisierungsserver stellt eines aus. Kein Browser, kein Passwort und kein Zustimmungsschritt: Die Signatur ist die ganze Autorisierung, weshalb der Aussteller auf einem Anwendungseintrag als `oauthAssertionIssuer` deklariert sein muss, bevor irgendetwas davon geglaubt wird."
+  },
+  "delegation.types.oauth-saml-assertion-grant.label": {
+    "en": "4ea51ffb0d6de32b",
+    "text": "SAML-2.0-Bearer-Assertion-Grant"
+  },
+  "delegation.types.oauth-saml-assertion-grant.what": {
+    "en": "ae3da4b1ba10b743",
+    "text": "Eine vertraute Stelle signiert eine SAML-2.0-Assertion, die sagt, für wen das Token bestimmt ist, und dieser Autorisierungsserver stellt eines aus. Kein Browser, kein Passwort und kein Zustimmungsschritt: Die XML Signature ist die ganze Autorisierung, weshalb der Issuer auf einem Anwendungseintrag als `oauthSamlAssertionIssuer` deklariert und das Zertifikat dort registriert sein muss, bevor irgendetwas davon geglaubt wird. Es ist das Geschwister von RFC 7523 und NICHT derselbe Mechanismus — die beiden Profile halten getrennte Schlüsselpaare, und keines kann für das andere signieren."
+  },
+  "delegation.types.gnap-impersonation.label": {
+    "en": "bc3d8b66ed9bd3b7",
+    "text": "GNAP-Grant per Benutzer-Assertion, ohne Interaktion"
+  },
+  "delegation.types.gnap-impersonation.what": {
+    "en": "999928d9b84010b9",
+    "text": "Ein Client, dem vertraut wird, die Interaktion zu überspringen (gnapSkipInteraction), hat eine geprüfte Assertion über eine Person vorgelegt und bekam Token für sie ausgestellt. Die Person wurde nicht gefragt: Die Assertion ist ihr ganzer Anteil daran, und das Token ist ihres, ohne einen Vermerk des Clients darin."
+  },
+  "delegation.types.gnap-derivation.label": {
+    "en": "7441b7b960ae3a04",
+    "text": "GNAP-Tokenableitung (Ressourcenserver zum nachgelagerten)"
+  },
+  "delegation.types.gnap-derivation.what": {
+    "en": "d160cc26eabf4540",
+    "text": "Ein Ressourcenserver hat ein ihm übergebenes Token vorgelegt und eines verlangt, um einen nachgelagerten Ressourcenserver als dieselbe Person zu erreichen. Das abgeleitete Token trägt nicht mehr Zugriff als das, von dem es stammt, und nennt den ableitenden Ressourcenserver in seiner act-Kette."
+  },
+  "delegation.roles.initial.label": {
+    "en": "e28c5dfe701033ab",
+    "text": "Anfängliche Identität"
+  },
+  "delegation.roles.initial.what": {
+    "en": "9ab21122a5f78d50",
+    "text": "Über wen die Anmeldedaten AUSSAGEN. Die Person, die sich anderswo angemeldet hat, oder die sich nie angemeldet hat — unter S4U2Self und OnBehalfOf war sie nicht anwesend und hat nichts nachgewiesen."
+  },
+  "delegation.roles.intermediary.label": {
+    "en": "cbf2c59661b0c067",
+    "text": "Vermittler"
+  },
+  "delegation.roles.intermediary.what": {
+    "en": "26b5aa6ecacdf551",
+    "text": "Wer in ihrem Namen handelt: der Frontend-Dienst, der Anforderer, der Client, der den Austausch ausführt. Das ist die Partei, die eigene Anmeldedaten vorgelegt hat, und bei einem Identitätswechsel die Partei, die das andere Ende nie zu sehen bekommt."
+  },
+  "delegation.roles.target.label": {
+    "en": "978354db0c00fc78",
+    "text": "Ziel"
+  },
+  "delegation.roles.target.what": {
+    "en": "d21e8125ace1bfed",
+    "text": "Was erreicht wird — der Backend-Dienst, das AppliesTo, die Audience oder die Ressource. Es ist eine Anwendung, keine Person, und es ist die Schicht, die entscheidet, ob davon irgendetwas eine Rolle spielte."
+  },
+  "delegation.mapKey.table": {
+    "en": "4db151f5c8c7b7ac",
+    "text": "<table class=\"key\"><tr><th>Form</th><th>Was sie bedeutet</th></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}</td></tr><tr><td class=\"art\">{{art3}}</td><td>{{what3}}</td></tr><tr><td class=\"art\">{{art4}}</td><td>{{what4}}</td></tr><tr><td class=\"art\">{{art5}}</td><td>{{what5}}</td></tr><tr><td class=\"art\">{{art6}}</td><td>{{what6}}</td></tr><tr><td class=\"art\">{{art7}}</td><td>{{what7}}</td></tr><tr><td class=\"art\">{{art8}}</td><td>{{what8}}</td></tr><tr><td class=\"art\">{{art9}}</td><td>{{what9}}</td></tr><tr><td class=\"art\">{{art10}}</td><td>{{what10}}</td></tr><tr><td class=\"art\">{{art11}}</td><td>{{what11}}</td></tr><tr><td class=\"art\">{{art12}}</td><td>{{what12}}</td></tr><tr><td class=\"art\">{{art13}}</td><td>{{what13}}</td></tr></table>"
+  },
+  "delegation.mapKey.tail": {
+    "en": "f364a7825f8f3e5f",
+    "text": "{{last}}</td></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}"
+  },
+  "delegation.federationKey.table": {
+    "en": "dde23dd944f3bc36",
+    "text": "<h3>Die Kästen</h3><table><tr><th>Gezeichnet als</th><th>Was es ist</th></tr><tr><td>{{box0}}</td><td>{{boxWhat0}}</td></tr><tr><td>{{box1}}</td><td>{{boxWhat1}}</td></tr><tr><td>{{box2}}</td><td>{{boxWhat2}}</td></tr><tr><td>{{box3}}</td><td>{{boxWhat3}}</td></tr></table><h3>Die Linien</h3>{{note}}<table><tr><th>Farbe</th><th>Was sie bedeutet</th></tr><tr><td>{{line0}}</td><td>{{lineWhat0}}</td></tr><tr><td>{{line1}}</td><td>{{lineWhat1}}</td></tr><tr><td>{{line2}}</td><td>{{lineWhat2}}</td></tr><tr><td>{{line3}}</td><td>{{lineWhat3}}</td></tr></table>"
+  },
+  "delegation.federationKey.fold": {
+    "en": "2ebcf71641b4acc2",
+    "text": "<details class=\"note fold\"><summary>{{summary}}</summary><div class=\"foldbody\">{{body}}</div></details>"
+  },
+  "delegation.mapKey.param.row0": {
+    "en": "9dcdf27572f0fd6c",
+    "text": "<strong>Eine Person.</strong> Etwas mit einem Eintrag unter <code>ou=users</code> — jeder, den dieser Dienst authentifiziert hat, in irgendeiner der sechzehn Familien."
+  },
+  "delegation.mapKey.param.row1": {
+    "en": "0011b3f302f63292",
+    "text": "<strong>Eine Anwendung.</strong> Etwas mit einem Eintrag unter <code>ou=applications</code> — ein OAuth-Client, ein Dienstanbieter, ein Kerberos-Dienst, eine Relying Party von WS-Trust."
+  },
+  "delegation.mapKey.param.row2": {
+    "en": "974ae8fb2049ef51",
+    "text": "<strong>Beides, was die mittlere Schicht gewöhnlich ist.</strong> <code>HTTP/frontend.example.com</code> authentifiziert sich (der Trichter ordnet es also den Personen zu) UND es werden Tickets FÜR es ausgestellt (die Registrierung führt es also). Zwei Einträge, eine Partei."
+  },
+  "delegation.mapKey.param.row3": {
+    "en": "5e08092d0d84020a",
+    "text": "<strong>Dieser Dienst, in einem Vertrauensbereich.</strong> Jede Linie hier gibt es, weil er Anmeldedaten ausgestellt oder abgelehnt hat. Der Bereich steht auf dem Kasten, weil ein Bereich eine ganze logische Kopie dieses Dienstes ist."
+  },
+  "delegation.mapKey.param.row4": {
+    "en": "863933eca45014e5",
+    "text": "<strong>Die zwei kleinen Zeilen unter einem Namen sind verschiedene Sätze.</strong> Die erste sagt, was der Kasten IST &mdash; welcher der beiden Speicher ihn kennt, oder die Rolle, aus der seine Form erschlossen wurde. Die zweite ist <strong>der Bezeichner, den ein Protokoll vorlegen müsste, um ihn zu erreichen, mit dem eigenen Wort dieses Protokolls dafür</strong>: eine <code>client_id</code> für OAuth 2.0 und OpenID Connect, eine <code>entityID</code> für beide SAML-Profile, eine <code>wtrealm</code> für WS-Federation, ein <code>AppliesTo</code> für WS-Trust, ein <code>SPN</code> für Kerberos. Der NAME auf dem Kasten ist, wie jemand dieses Ding GENANNT hat &mdash; ein <code>cn</code>, ein <code>appName</code> &mdash; und taugt nichts in einer Anfrage, die Sie gleich bauen, weshalb der Bezeichner auf dem Bild steht und nicht nur im Tooltip. Wo beide dieselbe Zeichenfolge sind, wird nur das Wort gezeichnet, weil der Wert schon die Beschriftung ist; wo EINE Zeichenfolge der Bezeichner zweier Familien ist, werden beide Wörter gezeichnet (<code>AppliesTo / entityID</code>); und wo die Anwendung auf mehrere VERSCHIEDENE Namen hört, ist der gezeichnete derjenige, den dieser Vorgang tatsächlich trug &mdash; oder, falls der Vorgang etwas trug, das kein Bezeichnerattribut hält, der erste deklarierte, und der Tooltip sagt das. Jeder Name, auf den sie hört, steht so oder so in diesem Tooltip."
+  },
+  "delegation.mapKey.param.row5": {
+    "en": "4954aa8673157fa8",
+    "text": "<strong>Ein gestrichelter Umriss ist etwas, das keiner der beiden Speicher kennt.</strong> Es wird in der Form gezeichnet, die seine ROLLE nahelegt, und ist kein Fehler: Eine <code>audience</code> nach RFC 8693, die sonst niemand genannt hat, ist genau dies."
+  },
+  "delegation.mapKey.param.row6": {
+    "en": "87f079ab380e9f00",
+    "text": "<strong>Wohin eine Linie geht, steht an BEIDEN Enden.</strong> Sie verlässt den Kasten mit dem runden Ende und kommt am Kasten mit der Pfeilspitze an &mdash; die Frage, die ein Leser an einem Kasten tatsächlich stellt: <em>ist diese Linie meine, oder die von jemandem an mir?</em>, wird also dort beantwortet, wo er steht, und nicht am fernen Ende einer Kurve, die auf dem Weg drei andere kreuzt. Jede Linie hier trägt beide Marken, und keine Linie hier geht in beide Richtungen: Zwei Anwendungen, die einander erreichen, werden als zwei Linien gezeichnet."
+  },
+  "delegation.mapKey.param.row7": {
+    "en": "22997b6d1c902ee3",
+    "text": "<strong>handelt für &mdash; ein IDENTITÄTSWECHSEL.</strong> Was herauskam, benennt die anfängliche Identität und sonst nichts, sodass am anderen Ende nichts erkennen kann, dass ein Vermittler beteiligt war. Bernstein, weil dieses Bild der einzige Ort ist, an dem diese Tatsache je existieren wird."
+  },
+  "delegation.mapKey.param.row8": {
+    "en": "94664ec3a3f92920",
+    "text": "<strong>handelt für &mdash; eine DELEGIERUNG.</strong> Was herauskam, TRÄGT die Kette: einen <code>act</code>-Claim, ein zusammengesetztes <code>ActAs</code>, <code>S4U_DELEGATION_INFO</code> im PAC."
+  },
+  "delegation.mapKey.param.row9": {
+    "en": "932da9e5324d3417",
+    "text": "<strong>erreicht &mdash; die VERTRAUENSBEZIEHUNG.</strong> Wofür die Anmeldedaten DA sind: der Backend-Dienst, das <code>AppliesTo</code>, die Audience oder die Ressource. Die Beschriftung sagt, wessen Namen sie trägt."
+  },
+  "delegation.mapKey.param.row10": {
+    "en": "bbc1db8c9b1f7797",
+    "text": "<strong>Eine gebrochene Linie überspringt eine Partei, die niemand benannt hat.</strong> Ein weitergeleitetes Ticket-Granting-Ticket hat keinen Vermittler und kann keinen haben — der Client gibt es dem Dienst, den er wählt, und diesem KDC wird nie gesagt, welchem."
+  },
+  "delegation.mapKey.param.row11": {
+    "en": "d10f0a35aeebc729",
+    "text": "<strong>darf delegieren &mdash; eine KONFIGURIERTE Beziehung, GESTRICHELT, bis ein Vorgang sie genutzt hat.</strong> Eine Linie je Paar, das ein Eintrag erlaubt: <code>appAllowedToDelegateTo</code> an der Quelle (eingeschränkt) oder <code>appAllowedToActOnBehalfOf</code> am Ziel (ressourcenbasiert) &mdash; dieselben Steuerungen für den Token Exchange von OAuth 2.0, für WS-Trust und für Kerberos. Durchgezogen, sobald ein Vorgang sie gekreuzt hat. Gezeichnet, sofern die Vorgänge nicht nach Ergebnis, Typ oder Text eingegrenzt sind."
+  },
+  "delegation.mapKey.param.row12": {
+    "en": "9344a1085b5a8403",
+    "text": "<strong>Rot ist eine Kette, auf der nie etwas ausgestellt wurde.</strong> Der Tooltip trägt die eigenen Worte des KDC für das Warum, und das ist derselbe Satz, der dem Client gesendet wurde."
+  },
+  "delegation.mapKey.param.row13": {
+    "en": "98bf6ee6df94528f",
+    "text": "<strong>Grau und gestrichelt, vom Sechseck: Dieser Dienst hat an diese Partei AUSGESTELLT.</strong> Sie geht zu dem, der GEFRAGT hat — zum Vermittler, wo eine Kette einen hat, zur anfänglichen Identität, wo sie keinen hat."
+  },
+  "delegation.mapKey.param.issuance0": {
+    "en": "03efeb293124715d",
+    "text": "<strong>Punktiert, ins Sechseck: Diese Person hat sich hier AUTHENTIFIZIERT.</strong> Die Beschriftung ist die Protokollfamilie und der Tooltip die Methode — der Anmeldebildschirm, ein AS-REQ, ein UsernameToken, eine föderierte Assertion. Das ist der Grund, warum alles andere auf dem Bild erlaubt war."
+  },
+  "delegation.mapKey.param.issuance1": {
+    "en": "d8370d518b229ac4",
+    "text": "<strong>Durchgezogenes Indigo: ein GEWÖHNLICHER GRANT, und die Beschriftung ist genau die</strong> — <code>authorization_code</code>, <code>refresh_token</code>, <code>client_credentials</code>, mit dem Abschnitt der Spezifikation im Tooltip. Aus der PERSON heraus bedeutet es, dass Anmeldedaten, die sie benennen, an diese Anwendung gingen; aus dem SECHSECK heraus bedeutet es, dass niemand sonst sie hält — ein <code>client_credentials</code>-Token handelt vom Client selbst, und eine X509-SVID hat keine Audience, sodass Subjekt und Inhaber ein Kasten sind und es eine Linie gibt statt zweier. Es nimmt kein Bernstein und kein Grün an, weil Identitätswechsel und Delegierung Eigenschaften eines Delegierungsmechanismus sind und ein Grant keines von beiden beansprucht."
+  },
+  "delegation.mapKey.param.issuance2": {
+    "en": "45f720e187b11ba4",
+    "text": "<strong>Durchgezogenes Indigo aus einer ANWENDUNG ist dieselbe Beziehung einen Schritt weiter: woran die Anmeldedaten, die sie hält, ADRESSIERT sind.</strong> Es ist die <em>erreicht</em>-Linie oben, gesagt über einen gewöhnlichen Grant statt über eine Delegierung — ein Zugriffstoken, das an ein Web-Frontend ausgestellt und an ein API-Gateway adressiert ist, ist dieser Dienst, der sagt, das erste dürfe das zweite im Namen dieser Person erreichen, ohne dass dafür etwas getauscht wurde. Der Mechanismus auf der Beschriftung unterscheidet die beiden: ein Grant oder <code>Token exchange</code>. Die Audience, die das Token tatsächlich trägt, steht im Tooltip, weil der Kasten nach derjenigen Anwendung benannt ist, die diese Audience registriert hat. <strong>Die Linie darunter benennt die DELEGIERTEN BERECHTIGUNGEN auf diesem Token</strong> — die Werte seines <code>scope</code>-Claims, die die Ressource am anderen Ende DEFINIERT hat; genau das fordert ein Client an, indem er den ganzen Berechtigungsbezeichner (die Basis-URI der Ressource, gefolgt vom Namen) als Scope sendet. <strong><code>default permissions</code> bedeutet, dass das Token die Ressource benannt und keine davon verlangt hat</strong>: Das erzeugt ein Scope, der die eigene <code>client_id</code> der Ressource benennt, denn dieser Wert wird zur Audience und fällt aus dem Scope-Claim. Es sagt, was AUSGESTELLT wurde, und nicht, was GEWÄHRT wurde — <a href=\"/admin/delegation/allowed\">das konfigurierte Register</a> ist die andere Frage, und in der Entwicklung ist <code>oauth2.delegatedPermissionsEnforced</code> standardmäßig aus, sodass ein Token eine Berechtigung tragen kann, die seinem Client nie gewährt wurde (der Produktmodus lehnt eine solche ab)."
+  },
+  "delegation.federationKey.param.box0": {
+    "en": "4c914ed78ba82e25",
+    "text": "Der Vertrauensbereich, den Sie betrachten. Jede Linie auf dem Bild beginnt oder endet hier, weil jede Beziehung zwischen diesem Bereich und jemand anderem besteht."
+  },
+  "delegation.federationKey.param.box1": {
+    "en": "c7665e3dec149b4a",
+    "text": "Eine HIER registrierte Anwendung, deren Personen anderswo authentifiziert werden. Was sie auf einen Partner ausrichtet, ist <code>appFederationRelationship</code> an ihrem Eintrag unter <code>ou=applications</code>."
+  },
+  "delegation.federationKey.param.box2": {
+    "en": "26b7b7ae72e14cd3",
+    "text": "Ein FREMDER DIENSTANBIETER. Er bittet diesen Dienst, jemanden zu authentifizieren. Gestrichelt, weil er nicht dieser Dienst ist und hier nichts in ihn hineinsehen kann."
+  },
+  "delegation.federationKey.param.box3": {
+    "en": "882c09b8e23c53ac",
+    "text": "Ein FREMDER IDENTITÄTSANBIETER. Er authentifiziert die Person, und dieser Dienst verbraucht, was jener ausstellt. Aus demselben Grund gestrichelt — und ein Sechseck statt eines Rechtecks, weil er ein Identitätsdienst ist, und das ist dieser Dienst auch."
+  },
+  "delegation.federationKey.param.line0": {
+    "en": "7b7e2aed4da51756",
+    "text": "<strong>Bereit</strong> — aktiviert und vollständig konfiguriert. Es wird funktionieren."
+  },
+  "delegation.federationKey.param.line1": {
+    "en": "42faa997275831ac",
+    "text": "<strong>Deaktiviert</strong> — so beginnt jede Beziehung. Das ist der gewöhnliche Zustand von etwas, das jemand noch nicht fertig eingerichtet hat, kein Fehler."
+  },
+  "delegation.federationKey.param.line2": {
+    "en": "55067642229aee17",
+    "text": "<strong>Aktiviert und NICHT konfiguriert</strong> — das laute, und es hat verdient, das einzige Rot auf dieser Seite zu sein: Es wird ABLEHNEN, sobald jemand es zu verwenden versucht, und es sieht aus jedem Blickwinkel fertig aus außer aus diesem."
+  },
+  "delegation.federationKey.param.line3": {
+    "en": "774b03ad7183a842",
+    "text": "<strong>Ein Broker, der nicht vermitteln kann</strong> — die Beziehung ist in Ordnung, und die Beziehung, DURCH die sie authentifiziert, ist es nicht, sodass die Person den Anmeldebildschirm statt des Partners vorfindet. Dieser Bildschirm prüft kein Passwort, und deshalb ist das eine eigene Farbe wert: Es ist der einzige Fehler hier, der eine funktionierende Anmeldung hervorbringt."
+  },
+  "delegation.federationKey.param.noteSummary": {
+    "en": "1d497e16c1a376ab",
+    "text": "Ein Pfeil ist eine ANFRAGE und keine Assertion, und das ist das eine an diesem Bild, das&hellip;"
+  },
+  "delegation.federationKey.param.note": {
+    "en": "67dc19dd12a069bd",
+    "text": "<strong>Ein Pfeil ist eine ANFRAGE und keine Assertion</strong>, und das ist das eine an diesem Bild, das rückwärts aussieht, bis es gesagt ist. Alles links kommt an und will, dass jemand angemeldet ist; alles rechts wird gebeten, die Anmeldung zu leisten. Eine Beziehung aufseiten des Identitätsanbieters — bei der dieser Dienst gegenüber dem Partner ASSERTIERT — zeigt also NACH INNEN, weil der Partner gefragt hat. Andersherum gezeichnet ist ein Identitätsbroker zwei Pfeile, die denselben Kasten verlassen, ohne dass sie etwas verbindet; so gezeichnet ist es eine gerade Linie durch die Mitte, und das ist, was eine Brücke ist."
+  }
+}

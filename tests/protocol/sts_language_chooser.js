@@ -36,6 +36,8 @@
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 
@@ -232,8 +234,8 @@ async function test() {
   }
 
   log.info("=== e. an unanswered tag is refused ===");
-  r = await postChooser(chooser.action, "de-CH", chooser.back);
-  check("de-CH is refused with a 400, in English", function () {
+  r = await postChooser(chooser.action, "ja", chooser.back);
+  check("ja is refused with a 400, in English", function () {
     assert.strictEqual(r.status, 400);
     assert.ok(/not a language this service has a catalog for/
       .test(r.raw), r.raw.slice(0, 200));
@@ -241,11 +243,16 @@ async function test() {
 
   log.info("=== f. discovery lists the offered locales ===");
   r = await send(base + R + "/.well-known/openid-configuration");
-  check("ui_locales_supported lists fr-CA, zh-HK and sv-SE", function () {
+  check("ui_locales_supported lists the offered locales", function () {
     const listed = (r.body && r.body.ui_locales_supported) || [];
-    ["en", "fr-CA", "zh-HK", "sv-SE"].forEach(function (tag) {
-      assert.ok(listed.indexOf(tag) >= 0, JSON.stringify(listed));
+    // The checkout's index, not a copied list: a language added to
+    // catalogs.json is what discovery must name, in that order.
+    const index = JSON.parse(fs.readFileSync(path.join(__dirname, "..",
+      "..", "common", "locales", "catalogs.json"), "utf8"));
+    const offered = index.offered.map(function (one) {
+      return one.tag;
     });
+    assert.deepStrictEqual(listed, offered);
   });
 
   assert.ok(checks >= 13, "only " + checks + " checks ran; a section has " +

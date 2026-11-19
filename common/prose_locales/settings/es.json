@@ -6220,8 +6220,56 @@
     "text": "Algoritmo de firma de las credenciales"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usa la Domain Linkage Credential de la DID Configuration. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier de este servicio comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó. oid4vc.walletCompatibility rechaza aquí uno poscuántico o compuesto."
+    "en": "3ed3ccddb91c589b",
+    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usa la Domain Linkage Credential de la DID Configuration. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier de este servicio comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó. oid4vc.walletCompatibility rechaza aquí uno poscuántico o compuesto. Un mso_mdoc se firma con COSE ES256 (-7) o ESP256 (-9), no con este algoritmo."
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "Tipo de documento mdoc"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "El docType de un mso_mdoc que emite este dominio (ISO/IEC 18013-5). Un inicio de sesión con billetera pide este mismo tipo. El punto de acceso independiente del verificador usa oid4vp.expectedDoctype, cuyo valor predeterminado es el mismo."
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "Espacio de nombres de datos mdoc"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "El espacio de nombres en el que se nombran los elementos de un mdoc emitido. Un inicio de sesión pide issuing_authority en este espacio de nombres. El punto de acceso independiente del verificador usa oid4vp.mdocNamespace, cuyo valor predeterminado es el mismo."
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "Validez de mdoc (días)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "Cuántos días cubre el validityInfo de un mdoc emitido, desde el momento en que se firma. El certificado del firmante del documento es más corto que la CA de la autoridad emisora y puede terminar antes que esta ventana; un verificador compara la hora de la firma con el certificado, no con la caducidad del documento."
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "Umbrales de edad de mdoc"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "Los booleanos age_over_NN que lleva un mdoc cuando la persona tiene fecha de nacimiento, en años completos. Se calculan a partir de la fecha de nacimiento. No se inventan un retrato ni permisos de conducción."
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "País emisor de mdoc"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "El país ISO 3166-1 alfa-2 que nombra el sujeto de la CA de la autoridad emisora, y el elemento issuing_country de cada mdoc. Dos letras."
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "Autoridad emisora de mdoc"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "El nombre en el nombre común de la CA de la autoridad emisora y el elemento issuing_authority de cada mdoc. Un inicio de sesión con billetera pide este elemento, que siempre está presente."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6748,24 +6796,24 @@
     "text": "Autoridades emisoras de mdoc de confianza (certificados IACA, PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "Certificados PEM, concatenados: los certificados de la CA de la autoridad emisora (ISO/IEC 18013-5, anexo B) a los que debe encadenarse el certificado del firmante del documento de un mdoc presentado. La cadena se construye y se comprueba como dice RFC 5280, se consulta la revocación del firmante del documento (pki.revocationCheck), y se rechaza un mdoc cuyo firmante no se encadene a ninguno de ellos. Vacío — el valor predeterminado — no confía en ningún emisor de mdoc, de modo que una presentación mso_mdoc se rechaza hasta que se nombre uno."
+    "en": "725416403bc17a75",
+    "text": "Certificados PEM, concatenados: los certificados de la CA de la autoridad emisora (ISO/IEC 18013-5, anexo B) a los que debe encadenarse el certificado del firmante del documento de un mdoc presentado. La cadena se construye y se comprueba como dice RFC 5280, se consulta la revocación del firmante del documento (pki.revocationCheck), y se rechaza un mdoc cuyo firmante no se encadene a ninguno de ellos. Vacío — el valor predeterminado — no confía en ningún emisor de mdoc salvo la CA de la autoridad emisora propia de este dominio, una vez creada (GET /oid4vci/mdoc-iaca)."
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "Tipo de documento mdoc esperado (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "El `docType` que pide una solicitud mso_mdoc (`meta.doctype_value`) y que el verificador exige al documento presentado y a su Mobile Security Object. El valor predeterminado es el permiso de conducir móvil de ISO/IEC 18013-5."
+    "en": "dcb6e8f85158b0a1",
+    "text": "El `docType` que pide una solicitud mso_mdoc (`meta.doctype_value`) y que el verificador exige al documento presentado y a su Mobile Security Object. El valor predeterminado es el tipo que emite este dominio (oid4vci.mdocDoctype). Un permiso de conducir móvil ISO es org.iso.18013.5.1.mDL, que se define aquí y en el emisor."
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "Espacio de nombres mdoc del que se leen las notificaciones solicitadas"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "El espacio de nombres que nombran las rutas de notificación de una solicitud mso_mdoc (`[namespace, element]`, OpenID4VP 1.0, apéndice B.2.3). Cada notificación solicitada se pide como el elemento de datos del mismo nombre, salvo birthdate (birth_date) y address (resident_address), que ISO/IEC 18013-5 nombra de otro modo. El valor predeterminado es el del permiso de conducir móvil."
+    "en": "0ad347251f9b7a85",
+    "text": "El espacio de nombres que nombran las rutas de notificación de una solicitud mso_mdoc (`[namespace, element]`, OpenID4VP 1.0, apéndice B.2.3). Cada notificación solicitada se pide como el elemento de datos del mismo nombre, salvo birthdate (birth_date) y address (resident_address), que ISO/IEC 18013-5 nombra de otro modo. El valor predeterminado es el espacio de nombres en el que emite este dominio (oid4vci.mdocNamespace)."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6828,8 +6876,8 @@
     "text": "Formatos de credencial del inicio de sesión con billetera"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "Los formatos de credencial que pide un inicio de sesión con billetera, por orden de preferencia: una consulta de credencial DCQL por cada uno, y un conjunto de credenciales que indica que cualquiera sirve. Cada uno inicia sesión solo con una prueba reciente del titular — un Key Binding JWT, un VP JWT o una prueba Data Integrity — para esta solicitud. Los nombres desconocidos se ignoran; ninguno significa los tres. Una billetera que solo responde la primera consulta que lee responde en el primer formato de aquí."
+    "en": "53a49b652b8fa682",
+    "text": "Los formatos de credencial que pide un inicio de sesión con billetera, por orden de preferencia: una consulta de credencial DCQL por cada uno, y un conjunto de credenciales que indica que cualquiera sirve. Cada uno inicia sesión solo con una prueba reciente del titular — un Key Binding JWT, un VP JWT, una prueba Data Integrity o una firma de dispositivo mdoc — para esta solicitud. Los nombres desconocidos se ignoran; ninguno significa los cuatro. Una billetera que solo responde la primera consulta que lee responde en el primer formato de aquí. Un mso_mdoc inicia la sesión de alguien solo si lo emitió este dominio."
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",

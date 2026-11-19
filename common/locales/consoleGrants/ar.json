@@ -1,0 +1,20 @@
+{
+  "scopeFor": " لـ {resource}",
+  "details": "{n} من تفاصيل التفويض",
+  "claims": "مطالبات {claims}",
+  "revoke": "إلغاء",
+  "none": "لا يحتفظ أي عميل بمنحة في نطاق الثقة هذا. تُنشأ المنحة بطلب تفويض يحمل <code>grant_management_action=create</code>.",
+  "note": "<strong>إدارة المنح في OAuth 2.0.</strong> يسمّي عميل سري ما سمح له به شخص — إنشاء منحة، أو دمج المزيد في واحدة، أو استبدالها عبر طلبات تفويض عادية — ويقرأها أو يلغيها عند <code>{path}</code> بنطاقي <code>grant_management_query</code> و<code>grant_management_revoke</code>. توجد المنحة ما إن يُطالب برموزها، وتنتهي مع آخرها. إلغاء واحدة هنا هو ما يفعله DELETE الخاص بالعميل: يُرفض كل رمز تحديث بموجبها على كل عقدة، ويُلغى كل رمز سجّله نطاق الثقة هذا بموجبها. ما وافق عليه الشخص هو ",
+  "consentLink": "الموافقة",
+  "noteEnd": ".",
+  "colClient": "العميل",
+  "colSubject": "الموضوع",
+  "colScopes": "النطاقات",
+  "colGeneration": "الجيل",
+  "colCreated": "أُنشئ / حُدّث",
+  "colExpires": "تنتهي الصلاحية",
+  "colTokens": "الرموز المحتفَظ بها",
+  "noMatch": "لا تطابق أي منحة <code>{wanted}</code>.",
+  "searchLabel": "تضييق المنح",
+  "searchPlaceholder": "grant_id أو عميل أو موضوع"
+}

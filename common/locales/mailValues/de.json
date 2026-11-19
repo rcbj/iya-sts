@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "Sie oder jemand, der Ihren Kontonamen, Ihre Adresse und einen Ihrer Wiederherstellungscodes kannte",
+  "requestedBy.signInScreen": "Sie oder jemand, der Ihren Kontonamen kannte, auf dem Anmeldebildschirm",
+  "requestedBy.administrator": "ein Administrator",
+  "requestedBy.administratorNamed": "ein Administrator ({actor})",
+  "how.by": "von {entity, select, user {Benutzer} admin {Administrator} system {System} policy {Richtlinie} someone {jemand} other {{entity}}}",
+  "credential.type": "{type, select, password {Passwort} x509 {x509} app {App} fido2-roaming {fido2-roaming} fido2-platform {fido2-platform} other {{type}}}",
+  "by.you": "Sie",
+  "by.administrator": "ein Administrator",
+  "by.administratorSessionsPage": "ein Administrator (die Sitzungsseite)",
+  "by.administratorConsoleLogout": "ein Administrator (die Administratorkonsole unter /admin/logout)",
+  "act.credentialCompromised": "Anmeldedaten als kompromittiert markiert",
+  "act.accountDisabled": "Konto deaktiviert",
+  "rights.access": "Zugriff",
+  "address.none": "(keine)"
+}

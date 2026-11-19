@@ -1020,8 +1020,8 @@
     "text": "Registro de inicio de sesión con billetera"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "Las credenciales que este dominio emitió para una persona con un token de acceso que verificó, que son las únicas con las que una billetera puede iniciar sesión — indexadas por un resumen del JWT firmado por el emisor, o para ldp_vc por la clave del titular y la persona."
+    "en": "979c99c562007a1c",
+    "text": "Las credenciales que este dominio emitió para una persona con un token de acceso que verificó, que son las únicas con las que una billetera puede iniciar sesión — indexadas por un resumen del JWT firmado por el emisor (para un mdoc, de la carga útil de issuerAuth), o para ldp_vc por la clave del titular y la persona."
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",
@@ -1607,6 +1607,22 @@
     "en": "6ba64c6240c222a0",
     "text": "Sin caducidad: indexado por contenido, así que una política editada es una entrada nueva y su análisis anterior sale cuando es el usado menos recientemente."
   },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "Tickets Basic de PEP remotos"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "Los tickets que un POST /xacml/pep/basic válido entregó a un PEP remoto, guardados bajo el SHA-256 de cada uno; el ticket en sí no se almacena."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "Aplicado: 10000 por reino, se descarta el más antiguo; el PEP vuelve a validar la credencial Basic."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "se encontró un ticket por su resumen"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Una caché acotada en orden de uso menos reciente."
@@ -1694,21 +1710,5 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "obsoleta: la credencial fue desautorizada"
-  },
-  "caches.store.xacml.pep-tickets.title": {
-    "en": "d8dab9277ae943e0",
-    "text": "Tickets Basic de PEP remotos"
-  },
-  "caches.store.xacml.pep-tickets.description": {
-    "en": "1cdd4ca49053b643",
-    "text": "Los tickets que un POST /xacml/pep/basic válido entregó a un PEP remoto, guardados bajo el SHA-256 de cada uno; el ticket en sí no se almacena."
-  },
-  "caches.store.xacml.pep-tickets.bound": {
-    "en": "4dead9c8be3539ac",
-    "text": "Aplicado: 10000 por reino, se descarta el más antiguo; el PEP vuelve a validar la credencial Basic."
-  },
-  "caches.store.xacml.pep-tickets.hitMeaning": {
-    "en": "484401484f6f539d",
-    "text": "se encontró un ticket por su resumen"
   }
 }

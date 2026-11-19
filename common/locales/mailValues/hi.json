@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "आप, या कोई जिसने आपका खाता नाम, आपका पता और आपके पुनर्प्राप्ति कोडों में से एक जाना हो",
+  "requestedBy.signInScreen": "आप, या कोई जिसने साइन-इन स्क्रीन पर आपका खाता नाम जाना हो",
+  "requestedBy.administrator": "एक व्यवस्थापक",
+  "requestedBy.administratorNamed": "एक व्यवस्थापक ({actor})",
+  "how.by": "{entity, select, user {उपयोगकर्ता} admin {व्यवस्थापक} system {सिस्टम} policy {नीति} someone {कोई} other {{entity}}} द्वारा",
+  "credential.type": "{type, select, password {पासवर्ड} x509 {x509} app {ऐप} fido2-roaming {fido2-roaming} fido2-platform {fido2-platform} other {{type}}}",
+  "by.you": "आप",
+  "by.administrator": "एक व्यवस्थापक",
+  "by.administratorSessionsPage": "एक व्यवस्थापक (सत्र पृष्ठ)",
+  "by.administratorConsoleLogout": "एक व्यवस्थापक (/admin/logout पर व्यवस्थापक कंसोल)",
+  "act.credentialCompromised": "क्रेडेंशियल समझौताग्रस्त चिह्नित",
+  "act.accountDisabled": "खाता अक्षम",
+  "rights.access": "पहुँच",
+  "address.none": "(कोई नहीं)"
+}

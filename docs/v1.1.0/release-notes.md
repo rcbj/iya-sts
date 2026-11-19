@@ -8,6 +8,23 @@ title: Release notes
 
 These changes are on a feature branch and are not part of any release yet.
 
+### An ISO mdoc is issued
+
+The issuer offers `IdentityCredentialMdoc` (`mso_mdoc`). It is signed with
+COSE ES256 (`-7`) or ESP256 (`-9`) by a document signer that chains to an
+ECDSA Issuing Authority CA this realm mints on first use
+(`GET /oid4vci/mdoc-iaca`, and `GET /admin-api/mdoc-iaca`). The credential
+names `GET /oid4vci/status-lists/mdoc`. A wallet sign-in accepts an mdoc
+only when this realm issued it. The Digital Credentials API still does not
+carry one, and the Mobile Security Object is not signed with a post-quantum
+algorithm.
+
+The verifier's default document type and namespace are now the type this
+realm issues (`urn:iya:sts:mdoc:identity`, `urn:iya:sts:mdoc`), not the
+mobile driving licence. A deployment that asked for
+`org.iso.18013.5.1.mDL` sets `oid4vp.expectedDoctype` and
+`oid4vp.mdocNamespace`.
+
 ### `bbs-2023` is the W3C cryptosuite
 
 Until 1.1.0 an `ldp_vc` this service issued was labelled `bbs-2023` but

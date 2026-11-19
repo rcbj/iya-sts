@@ -45,7 +45,7 @@ Identifiers, its chain and its trust anchor.
 **What the Verifier supports.** A request is a DCQL query (`dcql_query`, with
 `credential_sets`); DIF Presentation Exchange (`presentation_definition`) is
 not supported. It asks for `dc+sd-jwt`, `jwt_vc_json`, `ldp_vc` or an ISO
-mdoc (`mso_mdoc`, which it verifies and this service does not issue; see
+mdoc (`mso_mdoc`, which this service also issues; see
 [Accept an ISO mdoc](#accept-an-iso-mdoc)). The response modes are `direct_post`, `direct_post.jwt`
 (encrypted) and, for SIOPv2, `form_post`; over the Digital Credentials API
 they are `dc_api.jwt` and `dc_api`.
@@ -264,22 +264,23 @@ kept no longer than `oid4vp.statusListMaxCacheS` (3600 s).
 
 ## Accept an ISO mdoc
 
-The Verifier verifies an ISO/IEC 18013-5 mdoc, such as a mobile driving
-licence, presented through OpenID4VP (Appendix B.2). This service issues no
-mdoc, so every mdoc it accepts comes from an issuer you trust. Taken from
-`tests/vc_mdoc.js` and `sts_oid4vp_conformance.js`.
+The Verifier verifies an ISO/IEC 18013-5 mdoc presented through OpenID4VP
+(Appendix B.2). This realm issues `IdentityCredentialMdoc`. A foreign mdoc
+is accepted when its document signer chains to an issuer you trust. Taken
+from `tests/vc_mdoc.js`, `tests/vc_mdoc_issue.js` and
+`sts_oid4vp_conformance.js`.
 
 1. Trust the issuer's Issuing Authority CA (IACA) certificate. The
    document signer certificate inside each mdoc must chain to one of these
-   certificates. With the setting empty, which is the default, every mdoc is
-   refused:
+   certificates. With the setting empty, which is the default, a presentation
+   is trusted only once this realm's own IACA has been minted:
    ```bash
    api config/set '{"key":"oid4vp.mdocTrustAnchors",
      "value":"-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}'
    ```
-2. Say which document and namespace to ask for, if not the mobile driving
-   licence (`oid4vp.expectedDoctype`, default `org.iso.18013.5.1.mDL`, and
-   `oid4vp.mdocNamespace`, default `org.iso.18013.5.1`). Each requested claim
+2. Say which document and namespace to ask for, if not the type this realm
+   issues (`oid4vp.expectedDoctype`, default `urn:iya:sts:mdoc:identity`, and
+   `oid4vp.mdocNamespace`, default `urn:iya:sts:mdoc`). Each requested claim
    is asked for as the data element with the same name. `birthdate` is asked
    for as `birth_date`, and `address` as `resident_address`.
 3. Start a verification for the format:
@@ -299,8 +300,8 @@ status reference, an mdoc is refused under `oid4vp.requireStatusReference` =
 `oid4vp.statusOptionalIssuers`. The refusals are `STS-VC-0156` to
 `STS-VC-0160`.
 
-An mdoc is not accepted for a wallet sign-in or through the Digital
-Credentials API.
+A wallet sign-in accepts an mdoc only when this realm issued it. The
+Digital Credentials API does not carry an mdoc.
 
 ## A Verifier for OpenID4VC HAIP
 

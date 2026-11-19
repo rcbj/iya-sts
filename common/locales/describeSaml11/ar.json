@@ -1,0 +1,18 @@
+{
+  "title": "SAML 1.1",
+  "heading": "SAML 1.1",
+  "sub": "ملفا المتصفح، ومجيب SAML خلف أحدهما",
+  "lead": "تصدر هذه الخدمة تأكيدات SAML 1.1 من ثلاثة أبواب، وهذا أحدثها: <strong>ملفات المتصفح</strong>، حيث يسجّل شخص دخوله ويصل تأكيد إلى طرف معتمد. والبابان الآخران هما {wsfed}، الذي يغلّف التأكيد نفسه في <code>wresult</code>، و{wstrust}، الذي يعيد واحدًا في <code>RSTR</code>. تستدعي الثلاثة كلها منشئًا واحدًا، لذا تظهر السمة المضبوطة على <code>/admin/saml-attributes</code> في الثلاثة كلها.",
+  "endpoints": "نقاط النهاية",
+  "endpoint": "نقطة النهاية",
+  "what": "ما هي",
+  "sso": "خدمة النقل بين المواقع — اسم SAML 1.1 لما تسميه SAML 2.0 خدمة Single Sign-On",
+  "responder": "مجيب SAML، عبر SOAP. يحل المصنوعات، ويعيد التأكيدات بحسب AssertionID، ويجيب عن AttributeQuery وAuthenticationQuery — نصف سلطة السمات في SAML 1.1",
+  "metadata": "بيانات وصفية موقّعة. وثيقة بيانات وصفية لـ SAML 2.0 تصف مزود هوية SAML 1.1، وهو ما يستهلكه فعليًا كل طرف معتمد",
+  "different": "ما يميّزه عن SAML 2.0",
+  "noRequest": "<strong>لا رسالة طلب.</strong> لا AuthnRequest، لذا لا يعرّف الطرف المعتمد نفسه أبدًا، ولا يطلب ربطًا أو تنسيق NameID أو سياق مصادقة، ولا يتلقى خطأً — فليس هناك ما يُجاب عنه.",
+  "noSlo": "<strong>لا Single Logout.</strong> ظهر مع SAML 2.0.",
+  "spellings": "<strong>تهجئات مختلفة في كل مكان.</strong> <code>AssertionID</code> لا <code>ID</code>، وسمة <code>Issuer</code> لا عنصر، ورمز حالة هو QName لا URI، و<code>AudienceRestrictionCondition</code> لا <code>AudienceRestriction</code>، وتوقيع يأتي أخيرًا في التأكيد وأولًا في الاستجابة.",
+  "artifact": "<strong>مصنوع من 42 بايتًا</strong>، من النوع 0x0001، بينما مصنوع SAML 2.0 طوله 44 بايتًا ومن النوع 0x0004.",
+  "theMetadata": "البيانات الوصفية"
+}

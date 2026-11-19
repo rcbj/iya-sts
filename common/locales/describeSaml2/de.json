@@ -1,0 +1,18 @@
+{
+  "title": "SAML 2.0 — Web Browser SSO",
+  "heading": "SAML 2.0 — Web Browser SSO, alle vier Bindungen",
+  "sub": "Identitätsanbieter <code>{entityId}</code> unter <code>{base}</code>",
+  "lead": "Ein vollständiger SAML-2.0-Identitätsanbieter: HTTP Redirect, HTTP POST und HTTP POST SimpleSign für die Anfrage sowie HTTP POST, HTTP Redirect, HTTP POST SimpleSign oder HTTP Artifact für die Antwort, mit einem SOAP-Dienst zur Artifact Resolution hinter der letzten. Im Entwicklungsmodus akzeptiert er JEDE entityID — ein Dienstanbieter muss hier nicht bereitgestellt sein, bevor er auf diesen Dienst zeigen kann, und die erste gültige AuthnRequest einer entityID legt seinen Anwendungseintrag im eingebetteten Verzeichnis an. Im Produktmodus wird nur ein REGISTRIERTER Dienstanbieter bedient (#496).",
+  "endpoints": "Die Endpunkte",
+  "endpoint": "Endpunkt",
+  "what": "Was es ist",
+  "sso": "Single Sign-On. <code>{scoped}</code> ist derselbe Dienst, auf einen Dienstanbieter begrenzt.",
+  "ars": "Artifact Resolution, SOAP über HTTP. Ein Browser berührt ihn nie — der Dienstanbieter ruft ihn direkt auf, und genau das ist der Sinn des Artifact-Profils.",
+  "slo": "Single Logout, in beide Richtungen.",
+  "unsolicited": "Vom Identitätsanbieter eingeleitete Anmeldung: eine unaufgeforderte Response an den Dienstanbieter, den <code>providerId</code> nennt, dort wo <code>saml2.idpInitiatedSso</code> für ihn an ist (standardmäßig aus).",
+  "aa": "Die Attributbehörde: ein SOAP-<code>{element}</code>, das Profil Assertion Query and Request.",
+  "metadata": "Die signierten Metadaten des Identitätsanbieters. <code>{scoped}</code> ist ein EIGENES Dokument für diesen Dienstanbieter — eine andere entityID und andere Endpunkte — und es wird für jeden angefragten {sp} erzeugt.",
+  "perSp": "Metadaten je Dienstanbieter",
+  "perSpLead": "Jeder Dienstanbieter erhält eigene Endpunkte unter seinem eigenen Pfad, mit der einen entityID dieses Identitätsanbieters, dem OAuth-Issuer des Vertrauensbereichs. Fordern Sie <code>{path}</code> an, und es wird erzeugt — die entityID darf eine prozentkodierte URL oder ein schlichter Name sein:",
+  "generic": "Die allgemeinen Endpunkte sind <code>{sso}</code>, <code>{slo}</code> und <code>{ars}</code>. Sie verhalten sich gleich — der Scope im Pfad entscheidet, welcher Identitätsanbieter sich in der Antwort nennt, und der eigene Issuer der AuthnRequest entscheidet in beiden Fällen, für wen die Assertion bestimmt ist."
+}

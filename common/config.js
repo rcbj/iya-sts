@@ -905,7 +905,8 @@ const OID4VCI_CONFIG_IDS = ['IdentityCredential',
                             'IdentityCredentialJwtVcJson',
                             'IdentityCredentialLdpVc',
                             'IdentityCredentialDid',
-                            'IdentityCredentialLdpVcDid'];
+                            'IdentityCredentialLdpVcDid',
+                            'IdentityCredentialMdoc'];
 
 // THE KEM AND HPKE JWE ALGS (#82): `common/crypto.js`'s section 4a table,
 // written out because this file requires nothing in this repository.
@@ -12582,7 +12583,67 @@ const SETTINGS = [
                  'bbs-2023 and is not affected. A credential already issued ' +
                  'keeps the algorithm it was signed with. ' +
                  'oid4vc.walletCompatibility refuses a post-quantum or ' +
-                 'composite one here.' },
+                 'composite one here. An mso_mdoc is signed with COSE ' +
+                 'ES256 (-7) or ESP256 (-9), not with this algorithm.' },
+
+  // AN mdoc's DOCUMENT TYPE AND NAMESPACE (#1862). The same values the
+  // verifier accepts by default, so a realm that changes neither issues
+  // a document it will also accept. An operator who wants an ISO mDL
+  // sets both sides to org.iso.18013.5.1.mDL and org.iso.18013.5.1.
+  { key: 'oid4vci.mdocDoctype', group: 'OID4VCI',
+    label: 'mdoc document type',
+    env: 'OID4VCI_MDOC_DOCTYPE', type: 'string',
+    dflt: 'urn:iya:sts:mdoc:identity', runtime: true,
+    description: 'The docType of an mso_mdoc this realm issues (ISO/IEC ' +
+                 '18013-5). A wallet sign-in asks for this same type. ' +
+                 'The verifier\'s bar door uses oid4vp.expectedDoctype, ' +
+                 'which defaults to the same value.' },
+
+  { key: 'oid4vci.mdocNamespace', group: 'OID4VCI',
+    label: 'mdoc data namespace',
+    env: 'OID4VCI_MDOC_NAMESPACE', type: 'string',
+    dflt: 'urn:iya:sts:mdoc', runtime: true,
+    description: 'The namespace an issued mdoc\'s elements are named ' +
+                 'in. A sign-in asks for issuing_authority in this ' +
+                 'namespace. The verifier\'s bar door uses ' +
+                 'oid4vp.mdocNamespace, which defaults to the same value.' },
+
+  { key: 'oid4vci.mdocValidityDays', group: 'OID4VCI',
+    label: 'mdoc validity (days)',
+    env: 'OID4VCI_MDOC_VALIDITY_DAYS', type: 'int', dflt: 365,
+    min: 1, max: 3650, runtime: true,
+    description: 'How many days an issued mdoc\'s validityInfo covers, ' +
+                 'from the moment it is signed. The document signer\'s ' +
+                 'certificate is shorter than the Issuing Authority CA ' +
+                 'and may end before this window does; a verifier checks ' +
+                 'the signature time against the certificate, not the ' +
+                 'document\'s expiry.' },
+
+  { key: 'oid4vci.mdocAgeThresholds', group: 'OID4VCI',
+    label: 'mdoc age-over thresholds',
+    env: 'OID4VCI_MDOC_AGE_THRESHOLDS', type: 'csv', dflt: '18,21',
+    runtime: true,
+    description: 'The age_over_NN booleans an mdoc carries when the ' +
+                 'person has a birth date, as whole years. Computed from ' +
+                 'the birth date. A portrait and driving privileges are ' +
+                 'not invented.' },
+
+  { key: 'oid4vci.mdocIssuingCountry', group: 'OID4VCI',
+    label: 'mdoc issuing country',
+    env: 'OID4VCI_MDOC_ISSUING_COUNTRY', type: 'string', dflt: 'US',
+    runtime: true,
+    description: 'The ISO 3166-1 alpha-2 country the Issuing Authority ' +
+                 'CA\'s subject names, and the issuing_country element ' +
+                 'of every mdoc. Two letters.' },
+
+  { key: 'oid4vci.mdocIssuingAuthority', group: 'OID4VCI',
+    label: 'mdoc issuing authority',
+    env: 'OID4VCI_MDOC_ISSUING_AUTHORITY', type: 'string',
+    dflt: 'Iya STS', runtime: true,
+    description: 'The name in the Issuing Authority CA\'s common name ' +
+                 'and the issuing_authority element of every mdoc. A ' +
+                 'wallet sign-in asks for this element, which is always ' +
+                 'present.' },
 
   // `x5c` BY DEFAULT (2026-10-16): eudi-dev's wallet refused every
   // credential's Token Status List with "no key to verify the status list
@@ -13325,11 +13386,12 @@ const SETTINGS = [
                  'type.' },
 
   // AN ISO mdoc (#935, OpenID4VP 1.0 Appendix B.2, ISO/IEC 18013-5): the
-  // fourth format the Verifier asks for. This realm issues none, so every
-  // mdoc it accepts is another issuer's, and these three say whose and what:
-  // the IACA certificates a document signer must chain to (no chain, no
-  // mdoc — the default trusts nobody), the document type, and the namespace
-  // the requested claims are read from.
+  // fourth format the Verifier asks for. This realm also issues one
+  // (#1862). These three say whose and what the bar door accepts: the
+  // IACA certificates a document signer must chain to, the document
+  // type, and the namespace the requested claims are read from. An empty
+  // anchor list still trusts nobody until this realm has minted its own
+  // IACA, which is then trusted as well.
   { key: 'oid4vp.mdocTrustAnchors', group: 'OID4VP',
     label: 'Trusted mdoc issuing authorities (IACA certificates, PEM)',
     env: 'OID4VP_MDOC_TRUST_ANCHORS', type: 'string', dflt: '',
@@ -13340,28 +13402,32 @@ const SETTINGS = [
                  'built and checked as RFC 5280 says, the document signer\'s ' +
                  'revocation is consulted (pki.revocationCheck), and an mdoc ' +
                  'whose signer chains to none of these is refused. Empty — ' +
-                 'the default — trusts no mdoc issuer, so an mso_mdoc ' +
-                 'presentation is refused until one is named.' },
+                 'the default — trusts no mdoc issuer except this ' +
+                 'realm\'s own Issuing Authority CA, once one has been ' +
+                 'minted (GET /oid4vci/mdoc-iaca).' },
 
   { key: 'oid4vp.expectedDoctype', group: 'OID4VP',
     label: 'Expected mdoc document type (docType)',
     env: 'OID4VP_EXPECTED_DOCTYPE', type: 'string',
-    dflt: 'org.iso.18013.5.1.mDL', runtime: true,
+    dflt: 'urn:iya:sts:mdoc:identity', runtime: true,
     description: 'The `docType` an mso_mdoc request asks for ' +
                  '(`meta.doctype_value`) and the Verifier requires of the ' +
                  'presented document and its Mobile Security Object. The ' +
-                 'default is the mobile driving licence of ISO/IEC 18013-5.' },
+                 'default is the type this realm issues ' +
+                 '(oid4vci.mdocDoctype). An ISO mobile driving licence is ' +
+                 'org.iso.18013.5.1.mDL, set here and on the issuer.' },
 
   { key: 'oid4vp.mdocNamespace', group: 'OID4VP',
     label: 'mdoc namespace the requested claims are read from',
     env: 'OID4VP_MDOC_NAMESPACE', type: 'string',
-    dflt: 'org.iso.18013.5.1', runtime: true,
+    dflt: 'urn:iya:sts:mdoc', runtime: true,
     description: 'The namespace an mso_mdoc request\'s claim paths name ' +
                  '(`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). ' +
                  'Each requested claim is asked for as the data element of ' +
                  'the same name, except birthdate (birth_date) and address ' +
                  '(resident_address), which ISO/IEC 18013-5 names ' +
-                 'differently. The default is the mobile driving licence\'s.' },
+                 'differently. The default is the namespace this realm ' +
+                 'issues in (oid4vci.mdocNamespace).' },
 
   { key: 'oid4vp.maxRequestedClaims', group: 'OID4VP',
     label: 'Claims one request may ask for',
@@ -13487,18 +13553,21 @@ const SETTINGS = [
   { key: 'oid4vp.signInFormats', group: 'OID4VP',
     label: 'Wallet sign-in credential formats',
     env: 'OID4VP_SIGN_IN_FORMATS', type: 'csv',
-    dflt: 'dc+sd-jwt,jwt_vc_json,ldp_vc', runtime: true,
+    dflt: 'dc+sd-jwt,jwt_vc_json,ldp_vc,mso_mdoc', runtime: true,
     // Mirrors oid4vc/vc_verifier.ts's SIGN_IN_FORMATS, and `dc sd-jwt`, which
     // its reader turns back into dc+sd-jwt.
-    csvValues: ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc', 'dc sd-jwt'],
+    csvValues: ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc', 'mso_mdoc',
+                'dc sd-jwt'],
     description: 'The credential formats a wallet sign-in asks for, in ' +
                  'order of preference: one DCQL credential query each, and ' +
                  'a credential set saying any one will do. Each signs in ' +
                  'only with a fresh holder proof — a Key Binding JWT, a VP ' +
-                 'JWT, or a Data Integrity proof — for this request. ' +
-                 'Unknown names are ignored; none at all means all three. ' +
-                 'A wallet that answers only the first query it reads ' +
-                 'answers in the first format here.' },
+                 'JWT, a Data Integrity proof, or an mdoc device ' +
+                 'signature — for this request. Unknown names are ' +
+                 'ignored; none at all means all four. A wallet that ' +
+                 'answers only the first query it reads answers in the ' +
+                 'first format here. An mso_mdoc signs somebody in only ' +
+                 'when this realm issued it.' },
 
   { key: 'oid4vp.signInDcApiResponseMode', group: 'OID4VP',
     label: 'Digital Credentials API response mode',

@@ -6220,8 +6220,56 @@
     "text": "Algorithme de signature des justificatifs"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilise le Domain Linkage Credential de la DID Configuration. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur de ce service s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé. oid4vc.walletCompatibility refuse ici un algorithme post-quantique ou composite."
+    "en": "3ed3ccddb91c589b",
+    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilise le Domain Linkage Credential de la DID Configuration. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur de ce service s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé. oid4vc.walletCompatibility refuse ici un algorithme post-quantique ou composite. Un mso_mdoc est signé avec COSE ES256 (-7) ou ESP256 (-9), et non avec cet algorithme."
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "Type de document mdoc"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "Le docType d’un mso_mdoc que ce domaine émet (ISO/IEC 18013-5). Une connexion par portefeuille demande ce même type. Le point d’accès autonome du vérificateur utilise oid4vp.expectedDoctype, dont la valeur par défaut est la même."
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "Espace de noms des données mdoc"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "L’espace de noms dans lequel sont nommés les éléments d’un mdoc émis. Une connexion demande issuing_authority dans cet espace de noms. Le point d’accès autonome du vérificateur utilise oid4vp.mdocNamespace, dont la valeur par défaut est la même."
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "Validité mdoc (jours)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "Le nombre de jours que couvre le validityInfo d’un mdoc émis, à partir du moment où il est signé. Le certificat du signataire de document est plus court que l’AC de l’autorité émettrice et peut expirer avant la fin de cette fenêtre ; un vérificateur compare l’heure de signature au certificat, pas à l’expiration du document."
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "Seuils d’âge mdoc"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "Les booléens age_over_NN que porte un mdoc lorsque la personne a une date de naissance, en années entières. Calculés à partir de la date de naissance. Aucun portrait ni privilège de conduite n’est inventé."
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "Pays d’émission mdoc"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "Le pays ISO 3166-1 alpha-2 que nomme le sujet de l’AC de l’autorité émettrice, et l’élément issuing_country de chaque mdoc. Deux lettres."
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "Autorité émettrice mdoc"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "Le nom figurant dans le nom commun de l’AC de l’autorité émettrice et l’élément issuing_authority de chaque mdoc. Une connexion par portefeuille demande cet élément, qui est toujours présent."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6748,24 +6796,24 @@
     "text": "Autorités émettrices de mdoc de confiance (certificats IACA, PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "Des certificats PEM, concaténés : les certificats d’AC de l’autorité émettrice (ISO/IEC 18013-5, annexe B) auxquels le certificat du signataire de document d’un mdoc présenté doit se chaîner. La chaîne est construite et vérifiée comme le dit la RFC 5280, la révocation du signataire de document est consultée (pki.revocationCheck), et un mdoc dont le signataire ne se chaîne à aucun d’eux est refusé. Vide — la valeur par défaut — ne fait confiance à aucun émetteur de mdoc, de sorte qu’une présentation mso_mdoc est refusée tant qu’aucun n’est nommé."
+    "en": "725416403bc17a75",
+    "text": "Des certificats PEM, concaténés : les certificats d’AC de l’autorité émettrice (ISO/IEC 18013-5, annexe B) auxquels le certificat du signataire de document d’un mdoc présenté doit se chaîner. La chaîne est construite et vérifiée comme le dit la RFC 5280, la révocation du signataire de document est consultée (pki.revocationCheck), et un mdoc dont le signataire ne se chaîne à aucun d’eux est refusé. Vide — la valeur par défaut — ne fait confiance à aucun émetteur de mdoc, sauf à l’AC de l’autorité émettrice propre à ce domaine, une fois qu’elle a été créée (GET /oid4vci/mdoc-iaca)."
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "Type de document mdoc attendu (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "Le `docType` que demande une requête mso_mdoc (`meta.doctype_value`) et que le vérificateur exige du document présenté et de son Mobile Security Object. La valeur par défaut est le permis de conduire mobile de l’ISO/IEC 18013-5."
+    "en": "dcb6e8f85158b0a1",
+    "text": "Le `docType` que demande une requête mso_mdoc (`meta.doctype_value`) et que le vérificateur exige du document présenté et de son Mobile Security Object. La valeur par défaut est le type que ce domaine émet (oid4vci.mdocDoctype). Un permis de conduire mobile ISO est org.iso.18013.5.1.mDL, à définir ici et sur l’émetteur."
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "Espace de noms mdoc où sont lues les revendications demandées"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "L’espace de noms que nomment les chemins de revendication d’une requête mso_mdoc (`[namespace, element]`, OpenID4VP 1.0, annexe B.2.3). Chaque revendication demandée l’est comme l’élément de données du même nom, sauf birthdate (birth_date) et address (resident_address), que l’ISO/IEC 18013-5 nomme autrement. La valeur par défaut est celle du permis de conduire mobile."
+    "en": "0ad347251f9b7a85",
+    "text": "L’espace de noms que nomment les chemins de revendication d’une requête mso_mdoc (`[namespace, element]`, OpenID4VP 1.0, annexe B.2.3). Chaque revendication demandée l’est comme l’élément de données du même nom, sauf birthdate (birth_date) et address (resident_address), que l’ISO/IEC 18013-5 nomme autrement. La valeur par défaut est l’espace de noms dans lequel ce domaine émet (oid4vci.mdocNamespace)."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6828,8 +6876,8 @@
     "text": "Formats d’attestation pour la connexion par portefeuille"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "Les formats d’attestation qu’une connexion par portefeuille demande, par ordre de préférence : une requête d’attestation DCQL pour chacun, et un credential set indiquant que n’importe laquelle convient. Chacun ne connecte qu’avec une preuve de détenteur récente — un Key Binding JWT, un VP JWT ou une preuve Data Integrity — pour cette requête. Les noms inconnus sont ignorés ; aucun nom signifie les trois. Un portefeuille qui ne répond qu’à la première requête qu’il lit répond dans le premier format indiqué ici."
+    "en": "53a49b652b8fa682",
+    "text": "Les formats d’attestation qu’une connexion par portefeuille demande, par ordre de préférence : une requête d’attestation DCQL pour chacun, et un credential set indiquant que n’importe laquelle convient. Chacun ne connecte qu’avec une preuve de détenteur récente — un Key Binding JWT, un VP JWT, une preuve Data Integrity ou une signature d’appareil mdoc — pour cette requête. Les noms inconnus sont ignorés ; aucun nom signifie les quatre. Un portefeuille qui ne répond qu’à la première requête qu’il lit répond dans le premier format indiqué ici. Un mso_mdoc ne connecte quelqu’un que si ce domaine l’a émis."
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",

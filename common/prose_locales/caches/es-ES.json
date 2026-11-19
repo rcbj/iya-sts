@@ -8,8 +8,8 @@
     "text": "Registro de inicio de sesión con cartera"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "Las credenciales que este dominio emitió para una persona con un token de acceso que verificó, que son las únicas con las que una cartera puede iniciar sesión — indexadas por un resumen del JWT firmado por el emisor, o para ldp_vc por la clave del titular y la persona."
+    "en": "979c99c562007a1c",
+    "text": "Las credenciales que este dominio emitió para una persona con un token de acceso que verificó, que son las únicas con las que una cartera puede iniciar sesión — indexadas por un resumen del JWT firmado por el emisor (para un mdoc, de la carga útil de issuerAuth), o para ldp_vc por la clave del titular y la persona."
   },
   "caches.store.oid4vp.transactions.description": {
     "en": "90e0bfc3241f7632",

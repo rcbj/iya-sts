@@ -92,13 +92,15 @@ import vcConfigs = require('./vc_configs');
 
 const { VC_ATTRIBUTES } = vcClaims;
 const { VCI_VCT, VCI_JWT_TYPES, VCI_CONFIG_ID, VCI_DID_CONFIG_ID,
-        VCI_JWT_CONFIG_ID,
+        VCI_JWT_CONFIG_ID, VCI_MDOC_CONFIG_ID,
         VCI_LDP_CONFIG_ID, VCI_LDP_DID_CONFIG_ID } = vcConfigs;
 
-// THE mdoc DEFAULTS (#935): ISO/IEC 18013-5's mobile driving licence, which
-// `oid4vp.expectedDoctype` and `oid4vp.mdocNamespace` default to as well.
-const MDOC_DOCTYPE = 'org.iso.18013.5.1.mDL';
-const MDOC_NAMESPACE = 'org.iso.18013.5.1';
+// THE mdoc DEFAULTS (#1862): the document type and namespace this realm
+// issues, which `oid4vp.expectedDoctype` and `oid4vp.mdocNamespace`
+// default to as well. An ISO mobile driving licence is an operator's
+// setting, on both sides.
+const MDOC_DOCTYPE = 'urn:iya:sts:mdoc:identity';
+const MDOC_NAMESPACE = 'urn:iya:sts:mdoc';
 // The claims ISO/IEC 18013-5 (Table 5) names differently from OpenID
 // Connect; every other claim is asked for as the element of its own name.
 const MDOC_ELEMENTS: Record<string, string> = {
@@ -1003,9 +1005,9 @@ const FORMATS: FormatRow[] = [
           'for by a term the vendored context defines — several claims below ' +
           'have none and are dropped from an ldp_vc query rather than asked ' +
           'for under a name that would fail canonicalization.' },
-  // #935: ISO/IEC 18013-5's mdoc, which this realm verifies and does not
-  // issue — so no configuration of the issuer's names it, and every mdoc
-  // accepted chains to `oid4vp.mdocTrustAnchors`.
+  // #935, issued since #1862: IdentityCredentialMdoc. A foreign mdoc
+  // still chains to oid4vp.mdocTrustAnchors; this realm's own IACA is
+  // appended once it has been minted.
   { id: 'mso_mdoc', label: 'ISO mdoc (ISO/IEC 18013-5)',
     claimsAt: 'mdoc',
     identifiedBy: 'meta.doctype_value',
@@ -1024,11 +1026,12 @@ const FORMATS: FormatRow[] = [
     holderBinding: 'a device signature by the MSO\'s device key over the ' +
                    'session transcript, which binds this request\'s ' +
                    'client_id, nonce, response URI and encryption key',
-    configs: [],
-    what: 'Another issuer\'s document — this realm issues none — whose ' +
-          'document signer must chain to oid4vp.mdocTrustAnchors. Each ' +
-          'requested claim is a data element of oid4vp.mdocNamespace, and ' +
-          'the wallet discloses only those.' }
+    configs: [VCI_MDOC_CONFIG_ID],
+    what: 'A document this realm issues (IdentityCredentialMdoc), or ' +
+          'another issuer\'s whose document signer chains to ' +
+          'oid4vp.mdocTrustAnchors. Each requested claim is a data ' +
+          'element of oid4vp.mdocNamespace, and the wallet discloses ' +
+          'only those.' }
 ];
 
 /**

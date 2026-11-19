@@ -6220,8 +6220,56 @@
     "text": "Algoritm som autentiseringsuppgifter signeras med"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och den här tjänstens Verifier kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med. oid4vc.walletCompatibility avvisar här en postkvant- eller kompositalgoritm."
+    "en": "3ed3ccddb91c589b",
+    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och den här tjänstens Verifier kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med. oid4vc.walletCompatibility avvisar här en postkvant- eller kompositalgoritm. Ett mso_mdoc signeras med COSE ES256 (-7) eller ESP256 (-9), inte med den här algoritmen."
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "mdoc-dokumenttyp"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "Den docType som ett mso_mdoc som den här sfären utfärdar har (ISO/IEC 18013-5). En plånboksinloggning ber om samma typ. Verifierarens fristående slutpunkt använder oid4vp.expectedDoctype, vars standardvärde är detsamma."
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "mdoc-datanamnrymd"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "Den namnrymd som ett utfärdat mdoc:s element namnges i. En inloggning ber om issuing_authority i den här namnrymden. Verifierarens fristående slutpunkt använder oid4vp.mdocNamespace, vars standardvärde är detsamma."
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "mdoc-giltighet (dagar)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "Hur många dagar ett utfärdat mdoc:s validityInfo täcker, från det att det signeras. Dokumentsignerarens certifikat är kortare än CA:n för utfärdande myndighet och kan löpa ut före det här fönstret; en verifierare kontrollerar signaturtiden mot certifikatet, inte dokumentets utgång."
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "mdoc-åldersgränser"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "De age_over_NN-booleaner ett mdoc bär när personen har ett födelsedatum, i hela år. Beräknas från födelsedatumet. Ett porträtt och körbehörigheter hittas inte på."
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "mdoc-utfärdarland"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "Det ISO 3166-1 alpha-2-land som CA:n för utfärdande myndighet namnger i sitt subjekt, och elementet issuing_country i varje mdoc. Två bokstäver."
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "mdoc-utfärdande myndighet"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "Namnet i common name för CA:n för utfärdande myndighet och elementet issuing_authority i varje mdoc. En plånboksinloggning ber om det här elementet, som alltid finns."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6748,24 +6796,24 @@
     "text": "Betrodda utfärdande mdoc-myndigheter (IACA-certifikat, PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "PEM-certifikat, sammanfogade: de CA-certifikat för utfärdande myndighet (ISO/IEC 18013-5 bilaga B) som ett uppvisat mdoc:s dokumentsignerarcertifikat måste kedja till. Kedjan byggs och kontrolleras enligt RFC 5280, dokumentsignerarens återkallelse kontrolleras (pki.revocationCheck), och ett mdoc vars signerare inte kedjar till något av dem nekas. Tomt — standardvärdet — litar inte på någon mdoc-utfärdare, så en mso_mdoc-presentation nekas tills en anges."
+    "en": "725416403bc17a75",
+    "text": "PEM-certifikat, sammanfogade: de CA-certifikat för utfärdande myndighet (ISO/IEC 18013-5 bilaga B) som ett uppvisat mdoc:s dokumentsignerarcertifikat måste kedja till. Kedjan byggs och kontrolleras enligt RFC 5280, dokumentsignerarens återkallelse kontrolleras (pki.revocationCheck), och ett mdoc vars signerare inte kedjar till något av dem nekas. Tomt — standardvärdet — litar inte på någon mdoc-utfärdare utom den här sfärens egen CA för utfärdande myndighet, när en har skapats (GET /oid4vci/mdoc-iaca)."
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "Förväntad mdoc-dokumenttyp (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "Den `docType` som en mso_mdoc-förfrågan ber om (`meta.doctype_value`) och som verifieraren kräver av det uppvisade dokumentet och dess Mobile Security Object. Standardvärdet är det mobila körkortet i ISO/IEC 18013-5."
+    "en": "dcb6e8f85158b0a1",
+    "text": "Den `docType` som en mso_mdoc-förfrågan ber om (`meta.doctype_value`) och som verifieraren kräver av det uppvisade dokumentet och dess Mobile Security Object. Standardvärdet är den typ som den här sfären utfärdar (oid4vci.mdocDoctype). Ett mobilt ISO-körkort är org.iso.18013.5.1.mDL, som anges här och på utfärdaren."
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "mdoc-namnrymd som de begärda anspråken läses från"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "Den namnrymd som en mso_mdoc-förfrågans anspråkssökvägar namnger (`[namespace, element]`, OpenID4VP 1.0 bilaga B.2.3). Varje begärt anspråk begärs som dataelementet med samma namn, utom birthdate (birth_date) och address (resident_address), som ISO/IEC 18013-5 namnger annorlunda. Standardvärdet är det mobila körkortets."
+    "en": "0ad347251f9b7a85",
+    "text": "Den namnrymd som en mso_mdoc-förfrågans anspråkssökvägar namnger (`[namespace, element]`, OpenID4VP 1.0 bilaga B.2.3). Varje begärt anspråk begärs som dataelementet med samma namn, utom birthdate (birth_date) och address (resident_address), som ISO/IEC 18013-5 namnger annorlunda. Standardvärdet är den namnrymd som den här sfären utfärdar i (oid4vci.mdocNamespace)."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6828,8 +6876,8 @@
     "text": "Intygsformat för plånboksinloggning"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "De intygsformat som en plånboksinloggning ber om, i prioritetsordning: en DCQL-intygsfråga för varje, och en intygsmängd som säger att vilket som helst av dem duger. Var och en loggar bara in med ett färskt innehavarbevis — en Key Binding JWT, en VP JWT eller ett Data Integrity-bevis — för den här begäran. Okända namn ignoreras; inga alls betyder alla tre. En plånbok som bara besvarar den första fråga den läser svarar i det första formatet här."
+    "en": "53a49b652b8fa682",
+    "text": "De intygsformat som en plånboksinloggning ber om, i prioritetsordning: en DCQL-intygsfråga för varje, och en intygsmängd som säger att vilket som helst av dem duger. Var och en loggar bara in med ett färskt innehavarbevis — en Key Binding JWT, en VP JWT, ett Data Integrity-bevis eller en mdoc-enhetssignatur — för den här begäran. Okända namn ignoreras; inga alls betyder alla fyra. En plånbok som bara besvarar den första fråga den läser svarar i det första formatet här. Ett mso_mdoc loggar in någon bara när den här sfären utfärdade det."
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",

@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "أنت، أو شخص عرف اسم حسابك وعنوانك وأحد رموز الاسترداد",
+  "requestedBy.signInScreen": "أنت، أو شخص عرف اسم حسابك، على شاشة تسجيل الدخول",
+  "requestedBy.administrator": "مسؤول",
+  "requestedBy.administratorNamed": "مسؤول ({actor})",
+  "how.by": "بواسطة {entity, select, user {مستخدم} admin {مسؤول} system {النظام} policy {سياسة} someone {شخص} other {{entity}}}",
+  "credential.type": "{type, select, password {كلمة المرور} x509 {x509} app {تطبيق} fido2-roaming {fido2-roaming} fido2-platform {fido2-platform} other {{type}}}",
+  "by.you": "أنت",
+  "by.administrator": "مسؤول",
+  "by.administratorSessionsPage": "مسؤول (صفحة الجلسات)",
+  "by.administratorConsoleLogout": "مسؤول (وحدة تحكم المسؤول عند /admin/logout)",
+  "act.credentialCompromised": "وُسمت بيانات الاعتماد بأنها مخترقة",
+  "act.accountDisabled": "عُطّل الحساب",
+  "rights.access": "الوصول",
+  "address.none": "(لا شيء)"
+}

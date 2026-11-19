@@ -1,0 +1,350 @@
+{
+  "listeners.builtin.main.name": {
+    "en": "9dc3805bbb46619d",
+    "text": "Hauptport"
+  },
+  "listeners.builtin.main.what": {
+    "en": "431d7c6fda5c0cfb",
+    "text": "Jedes HTTP-Protokoll, die Konsole und das Portal."
+  },
+  "listeners.builtin.ldap.name": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "listeners.builtin.ldap.what": {
+    "en": "177408f6a3cbe157",
+    "text": "Das eingebettete Verzeichnis, im Klartext."
+  },
+  "listeners.builtin.ldaps.name": {
+    "en": "9618bbe69ddd3eb5",
+    "text": "LDAPS"
+  },
+  "listeners.builtin.ldaps.what": {
+    "en": "f40218d728835152",
+    "text": "Das eingebettete Verzeichnis über TLS."
+  },
+  "listeners.builtin.debugger.name": {
+    "en": "2bdecd403c36b3de",
+    "text": "Protokolldebugger"
+  },
+  "listeners.builtin.debugger.what": {
+    "en": "5e758f21cab3cbd0",
+    "text": "Der eingebettete Protokolldebugger, sofern einer eingebettet ist."
+  },
+  "listeners.builtin.kdc.name": {
+    "en": "50337c0a4e94b039",
+    "text": "Kerberos KDC"
+  },
+  "listeners.builtin.kdc.what": {
+    "en": "3f7729c5149376d6",
+    "text": "TCP und UDP 88; Kerberos-Nachrichten, kein TLS."
+  },
+  "listeners.builtin.revocation.name": {
+    "en": "384cb54062bffd4b",
+    "text": "Widerruf (reines HTTP)"
+  },
+  "listeners.builtin.revocation.what": {
+    "en": "55a30857a7345fe6",
+    "text": "CRLs und OCSP über reines HTTP, wie RFC 5280 Abschnitt 8 es verlangt."
+  },
+  "listeners.builtin.spiffe-workload.name": {
+    "en": "8c6c635f7d593551",
+    "text": "SPIFFE Workload API (TCP)"
+  },
+  "listeners.builtin.spiffe-workload.what": {
+    "en": "42f169eed1663fe6",
+    "text": "Kein TLS: der Transport laut Spezifikation ist das Netz des Aufrufers, und der Produktmodus bedient ihn nur dort, wo es als authentifiziert erklärt ist."
+  },
+  "listeners.builtin.spiffe-server.name": {
+    "en": "5373db72c7e9bae7",
+    "text": "SPIRE Server API"
+  },
+  "listeners.builtin.spiffe-server.what": {
+    "en": "e4a22cf64fca967f",
+    "text": "Gegenseitiges TLS unter der Trust Domain jedes Vertrauensbereichs."
+  },
+  "listeners.builtin.spiffe-server.clientAuth": {
+    "en": "6ff4a4e99a607b89",
+    "text": "angefordert, nicht verlangt: ein Agent, der noch keine SVID hat, muss AttestAgent erreichen (die des Protokolls)"
+  },
+  "listeners.builtin.spiffe-broker.name": {
+    "en": "4eeddd04a30a0491",
+    "text": "SPIFFE Broker API"
+  },
+  "listeners.builtin.spiffe-broker.what": {
+    "en": "560d5e79517fa839",
+    "text": "Gegenseitiges TLS für die Broker in spiffe.brokers."
+  },
+  "listeners.builtin.spiffe-broker.clientAuth": {
+    "en": "588e0284f9d55b20",
+    "text": "verlangt: die X509-SVID eines Brokers (die des Protokolls)"
+  },
+  "listeners.builtin.cell.name": {
+    "en": "178e409afed3c530",
+    "text": "Kanal zwischen den Zellen"
+  },
+  "listeners.builtin.cell.what": {
+    "en": "da35fbcaf99404a1",
+    "text": "Gegenseitiges TLS zwischen den Zellen eines Dienstes; immer TLS 1.3."
+  },
+  "listeners.builtin.cell.clientAuth": {
+    "en": "11980b13bc20d54a",
+    "text": "verlangt: das Zertifikat einer anderen Zelle (das des Protokolls)"
+  },
+  "listeners.policy.nodeDefault": {
+    "en": "2a77fdd39a1fe033",
+    "text": "(Knotenstandard)"
+  },
+  "listeners.policy.opensslDefault": {
+    "en": "bcdb3bd6dae8bd33",
+    "text": "(OpenSSL-Standard)"
+  },
+  "listeners.policy.notBound": {
+    "en": "58c8d4b93b0f0599",
+    "text": "auf diesem Knoten nicht gebunden"
+  },
+  "listeners.policy.protocolTrust": {
+    "en": "4a4ba3c3bbf2a9fd",
+    "text": "(das eigene Vertrauensbündel des Protokolls)"
+  },
+  "listeners.policy.ownFile": {
+    "en": "d50b3852e4f7f274",
+    "text": "seine eigene Datei {{file}}"
+  },
+  "listeners.policy.ownFileAndRoot": {
+    "en": "002be94bf76acfc0",
+    "text": "seine eigene Datei {{file}} und das Root des Dienstes"
+  },
+  "listeners.policy.anchors": {
+    "en": "6788dbdb070b901c",
+    "text": "die Anker des Dienstes"
+  },
+  "listeners.policy.anchorsAndRoot": {
+    "en": "e8f30dd045f13fd7",
+    "text": "die Anker des Dienstes und das Root des Dienstes"
+  },
+  "listeners.applications.home.label": {
+    "en": "91b2dbada3ab1fa1",
+    "text": "Eingangstür"
+  },
+  "listeners.applications.home.what": {
+    "en": "45245b5eb4a5b2c5",
+    "text": "GET /, sein Bild, die Dokumentation, die Seiten für Bedingungen und Richtlinien sowie die Liste der Vertrauensbereiche."
+  },
+  "listeners.applications.authn.label": {
+    "en": "72f0c79fe76b583e",
+    "text": "Authentifizierungsdienst"
+  },
+  "listeners.applications.authn.what": {
+    "en": "1d66f74984228996",
+    "text": "Der Anmeldedienst mit seinen zweiten Faktoren, die Wallet, Anmeldungen per SPNEGO und Zertifikat sowie die Abmeldung."
+  },
+  "listeners.applications.portal.label": {
+    "en": "00cf214ba77e7497",
+    "text": "Benutzerportal"
+  },
+  "listeners.applications.portal.what": {
+    "en": "ae78f5077c808641",
+    "text": "Die Seiten, die der Person gehören, die sie betrachtet, und die Konto-API, aus der sie aufgebaut werden."
+  },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "Berichte"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "Die Berichte, die eine Person hier ausführen darf, und die API, aus der sie aufgebaut werden."
+  },
+  "listeners.applications.admin-console.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "Administratorkonsole"
+  },
+  "listeners.applications.admin-console.what": {
+    "en": "01585f76e46f24d9",
+    "text": "Die Konsole unter /admin, ihr Skript und ihre Seiten."
+  },
+  "listeners.applications.management-api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "Verwaltungs-API"
+  },
+  "listeners.applications.management-api.what": {
+    "en": "f87960a0be10dbb1",
+    "text": "/admin-api, jede Steuerung der Konsole, die eine Maschine erreichen kann."
+  },
+  "listeners.applications.oauth-oidc.label": {
+    "en": "ca2ce1b840c94ea6",
+    "text": "OAuth 2.0 / OpenID Connect"
+  },
+  "listeners.applications.oauth-oidc.what": {
+    "en": "2186eb305111cd6a",
+    "text": "Der Autorisierungsserver und der OpenID Provider, ihre Discovery-Dokumente und die Statusliste der Access Tokens."
+  },
+  "listeners.applications.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "listeners.applications.saml2.what": {
+    "en": "e31f5a124e3105ff",
+    "text": "Der Identitätsanbieter für SAML 2.0."
+  },
+  "listeners.applications.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "listeners.applications.saml11.what": {
+    "en": "3f8a5e529e26ea47",
+    "text": "Der Identitätsanbieter für SAML 1.1."
+  },
+  "listeners.applications.ws-trust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "listeners.applications.ws-trust.what": {
+    "en": "6a7c8cd71b884bfd",
+    "text": "Der Sicherheitstokendienst für WS-Trust."
+  },
+  "listeners.applications.ws-federation.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "listeners.applications.ws-federation.what": {
+    "en": "d46418b8851b7875",
+    "text": "Das Passive Requestor Profile und seine Metadaten."
+  },
+  "listeners.applications.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Föderation"
+  },
+  "listeners.applications.federation.what": {
+    "en": "9dd9fae01faa7bb2",
+    "text": "Föderationsbeziehungen mit fremden Identitätsdiensten."
+  },
+  "listeners.applications.oidfed.label": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "listeners.applications.oidfed.what": {
+    "en": "3ad47704e5adf5bf",
+    "text": "Die Entity Configuration und die Föderationsendpunkte."
+  },
+  "listeners.applications.oid4vc.label": {
+    "en": "3ed217bd349c451a",
+    "text": "Verifizierbare Anmeldedaten"
+  },
+  "listeners.applications.oid4vc.what": {
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, DIDs und die Statuslisten."
+  },
+  "listeners.applications.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "listeners.applications.scim.what": {
+    "en": "753bc4eccff231fc",
+    "text": "Bereitstellung in das Verzeichnis."
+  },
+  "listeners.applications.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "listeners.applications.ssf.what": {
+    "en": "0755a2e473f064ed",
+    "text": "Der Transmitter für Shared Signals."
+  },
+  "listeners.applications.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "listeners.applications.gnap.what": {
+    "en": "f787462ada9a2720",
+    "text": "Der GNAP-Autorisierungsserver und seine Interaktionsseiten."
+  },
+  "listeners.applications.xacml.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "listeners.applications.xacml.what": {
+    "en": "fbd4d4a27b747323",
+    "text": "Der Policy Decision Point, seine Richtlinien und die Türen der entfernten PEPs."
+  },
+  "listeners.applications.authzen.label": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "listeners.applications.authzen.what": {
+    "en": "26f176a9b231df2f",
+    "text": "Die AuthZEN Authorization API: Zugriffsbewertungen über die XACML-Engine und ihr Metadatendokument."
+  },
+  "listeners.applications.uma.label": {
+    "en": "6d9ae1cf94d49aa6",
+    "text": "User-Managed Access"
+  },
+  "listeners.applications.uma.what": {
+    "en": "2bf34c3abf834191",
+    "text": "Die Schutz-API von UMA 2.0 (Ressourcenregistrierung und Berechtigungstickets), die Claims-Interaktionsseite und das Dokument uma2-configuration."
+  },
+  "listeners.applications.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "listeners.applications.acme.what": {
+    "en": "2398dbe02edc11de",
+    "text": "Zertifikatsregistrierung per ACME."
+  },
+  "listeners.applications.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "listeners.applications.est.what": {
+    "en": "0792aaa5bdd515bb",
+    "text": "Zertifikatsregistrierung per EST."
+  },
+  "listeners.applications.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "listeners.applications.scep.what": {
+    "en": "2b96ead3c4a041ba",
+    "text": "Zertifikatsregistrierung per SCEP."
+  },
+  "listeners.applications.pki.label": {
+    "en": "b34129880663423f",
+    "text": "Zertifizierungsstelle"
+  },
+  "listeners.applications.pki.what": {
+    "en": "8b280b2baedbdfe6",
+    "text": "CRLs, OCSP, die Zertifikate und Ketten der CA sowie die kryptografischen Metadatendokumente."
+  },
+  "listeners.applications.kerberos.label": {
+    "en": "43c19a093b34b581",
+    "text": "Kerberos"
+  },
+  "listeners.applications.kerberos.what": {
+    "en": "00e0e7e4163fd250",
+    "text": "MS-KKDCP, das Kerberos-KDC über HTTPS."
+  },
+  "listeners.applications.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "listeners.applications.spiffe.what": {
+    "en": "76b7e20cfb090f52",
+    "text": "Der Bundle-Endpunkt von SPIFFE."
+  },
+  "listeners.applications.tls.label": {
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
+  },
+  "listeners.applications.tls.what": {
+    "en": "22e07124e7ed4aca",
+    "text": "Das Serverzertifikat, das dieser Dienst vorzeigt."
+  },
+  "listeners.map.sentences.rpIdNotCommon": {
+    "en": "629aac67a80b3ff9",
+    "text": "Die Anwendungen, die die Anmeldesitzung lesen, liegen auf den Hostnamen {{hosts}}, und webauthn.rpId ({{rpId}}) ist keine Domäne, unter der sie alle liegen: ein auf der einen registrierter Passkey ist auf einer anderen nicht verwendbar. Setzen Sie webauthn.rpId auf die Domäne, die authn.cookieDomain nennt."
+  },
+  "listeners.map.sentences.rpIdEmpty": {
+    "en": "d82c2e645f3ef21a",
+    "text": "Die Anwendungen, die die Anmeldesitzung lesen, liegen auf den Hostnamen {{hosts}}, und webauthn.rpId ist leer, sodass jede ihre eigene Relying Party ist: ein auf der einen registrierter Passkey ist auf einer anderen nicht verwendbar. Setzen Sie webauthn.rpId auf die Domäne, die authn.cookieDomain nennt."
+  }
+}
