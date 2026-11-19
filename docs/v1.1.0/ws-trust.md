@@ -144,8 +144,12 @@ elements in one request are refused.
 #### The encryption certificate
 
 The certificate a request is encrypted to is the realm's XML Encryption
-certificate. It is the same for every application of the realm. Where a
-client gets it depends on `wstrust.advertiseEndpointIdentity`.
+certificate, the same for every application of the realm, unless the
+application holds a decryption key pair of its own (see
+[XML Encryption](#an-applications-own-decryption-key-pair)). Where a client
+gets the realm's certificate depends on `wstrust.advertiseEndpointIdentity`.
+The WSDL is one document per realm and never names an application's own
+certificate, so that one is always configured out of band.
 
 **Off, the default.** The WSDL names no certificate. Configure the client
 with it out of band. It is published at:
@@ -811,7 +815,8 @@ answers in clear when encryption was required and could not be done.
 
   Either way a ciphertext that will not open with this realm's keys is
   `wsse:FailedCheck` (`STS-WSTRUST-0075`), and so are more than 64
-  ciphertexts.
+  ciphertexts. "This realm's keys" are the realm's XML Encryption key and
+  the applications' own decryption keys, chosen as the next section says.
 * **Encryption required.** `wstrustEncryptRequest` makes the map required:
   each expression of `wstrustEncryptRequestElements` must match an element
   that arrived encrypted. An empty map, an expression that matches an
@@ -837,6 +842,38 @@ answers in clear when encryption was required and could not be done.
 * **Which application.** The `AppliesTo` is read from the opened request,
   so an encrypted Body names its application as a clear one does. Until it
   is open, the service-wide settings stand for it.
+
+#### An application's own decryption key pair
+
+An application may hold a decryption key pair of its own (#1668), issued from
+the realm's certificate authority or uploaded, on its page and through
+`/admin-api` ([Configuring WS-Trust](configure-ws-trust.md#an-applications-own-decryption-key-pair)).
+Its four attributes are `wstrustDecryptionCertificate`,
+`wstrustDecryptionCertificateChain`, `wstrustDecryptionPrivateKey` (sealed
+where keys persist, and withheld from every page, answer and directory read)
+and `wstrustDecryptionKeySource` (`issued` or `uploaded`). None is editable
+by hand.
+
+* **Which key opens a ciphertext.** The recipient its `EncryptedKey` names
+  in its `KeyInfo`: the certificate in an `X509Data`, a
+  `SecurityTokenReference` to an `#X509v3` `BinarySecurityToken`, a
+  `#ThumbprintSHA1` or `#X509SubjectKeyIdentifier` `KeyIdentifier`, an
+  `X509SKI`, or an `X509IssuerSerial`; for ECDH-ES, the same inside the
+  `RecipientKeyInfo`. A recipient that is an application's certificate
+  chooses that application's key. Anything else, or no recipient, is
+  opened with the realm's keys, as before. The `AppliesTo` may be inside
+  the ciphertext: the key is chosen before it is read.
+* **Whose request it is.** After the request is open, the application its
+  `AppliesTo` names must be the one whose key opened it. Ciphertext opened
+  with an application's key in a request for another application, for no
+  application, or alongside another application's key, is
+  `wsse:FailedCheck` (`STS-WSTRUST-0082`). A request for an application
+  that holds its own key, any of whose ciphertext was opened with the
+  realm's key, is `wsse:FailedCheck` (`STS-WSTRUST-0083`). Nothing is
+  issued, and neither fault says more than that the request was encrypted
+  to a key it may not be opened with.
+* **The response is unchanged.** It is still encrypted to the recipient
+  the list below chooses, not to the application's own certificate.
 
 An expression is a stated subset of XPath: `/` and `//`, `*`, an element
 name, `prefix:local`, a union with `|`, and the predicates `local-name()`,
@@ -946,7 +983,7 @@ codes, in the request's own trust namespace: on SOAP 1.1 it is the
 | A Kerberos token asked for without TLS; a Renew or Cancel of a Kerberos token | `wst:InvalidRequest` |
 | A forwarded Kerberos ticket from a requester not trusted for delegation; `wst:Delegatable` to a target not trusted for it; the KDC could not issue the ticket | `wst:RequestFailed` |
 | Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; response encryption on and the request names no recipient certificate element, or the recipient expression selects one no accepted signature covers (`STS-WSTRUST-0081`); ciphertext no request map names while arbitrary encrypted elements are off (`STS-WSTRUST-0080`); `wst:EncryptionAlgorithm` or `wst:EncryptWith` while response encryption is off, or naming a cipher other than the one configured | `wst:InvalidRequest` |
-| Request encryption on and the request does not match its map — the map is empty, or an expression matches an element that arrived in the clear or nothing restored; or, either way, a ciphertext will not open. Processing stops | `wsse:FailedCheck` (WS-Security 1.1 section 12) |
+| Request encryption on and the request does not match its map — the map is empty, or an expression matches an element that arrived in the clear or nothing restored; or, either way, a ciphertext will not open (`STS-WSTRUST-0075`). Ciphertext opened with an application's own key in a request that is not that application's (`STS-WSTRUST-0082`), or a request for an application with its own key encrypted to the realm's (`STS-WSTRUST-0083`). Processing stops | `wsse:FailedCheck` (WS-Security 1.1 section 12) |
 | The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; response encryption that cannot be completed (an empty map, an expression that matches nothing, a certificate element or the application's encryption certificate that is not readable, a recipient the encryption check refuses, a cipher that failed); an XPath expression outside the subset this service evaluates; a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
 
 A failure of the service itself, not of the request, is `soap:Receiver` (SOAP

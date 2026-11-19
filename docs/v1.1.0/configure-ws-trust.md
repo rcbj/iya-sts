@@ -716,6 +716,92 @@ certificate again after a restart. In product mode it changes when the
 `xml` key rotates. The setting changes only what the WSDL says; which
 ciphertext is accepted is still the settings above.
 
+### An application's own decryption key pair
+
+An application may hold a decryption key pair of its own. A request for that
+application is then encrypted to the application's certificate and not to
+the realm's, so a client of one application never holds the certificate that
+opens another's requests, and a key that leaks exposes one application's
+traffic. Give it one in either of two ways.
+
+**Issue one from the realm's certificate authority.** The realm needs a
+certificate authority first (**Protocols → PKI**, or `api pki/build`). The
+certificate is issued with the `key-encipherment` profile: `keyEncipherment`
+for an RSA key, `keyAgreement` for an EC key, never `digitalSignature`. Its
+subject is the realm's standard name with `CN=<application>-encrypt`, for
+example `CN=esb1-encrypt, O=iya-sts`, and its subjectAltName is
+`urn:sts:application:<application>`.
+
+* **Console:** **Directory → Applications**, open the application, the
+  **Credentials** tab, **WS-Trust decryption key pair**. Choose `rsa-3072`
+  (the default) or `ec-p256` and press **Issue a key pair**.
+* **API:**
+  ```bash
+  api applications/issue-wstrust-decryption-key \
+    '{"application":"esb1","keyAlg":"rsa-3072"}'
+  ```
+
+**Or upload a key pair you made.** Paste one PEM certificate and its
+unencrypted PEM private key (PKCS#8, PKCS#1 or SEC 1; PKCS#12 is not taken).
+The key must be the certificate's, RSA of at least 2048 bits or EC on P-256,
+P-384 or P-521, and the certificate's key usage, if it has one, must include
+`keyEncipherment` (RSA) or `keyAgreement` (EC).
+
+```bash
+api applications/upload-wstrust-decryption-key "$(jq -n \
+  --arg c "$(cat esb1-encrypt.pem)" --arg k "$(cat esb1-encrypt.key)" \
+  '{application:"esb1",certificate:$c,privateKey:$k}')"
+```
+
+| Refused | Code |
+|---|---|
+| Not one PEM certificate, or a private key that is encrypted or does not parse | `STS-ADMIN-0946` |
+| A private key that is not the certificate's | `STS-ADMIN-0947` |
+| A key that is not RSA of 2048 bits or more, or EC on P-256, P-384 or P-521 | `STS-ADMIN-0948` |
+| A key usage without `keyEncipherment` (RSA) or `keyAgreement` (EC), or an expired certificate | `STS-ADMIN-0949` |
+| A certificate another application holds, or an application that does not exist | `STS-ADMIN-0950` |
+
+**Give the client the certificate.** The private key never leaves this
+service: no page, API answer or directory read carries it, and where keys
+persist it is sealed on the application's entry. The certificate is public.
+Download it from the same section of the console (**Download the
+certificate (PEM)**), or read it from the API:
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/admin-api/applications?application=esb1" \
+  | jq -r '.credentials.wstrustDecryption.certificatePem' > esb1-encrypt.pem
+```
+
+The section shows the subject, the issuer, the serial, the validity and two
+thumbprints: the SHA-256 one, and the `#ThumbprintSHA1` a WSS4J or WCF client
+names the certificate by. The realm's WSDL is one document for the whole
+realm, so it never names an application's certificate, even with
+`wstrust.advertiseEndpointIdentity` on: configure the client with the
+downloaded certificate out of band.
+
+**How a request is opened.** The key is chosen by the recipient the
+`EncryptedKey` names: the certificate itself, its `#ThumbprintSHA1` or
+`#X509SubjectKeyIdentifier` `KeyIdentifier`, or its `X509IssuerSerial`. So a
+request whose `AppliesTo` is itself inside the ciphertext still opens. The
+opened request is then held to the key that opened it:
+
+* ciphertext opened with an application's key in a request for any other
+  application is `wsse:FailedCheck` (`STS-WSTRUST-0082`);
+* a request for an application that holds its own key, encrypted to the
+  realm's certificate, is `wsse:FailedCheck` (`STS-WSTRUST-0083`).
+
+An application with no key pair of its own is unchanged: its requests are
+encrypted to the realm's certificate. What a request may encrypt is still the
+settings above, and the certificate a response is encrypted to is still the
+requester's (*An encrypted response*).
+
+**Remove it** with **Remove the key pair**, or
+`api applications/remove-wstrust-decryption-key '{"application":"esb1"}'`.
+Requests for the application are then opened with the realm's key again.
+Removing is not revocation: a certificate issued here stays valid until it
+expires, and is on no revocation list.
+
 ## Related
 
 * [WS-Trust](ws-trust.md): the behaviour, the faults and every setting.

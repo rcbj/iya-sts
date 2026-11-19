@@ -507,6 +507,39 @@ step. Both switches default to off, so a deployment that never sent
 `?encrypt=1` is unchanged. A caller that did has to set the application
 as above. The query parameter no longer encrypts the assertion.
 
+### New: an application's own WS-Trust decryption key pair
+
+An application may now hold a decryption key pair of its own, so a request
+for it is encrypted to its certificate rather than to the realm's XML
+Encryption certificate (#1668). On the application's **Credentials** tab,
+**WS-Trust decryption key pair**, and through three new management API
+operations:
+
+* **Issue** one from the realm's certificate authority
+  (`POST /admin-api/applications/issue-wstrust-decryption-key`): the
+  `key-encipherment` profile, `rsa-3072` or `ec-p256`, subject
+  `CN=<application>-encrypt` with the realm's organisation.
+* **Upload** a PEM certificate and its unencrypted private key
+  (`upload-wstrust-decryption-key`). The key must be the certificate's, RSA
+  of 2048 bits or more or EC on P-256, P-384 or P-521; each refusal has its
+  code, `STS-ADMIN-0946` to `0950`.
+* **Remove** it (`remove-wstrust-decryption-key`).
+
+The private key is sealed where keys persist and is never shown, answered
+or logged. The certificate is on the page, with a download, and in
+`credentials.wstrustDecryption` of `GET /admin-api/applications?application=`.
+The WSDL does not name it: configure the client out of band.
+
+A request is opened with the key its `EncryptedKey` names, so a request
+whose `AppliesTo` is inside the ciphertext still opens. Ciphertext opened
+with an application's key in another application's request is
+`wsse:FailedCheck` (`STS-WSTRUST-0082`), and a request for an application
+with its own key encrypted to the realm's key is `STS-WSTRUST-0083`. An
+application without one is unchanged. Four new directory attributes carry
+it (`wstrustDecryptionCertificate`, `wstrustDecryptionCertificateChain`,
+`wstrustDecryptionPrivateKey`, `wstrustDecryptionKeySource`); nothing
+existing has to be migrated, and there is no upgrade-script step.
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the

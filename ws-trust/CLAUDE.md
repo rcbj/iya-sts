@@ -1,9 +1,11 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`, and its metadata, #958, below). Six files: `wstrust.ts`, the
+`/sts/cert`, and its metadata, #958, below). Seven files: `wstrust.ts`, the
 endpoint; `ws_encryption.ts`, XML Encryption of a request and a response
 (#1668), a library `wstrust.ts` requires — it registers nothing;
+`ws_decryption_key.ts`, an application's own decryption key pair (#1668,
+*AN APPLICATION'S OWN DECRYPTION KEY PAIR*, below), a library too;
 `wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
 `wstrust_capabilities.ts`, the token capability model and the extension
 document and schema at `GET /sts/metadata/capabilities{,.xsd}`;
@@ -1089,6 +1091,71 @@ wrapped in an EncryptedHeader. WSS4J 3.0.3 decrypted a real answer this way
 on #1908's review. **A recipient expression selects only what the accepted
 signature covers** (`coveredBySignature()`): the signer's own token or an
 element inside a referenced part, else `0081`.
+
+**AN APPLICATION'S OWN DECRYPTION KEY PAIR (#1668, rcbj's request of
+2026-11-19: "a configuration field to either upload or generate (from the
+internal CA) a keypair for use with encryption").** `ws_decryption_key.ts`
+(`WsDecryptionKey`, a static utility class, `federation_encryption.ts`'s
+shape) and four application attributes, OIDs 773-776:
+`wstrustDecryptionCertificate`, `…CertificateChain`, `…PrivateKey` and
+`…KeySource`. None is `editable`: they are written together by
+`applications.setWstrustDecryptionKey()` and by nothing else, because a
+certificate set by hand beside a key it does not match decrypts nothing.
+
+* **Issued** by `pki.issueEncryptionKeyPair()` with `encryptionHolder:
+  'application'` — the federation relationship's leaf (#168), the
+  `key-encipherment` profile of the Certificate Workbench (keyEncipherment
+  for RSA, keyAgreement for EC, never digitalSignature, the XML Encryption
+  1.1 section 6.1.3 hazard), the realm's default Issuing CA. The subject is
+  the one every leaf of `issueSigningKeyPair()` carries, `CN`, then the
+  hierarchy's `O` and `C`, with `CN=<identifier>-encrypt`; the
+  subjectAltName `urn:sts:application:<identifier>` and the kid prefix
+  `appenc-` are the `application` holder's. The identifier is the
+  registry's — a client's `client_id` where it is one.
+* **Uploaded** as one PEM certificate and an unencrypted PEM key,
+  `crypto.decryptionKeyPairProblem()`: node's `checkPrivateKey`, RSA of
+  2048 bits or more or EC on P-256/384/521 (what `decryptElement()`
+  unwraps with), a keyUsage naming keyEncipherment or keyAgreement where
+  there is one, not expired. A problem per code, `STS-ADMIN-0946` to `0949`;
+  a certificate another application holds is `0950`, since one handle must
+  choose one application. **PKCS#12 is not taken**: `/admin/pki`'s upload,
+  the model rcbj named, takes PEM, and this service has no PKCS#12 reader.
+* **The private key** is in `SEALED_FIELDS` and `WITHHELD_FIELDS`
+  (`scimClientTlsPrivateKey`'s arrangement, not the assertion keys', which
+  are OPENED for the console), label `wstrust-decryption-key`
+  (`keystore.DIRECTORY_CLASSES`, `/admin/encryption`'s last row), and in
+  `names.tsp`'s secret list. The one reader is
+  `applications.wstrustDecryptionKeyOf()`, at the decryption. **In
+  development it is written in the clear**, as every sealed field is,
+  `sealFieldValue()`'s reason: the key-encryption key there is ephemeral,
+  and an entry the `ldif` or `postgres` store keeps would come back with a
+  private key that never opens. It is still withheld from every answer and
+  every directory read.
+* **Choosing the key** (`ws_encryption.ts`, `recipientHandles()`): the
+  `EncryptedKey`'s `KeyInfo` (or an agreement's `RecipientKeyInfo`, never
+  the `OriginatorKeyInfo`) gives handles — `sha1:`, `ski:`, `is:<serial>:
+  <issuer>` (`crypto.wssCertificateHandles()`, issuer RDNs compared in any
+  order) — and the listing's `byDecryptionKey` index answers which
+  application holds that certificate, without a walk. A handle that names
+  no application's certificate, or no handle, is the realm's keys as
+  before. **The key is chosen before the AppliesTo is read**, which is what
+  lets a wholly encrypted RST open; `ownersProblem()` then holds what
+  opened it to the application the opened request names: another
+  application's key is `0082`, the realm's key for an application with
+  its own is `0083`, both `wsse:FailedCheck` with one sentence that says
+  nothing about the plaintext. `encryptionFault()` lists both literals.
+* **Publishing**: the certificate is in the page's section (with a `data:`
+  download) and `credentials.wstrustDecryption` of the GET. The WSDL is one
+  document per realm and names the realm's certificate only, even with
+  `wstrust.advertiseEndpointIdentity` on: no per-application WSDL (the
+  integrator's decision on #1908). A response is still encrypted to the
+  requester's certificate, never to this one.
+* **Not exported**: an application's LDIF export carries editable
+  attributes only, so the key pair stays behind; an imported application
+  is issued or given one again.
+
+`tests/wstrust_decryption_key.js` holds all of it in process;
+`tests/protocol/sts_wstrust_decryption_key.js` over the wire.
 
 **NOT YET**: the answer is never signed (a follow-up ticket of rcbj's), so
 no output policy offers signing and the binding has no
