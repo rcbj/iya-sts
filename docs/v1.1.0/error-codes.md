@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5736** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5738** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 258
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 176
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 177
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
@@ -98,7 +98,7 @@ is an ordinary outcome.
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 187
-* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
+* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 59
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
 
@@ -3592,6 +3592,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0220` | A person import was refused: a credential in the file is not in the form an export writes (a password that is not a stored hash, a record that is not JSON, a certificate that is not one), is already held by somebody else in this realm (a passkey user handle, a stored certificate), or could not be sealed. Nothing was created. | none (a console or management API refusal, HTTP 400) |
 | `STS-LDAP-0221` | A person import created the entry but could not write the credentials the file carried. The person is there without them. | none (a console or management API refusal, HTTP 400) |
 | `STS-LDAP-0222` | Something a deleted person held outside their entry, under their name or DN (devices, post-login progress, mail preferences, federation blocks, GNAP approvals, the identity register, pending enrolments, rich authorization Allows, the risk standing; the RISC register row, moved out of the name when it is taken again), could not be forgotten, so a person made again under the name may inherit it. The delete itself stands. | — |
+| `STS-LDAP-0223` | An LDAP operation's handler threw after the cluster read barrier it waited for (active-active), where the socket's own handling can no longer catch it: the client is answered operationsError (1) rather than left without a result (run #510). | RFC 4511 section 4.1.9 |
 
 ## STS-ATTR
 
@@ -6426,6 +6427,7 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 | `STS-DBG-0031` *(retired)* | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
 | `STS-DBG-0032` *(retired)* | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-DBG-0033` | Product mode: the debugger was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | HTTP 403 at the debugger |
+| `STS-DBG-0034` | The debugger's api process was starting, being replaced for a new trust anchor or due to restart, and did not report listening within the /api call's debugger.proxyTimeoutS, so the call was not forwarded. | HTTP 503 with Retry-After |
 
 ## STS-REPORT
 

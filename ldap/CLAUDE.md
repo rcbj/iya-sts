@@ -3028,6 +3028,26 @@ the mechanism and the argument; `tests/request_write_barrier.js` section B
 shows each hazard with nothing applied and the barrier's answer once the keys
 are.
 
+### And caught up with the OTHER NODES first (2026-11-18, run #510)
+
+**The pool's read barrier is one container's.** What another NODE committed
+reached an LDAP operation only at this node's next change pull, because
+`cluster_barrier.js`'s rule 1 is HTTP middleware and a socket never passes
+`app.js`. GitHub run #510, cluster mode: a second factor required of a person
+through `/admin-api` on node A (answered after its commit, 03:17:50.496), and
+the LDAPS simple bind that followed, balanced to node B (50.522), ACCEPTED
+her password alone. Every operation but unbind is now wrapped in
+`afterClusterCatchUp()` at registration — outside the realm wrapper, so a
+realm just created elsewhere is known, and inside what `LOCAL_HANDLERS`
+holds, so it runs in whichever process runs the operation — and waits, where
+the barrier is active (active-active), for `clusterBarrier.catchUp()`: a pull
+that started after it arrived, shared as the HTTP side shares it. A pull that
+cannot catch up is STS-CLUSTER-0018 and the operation goes on, the
+middleware's rule; a handler that throws after the wait is answered
+`operationsError` (STS-LDAP-0223) or, for an unreadable directory,
+`unavailable`. SPIFFE's gRPC listener closed the same gap the same way
+(`spiffe/spiffe_grpc.ts`, `fromCaller()`). `tests/ldap_cluster_barrier.js`.
+
 ### What is asserted, and what is not
 
 `tests/ldap_operations.js` is the in-process half: it drives both sides of the

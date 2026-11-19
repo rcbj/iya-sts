@@ -823,6 +823,62 @@ function commitBeforeSending() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// RULE 1 FOR SOMETHING THAT IS NOT AN HTTP REQUEST (2026-11-18, run #510).
+//
+// The middleware below is the only caller of rule 1 that `app.js` installs,
+// and an LDAP operation never passes through `app.js`: the socket is the
+// front process's and the operation runs there or in the request worker it
+// was dispatched to. So a change committed on one node reached an LDAP
+// operation on the other only at that node's next change pull. GitHub run
+// #510 (cluster mode, 2026-11-19): `/admin-api/users/require-mfa` was
+// answered on node A at 03:17:50.496, after its commit (rule 2), and the
+// LDAPS simple bind the job made next was balanced to node B at 50.522 and
+// ACCEPTED Alice's password alone — the second-factor requirement had not
+// reached B's copy of her entry. A door that must refuse a password let one
+// through. `spiffe/spiffe_grpc.ts`'s `fromCaller()` closed the same gap for
+// gRPC on 2026-09-24 by asking `syncShared()` itself; this is that call,
+// with the middleware's counters and its warning, for any caller outside
+// `app.js` that serves something a client sent.
+//
+// It never rejects. A pull that could not catch up is counted and logged
+// under STS-CLUSTER-0018 and the caller goes on from this process's copy —
+// the middleware's own rule, so an LDAP operation and an HTTP request behind
+// one balancer are answered by the same standard.
+// ---------------------------------------------------------------------------
+/**
+ * Waits, in active-active mode, for a change-log pull that started after
+ * the call, so what the caller serves next includes everything another node
+ * committed before it arrived (rule 1, for a caller outside `app.js`).
+ *
+ * @param what - names the work being caught up for, for the log line
+ * @returns a promise of the pull's answer, or null where the barrier is
+ *   not active; it never rejects
+ */
+function catchUp(what) {
+  log.debug("Entering catchUp().");
+  if (!active()) {
+    log.debug("Leaving catchUp(). Not active-active.");
+    return Promise.resolve(null);
+  }
+  stats.requests += 1;
+  const began = Date.now();
+  log.debug("Leaving catchUp(). Pulling.");
+  return syncShared().then(function (answer) {
+    stats.totalWaitMs += Date.now() - began;
+    if (answer && answer.caughtUp) {
+      stats.caughtUp += 1;
+    } else if (answer && answer.coordinating !== false) {
+      stats.gaveUp += 1;
+      log.warn(errorCodes.tag('STS-CLUSTER-0018') + 'cluster barrier: ' +
+               String(what || 'an operation') + ' is served before this ' +
+               'node caught up with the others (' + JSON.stringify(answer) +
+               ').');
+    }
+    return answer;
+  });
+}
+
 // For common/app.js's realm middleware, which runs above this one.
 /**
  * Says whether the barrier applies: active-active mode with clustering on.
@@ -941,6 +997,7 @@ capabilities.provide('cluster.read-barrier');
 module.exports = {
   middleware: middleware,
   syncShared: syncShared,
+  catchUp: catchUp,
   holdUntilCommitted: holdUntilCommitted,
   deferUntilCommitted: deferUntilCommitted,
   heldResponse: heldResponse,

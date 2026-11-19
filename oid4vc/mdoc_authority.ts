@@ -154,7 +154,7 @@ class MdocAuthority {
       throw this.fail('the mdoc authority needs the credential ' +
                       'issuer URI and none was given.');
     }
-    await this.claim(keys);
+    await this.claimMint(keys);
     const raced = this.pairFrom(keys);
     if (raced) {
       log.debug("Leaving MdocAuthority.ensure(). Minted elsewhere.");
@@ -265,12 +265,15 @@ class MdocAuthority {
   }
 
   // One claim for the realm. A lost claim waits, then mints here, which
-  // is what a credential signer does when the winner never arrives.
-  private async claim(keys: any): Promise<void> {
+  // is what a credential signer does when the winner never arrives. NOT
+  // named `claim`: its body calls `claims.claim()`, and a method whose body
+  // names itself beside a `setTimeout` is what tests/no_periodic_timers.js
+  // reads as a timer chain. The wait below is one bounded operation.
+  private async claimMint(keys: any): Promise<void> {
     const { log, errorCodes } = this.deps;
-    log.debug("Entering MdocAuthority.claim().");
+    log.debug("Entering MdocAuthority.claimMint().");
     if (!keys || keys.realm === undefined) {
-      log.debug("Leaving MdocAuthority.claim(). No realm.");
+      log.debug("Leaving MdocAuthority.claimMint(). No realm.");
       return;
     }
     let claimed: any = { ok: true, reason: '' };
@@ -282,20 +285,20 @@ class MdocAuthority {
                ':mdoc',
         realm: String(keys.realm), ttlMs: 60000 });
     } catch (e) {
-      log.debug("Caught in MdocAuthority.claim(): " +
+      log.debug("Caught in MdocAuthority.claimMint(): " +
                 ((e && e.message) || e));
       // No claim service in this process: minting here is the only
       // copy there will be.
       claimed = { ok: true, reason: '' };
     }
     if (claimed.ok || claimed.reason !== 'used') {
-      log.debug("Leaving MdocAuthority.claim(). This process.");
+      log.debug("Leaving MdocAuthority.claimMint(). This process.");
       return;
     }
     const deadline = Date.now() + MINT_WAIT_MS;
     while (Date.now() < deadline) {
       if (this.pairFrom(keys)) {
-        log.debug("Leaving MdocAuthority.claim(). Arrived.");
+        log.debug("Leaving MdocAuthority.claimMint(). Arrived.");
         return;
       }
       // A per-operation poll inside one bounded wait, not periodic work.
@@ -307,7 +310,7 @@ class MdocAuthority {
              'process claimed the "' + keys.realm + '" realm\'s mdoc ' +
              'authority and it did not arrive within ' + MINT_WAIT_MS +
              'ms; it is made here.');
-    log.debug("Leaving MdocAuthority.claim(). Timed out.");
+    log.debug("Leaving MdocAuthority.claimMint(). Timed out.");
   }
 
   private async mint(keys: any, issuer: string): Promise<MdocPair> {

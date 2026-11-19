@@ -191,6 +191,19 @@ async function run(t) {
     t.check(!apiProcess.ready(),
             'and the child is NOT READY from that moment, so no call is sent ' +
             'to a process that has been told to exit');
+    // CI run #510: a call arriving now is held for the successor, not
+    // answered 502.
+    t.check(apiProcess.transient(),
+            'but it is ON ITS WAY, which a caller may wait out',
+            JSON.stringify(apiProcess.status()));
+    const waitedAt = Date.now();
+    const heard = await apiProcess.whenListening(15000);
+    t.check(heard === true && apiProcess.ready() &&
+            apiProcess.status().pid !== first.pid,
+            'and whenListening() settles true as the successor reports ' +
+            'listening, without waiting out its bound',
+            (Date.now() - waitedAt) + 'ms ' +
+            JSON.stringify(apiProcess.status()));
     t.check(await until(function () {
       const now = apiProcess.status();
       return apiProcess.ready() && now.pid && now.pid !== first.pid;
@@ -238,6 +251,13 @@ async function run(t) {
     t.equal(apiProcess.status().consecutiveFailures, 2,
             'with both deaths counted');
     t.check(!apiProcess.ready(), 'and it is not ready');
+    t.check(!apiProcess.transient(),
+            'nor on its way, so a call is not held for it');
+    const givenUpAt = Date.now();
+    t.equal(await apiProcess.whenListening(10000), false,
+            'and whenListening() answers false at once');
+    t.check(Date.now() - givenUpAt < 1000,
+            'without waiting out its bound', (Date.now() - givenUpAt) + 'ms');
   } finally {
     config.clearOverride('debugger.restartLimit');
     // -----------------------------------------------------------------------

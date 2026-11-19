@@ -16729,6 +16729,12 @@ const CODES = [
       'a person made again under the name may inherit it. The delete ' +
       'itself stands.',
     spec: '' },
+  { code: 'STS-LDAP-0223',
+    summary: 'An LDAP operation\'s handler threw after the cluster read ' +
+      'barrier it waited for (active-active), where the socket\'s own ' +
+      'handling can no longer catch it: the client is answered ' +
+      'operationsError (1) rather than left without a result (run #510).',
+    spec: 'RFC 4511 section 4.1.9' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -29507,6 +29513,13 @@ const CODES = [
       'password; until it has, its roles are honoured at the console ' +
       'alone, from a password sign-in (#103).',
     spec: 'HTTP 403 at the debugger' },
+  // CI run #510: a child on its way is waited for, then answered 503.
+  { code: 'STS-DBG-0034',
+    summary: 'The debugger\'s api process was starting, being replaced for ' +
+      'a new trust anchor or due to restart, and did not report listening ' +
+      'within the /api call\'s debugger.proxyTimeoutS, so the call was not ' +
+      'forwarded.',
+    spec: 'HTTP 503 with Retry-After' },
   // #956. Recorded, never sent. The public token is named in `spec`.
   { code: 'STS-REPORT-0001',
     summary: 'A report query named a source the catalog does not publish.',
