@@ -5636,6 +5636,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'private half. This API is not gated at all, which is the same ' +
           'honest consequence every operation here has and is worth saying ' +
           'twice for this one. Mirrors POST /admin/keys/export.' },
+  { path: '/admin-api/mdoc-iaca', group: 'Management API',
+    name: 'This realm\'s mdoc Issuing Authority CA',
+    specs: ['rfc5280', 'oid4vci'],
+    what: 'NON-SPEC (#1862). The certificate GET /oid4vci/mdoc-iaca ' +
+          'publishes, as JSON: the PEM, its subject, notBefore and ' +
+          'notAfter. Minted on the first call, the same way that public ' +
+          'read mints it. No private key. A failure to mint answers 500 ' +
+          'in plain text.' },
   { path: '/admin-api/pki', group: 'Management API',
     name: 'The certificate authority this realm holds',
     specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],

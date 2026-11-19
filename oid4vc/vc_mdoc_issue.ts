@@ -40,7 +40,6 @@ import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
 import codec = require('./vc_status_codec');
-import nodeCrypto = require('crypto');
 
 const { Tagged } = codec;
 
@@ -273,7 +272,7 @@ class VcMdocIssue {
     const digests = new Map();
     const items: any[] = [];
     elements.forEach((element: any, i: number) => {
-      const salt = nodeCrypto.randomBytes(16);
+      const salt = stsCrypto.randomBytes(16);
       const item = new Map<string, unknown>([
         ['random', salt],
         ['digestID', ids[i]],
@@ -282,8 +281,7 @@ class VcMdocIssue {
       ]);
       const tagged = new Tagged(TAG_ENCODED_CBOR, codec.cborEncode(item));
       const bytes = codec.cborEncode(tagged);
-      digests.set(ids[i], nodeCrypto.createHash('sha256')
-        .update(bytes).digest());
+      digests.set(ids[i], stsCrypto.digest('sha256', bytes));
       items.push(tagged);
     });
     const digestMap = new Map();
@@ -433,12 +431,12 @@ class VcMdocIssue {
 
   // Random, unique, and never the 0, 1, 2 a hand-built test mdoc uses.
   private digestIds(count: number): number[] {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcMdocIssue.digestIds(). " + count);
     const ids: number[] = [];
     const seen = new Set<number>();
     while (ids.length < count) {
-      const n = nodeCrypto.randomInt(24, 0x7fffffff);
+      const n = stsCrypto.randomInt(24, 0x7fffffff);
       if (!seen.has(n)) {
         seen.add(n);
         ids.push(n);

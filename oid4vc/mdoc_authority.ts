@@ -28,17 +28,19 @@
 // empty trusts nobody, and a test that never asks for a certificate
 // must still find none.
 //
-// A LIBRARY (rule 3). It registers nothing. `common/keystore.js`, the
-// X.509 issuer and the cluster claim are required inside the methods
-// that use them, so loading this module moves no route and closes no
-// cycle with the issuer or the status list.
+// A LIBRARY (rule 3). It registers nothing. Every hash, key and random
+// value is `common/crypto.js`'s (rule 3r), and both certificates are
+// issued through `common/pki.js`'s `issueOutsideHierarchy()` (3w).
+// `common/keystore.js`, `pki.js` and the cluster claim are required
+// inside the methods that use them, so loading this module moves no
+// route and closes no cycle with the issuer or the status list.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 
 const GROUP = 'mdoc';
 const IACA_SLOT = 'mdoc-iaca';
@@ -57,6 +59,7 @@ interface MdocAuthorityDeps {
   config: typeof config;
   errorCodes: typeof errorCodes;
   helpers: typeof helpers;
+  stsCrypto: typeof stsCrypto;
 }
 
 /**
@@ -78,7 +81,8 @@ class MdocAuthority {
   /**
    * Builds an authority with the dependencies it reads.
    *
-   * @param deps - the logger, settings, error codes and helpers
+   * @param deps - the logger, settings, error codes, helpers and
+   *   `common/crypto.js`
    */
   constructor(private readonly deps: MdocAuthorityDeps) {
   }
@@ -93,7 +97,8 @@ class MdocAuthority {
       log: helpers.log,
       config: config,
       errorCodes: errorCodes,
-      helpers: helpers
+      helpers: helpers,
+      stsCrypto: stsCrypto
     };
   }
 
@@ -306,12 +311,12 @@ class MdocAuthority {
   }
 
   private async mint(keys: any, issuer: string): Promise<MdocPair> {
-    const { log, config } = this.deps;
+    const { log, config, stsCrypto } = this.deps;
     log.debug("Entering MdocAuthority.mint().");
     const country = this.country();
     const authority = String(config.value(
       'oid4vci.mdocIssuingAuthority') || 'Iya STS');
-    const x509 = require('../common/crypto_impl/x509');
+    const pki = require('../common/pki');
     const keyMaterial = require('../common/crypto_impl/key_material');
     const now = Date.now();
     const notBefore = new Date(now - HOUR_MS).toISOString();
@@ -321,13 +326,13 @@ class MdocAuthority {
     let ds: any;
     try {
       caPair = await keyMaterial.generateKeyPair('ec-p256');
-      ca = await x509.issueCertificate({
+      ca = await pki.issueOutsideHierarchy({
         subject: [{ name: 'C', value: country },
                   { name: 'CN', value: authority + ' IACA' }],
         subjectPublicKey: caPair.publicPem,
         issuerPrivateKey: caPair.privatePem,
         signatureAlg: 'sha256-ecdsa',
-        serial: nodeCrypto.randomBytes(8).toString('hex'),
+        serial: stsCrypto.randomBytes(8).toString('hex'),
         notBefore: notBefore,
         notAfter: new Date(now + 10 * YEAR_MS).toISOString(),
         extensions: {
@@ -343,7 +348,7 @@ class MdocAuthority {
         }
       });
       dsPair = await keyMaterial.generateKeyPair('ec-p256');
-      ds = await x509.issueCertificate({
+      ds = await pki.issueOutsideHierarchy({
         subject: [{ name: 'C', value: country },
                   { name: 'CN', value: authority + ' document signer' }],
         subjectPublicKey: dsPair.publicPem,
@@ -351,7 +356,7 @@ class MdocAuthority {
                   privateKeyPem: caPair.privatePem,
                   keyAlg: 'ec-p256' },
         signatureAlg: 'sha256-ecdsa',
-        serial: nodeCrypto.randomBytes(8).toString('hex'),
+        serial: stsCrypto.randomBytes(8).toString('hex'),
         notBefore: notBefore,
         notAfter: new Date(now + 2 * YEAR_MS).toISOString(),
         extensions: {
@@ -378,7 +383,7 @@ class MdocAuthority {
     log.debug("Leaving MdocAuthority.mint(). " + DS_KID);
     return { iacaPem: ca.pem, dsPem: ds.pem,
              dsDer: Buffer.from(ds.der),
-             dsKey: nodeCrypto.createPrivateKey(dsPair.privatePem),
+             dsKey: stsCrypto.privateKeyFrom(dsPair.privatePem),
              dsKid: DS_KID };
   }
 
@@ -398,9 +403,9 @@ class MdocAuthority {
 
   private row(slot: string, paired: string, kid: string,
               privatePem: string, certPem: string): any {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering MdocAuthority.row(). " + slot);
-    const jwk: any = nodeCrypto.createPublicKey(privatePem)
+    const jwk: any = stsCrypto.publicKeyOf(privatePem)
       .export({ format: 'jwk' });
     jwk.kid = kid;
     jwk.alg = 'ES256';
@@ -410,7 +415,7 @@ class MdocAuthority {
     return {
       group: GROUP, slot: slot, alg: 'ES256', kind: 'ec',
       pairedSlot: paired, publicJwk: jwk,
-      privateKey: nodeCrypto.createPrivateKey(privatePem),
+      privateKey: stsCrypto.privateKeyFrom(privatePem),
       certPem: certPem
     };
   }

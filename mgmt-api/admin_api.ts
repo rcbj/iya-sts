@@ -8474,8 +8474,7 @@ class AdminApi {
           const issuer = String(baseUrlOf(req) || '').replace(/\/+$/, '');
           authority.ensure(helpers.stsKeysFor(), issuer).then(
             function (held) {
-              const crypto = require('crypto');
-              const cert = new crypto.X509Certificate(held.iacaPem);
+              const cert = stsCrypto.parseCertificate(held.iacaPem);
               const subject = String(cert.subject || '')
                 .replace(/\n/g, ', ');
               self.sendJson(res, 200, {
