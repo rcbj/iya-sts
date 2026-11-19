@@ -1096,12 +1096,48 @@ cluster to join, because nothing a PEP holds needs coordinating:
 | its decision counters | its own. Each instance counts only what it decided |
 | its HTTPS listener pair | the two files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name |
 | a person's attributes | asked of `POST /xacml/pip` before each decision, and not kept |
+| the reverse proxy's sign-ins in flight, its sessions and their tokens, and each client's DPoP key | its own, in memory. Not shared with another instance and not kept across a restart |
 
 The service is already the one place the policy comes from, so instances
 converge on it on their own: each within one `PEP_POLL_INTERVAL_MS`, or at once
 when nudged. An instance that cannot reach the service keeps enforcing what it
 last pulled, [as above](#when-the-pdp-goes-away). A peer could only hand it the
 same copy or an older one.
+
+### The load balancer must keep a browser on one instance
+
+**If the instances run the [reverse proxy](#in-front-of-an-application-the-reverse-proxy-1760), the load
+balancer in front of its port (9543) must keep session affinity (sticky
+sessions).** Everything a sign-in builds stays on the instance where it
+started:
+* the sign-in waiting for its callback at `/.iya-pep/callback`;
+* the session the browser's cookie names, with its access and refresh tokens;
+* the DPoP key the authorization code and those tokens are bound to
+  (RFC 9449 sections 5, 7 and 10).
+
+Another instance has none of these. A callback that lands on another instance
+fails, and so does a request that carries another instance's session cookie.
+The person is sent to sign in again.
+
+The PEP terminates its own TLS, so a balancer that passes TLS through (layer 4)
+can only keep affinity by the client's address. In HAProxy that is
+`balance source`, or a `stick-table` keyed on `src`. A balancer that ends TLS
+and opens a new TLS connection to the PEP can keep affinity with a cookie
+instead. Either way:
+* **A browser stays on one instance for the length of its session**, and moves
+  only when that instance goes away. A person who moves signs in again; if
+  their sign-on session at the service is still live, that is a round trip
+  with no prompt.
+* **Clients behind one address share one instance.** With affinity by address,
+  everybody behind one NAT or forward proxy lands on the same instance. Use
+  cookie affinity if that concentrates too much load.
+* **The decision API (9443) needs no affinity.** Each decision stands alone,
+  so round robin per connection is right there.
+
+A restarted instance has lost its sessions, so the people it was serving sign
+in again whatever the balancer does. The demonstration stack's balancer,
+`iya-sts-8081/pep-haproxy.cfg`, is an example: `balance source` on 9543 and
+round robin on 9443.
 
 ### One certificate per instance, or one shared
 
@@ -2390,6 +2426,13 @@ reverse proxy and its routes, the managed settings and the listener
 definitions once, and every member pulls them as its own. The members differ
 only in their name and their addresses. Configure one PEP, then apply its
 configuration to the others.
+
+**A cluster shares configuration, not sessions.** Each member still holds its
+own reverse-proxy sign-ins, sessions, tokens and DPoP keys. The load balancer
+in front of a cluster's reverse proxy must therefore keep session affinity
+(sticky sessions), as
+[Running more than one](#the-load-balancer-must-keep-a-browser-on-one-instance)
+explains.
 
 The clusters are on the XACML page's **PEP clusters** tab, after Remote PEPs.
 Each cluster has a page of its own, `/admin/xacml/pep-cluster?cluster=<name>`,
