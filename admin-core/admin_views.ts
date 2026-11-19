@@ -5790,7 +5790,9 @@ class AdminViews {
   // here, so the one fact about the realm that code needs is answered as
   // data — `drawing.verifiesCredentials`, the mode's answer, which one
   // tooltip sentence turns on. `svg` is still answered, drawn by the same
-  // code, for whoever reads it; the console no longer does.
+  // code. When the request names a language, the API redraws it from the
+  // translated graph (`admin-ui/picture_svg.ts`, #1768), so the member is
+  // the picture the console draws. With no language it is these bytes.
   //
   // IT IS THE SAME FOUR CALLS THE PAGE'S ROUTE MAKES, in its order, and
   // deliberately not yet the route's own source of them: the route is left as

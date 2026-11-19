@@ -24,7 +24,8 @@
 // realm's mode, which says whether a `signed in` line's tooltip may claim that
 // what was presented was verified. Every function forwards to that module, so
 // an answer's `svg` and the browser's drawing are one code path and cannot
-// differ.
+// differ. When the request names a language, `picture_svg.ts` redraws that
+// `svg` from the translated graph (#1768), so the two still cannot differ.
 //
 // It requires `../common/helpers` (for `log`), the error-code table (a leaf),
 // `../common/mode` (a leaf over config) and `web_delegation_map.ts`, and

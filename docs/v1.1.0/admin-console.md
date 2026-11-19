@@ -1420,11 +1420,13 @@ and this one is the relationships. Every delegation page is drawn from an
 operation under `/admin-api/delegation`, saves its drawing as an SVG file, and
 links back to the table carrying whatever filter you left it with.
 
-**No picture has a script of its own.** The layout is computed on the server with
-[`@dagrejs/dagre`](https://github.com/dagrejs/dagre) and every shape is this
-service's own, arriving as an SVG the page shows as it is. The cost is that a
-picture does not pan, zoom or drag: the filter is how a busy one is made
-readable, and `?format=svg` is how it is opened in something that zooms.
+**No picture has a script of its own.** The console lays each picture out in
+the browser, with the same code that draws the SVG an `/admin-api` answer
+carries, and [`@dagrejs/dagre`](https://github.com/dagrejs/dagre) does the
+layout. The page shows that drawing. `?format=svg` saves it as a file, and
+with a language selected the file is in that language. A picture does not
+pan, zoom or drag: the filter is how a busy one is made readable, and the
+saved file is how it is opened in something that zooms.
 
 ### Delegated permissions
 

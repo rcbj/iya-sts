@@ -141,6 +141,9 @@ import ResponseModelKit = require('../common/response_model_kit');
 // prose a view carries, in the caller's language (#543). Libraries.
 import i18n = require('../common/i18n');
 import serverProse = require('../common/server_prose');
+// The picture members, redrawn from the translated answer so they are the
+// picture the console draws (#1768). A library; it registers nothing.
+import pictureSvg = require('../admin-ui/picture_svg');
 import PageLocale = require('../common/page_locale');
 import oidcRp = require('../common/oidc_rp');
 import lingeringClose = require('../common/lingering_close');
@@ -1517,9 +1520,15 @@ class AdminApi {
     // document, which stays English (rcbj's answers 1 and 2). A caller that
     // names no language reads exactly what it read before.
     if (status >= 200 && status < 300 && this.translatesAnswer(res.req)) {
+      // THE PICTURE WAS DRAWN BEFORE THIS TRANSLATION (#1768). Redraw it
+      // from the translated graph when that graph is what the picture
+      // reads, so `svg` and `picture.svg` are the console's drawing. An
+      // answer whose picture inputs did not change keeps the model's bytes.
+      const source = body;
       body = serverProse.translateView(body, serverProse.translatorFor(
         res.req.headers['accept-language'],
         (res.locals && res.locals.proseRoute) || ''));
+      pictureSvg.align(source, body, true);
     }
     // ADDED TO, never set: CORS may already have said `Vary: Origin`. A
     // response a test builds by hand has no `vary()`, and needs none.
@@ -1549,6 +1558,39 @@ class AdminApi {
     const out = named && !/\/openapi\.json$/.test(String(req.path || ''));
     log.debug("Leaving AdminApi.translatesAnswer(). " + out);
     return out;
+  }
+
+  /**
+   * Answers a picture's `format=svg`: the document alone, with no links,
+   * in the caller's language when the request names one (#1768).
+   *
+   * The model has already drawn the English document. When the request
+   * names a language, the same redraw `sendJson()` does runs here with
+   * the links left out, which is the document the console's page saves.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param model - the picture's answer, drawn with `links: false`
+   */
+  sendPicture(req: any, res: any, model: any): void {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.sendPicture().");
+    let view = model;
+    if (this.translatesAnswer(req)) {
+      const route = (res.locals && res.locals.proseRoute) || '';
+      view = serverProse.translateView(model, serverProse.translatorFor(
+        req.headers['accept-language'], route));
+      pictureSvg.align(model, view, false);
+    }
+    // The document now depends on the language, so a cache has to vary on
+    // it. ADDED TO, as `sendJson()` does: CORS may already have said
+    // `Vary: Origin`. A response a test builds by hand has no `vary()`.
+    if (typeof res.vary === 'function') {
+      res.vary('Accept-Language');
+    }
+    res.status(200).set('Cache-Control', 'no-store')
+       .type('image/svg+xml').send(view && view.svg);
+    log.debug("Leaving AdminApi.sendPicture().");
   }
 
   // The action a POST names, from the path rather than the body. It is forced
@@ -5944,10 +5986,8 @@ class AdminApi {
           log.debug("Entering the management API credential lineage " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.credentialLineageModel(req.query,
-                                                           { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.credentialLineageModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API credential lineage " +
                       "endpoint. Answered SVG.");
             return;
@@ -9277,10 +9317,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API delegation map endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationMapModel(req.query,
-                                                       { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationMapModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation map endpoint. " +
                       "Answered SVG.");
             return;
@@ -9314,10 +9352,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API federation map endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.federationMapModel(req.query,
-                                                       { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.federationMapModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API federation map endpoint. " +
                       "Answered SVG.");
             return;
@@ -9346,10 +9382,8 @@ class AdminApi {
           log.debug("Entering the management API delegation cluster " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationClusterModel(req.query,
-                                                           { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationClusterModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation cluster " +
                       "endpoint. Answered SVG.");
             return;
@@ -9378,10 +9412,8 @@ class AdminApi {
           log.debug("Entering the management API allowed delegation " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationAllowedModel(req.query,
-                                                           { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationAllowedModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API allowed delegation " +
                       "endpoint. Answered SVG.");
             return;
@@ -9437,10 +9469,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API delegation user endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationUserModel(req.query,
-                                                        { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationUserModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation user " +
                       "endpoint. Answered SVG.");
             return;
@@ -9472,10 +9502,9 @@ class AdminApi {
           log.debug("Entering the management API delegation application " +
                     "endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationApplicationModel(req.query,
-              { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res,
+              adminViews.delegationApplicationModel(req.query,
+                                                    { links: false }));
             log.debug("Leaving the management API delegation application " +
                       "endpoint. Answered SVG.");
             return;
@@ -9506,10 +9535,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API delegation chain endpoint.");
           if (String((req.query || {}).format || '') === 'svg') {
-            const bare = adminViews.delegationChainModel(req.query,
-                                                         { links: false });
-            res.status(200).set('Cache-Control', 'no-store')
-               .type('image/svg+xml').send(bare.svg);
+            self.sendPicture(req, res, adminViews.delegationChainModel(
+              req.query, { links: false }));
             log.debug("Leaving the management API delegation chain " +
                       "endpoint. Answered SVG.");
             return;

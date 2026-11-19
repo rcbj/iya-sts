@@ -2904,7 +2904,12 @@ WHERE the code runs, not what it draws.
   read from disk. So the `svg` an answer still carries and the picture a
   browser draws are one code path, and `tests/console_web_bundle.js`
   (D1-pictures, D1-map) holds the bundle's drawing of every picture to the
-  answer's own `svg`, to the byte.
+  answer's own `svg`, to the byte. When the request names a language,
+  `admin-ui/picture_svg.ts` redraws `svg` and `picture.svg` from the
+  translated graph with that same code, and only when the picture's inputs
+  changed, so an English answer stays the bytes the model laid out.
+  `tests/picture_svg.js` holds the French federation map to the browser's
+  drawing, and the other pictures to theirs.
 * **WHAT THE ANSWER CARRIES FOR IT.** The delegation pictures already
   answered the graph (`graph`, or the map's `nodes` and `edges`) and `looks`;
   they add `drawing.verifiesCredentials`, the one fact about the realm a
@@ -2927,11 +2932,14 @@ WHERE the code runs, not what it draws.
 * **`?format=svg` IS DRAWN IN THE BROWSER TOO**, from the answer in hand
   (`WebPages.documentOf()`, a page row's `document`), and saved as a file.
   The API's own `format=svg` and every answer's `svg` and `picture.svg` are
-  still answered — nothing an existing caller reads changed — but the console
-  no longer reads them. Whether to retire them is rcbj's decision: the
-  console operations' `svg` is console-only markup (`mgmt-api/CLAUDE.md`
-  3cc), while `getCredentialLineage`'s `svg` and `format=svg` and
-  `getGeolocation`'s `picture.svg` are on management operations.
+  still answered. **KEPT (#1768, 2026-11-18).** An unread member is
+  investigated, not removed. The console lays its page out from the data
+  and does not fetch `svg` to display it. The member, and `format=svg`,
+  stay for a caller that saves the document, and they are the picture the
+  console would draw, in the caller's language. The console operations'
+  `svg` is console-only markup (`mgmt-api/CLAUDE.md` 3cc), while
+  `getCredentialLineage`'s `svg` and `format=svg` and `getGeolocation`'s
+  `picture.svg` are on management operations.
 * **A FOURTH PICTURE WAS BORN IN THE BROWSER** (2026-11-15):
   `xacml/web_pep_picture.ts`, a remote PEP's Visual sub-tab, has no server
   wrapper, no `svg` member and no `?format=svg`; it is drawn from the PEP
