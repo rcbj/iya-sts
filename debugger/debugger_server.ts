@@ -600,25 +600,94 @@ class DebuggerServer {
    * Hop-by-hop headers and cookies are not forwarded — `Authorization` and
    * `DPoP` are, untouched, because they are the debugger's own (#1717); the
    * body is bounded by `debugger.maxRequestBytes` and the call by
-   * `debugger.proxyTimeoutS`. A child that is not ready is answered 502.
+   * `debugger.proxyTimeoutS`. A child ON ITS WAY — starting, replaced for
+   * a new trust anchor, due to restart — is waited for within that same
+   * bound, and answered 503 with Retry-After if it does not come; one that
+   * is not coming (given up, stopped) is answered 502.
    * @param req - the express request
    * @param res - the express response
    */
   forward(req, res) {
-    const { log, apiProcess, config, http, errorCodes } = this.deps;
+    const { log, apiProcess, config, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering DebuggerServer.forward(). " + req.method + " " +
               req.originalUrl);
     this.checkAnchor();
-    if (!apiProcess.ready()) {
+    const budgetMs = Number(config.value('debugger.proxyTimeoutS')) * 1000;
+    if (apiProcess.ready()) {
+      this.relay(req, res, budgetMs);
+      log.debug("Leaving DebuggerServer.forward(). Relayed.");
+      return;
+    }
+    if (!apiProcess.transient()) {
       const status = apiProcess.status();
       this.refuse(req, res, 502, 'STS-DBG-0010', 'api_unavailable',
                   'The debugger api is ' + status.state + '. ' +
                   (status.lastError ? 'Last failure: ' + status.lastError :
                    ''));
-      log.debug("Leaving DebuggerServer.forward(). Not ready.");
+      log.debug("Leaving DebuggerServer.forward(). Not running.");
       return;
     }
+    // A CHILD ON ITS WAY IS WAITED FOR, NOT ANSWERED 502 (CI run #510). Its
+    // first run of tests/protocol/sts_debugger_signin.js signed in, and the
+    // first /api call after it found the child being replaced — the anchor
+    // check had noticed, on that very call, a Root rebuilt sixteen minutes
+    // earlier — and was answered 502 while the successor was half a second
+    // from listening. The wait comes out of the call's own
+    // `debugger.proxyTimeoutS`; the request body is not read until the call
+    // is relayed, so nothing is lost while it waits.
+    const started = Date.now();
+    log.info('debugger: ' + req.method + ' ' + req.originalUrl + ' waits ' +
+             'for the api process, which is ' + apiProcess.status().state +
+             '.');
+    apiProcess.whenListening(budgetMs).then(function (ok) {
+      if (res.headersSent || res.writableEnded) {
+        log.debug("DebuggerServer.forward(): the caller went while waiting.");
+        return;
+      }
+      if (ok) {
+        self.relay(req, res, Math.max(1, budgetMs - (Date.now() - started)));
+        return;
+      }
+      if (apiProcess.transient()) {
+        // Still on its way at the end of the call's own bound: a handled 503
+        // that says when to ask again.
+        res.set('Retry-After', String(apiProcess.retryAfterS()));
+        self.refuse(req, res, 503, 'STS-DBG-0034', 'api_unavailable',
+                    'The debugger api is ' + apiProcess.status().state +
+                    ' and did not report listening within ' +
+                    Math.round(budgetMs / 1000) + 's ' +
+                    '(debugger.proxyTimeoutS). Try again shortly.');
+        return;
+      }
+      const status = apiProcess.status();
+      self.refuse(req, res, 502, 'STS-DBG-0010', 'api_unavailable',
+                  'The debugger api is ' + status.state + '. ' +
+                  (status.lastError ? 'Last failure: ' + status.lastError :
+                   ''));
+    }, function (err) {
+      log.error(errorCodes.tag('STS-DBG-0011') + 'debugger: waiting for the ' +
+                'api process failed: ' + ((err && err.message) || err));
+      if (!res.headersSent) {
+        self.refuse(req, res, 502, 'STS-DBG-0011', 'api_unavailable',
+                    'The debugger api did not answer.');
+      }
+    });
+    log.debug("Leaving DebuggerServer.forward(). Waiting for the api.");
+  }
+
+  /**
+   * Relays one `/api` call to a ready api child; `forward()`'s second half.
+   *
+   * @param req - the express request
+   * @param res - the express response
+   * @param timeoutMs - what is left of the call's `debugger.proxyTimeoutS`
+   */
+  relay(req, res, timeoutMs) {
+    const { log, apiProcess, config, http, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering DebuggerServer.relay(). " + req.method + " " +
+              req.originalUrl);
     const max = Number(config.value('debugger.maxRequestBytes'));
     const declared = Number(req.headers['content-length'] || 0);
     if (declared > max) {
@@ -626,7 +695,7 @@ class DebuggerServer {
                   'That request body is ' + declared +
                   ' bytes and the debugger ' +
                   'forwards at most ' + max + ' (debugger.maxRequestBytes).');
-      log.debug("Leaving DebuggerServer.forward(). Too large.");
+      log.debug("Leaving DebuggerServer.relay(). Too large.");
       return;
     }
     // THE HOST IS THE AUTHORITY (#407; RFC 9113 section 8.3.1), asked again
@@ -637,7 +706,7 @@ class DebuggerServer {
       this.refuse(req, res, 400, 'STS-HTTP-0024', 'invalid_request',
                   'The request\'s :authority and Host name different hosts ' +
                   '(RFC 9113 section 8.3.1).');
-      log.debug("Leaving DebuggerServer.forward(). Host mismatch.");
+      log.debug("Leaving DebuggerServer.relay(). Host mismatch.");
       return;
     }
     const original = String(req.originalUrl || '/');
@@ -691,9 +760,9 @@ class DebuggerServer {
       res.writeHead(answer.statusCode || 502, out);
       answer.pipe(res);
     });
-    const timeoutMs = Number(config.value('debugger.proxyTimeoutS')) * 1000;
+    const boundS = Number(config.value('debugger.proxyTimeoutS'));
     upstream.setTimeout(timeoutMs, function () {
-      upstream.destroy(new Error('timed out after ' + (timeoutMs / 1000) +
+      upstream.destroy(new Error('timed out after ' + boundS +
                                  's (debugger.proxyTimeoutS)'));
     });
     upstream.on('error', function (err) {
@@ -724,7 +793,7 @@ class DebuggerServer {
       }
     });
     req.pipe(upstream);
-    log.debug("Leaving DebuggerServer.forward().");
+    log.debug("Leaving DebuggerServer.relay().");
   }
 
   /**
@@ -835,6 +904,24 @@ class DebuggerServer {
       // does, with revocation, and `app`'s first middleware waits (#1360).
       tlsServer.holdConnectionsOn(server, 'the protocol debugger (' + port +
                                           ')');
+      // THE API CHILD IS REPLACED WHEN THE LISTENER CERTIFICATE IS, not on the
+      // next /api call that happens to look (CI run #510): a Root rebuilt at
+      // 02:19 was noticed at 02:35, by the call that was then kept waiting
+      // for the successor. `checkAnchor()` stays on the forward as well, for
+      // a change no observer reports. The observer list is `tls_server.js`'s
+      // own, and fires in the process holding the sockets — this one.
+      // Once per process: a test that listens again must not stack them.
+      if (!anchorObserved &&
+          typeof tlsServer.onServerCertificateChange === 'function') {
+        anchorObserved = true;
+        const self = this;
+        tlsServer.onServerCertificateChange(function () {
+          log.debug("DebuggerServer.listen(): the listener certificate " +
+                    "changed; asking whether the api's anchor did.");
+          anchorCheckedAt = 0;
+          self.checkAnchor();
+        });
+      }
       // NO shared session-ticket key (tls/session_tickets.ts): this
       // listener asks for a client certificate, and a session resumed on
       // another node has no remembered chain there — server.js says why.
@@ -1349,6 +1436,9 @@ const app = Http2Express.adapt(express());
 // makes a few times in a deployment's life.
 const ANCHOR_CHECK_MS = 5000;
 let anchorCheckedAt = 0;
+// Whether listen() has asked `tls_server.js` to say when the listener
+// certificate changes (CI run #510).
+let anchorObserved = false;
 
 // ---------------------------------------------------------------------------
 // THE STATIC SITE.

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5733** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5734** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -98,7 +98,7 @@ is an ordinary outcome.
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 187
-* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
+* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 59
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
 
@@ -6421,6 +6421,7 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 | `STS-DBG-0031` *(retired)* | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
 | `STS-DBG-0032` *(retired)* | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-DBG-0033` | Product mode: the debugger was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | HTTP 403 at the debugger |
+| `STS-DBG-0034` | The debugger's api process was starting, being replaced for a new trust anchor or due to restart, and did not report listening within the /api call's debugger.proxyTimeoutS, so the call was not forwarded. | HTTP 503 with Retry-After |
 
 ## STS-REPORT
 
