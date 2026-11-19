@@ -212,8 +212,8 @@
     "text": "Formatos de credencial del inicio de sesión con cartera"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "Los formatos de credencial que pide un inicio de sesión con cartera, por orden de preferencia: una consulta de credencial DCQL por cada uno, y un conjunto de credenciales que indica que cualquiera sirve. Cada uno inicia sesión solo con una prueba reciente del titular — un Key Binding JWT, un VP JWT o una prueba Data Integrity — para esta solicitud. Los nombres desconocidos se ignoran; ninguno significa los tres. Una cartera que solo responde la primera consulta que lee responde en el primer formato de aquí."
+    "en": "53a49b652b8fa682",
+    "text": "Los formatos de credencial que pide un inicio de sesión con cartera, por orden de preferencia: una consulta de credencial DCQL por cada uno, y un conjunto de credenciales que indica que cualquiera sirve. Cada uno inicia sesión solo con una prueba reciente del titular — un Key Binding JWT, un VP JWT, una prueba Data Integrity o una firma de dispositivo mdoc — para esta solicitud. Los nombres desconocidos se ignoran; ninguno significa los cuatro. Una cartera que solo responde la primera consulta que lee responde en el primer formato de aquí. Un mso_mdoc inicia la sesión de alguien solo si lo emitió este dominio."
   },
   "oid4vp.signInDcApiResponseMode|description": {
     "en": "1721241f011b9a28",

@@ -576,12 +576,12 @@
     "text": "full (#124، الذي ضمّ #115، 2026-09-23): يجيب end_session_endpoint عن GET وPOST؛ ويُتحقَّق من الطلب قبل أن تنتهي الجلسة؛ ويُتحقَّق من id_token_hint بوصفه ID Token أصدره خادم التفويض هذا (تُقبل المنتهية، كما يسمح القسم 2) وجمهوره هو العميل، ويُرفض client_id لم يُصدَر إليه؛ ويُطلب من المستخدم النهائي أن يؤكد — صفحة بزر حقيقي وبلا نص برمجي — ما لم يسمِّ التلميح هذه الجلسة وكان أي logout_hint يسمّيه؛ ولا يُتبَع post_logout_redirect_uri إلا عند تطابق تام مع القائمة المسجّلة للعميل، في كل وضع (ما زال التطوير يتبع واحدًا لعميل لم يسجّل شيئًا؛ ولا يفعل ذلك المنتج ولا وضع OAuth 2.1)، وتُعاد state. يُقبل ui_locales وكل صفحة بالإنجليزية، اللغة الوحيدة لدى هذه الخدمة. تسجيل الخروج عبر القناة الأمامية وعبر القناة الخلفية صفان قائمان بذاتهما. بوصفه طرفًا معتمدًا (#167): يعرض تسجيل الخروج عند /logout نقطة end_session_endpoint لدى شريك الاتحاد مع id_token_hint وclient_id وpost_logout_redirect_uri وstate، وتُطابَق العودة عند /federation/slo/{id}."
   },
   "stsmetadata.specs.oid4vci.coverage": {
-    "en": "9ec03ba02c69a7ce",
-    "text": "partial لكن واسع: بيانات المُصدِر الوصفية، وnonce، وإثبات الحيازة، والإصدار الدفعي، والإصدار المؤجّل، وعروض بيانات الاعتماد (Appendix H.1/H.2/H.3)، ومنحة pre-authorized code مع tx_code، وcredential_identifiers، وتشفير الطلب والاستجابة (القسم 10)، ونقطة نهاية الإشعار (القسم 11). شهادات المفاتيح (Appendix D) في ترويسة إثبات jwt وبوصفها نوع إثبات الشهادة، يُتحقَّق منها مقابل الشهادات المُعدّة؛ وقوائم الحالة لكل بيانات اعتماد؛ وبيانات اعتماد موقّعة بخوارزميات ما بعد الكم. بلا شهادة محفظة (Appendix E)."
+    "en": "15dc78bbb604ec84",
+    "text": "partial لكن واسع: بيانات المُصدِر الوصفية، وnonce، وإثبات الحيازة، والإصدار الدفعي، والإصدار المؤجّل، وعروض بيانات الاعتماد (Appendix H.1/H.2/H.3)، ومنحة pre-authorized code مع tx_code، وcredential_identifiers، وتشفير الطلب والاستجابة (القسم 10)، ونقطة نهاية الإشعار (القسم 11). شهادات المفاتيح (Appendix D) في ترويسة إثبات jwt وبوصفها نوع إثبات الشهادة، يُتحقَّق منها مقابل الشهادات المُعدّة؛ وقوائم الحالة لكل بيانات اعتماد؛ وبيانات اعتماد موقّعة بخوارزميات ما بعد الكم. يُصدَر mso_mdoc (IdentityCredentialMdoc، #1862): COSE ES256 (-7) أو ESP256 (-9)، ويبقى الإثبات jwt بـ ES256. بلا شهادة محفظة (Appendix E)."
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "7b2694beee176000",
-    "text": "partial: طلبات التفويض بالقيمة وبوصفها كائن طلب موقّعًا بالمرجع، وresponse_mode=direct_post، واستعلام DCQL (بما في ذلك credential_sets)، وتحقق كامل مما يعود بالصيغ الأربع كلها — Key Binding JWT، وVP JWT مع nonce وaud وiat، وVerifiablePresentation بإثبات Data Integrity (B.1.3.2.5)، ومنذ #935 مستند ISO mdoc (B.2: موقّع المستند متسلسلًا إلى oid4vp.mdocTrustAnchors، وMSO، وتجزئة كل عنصر، وتوقيع الجهاز على session transcript في B.2.6.1؛ ويُرفض deviceMac) — وحالة كل بيانات اعتماد، والتي يجب أن تسمّيها كل بيانات اعتماد مُقدَّمة (oid4vp.requireStatusReference، الكل افتراضيًا؛ واستعلام ldp_vc يطلب credentialStatus وما يحجبها يُرفض). منذ 2026-09-17 يستطيع العرض أن يسجّل دخول شخص عند /authn/wallet — عبر Digital Credentials API (Appendix A: openid4vp-v1-signed وexpected_origins وdc_api.jwt أو dc_api، والجمهور origin:)، وعلى الجهاز نفسه مع response_code في القسم 8.2، وبرمز QR عادي فقط حيث يكون oid4vp.signInCrossDevice مُشغَّلًا — لكن فقط بيانات اعتماد مربوطة بالحائز أصدرها نطاق الثقة هذا، بأي من الصيغ الثلاث، وفقط بوصفها إدخال الدليل الذي أُصدرت له؛ وأي شيء آخر يُتحقَّق منه ولا يُسجَّل به دخول أحد. بلا presentation_definition (DIF PE) — DCQL فقط؛ وبلا طلب DC API غير موقّع أو متعدد التواقيع؛ وبلا mdoc عبر DC API أو لتسجيل الدخول؛ وبلا شهادة محفظة؛ وبلا transaction_data. منذ #129 يسمّي الطلب الموقّع معرّف عميله بالبادئة التي يختارها oid4vp.clientIdPrefix (القسم 5.9): pre-registered، وdecentralized_identifier (did:web الخاص بنطاق الثقة، وkid من نوع DID URL)، وverifier_attestation (JWT لشهادة المتحقّق في ترويسة `jwt`، مُعدّ أو موثّق ذاتيًا)، أو openid_federation (Entity Configuration الخاص بنطاق الثقة)، ومنذ #230 أيضًا x509_san_dns وx509_hash (القسم 5.9.3: شهادة المتحقّق نفسه من JOSE Issuing CA الخاص بنطاق الثقة في x5c، وdNSName هو مضيف Response URI، أو SHA-256 للورقة)، يُختار لكل نطاق ثقة أو لكل طلب؛ وغير الموقّع يستخدم redirect_uri. لا تُعرَض بادئة origin (فهي خاصة بـ Digital Credentials API، ويضبطها المتصفح)."
+    "en": "65e427209cdba492",
+    "text": "partial: طلبات التفويض بالقيمة وبوصفها كائن طلب موقّعًا بالمرجع، وresponse_mode=direct_post، واستعلام DCQL (بما في ذلك credential_sets)، وتحقق كامل مما يعود بالصيغ الأربع كلها — Key Binding JWT، وVP JWT مع nonce وaud وiat، وVerifiablePresentation بإثبات Data Integrity (B.1.3.2.5)، ومنذ #935 مستند ISO mdoc (B.2: موقّع المستند متسلسلًا إلى oid4vp.mdocTrustAnchors، وMSO، وتجزئة كل عنصر، وتوقيع الجهاز على session transcript في B.2.6.1؛ ويُرفض deviceMac) — وحالة كل بيانات اعتماد، والتي يجب أن تسمّيها كل بيانات اعتماد مُقدَّمة (oid4vp.requireStatusReference، الكل افتراضيًا؛ واستعلام ldp_vc يطلب credentialStatus وما يحجبها يُرفض). منذ 2026-09-17 يستطيع العرض أن يسجّل دخول شخص عند /authn/wallet — عبر Digital Credentials API (Appendix A: openid4vp-v1-signed وexpected_origins وdc_api.jwt أو dc_api، والجمهور origin:)، وعلى الجهاز نفسه مع response_code في القسم 8.2، وبرمز QR عادي فقط حيث يكون oid4vp.signInCrossDevice مُشغَّلًا — لكن فقط بيانات اعتماد مربوطة بالحائز أصدرها نطاق الثقة هذا، بأي من الصيغ الأربع، وفقط بوصفها إدخال الدليل الذي أُصدرت له؛ وأي شيء آخر يُتحقَّق منه ولا يُسجَّل به دخول أحد. بلا presentation_definition (DIF PE) — DCQL فقط؛ وبلا طلب DC API غير موقّع أو متعدد التواقيع؛ وبلا mdoc عبر DC API (الملحق A)؛ ولا يُسجِّل mso_mdoc دخول أحد إلا إذا أصدره نطاق الثقة هذا (#1862)؛ وبلا شهادة محفظة؛ وبلا transaction_data. منذ #129 يسمّي الطلب الموقّع معرّف عميله بالبادئة التي يختارها oid4vp.clientIdPrefix (القسم 5.9): pre-registered، وdecentralized_identifier (did:web الخاص بنطاق الثقة، وkid من نوع DID URL)، وverifier_attestation (JWT لشهادة المتحقّق في ترويسة `jwt`، مُعدّ أو موثّق ذاتيًا)، أو openid_federation (Entity Configuration الخاص بنطاق الثقة)، ومنذ #230 أيضًا x509_san_dns وx509_hash (القسم 5.9.3: شهادة المتحقّق نفسه من JOSE Issuing CA الخاص بنطاق الثقة في x5c، وdNSName هو مضيف Response URI، أو SHA-256 للورقة)، يُختار لكل نطاق ثقة أو لكل طلب؛ وغير الموقّع يستخدم redirect_uri. لا تُعرَض بادئة origin (فهي خاصة بـ Digital Credentials API، ويضبطها المتصفح)."
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -640,8 +640,8 @@
     "text": "partial: خدمات المُصدِر (issue) والحامل (prove وderive) والمتحقق (بيانات الاعتماد والعروض) والحالة، على مجموعات التشفير وقوائم الحالة والمفاتيح الخاصة بهذه الخدمة من VC API نفسها، متوقفة OFF إلى أن يشغّلها نطاق ثقة (vcApi.enabled)، خلف رمز وصول OAuth 2.0 يحمل vc-api:issue أو vc-api:verify في كل وضع، محدودة المعدل لكل عميل، وخيار لا تفهمه يُرفض. غير مبني: تفويض zcap، ومسارات العمل والتبادلات، والتحديات، وتخزين بيانات الاعتماد والعروض (GET وDELETE لـ /credentials/{id})، ونطاقات operation:path الخاصة بـ VCALM، ونسخ المُصدِر المكوَّنة لكل نطاق ثقة (النسخ ثابتة، واحدة لكل آلية تأمين ومنحنى)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "b7932392e5841ca6",
-    "text": "partial: قائمة لكل نطاق ثقة، بِتّان لكل بيان اعتماد (VALID وINVALID وSUSPENDED)، تُقدَّم كـ Status List Token بصيغتَي JWT وCWT وفق Accept، مع ttl وexp، ونقطة نهاية تجميع، وادعاء status في كل بيان اعتماد SD-JWT VC وjwt_vc_json؛ يحلّ المتحقق قائمة مُصدِر أجنبي موثوق ويرفض حين لا يمكن إصدار بيان. وقائمة ثانية لكل نطاق ثقة لرموز الوصول ACCESS TOKENS (#432): بِت واحد لكل رمز، وكل رمز وصول OAuth وفق RFC 9068 وكل رمز GNAP من نوع jwt-signed وjwt-encrypted يحمل ادعاء حالته، ويُعلَن بوصفه status_list_aggregation_endpoint (القسم 9.1) في بيانات خادم التفويض الوصفية. لا حل تاريخي (501)، ولا تُتَّبع إعادات التوجيه. لا يُصدَر mdoc؛ يحلّ المتحقق قائمة CWT التي يسمّيها Mobile Security Object الخاص بـ mdoc المقدَّم، موقَّعة بشهادة في x5chain تتسلسل إلى oid4vp.mdocTrustAnchors (#935)."
+    "en": "1159352758ad21d3",
+    "text": "partial: قائمة لكل نطاق ثقة، بِتّان لكل بيان اعتماد (VALID وINVALID وSUSPENDED)، تُقدَّم كـ Status List Token بصيغتَي JWT وCWT وفق Accept، مع ttl وexp، ونقطة نهاية تجميع، وادعاء status في كل بيان اعتماد SD-JWT VC وjwt_vc_json؛ يحلّ المتحقق قائمة مُصدِر أجنبي موثوق ويرفض حين لا يمكن إصدار بيان. وقائمة ثانية لكل نطاق ثقة لرموز الوصول ACCESS TOKENS (#432): بِت واحد لكل رمز، وكل رمز وصول OAuth وفق RFC 9068 وكل رمز GNAP من نوع jwt-signed وjwt-encrypted يحمل ادعاء حالته، ويُعلَن بوصفه status_list_aggregation_endpoint (القسم 9.1) في بيانات خادم التفويض الوصفية. لا حل تاريخي (501)، ولا تُتَّبع إعادات التوجيه. يسمّي mdoc المُصدَر CWT في /oid4vci/status-lists/mdoc، موقَّعًا من موقّع المستند مع x5chain (#1862). ويحلّ المتحقق CWT الخاص بـ mdoc المقدَّم مقابل oid4vp.mdocTrustAnchors وIACA نطاق الثقة هذا بعد سكّها (#935)."
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",
@@ -1622,6 +1622,10 @@
   "stsmetadata.endpoints./admin-api/keys/:action.what": {
     "en": "959c608dca54eb96",
     "text": "خارج المواصفة. `rotate` و`emergency` (#48) هما نموذجا /admin/keys/rotate: `{ \"units\": [...] }` (فارغ أو \"all\" لكل وحدة) ولحالة الطوارئ `\"confirm\": \"compromised\"`؛ يجيب كل منهما بـ 202 مع runId لتشغيل signing.rotate-now المُدرج في الطابور، لمتابعته عند /admin-api/scheduler?run=. `export`: تعيد هذه العملية مادة المفتاح الخاص، بصيغة base64 في رد JSON لأن هذه الواجهة تجيب بـ JSON في كل موضع آخر. تأخذ معرّف مفتاح، وصيغة (pem أو der أو jwk أو pkcs12) وكلمة المرور — مطلوبة لـ pkcs12، واختيارية في غيرها، حيث تشفّر النصف الخاص. هذه الواجهة غير محجوبة إطلاقًا، وهي النتيجة الصادقة نفسها التي لكل عملية هنا وتستحق أن تُقال مرتين لهذه. يطابق POST /admin/keys/export."
+  },
+  "stsmetadata.endpoints./admin-api/mdoc-iaca.what": {
+    "en": "371ef1954001d46d",
+    "text": "NON-SPEC (#1862). الشهادة التي ينشرها GET /oid4vci/mdoc-iaca، بصيغة JSON: الـ PEM وموضوعها وnotBefore وnotAfter. تُسكّ عند الاستدعاء الأول، بالطريقة نفسها التي تسكّها بها تلك القراءة العامة. بلا مفتاح خاص. وفشل السك يُجاب بـ 500 نصًا عاديًا."
   },
   "stsmetadata.endpoints./admin-api/pki.what": {
     "en": "83b11af065a98038",
@@ -3428,12 +3432,20 @@
     "text": "قيمة c_nonce جديدة لإثبات الحيازة. تُستخدم مرة واحدة."
   },
   "stsmetadata.endpoints./oid4vci/credential.what": {
-    "en": "183d47a992f2e527",
-    "text": "يُصدِر dc+sd-jwt أو jwt_vc_json أو ldp_vc وفق التهيئة المطلوبة، ويحمل كل منها مرجع قائمة حالته. يتحقق من إثبات المحفظة — إثبات jwt، مع إقرار مفتاح في ترويسته إن أُرسل أو طُلب، أو نوع إثبات الإقرار — ويدعم الإصدار الدفعي، ويقبل طلبًا مشفَّرًا و/أو يعيد استجابة مشفَّرة."
+    "en": "691a18d16548af3b",
+    "text": "يُصدِر dc+sd-jwt أو jwt_vc_json أو ldp_vc أو mso_mdoc وفق التهيئة المطلوبة، ويحمل كل منها مرجع قائمة حالته. يتحقق من إثبات المحفظة — إثبات jwt، مع إقرار مفتاح في ترويسته إن أُرسل أو طُلب، أو نوع إثبات الإقرار — ويدعم الإصدار الدفعي، ويقبل طلبًا مشفَّرًا و/أو يعيد استجابة مشفَّرة."
   },
   "stsmetadata.endpoints./oid4vci/status-lists/1.what": {
     "en": "0f0ea3feaea47fa8",
     "text": "رمز قائمة الحالة Status List Token لنطاق الثقة هذا: application/statuslist+jwt، أو application/statuslist+cwt حين يطلبه Accept (وهو COSE_Sign1، وليس موسومًا كـ CWT). بتّان لكل بيانات اعتماد؛ وttl هو oid4vci.statusListTtlS، وexp هو oid4vci.statusListLifetimeS، ويُوقَّع بمفتاح بيانات الاعتماد. يجيب ?time= بـ 501: لا تُحفظ قوائم تاريخية."
+  },
+  "stsmetadata.endpoints./oid4vci/status-lists/mdoc.what": {
+    "en": "635d4fa4e34ca898",
+    "text": "سلسلة البتات نفسها في /oid4vci/status-lists/1، بصيغة application/statuslist+cwt موقَّعة من موقّع مستندات mdoc لنطاق الثقة هذا. وx5chain هي تلك الشهادة. وCache-Control هو max-age بقيمة ttl للقائمة، وVary هو Accept. ويُجاب ?time= بـ 501."
+  },
+  "stsmetadata.endpoints./oid4vci/mdoc-iaca.what": {
+    "en": "ef6376b2dcb0c9f8",
+    "text": "CA السلطة المُصدِرة لـ mdoc الخاصة بنطاق الثقة هذا، PEM، application/pem-certificate-chain، Cache-Control no-store. تُسكّ عند الاستدعاء الأول. بلا مفتاح خاص."
   },
   "stsmetadata.endpoints./oid4vci/status-lists.what": {
     "en": "76f52e390d2c1987",

@@ -819,6 +819,10 @@
     "en": "02bd417f55c9790f",
     "text": "Ein Schlüsselpaar exportieren oder die Signaturschlüssel rotieren"
   },
+  "endpoints.route./admin-api/mdoc-iaca.name": {
+    "en": "2a0f7fa3f4260418",
+    "text": "Die mdoc Issuing Authority CA dieses Vertrauensbereichs"
+  },
   "endpoints.route./admin-api/pki.name": {
     "en": "bc458d477b4de7d9",
     "text": "Die Zertifizierungsstelle dieses Vertrauensbereichs"
@@ -2210,6 +2214,14 @@
   "endpoints.route./oid4vci/status-lists/1.name": {
     "en": "6bc2372d3bb214c3",
     "text": "Token-Statusliste"
+  },
+  "endpoints.route./oid4vci/status-lists/mdoc.name": {
+    "en": "0f85cae8f7648bb1",
+    "text": "mdoc-Token-Statusliste"
+  },
+  "endpoints.route./oid4vci/mdoc-iaca.name": {
+    "en": "005a19a028c1adc0",
+    "text": "mdoc Issuing Authority CA"
   },
   "endpoints.route./oid4vci/status-lists.name": {
     "en": "b7c39aa8efc43f99",

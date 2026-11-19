@@ -1020,8 +1020,8 @@
     "text": "Register der Wallet-Anmeldung"
   },
   "caches.store.oid4vp.sign-in-register.description": {
-    "en": "91808833ee8c6a0c",
-    "text": "Die Credentials, die dieser Vertrauensbereich einer Person auf einem von ihm geprüften Zugriffstoken ausgestellt hat und mit denen sich eine Wallet als Einzige anmelden darf — Schlüssel ist ein Digest des vom Aussteller signierten JWT, oder bei ldp_vc der Schlüssel des Inhabers und die Person."
+    "en": "979c99c562007a1c",
+    "text": "Die Credentials, die dieser Vertrauensbereich einer Person auf einem von ihm geprüften Zugriffstoken ausgestellt hat und mit denen sich eine Wallet als Einzige anmelden darf — Schlüssel ist ein Digest des vom Aussteller signierten JWT (bei einem mdoc: der Nutzlast von issuerAuth), oder bei ldp_vc der Schlüssel des Inhabers und die Person."
   },
   "caches.store.oid4vp.sign-in-register.bound": {
     "en": "89a00ee69a340570",

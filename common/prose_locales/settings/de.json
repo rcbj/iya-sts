@@ -6188,8 +6188,56 @@
     "text": "Algorithmus, mit dem Credentials signiert werden"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "Der JWS-Algorithmus, mit dem Credentials dc+sd-jwt und jwt_vc_json signiert werden — Post-Quantum-Algorithmen eingeschlossen — und der, mit dem die Statuslisten dieses Bereichs signiert werden, und der, den das Domain Linkage Credential der DID Configuration verwendet. credential_signing_alg_values_supported der Metadaten nennt ihn, /oauth2/jwks und /.well-known/did.json veröffentlichen den Schlüssel, und der Verifier dieses Dienstes prüft dagegen. ldp_vc ist bbs-2023 und ist nicht betroffen. Ein bereits ausgestelltes Credential behält den Algorithmus, mit dem es signiert wurde. oid4vc.walletCompatibility lehnt hier einen Post-Quantum- oder einen Composite-Algorithmus ab."
+    "en": "3ed3ccddb91c589b",
+    "text": "Der JWS-Algorithmus, mit dem Credentials dc+sd-jwt und jwt_vc_json signiert werden — Post-Quantum-Algorithmen eingeschlossen — und der, mit dem die Statuslisten dieses Bereichs signiert werden, und der, den das Domain Linkage Credential der DID Configuration verwendet. credential_signing_alg_values_supported der Metadaten nennt ihn, /oauth2/jwks und /.well-known/did.json veröffentlichen den Schlüssel, und der Verifier dieses Dienstes prüft dagegen. ldp_vc ist bbs-2023 und ist nicht betroffen. Ein bereits ausgestelltes Credential behält den Algorithmus, mit dem es signiert wurde. oid4vc.walletCompatibility lehnt hier einen Post-Quantum- oder einen Composite-Algorithmus ab. Ein mso_mdoc wird mit COSE ES256 (-7) oder ESP256 (-9) signiert, nicht mit diesem Algorithmus."
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "mdoc-Dokumenttyp"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "Der docType eines mso_mdoc, das dieser Vertrauensbereich ausstellt (ISO/IEC 18013-5). Eine Wallet-Anmeldung verlangt denselben Typ. Der eigenständige Endpunkt des Verifiers verwendet oid4vp.expectedDoctype, dessen Vorgabe derselbe Wert ist."
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "mdoc-Datennamensraum"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "Der Namensraum, in dem die Elemente eines ausgestellten mdoc benannt sind. Eine Anmeldung verlangt issuing_authority in diesem Namensraum. Der eigenständige Endpunkt des Verifiers verwendet oid4vp.mdocNamespace, dessen Vorgabe derselbe Wert ist."
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "mdoc-Gültigkeit (Tage)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "Wie viele Tage das validityInfo eines ausgestellten mdoc ab dem Signieren abdeckt. Das Zertifikat des Document Signers ist kürzer als die Issuing Authority CA und kann vor diesem Zeitraum enden; ein Verifier prüft die Signaturzeit gegen das Zertifikat, nicht gegen den Ablauf des Dokuments."
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "mdoc-Altersschwellen"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "Die age_over_NN-Booleans, die ein mdoc trägt, wenn die Person ein Geburtsdatum hat, in ganzen Jahren. Aus dem Geburtsdatum berechnet. Ein Porträt und Fahrberechtigungen werden nicht erfunden."
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "mdoc-Ausstellungsland"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "Das Land nach ISO 3166-1 alpha-2, das der Subject der Issuing Authority CA nennt, und das Element issuing_country jedes mdoc. Zwei Buchstaben."
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "mdoc-Ausstellungsbehörde"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "Der Name im Common Name der Issuing Authority CA und das Element issuing_authority jedes mdoc. Eine Wallet-Anmeldung verlangt dieses Element, das immer vorhanden ist."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6716,24 +6764,24 @@
     "text": "Vertrauenswürdige mdoc-Ausstellungsstellen (IACA-Zertifikate, PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "Aneinandergereihte PEM-Zertifikate: die Zertifikate der Issuing Authority CA (ISO/IEC 18013-5 Annex B), an die das Zertifikat des Document Signers eines vorgelegten mdoc ketten muss. Die Kette wird aufgebaut und geprüft, wie RFC 5280 es sagt, die Sperrung des Document Signers wird konsultiert (pki.revocationCheck), und ein mdoc, dessen Signer an keines davon kettet, wird abgelehnt. Leer — die Vorgabe — vertraut keinem mdoc-Aussteller, sodass eine mso_mdoc-Präsentation abgelehnt wird, bis einer genannt ist."
+    "en": "725416403bc17a75",
+    "text": "Aneinandergereihte PEM-Zertifikate: die Zertifikate der Issuing Authority CA (ISO/IEC 18013-5 Annex B), an die das Zertifikat des Document Signers eines vorgelegten mdoc ketten muss. Die Kette wird aufgebaut und geprüft, wie RFC 5280 es sagt, die Sperrung des Document Signers wird konsultiert (pki.revocationCheck), und ein mdoc, dessen Signer an keines davon kettet, wird abgelehnt. Leer — die Vorgabe — vertraut keinem mdoc-Aussteller außer der eigenen Issuing Authority CA dieses Vertrauensbereichs, sobald eine erzeugt wurde (GET /oid4vci/mdoc-iaca)."
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "Erwarteter mdoc-Dokumenttyp (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "Der `docType`, den eine mso_mdoc-Anfrage verlangt (`meta.doctype_value`) und den der Verifier vom vorgelegten Dokument und seinem Mobile Security Object verlangt. Die Vorgabe ist der mobile Führerschein von ISO/IEC 18013-5."
+    "en": "dcb6e8f85158b0a1",
+    "text": "Der `docType`, den eine mso_mdoc-Anfrage verlangt (`meta.doctype_value`) und den der Verifier vom vorgelegten Dokument und seinem Mobile Security Object verlangt. Die Vorgabe ist der Typ, den dieser Vertrauensbereich ausstellt (oid4vci.mdocDoctype). Ein mobiler ISO-Führerschein ist org.iso.18013.5.1.mDL, hier und beim Aussteller einzustellen."
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "mdoc-Namensraum, aus dem die angeforderten Claims gelesen werden"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "Der Namensraum, den die Claim-Pfade einer mso_mdoc-Anfrage nennen (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). Jeder angeforderte Claim wird als Datenelement gleichen Namens verlangt, außer birthdate (birth_date) und address (resident_address), die ISO/IEC 18013-5 anders benennt. Die Vorgabe ist die des mobilen Führerscheins."
+    "en": "0ad347251f9b7a85",
+    "text": "Der Namensraum, den die Claim-Pfade einer mso_mdoc-Anfrage nennen (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). Jeder angeforderte Claim wird als Datenelement gleichen Namens verlangt, außer birthdate (birth_date) und address (resident_address), die ISO/IEC 18013-5 anders benennt. Die Vorgabe ist der Namensraum, in dem dieser Vertrauensbereich ausstellt (oid4vci.mdocNamespace)."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6796,8 +6844,8 @@
     "text": "Anmeldedatenformate der Wallet-Anmeldung"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "Die Formate von Anmeldedaten, die eine Wallet-Anmeldung anfordert, in der Reihenfolge der Bevorzugung: je eine DCQL-Credential-Query und ein Credential Set, das sagt, dass jedes einzelne genügt. Jedes meldet nur mit einem frischen Inhabernachweis an — einem Key Binding JWT, einem VP JWT oder einem Data-Integrity-Nachweis — für diese Anfrage. Unbekannte Namen werden ignoriert; gar keiner bedeutet alle drei. Eine Wallet, die nur die erste Query beantwortet, die sie liest, antwortet im ersten Format hier."
+    "en": "53a49b652b8fa682",
+    "text": "Die Formate von Anmeldedaten, die eine Wallet-Anmeldung anfordert, in der Reihenfolge der Bevorzugung: je eine DCQL-Credential-Query und ein Credential Set, das sagt, dass jedes einzelne genügt. Jedes meldet nur mit einem frischen Inhabernachweis an — einem Key Binding JWT, einem VP JWT, einem Data-Integrity-Nachweis oder einer mdoc-Gerätesignatur — für diese Anfrage. Unbekannte Namen werden ignoriert; gar keiner bedeutet alle vier. Eine Wallet, die nur die erste Query beantwortet, die sie liest, antwortet im ersten Format hier. Ein mso_mdoc meldet nur dann jemanden an, wenn dieser Vertrauensbereich es ausgestellt hat."
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",

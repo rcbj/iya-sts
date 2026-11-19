@@ -6188,8 +6188,56 @@
     "text": "क्रेडेंशियल जिस एल्गोरिदम से हस्ताक्षरित होते हैं"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "वह JWS एल्गोरिदम जिससे dc+sd-jwt और jwt_vc_json क्रेडेंशियल हस्ताक्षरित होते हैं — पोस्ट-क्वांटम वाले शामिल — और जिससे इस विश्वास क्षेत्र की स्टेटस सूचियाँ हस्ताक्षरित होती हैं, और जिसे DID Configuration का Domain Linkage Credential उपयोग करता है। मेटाडेटा का credential_signing_alg_values_supported इसे नाम देता है, /oauth2/jwks और /.well-known/did.json कुंजी प्रकाशित करते हैं, और इस सेवा का Verifier इसके विरुद्ध जाँचता है। ldp_vc bbs-2023 है और प्रभावित नहीं होता। पहले से जारी क्रेडेंशियल उस एल्गोरिदम को रखता है जिससे वह हस्ताक्षरित हुआ। oid4vc.walletCompatibility यहाँ पोस्ट-क्वांटम या कम्पोजिट वाले को अस्वीकार करता है।"
+    "en": "3ed3ccddb91c589b",
+    "text": "वह JWS एल्गोरिदम जिससे dc+sd-jwt और jwt_vc_json क्रेडेंशियल हस्ताक्षरित होते हैं — पोस्ट-क्वांटम वाले शामिल — और जिससे इस विश्वास क्षेत्र की स्टेटस सूचियाँ हस्ताक्षरित होती हैं, और जिसे DID Configuration का Domain Linkage Credential उपयोग करता है। मेटाडेटा का credential_signing_alg_values_supported इसे नाम देता है, /oauth2/jwks और /.well-known/did.json कुंजी प्रकाशित करते हैं, और इस सेवा का Verifier इसके विरुद्ध जाँचता है। ldp_vc bbs-2023 है और प्रभावित नहीं होता। पहले से जारी क्रेडेंशियल उस एल्गोरिदम को रखता है जिससे वह हस्ताक्षरित हुआ। oid4vc.walletCompatibility यहाँ पोस्ट-क्वांटम या कम्पोजिट वाले को अस्वीकार करता है। mso_mdoc पर COSE ES256 (-7) या ESP256 (-9) से हस्ताक्षर होता है, इस एल्गोरिथ्म से नहीं।"
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "mdoc दस्तावेज़ प्रकार"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "इस क्षेत्र द्वारा जारी mso_mdoc का docType (ISO/IEC 18013-5)। वॉलेट साइन-इन यही प्रकार माँगता है। Verifier का स्वतंत्र endpoint oid4vp.expectedDoctype का उपयोग करता है, जिसका डिफ़ॉल्ट यही मान है।"
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "mdoc डेटा नामस्थान"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "वह नामस्थान जिसमें जारी mdoc के तत्वों के नाम होते हैं। साइन-इन इस नामस्थान में issuing_authority माँगता है। Verifier का स्वतंत्र endpoint oid4vp.mdocNamespace का उपयोग करता है, जिसका डिफ़ॉल्ट यही मान है।"
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "mdoc वैधता (दिन)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "जारी mdoc का validityInfo हस्ताक्षर के क्षण से कितने दिन कवर करता है। दस्तावेज़ हस्ताक्षरकर्ता का प्रमाणपत्र Issuing Authority CA से छोटा होता है और इस अवधि से पहले समाप्त हो सकता है; Verifier हस्ताक्षर समय को प्रमाणपत्र से जाँचता है, दस्तावेज़ की समाप्ति से नहीं।"
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "mdoc आयु-सीमाएँ"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "वे age_over_NN बूलियन जो mdoc तब रखता है जब व्यक्ति की जन्म तिथि हो, पूरे वर्षों में। जन्म तिथि से गणना की जाती है। कोई चित्र या ड्राइविंग विशेषाधिकार गढ़े नहीं जाते।"
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "mdoc जारीकर्ता देश"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "ISO 3166-1 alpha-2 देश जिसे Issuing Authority CA का subject नाम देता है, और हर mdoc का issuing_country तत्व। दो अक्षर।"
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "mdoc जारीकर्ता प्राधिकरण"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "Issuing Authority CA के common name में नाम और हर mdoc का issuing_authority तत्व। वॉलेट साइन-इन यह तत्व माँगता है, जो हमेशा मौजूद होता है।"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6716,24 +6764,24 @@
     "text": "विश्वसनीय mdoc जारीकर्ता प्राधिकारी (IACA प्रमाणपत्र, PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "जोड़े गए PEM प्रमाणपत्र: Issuing Authority CA प्रमाणपत्र (ISO/IEC 18013-5 Annex B) जिन तक प्रस्तुत mdoc के दस्तावेज़-हस्ताक्षरकर्ता प्रमाणपत्र की चेन पहुँचनी चाहिए। चेन RFC 5280 के अनुसार बनती और जाँची जाती है, दस्तावेज़ हस्ताक्षरकर्ता का निरसन देखा जाता है (pki.revocationCheck), और जिसका हस्ताक्षरकर्ता इनमें से किसी तक नहीं पहुँचता वह mdoc अस्वीकार होता है। खाली — डिफ़ॉल्ट — किसी mdoc जारीकर्ता पर भरोसा नहीं करता, इसलिए नाम दिए जाने तक mso_mdoc प्रस्तुति अस्वीकार होती है।"
+    "en": "725416403bc17a75",
+    "text": "जोड़े गए PEM प्रमाणपत्र: Issuing Authority CA प्रमाणपत्र (ISO/IEC 18013-5 Annex B) जिन तक प्रस्तुत mdoc के दस्तावेज़-हस्ताक्षरकर्ता प्रमाणपत्र की चेन पहुँचनी चाहिए। चेन RFC 5280 के अनुसार बनती और जाँची जाती है, दस्तावेज़ हस्ताक्षरकर्ता का निरसन देखा जाता है (pki.revocationCheck), और जिसका हस्ताक्षरकर्ता इनमें से किसी तक नहीं पहुँचता वह mdoc अस्वीकार होता है। खाली — डिफ़ॉल्ट — इस क्षेत्र के अपने Issuing Authority CA को छोड़कर, एक बार बन जाने पर (GET /oid4vci/mdoc-iaca), किसी mdoc जारीकर्ता पर भरोसा नहीं करता।"
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "अपेक्षित mdoc दस्तावेज़ प्रकार (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "वह `docType` जिसे mso_mdoc अनुरोध माँगता है (`meta.doctype_value`) और जिसे Verifier प्रस्तुत दस्तावेज़ तथा उसके Mobile Security Object से माँगता है। डिफ़ॉल्ट ISO/IEC 18013-5 का मोबाइल ड्राइविंग लाइसेंस है।"
+    "en": "dcb6e8f85158b0a1",
+    "text": "वह `docType` जिसे mso_mdoc अनुरोध माँगता है (`meta.doctype_value`) और जिसे Verifier प्रस्तुत दस्तावेज़ तथा उसके Mobile Security Object से माँगता है। डिफ़ॉल्ट वह प्रकार है जिसे यह क्षेत्र जारी करता है (oid4vci.mdocDoctype)। ISO मोबाइल ड्राइविंग लाइसेंस org.iso.18013.5.1.mDL है, जिसे यहाँ और जारीकर्ता पर सेट किया जाता है।"
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "mdoc नामस्थान जिससे माँगे गए क्लेम पढ़े जाते हैं"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "वह नामस्थान जिसे mso_mdoc अनुरोध के क्लेम पथ नाम देते हैं (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3)। हर माँगा क्लेम उसी नाम के डेटा तत्व के रूप में माँगा जाता है, birthdate (birth_date) और address (resident_address) को छोड़कर, जिन्हें ISO/IEC 18013-5 अलग नाम देता है। डिफ़ॉल्ट मोबाइल ड्राइविंग लाइसेंस का है।"
+    "en": "0ad347251f9b7a85",
+    "text": "वह नामस्थान जिसे mso_mdoc अनुरोध के क्लेम पथ नाम देते हैं (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3)। हर माँगा क्लेम उसी नाम के डेटा तत्व के रूप में माँगा जाता है, birthdate (birth_date) और address (resident_address) को छोड़कर, जिन्हें ISO/IEC 18013-5 अलग नाम देता है। डिफ़ॉल्ट वह नामस्थान है जिसमें यह क्षेत्र जारी करता है (oid4vci.mdocNamespace)।"
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6796,8 +6844,8 @@
     "text": "वॉलेट साइन-इन के क्रेडेंशियल प्रारूप"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "वे क्रेडेंशियल प्रारूप जिन्हें वॉलेट साइन-इन प्राथमिकता के क्रम में माँगता है: प्रत्येक के लिए एक DCQL क्रेडेंशियल क्वेरी, और एक क्रेडेंशियल सेट जो कहे कि कोई भी एक पर्याप्त है। प्रत्येक इस अनुरोध के लिए केवल ताज़ा धारक प्रमाण से साइन इन करता है — Key Binding JWT, VP JWT, या Data Integrity प्रमाण। अज्ञात नाम छोड़ दिए जाते हैं; एक भी न होना तीनों का अर्थ है। जो वॉलेट केवल पहली पढ़ी क्वेरी का उत्तर देता है वह यहाँ के पहले प्रारूप में उत्तर देता है।"
+    "en": "53a49b652b8fa682",
+    "text": "वे क्रेडेंशियल प्रारूप जिन्हें वॉलेट साइन-इन प्राथमिकता के क्रम में माँगता है: प्रत्येक के लिए एक DCQL क्रेडेंशियल क्वेरी, और एक क्रेडेंशियल सेट जो कहे कि कोई भी एक पर्याप्त है। प्रत्येक इस अनुरोध के लिए केवल ताज़ा धारक प्रमाण से साइन इन करता है — Key Binding JWT, VP JWT, Data Integrity प्रमाण, या mdoc डिवाइस हस्ताक्षर। अज्ञात नाम छोड़ दिए जाते हैं; एक भी न होना चारों का अर्थ है। जो वॉलेट केवल पहली पढ़ी क्वेरी का उत्तर देता है वह यहाँ के पहले प्रारूप में उत्तर देता है। mso_mdoc किसी को तभी साइन इन कराता है जब इसे इस क्षेत्र ने जारी किया हो।"
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",

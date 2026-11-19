@@ -6188,8 +6188,56 @@
     "text": "الخوارزمية التي تُوقَّع بها الاعتمادات"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "64dfa4a593f7ec50",
-    "text": "خوارزمية JWS التي تُوقَّع بها اعتمادات dc+sd-jwt وjwt_vc_json — بما فيها ما بعد الكم — والتي تُوقَّع بها قوائم حالة هذا النطاق، والتي يستخدمها اعتماد ربط المجال في تكوين DID. يسمّيها credential_signing_alg_values_supported في بيانات الوصف، وينشر /oauth2/jwks و/.well-known/did.json المفتاح، وتتحقق جهة التحقق في هذه الخدمة مقابله. ldp_vc هو bbs-2023 ولا يتأثر. يحتفظ اعتماد صدر بالفعل بالخوارزمية التي وُقّع بها. يرفض oid4vc.walletCompatibility خوارزمية ما بعد كمومية أو مركّبة هنا."
+    "en": "3ed3ccddb91c589b",
+    "text": "خوارزمية JWS التي تُوقَّع بها اعتمادات dc+sd-jwt وjwt_vc_json — بما فيها ما بعد الكم — والتي تُوقَّع بها قوائم حالة هذا النطاق، والتي يستخدمها اعتماد ربط المجال في تكوين DID. يسمّيها credential_signing_alg_values_supported في بيانات الوصف، وينشر /oauth2/jwks و/.well-known/did.json المفتاح، وتتحقق جهة التحقق في هذه الخدمة مقابله. ldp_vc هو bbs-2023 ولا يتأثر. يحتفظ اعتماد صدر بالفعل بالخوارزمية التي وُقّع بها. يرفض oid4vc.walletCompatibility خوارزمية ما بعد كمومية أو مركّبة هنا. يُوقَّع mso_mdoc بـ COSE ES256 (-7) أو ESP256 (-9)، لا بهذه الخوارزمية."
+  },
+  "oid4vci.mdocDoctype|label": {
+    "en": "7c632130b19137d8",
+    "text": "نوع مستند mdoc"
+  },
+  "oid4vci.mdocDoctype|description": {
+    "en": "7c9ba6ae8828e218",
+    "text": "قيمة docType لـ mso_mdoc يُصدره نطاق الثقة هذا (ISO/IEC 18013-5). ويطلب تسجيل الدخول بالمحفظة هذا النوع نفسه. وتستخدم نقطة النهاية المستقلة للمتحقق oid4vp.expectedDoctype، وافتراضيها القيمة نفسها."
+  },
+  "oid4vci.mdocNamespace|label": {
+    "en": "f77603a07120c5c0",
+    "text": "فضاء أسماء بيانات mdoc"
+  },
+  "oid4vci.mdocNamespace|description": {
+    "en": "e2007e40d0654a1d",
+    "text": "فضاء الأسماء الذي تُسمّى فيه عناصر mdoc المُصدَر. ويطلب تسجيل الدخول issuing_authority في فضاء الأسماء هذا. وتستخدم نقطة النهاية المستقلة للمتحقق oid4vp.mdocNamespace، وافتراضيها القيمة نفسها."
+  },
+  "oid4vci.mdocValidityDays|label": {
+    "en": "59bc5ea950d1023b",
+    "text": "صلاحية mdoc (بالأيام)"
+  },
+  "oid4vci.mdocValidityDays|description": {
+    "en": "944bf93ff64708d5",
+    "text": "عدد الأيام التي يغطيها validityInfo لـ mdoc مُصدَر، من لحظة توقيعه. وشهادة موقّع المستند أقصر من CA السلطة المُصدِرة وقد تنتهي قبل هذه المدة؛ ويفحص المتحقق وقت التوقيع مقابل الشهادة، لا انتهاء صلاحية المستند."
+  },
+  "oid4vci.mdocAgeThresholds|label": {
+    "en": "6c387f6457dff007",
+    "text": "عتبات العمر في mdoc"
+  },
+  "oid4vci.mdocAgeThresholds|description": {
+    "en": "dc3119549f240edd",
+    "text": "القيم المنطقية age_over_NN التي يحملها mdoc حين يكون للشخص تاريخ ميلاد، بالسنوات الكاملة. تُحسب من تاريخ الميلاد. ولا تُختلق صورة شخصية ولا امتيازات قيادة."
+  },
+  "oid4vci.mdocIssuingCountry|label": {
+    "en": "58a5fa921fb5157c",
+    "text": "بلد إصدار mdoc"
+  },
+  "oid4vci.mdocIssuingCountry|description": {
+    "en": "599a6893d6e1ecbe",
+    "text": "البلد وفق ISO 3166-1 alpha-2 الذي يسمّيه موضوع CA السلطة المُصدِرة، وعنصر issuing_country في كل mdoc. حرفان."
+  },
+  "oid4vci.mdocIssuingAuthority|label": {
+    "en": "f2b2eee4bbbb52fa",
+    "text": "السلطة المُصدِرة لـ mdoc"
+  },
+  "oid4vci.mdocIssuingAuthority|description": {
+    "en": "ab81dc9a73b43680",
+    "text": "الاسم في الاسم الشائع لـ CA السلطة المُصدِرة وعنصر issuing_authority في كل mdoc. ويطلب تسجيل الدخول بالمحفظة هذا العنصر، وهو موجود دائمًا."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -6716,24 +6764,24 @@
     "text": "سلطات إصدار mdoc الموثوقة (شهادات IACA، بصيغة PEM)"
   },
   "oid4vp.mdocTrustAnchors|description": {
-    "en": "bc0c2fd840ac9688",
-    "text": "شهادات PEM متسلسلة: شهادات CA للسلطة المُصدِرة (ISO/IEC 18013-5 الملحق B) التي يجب أن تتسلسل إليها شهادة موقّع المستند في mdoc مقدَّم. تُبنى السلسلة وتُفحص كما يقول RFC 5280، ويُستشار إبطال موقّع المستند (pki.revocationCheck)، ويُرفض mdoc لا يتسلسل موقّعه إلى أي منها. فارغة — وهي الافتراضي — فلا تثق بأي مُصدِر mdoc، لذا يُرفض تقديم mso_mdoc إلى أن يُسمّى واحد."
+    "en": "725416403bc17a75",
+    "text": "شهادات PEM متسلسلة: شهادات CA للسلطة المُصدِرة (ISO/IEC 18013-5 الملحق B) التي يجب أن تتسلسل إليها شهادة موقّع المستند في mdoc مقدَّم. تُبنى السلسلة وتُفحص كما يقول RFC 5280، ويُستشار إبطال موقّع المستند (pki.revocationCheck)، ويُرفض mdoc لا يتسلسل موقّعه إلى أي منها. فارغة — وهي الافتراضي — فلا تثق بأي مُصدِر mdoc سوى CA السلطة المُصدِرة الخاصة بنطاق الثقة هذا، بعد سكّها (GET /oid4vci/mdoc-iaca)."
   },
   "oid4vp.expectedDoctype|label": {
     "en": "49833f72d06c775d",
     "text": "نوع مستند mdoc المتوقع (docType)"
   },
   "oid4vp.expectedDoctype|description": {
-    "en": "d718e92b610b1ae9",
-    "text": "قيمة `docType` التي يطلبها طلب mso_mdoc (`meta.doctype_value`) ويشترطها المتحقق في المستند المقدَّم وفي Mobile Security Object الخاص به. والافتراضي هو رخصة القيادة المحمولة في ISO/IEC 18013-5."
+    "en": "dcb6e8f85158b0a1",
+    "text": "قيمة `docType` التي يطلبها طلب mso_mdoc (`meta.doctype_value`) ويشترطها المتحقق في المستند المقدَّم وفي Mobile Security Object الخاص به. والافتراضي هو النوع الذي يُصدره نطاق الثقة هذا (oid4vci.mdocDoctype). ورخصة القيادة المحمولة وفق ISO هي org.iso.18013.5.1.mDL، وتُضبط هنا وعلى المُصدِر."
   },
   "oid4vp.mdocNamespace|label": {
     "en": "8e0371b0c93613a5",
     "text": "فضاء أسماء mdoc الذي تُقرأ منه المطالبات المطلوبة"
   },
   "oid4vp.mdocNamespace|description": {
-    "en": "119af9b2a1680a4c",
-    "text": "فضاء الأسماء الذي تسمّيه مسارات مطالبات طلب mso_mdoc (`[namespace, element]`، OpenID4VP 1.0 الملحق B.2.3). ويُطلب كل مطالبة بوصفها عنصر البيانات بالاسم نفسه، باستثناء birthdate (birth_date) وaddress (resident_address)، اللذين يسمّيهما ISO/IEC 18013-5 بأسماء مختلفة. والافتراضي هو فضاء رخصة القيادة المحمولة."
+    "en": "0ad347251f9b7a85",
+    "text": "فضاء الأسماء الذي تسمّيه مسارات مطالبات طلب mso_mdoc (`[namespace, element]`، OpenID4VP 1.0 الملحق B.2.3). ويُطلب كل مطالبة بوصفها عنصر البيانات بالاسم نفسه، باستثناء birthdate (birth_date) وaddress (resident_address)، اللذين يسمّيهما ISO/IEC 18013-5 بأسماء مختلفة. والافتراضي هو فضاء الأسماء الذي يُصدر فيه نطاق الثقة هذا (oid4vci.mdocNamespace)."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
@@ -6796,8 +6844,8 @@
     "text": "تنسيقات بيانات اعتماد تسجيل الدخول بالمحفظة"
   },
   "oid4vp.signInFormats|description": {
-    "en": "e90ac91d5df31d20",
-    "text": "تنسيقات بيانات الاعتماد التي يطلبها تسجيل الدخول بالمحفظة، بترتيب التفضيل: استعلام بيانات اعتماد DCQL واحد لكل منها، ومجموعة بيانات اعتماد تقول إن أياً منها يكفي. ولا يسجّل كل منها الدخول إلا بإثبات حامل جديد — Key Binding JWT أو VP JWT أو إثبات Data Integrity — لهذا الطلب. وتُتجاهل الأسماء غير المعروفة؛ وغيابها جميعاً يعني الثلاثة كلها. والمحفظة التي تجيب عن أول استعلام تقرأه فقط تجيب بالتنسيق الأول هنا."
+    "en": "53a49b652b8fa682",
+    "text": "تنسيقات بيانات الاعتماد التي يطلبها تسجيل الدخول بالمحفظة، بترتيب التفضيل: استعلام بيانات اعتماد DCQL واحد لكل منها، ومجموعة بيانات اعتماد تقول إن أياً منها يكفي. ولا يسجّل كل منها الدخول إلا بإثبات حامل جديد — Key Binding JWT أو VP JWT أو إثبات Data Integrity أو توقيع جهاز mdoc — لهذا الطلب. وتُتجاهل الأسماء غير المعروفة؛ وغيابها جميعاً يعني الأربعة كلها. والمحفظة التي تجيب عن أول استعلام تقرأه فقط تجيب بالتنسيق الأول هنا. ولا يُسجِّل mso_mdoc دخول أحد إلا إذا أصدره نطاق الثقة هذا."
   },
   "oid4vp.signInDcApiResponseMode|label": {
     "en": "65bede388d0c842b",
