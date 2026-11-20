@@ -98,10 +98,15 @@ function childMain() {
       });
     });
   }
+  // The listener VERIFIED, against the operator's certificate every custom
+  // listener here presents (`anchor`, set once it is made) under the name
+  // it carries: what each case asks is which listener answers what.
+  let anchor = '';
   function get(port, urlPath) {
     return new Promise(function (resolve) {
       const req = https.get({ host: '127.0.0.1', port: port, path: urlPath,
-                              rejectUnauthorized: false }, function (res) {
+                              ca: [anchor], servername: 'admin.example.test' },
+                            function (res) {
         let body = '';
         res.on('data', function (c) { body += c; });
         res.on('end', function () {
@@ -157,7 +162,10 @@ function childMain() {
     };
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'custom-listeners-'));
     const made = stsCrypto.selfSignedRsaCertificate({
-      commonName: 'admin.example.test' });
+      commonName: 'admin.example.test',
+      extensions: [{ name: 'subjectAltName',
+                     altNames: [{ type: 2, value: 'admin.example.test' }] }] });
+    anchor = made.certPem;
     const certFile = path.join(dir, 'cert.pem');
     const keyFile = path.join(dir, 'key.pem');
     fs.writeFileSync(certFile, made.certPem);
@@ -314,12 +322,14 @@ function childMain() {
          'its prefix — #99\'s realm listener', pinnedA + ' | ' + builtA);
 
     // --- D. the sockets ----------------------------------------------------
+    // Built with the client-authentication posture server.js gives a custom
+    // listener (`clientAuthOptions()`; `optional`, the main port's).
+    const tlsServer = require(ROOT_DIR + '/tls/tls_server');
     await listeners.start({
       build: function (label, certificate) {
-        return https.createServer({
-          key: certificate.key, cert: certificate.cert,
-          requestCert: true, rejectUnauthorized: false
-        }, app);
+        return https.createServer(Object.assign({
+          key: certificate.key, cert: certificate.cert
+        }, tlsServer.clientAuthOptions('optional')), app);
       }
     });
     await listeners.reconcile();

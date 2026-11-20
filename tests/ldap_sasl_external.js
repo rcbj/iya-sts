@@ -202,10 +202,20 @@ function baseSearch(dn) {
   };
 }
 
+// THE LISTENER IS VERIFIED, against the anchors this process gives a
+// loopback caller of its own listeners (tls_server.js's trustAnchorPems();
+// LDAPS presents presentedBundlePem(), tests/tls_trust_anchor.js): the
+// claims here are about the CLIENT's certificate. And it is the test's own
+// client, standing in for an outside one, not a dialer of the service's:
+// paranoid PKI mode's outbound gate, in force once a case turns product
+// on, is not this socket's (`stsOutboundGate: false`, the opt-out the
+// revocation fetch and the cell channel use for the same reason).
 function ldaps(port, credential) {
   log.debug("Entering ldaps(). " + port);
+  const tlsServer = require(ROOT + '/tls/tls_server');
   const socket = tls.connect(Object.assign({
-    host: '127.0.0.1', port: port, rejectUnauthorized: false
+    host: '127.0.0.1', port: port, ca: tlsServer.trustAnchorPems(),
+    stsOutboundGate: false
   }, credential ? { cert: credential.cert, key: credential.key } : {}));
   log.debug("Leaving ldaps().");
   return new Promise(function (resolve) {
