@@ -188,10 +188,10 @@ function sectionR(t, k) {
   t.log.info('=== R. what an issuance reads ===');
   const { instance, sessions, audit, eligibility } = k;
   const future = Date.now() + 3600 * 1000;
-  sessions.set('s1', { id: 's1', user: 'sel-op', expires: future,
+  sessions.set('s1', { id: 's1', user: { username: 'sel-op' }, expires: future,
     selectedRoles: [{ role: 'sel-oncall', application: 'sel-app', at: 1 },
                     { role: 'sel-must', application: 'other-app', at: 1 }] });
-  sessions.set('s2', { id: 's2', user: 'sel-op', expires: Date.now() - 1,
+  sessions.set('s2', { id: 's2', user: { username: 'sel-op' }, expires: Date.now() - 1,
     selectedRoles: [{ role: 'sel-oncall', application: 'sel-app', at: 1 }] });
   let got = instance.selectedFor({ username: 'sel-op', sessionId: 's1',
                                    applications: ['sel-app'] });
@@ -258,7 +258,7 @@ function sectionE(t, k) {
     roleEligibilityPolicy: [row.eligibilityPolicy] }));
   t.check(claimOf({}).split(',').indexOf('sel-pager') < 0,
           'E6. a member written onto a dynamic role is not a holder');
-  sessions.set('s3', { id: 's3', user: 'sel-op',
+  sessions.set('s3', { id: 's3', user: { username: 'sel-op' },
                        expires: Date.now() + 3600 * 1000, selectedRoles: [] });
   t.equal(claimOf({ sessionId: 's3' }), 'sel-static',
           'E7. a session that chose nothing carries the static roles as ' +

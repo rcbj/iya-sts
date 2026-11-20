@@ -237,9 +237,14 @@ class RoleSelection {
     const session = asked.sessionId
       ? this.deps.loadAuthn().sessionById(String(asked.sessionId)) : null;
     // A SESSION THAT ENDED, EXPIRED, OR IS SOMEBODY ELSE'S HAS NO CHOICE.
+    // `user` is the record `authn.ts`'s `userFor()` builds; a bare name is
+    // read too.
     const live = !!session && (!session.expires ||
                                Number(session.expires) > now());
-    const own = live && String(session.user || '').toLowerCase() ===
+    const holder = live
+      ? String((session.user && typeof session.user === 'object')
+        ? session.user.username || '' : session.user || '') : '';
+    const own = live && holder.toLowerCase() ===
                         String(asked.username || '').toLowerCase();
     if (!own) {
       log.debug("Leaving RoleSelection.selectedFor(). No live session.");
@@ -257,7 +262,7 @@ class RoleSelection {
     const out = [];
     rows.forEach(function (row) {
       const answer = eligibility.decide({
-        role: row.role, username: String(session.user || ''),
+        role: row.role, username: holder,
         application: row.application, stage: 'issue',
         acr: session.acr || '', amr: session.amr || [] });
       if (answer.eligible) {
@@ -265,7 +270,7 @@ class RoleSelection {
         return;
       }
       audit.audit({ action: 'roles.selection.dropped',
-                    actor: String(session.user || ''), target: row.role,
+                    actor: holder, target: row.role,
                     protocol: 'XACML', errorCode: answer.code,
                     detail: 'the dynamic role "' + row.role + '", chosen ' +
                             'for "' + row.application + '", was left off ' +
