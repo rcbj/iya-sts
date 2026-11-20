@@ -166,8 +166,11 @@ function kit(name) {
     log.debug("Entering shown().");
     log.debug("Leaving shown().");
     return r.status + " " + (r.location || "") + " " +
-      String(r.text || "").replace(/<style[\s\S]*?<\/style>/, "")
-        .replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").slice(0, 400);
+      // Every style block in any case, every tag, then any `<` left over:
+      // what is shown carries no markup however the page was written.
+      String(r.text || "").replace(/<style\b[\s\S]*?<\/style\s*>/gi, "")
+        .replace(/<[^>]*>/g, " ").replace(/</g, " ").replace(/\s+/g, " ")
+        .slice(0, 400);
   }
 
   async function ok(url, body, what) {
