@@ -1418,6 +1418,23 @@ including an older disjoint one a covering second batch did not.
 **Two different processes writing one key is untouched** and is still
 last-writer-wins, as above.
 
+**A FLUSH THAT TAKES NOTHING, WITH NO SAVE OUT, ANSWERS AT ONCE (run #551).**
+The gate `flush()` hands a caller whose keys are all in a save
+(`deferUntilSlot()`) is woken only by a save finishing. The realm-removal
+handler dropped a removed realm's keys and left the handle's EMPTY map in the
+journal, so `dirty()` said there was work, the take found none, and with no
+save out the gate never woke. `persistence.js`'s flush awaits the minted one,
+so its `flushing` never cleared, and `applyDirectoryChange()`, which waits on
+that flush for a key it carried, held the change-log pull for ever: in run
+#551's cluster mode a request worker on node b stopped catching up at
+22:16:21Z, one second after `sts_worker_pools` removed its realm (the removal
+arriving from node a, so nothing else was journalled here), and every
+read-your-write request it was routed was refused (STS-WORKER-0053, its
+STS-STORE-0039 naming one directory row "for" ever-growing milliseconds) for
+44 minutes, until the suite restarted the cluster. The handler now deletes an
+emptied handle, and `flush()` answers "nothing journalled" when a take finds
+nothing and no save or batch is out. `tests/minted_removed_realm_flush.js`.
+
 **`stop()` WAITS TOO, AND THAT MOVED A TEST ORDERING.**
 `appconfig_persistence.js` calls `persistence.stop()` without awaiting it, and
 `minted.stop()` marks the module stopped after its flush — so the mark can land

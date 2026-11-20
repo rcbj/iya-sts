@@ -403,15 +403,30 @@ function putBackJournal(pending) {
 // reader having to prove that, which is a harder thing to establish than to
 // prevent — and because the flush is the one place a removed realm could still
 // have written something after the delete.
+//
+// **A HANDLE LEFT WITH NO REALM GOES TOO (run #551).** Only the realm's keys
+// were deleted, so a handle whose one realm this was stayed in the journal
+// as an empty map: `dirty()` (`journal.size > 0`) said there was work, the
+// flush took none, and answered a gate only a finishing save wakes — with
+// none in flight, a promise that never settled. `persistence.js`'s directory
+// flush awaits it, so `flushing` never cleared, and the change-log applier
+// waiting on that flush for a key it carried waited for ever: a request
+// worker on node b stopped catching up one second after `sts_worker_pools`
+// removed its realm, and refused every read-your-write request for 44
+// minutes (STS-WORKER-0053). `tests/minted_removed_realm_flush.js`.
 // ---------------------------------------------------------------------------
 realms.onRemove(function (id) {
   const realmId = String(id || '');
   let dropped = 0;
-  journal.forEach(function (byRealm) {
-    const keys = byRealm.get(realmId);
+  Array.from(journal.keys()).forEach(function (handle) {
+    const byRealm = journal.get(handle);
+    const keys = byRealm ? byRealm.get(realmId) : null;
     if (keys) {
       dropped += keys.size;
       byRealm.delete(realmId);
+    }
+    if (byRealm && byRealm.size === 0) {
+      journal.delete(handle);
     }
   });
   if (dropped) {
@@ -2949,6 +2964,18 @@ function flush() {
 
   const startedAt = Date.now();
   const taken = takeDisjoint();
+  if (!taken.entries.length && activeFlightCount() === 0 &&
+      !(openBatch && openBatch.life === flightLife)) {
+    // NOTHING WAS TAKEN AND NO SAVE IS OUT (run #551): no key is held by a
+    // save, so the journal held no key at all — only maps a removal had
+    // emptied, which the take has now deleted. The gate below is woken only
+    // by a save finishing, so with none out it would never settle, and the
+    // directory flush awaiting this one, and the change-log pull behind
+    // that, would wait for ever. This is "nothing journalled".
+    advanceCommitted();
+    log.debug('Leaving flush(). Nothing was left to take.');
+    return Promise.resolve({ written: false });
+  }
   if (!taken.entries.length) {
     log.debug('Leaving flush(). Every remaining key is in a flush.');
     return deferUntilSlot();
