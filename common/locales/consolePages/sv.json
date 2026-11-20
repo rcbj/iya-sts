@@ -152,5 +152,6 @@
   "title.roles-new": "Ny roll",
   "title.devices-new": "Registrera en enhet",
   "title.attribute-sources-new": "Lägg till en attributkälla",
-  "title.secret-destinations-new": "Lägg till ett hemlighetsmål"
+  "title.secret-destinations-new": "Lägg till ett hemlighetsmål",
+  "title.policies-new": "Ny policy"
 }

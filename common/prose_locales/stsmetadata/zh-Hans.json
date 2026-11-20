@@ -1963,6 +1963,10 @@
     "en": "efff1aa20f1b29a1",
     "text": "非规范。以 JSON 说明添加密钥推送目标可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——标识符和提供方始终必填，有些仅对某些提供方必填（requiredWhen）：除 file 外均需写入凭据，aws 需区域，azure 和 vault 需端点，file 需目录。它不添加任何内容：创建是 POST /admin-api/secret-destinations/add-destination。对应 GET /admin/secret-destinations/new。"
   },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "非规范。可以创建命名策略的类型，以及对于所请求的类型，其保存的每个字段以及缺少它时保存是否会被拒绝——名称始终必填，因为没有名称的保存会更改默认策略；以及省略时不会保留其值的每个字段。它不保存任何内容：命名策略是该类型在本领域尚未使用的名称下的保存操作。对应 GET /admin/policies/new。"
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "非规范。创建操作接受的两套封闭词汇，以 JSON 形式提供：应用可以声明的八种种类和十四个协议系列，每项附带其含义，此外还有新条目将落入的 ou=applications 容器——本领域的容器，因为目录按领域划分——它将容纳多少个，以及创建时不能接受但 set/add/remove 可以接受的属性。它不创建任何东西：创建操作是 POST /admin-api/applications/create，而这是该调用据以校验的列表，发布它是为了让调用方从服务本身而不是从文档中的副本了解可以发送什么。声明一个系列不授予也不拒绝任何东西——没有任何端点读取 appAllowedProtocol。对应 GET /admin/applications/new。"

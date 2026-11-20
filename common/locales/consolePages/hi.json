@@ -152,5 +152,6 @@
   "title.roles-new": "नई भूमिका",
   "title.devices-new": "डिवाइस पंजीकृत करें",
   "title.attribute-sources-new": "एट्रिब्यूट स्रोत जोड़ें",
-  "title.secret-destinations-new": "सीक्रेट गंतव्य जोड़ें"
+  "title.secret-destinations-new": "सीक्रेट गंतव्य जोड़ें",
+  "title.policies-new": "नई नीति"
 }

@@ -1071,6 +1071,10 @@
     "en": "a6b78c1984266387",
     "text": "Formular für ein neues Geheimnisziel"
   },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "Formular für eine neue Richtlinie"
+  },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
     "text": "Formular für eine neue Anwendung"

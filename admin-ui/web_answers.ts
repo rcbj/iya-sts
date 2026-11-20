@@ -1290,6 +1290,15 @@ class WebAnswers {
         (forApplication ? '@' + forApplication : '');
       return '/admin/roles?' + new URLSearchParams({ role: name }).toString();
     }
+    // A POLICY MADE ON NEW POLICY (#1132) lands on its kind's named
+    // policies; its form posts to the policies page's own path.
+    if (page === POLICIES_PAGE && at.pathname === '/admin/policies/new' &&
+        (WebAnswers.one(fields || {}, 'newProfile') === '1' ||
+         action === 'save-named-authn-policy')) {
+      const kindId = action === 'save-named-authn-policy' ? 'authn'
+        : String(action || '').replace(/^save-/, '').replace(/-policy$/, '');
+      return '/admin/policies#' + kindId + '-sub-named';
+    }
     // A DESTINATION ADDED ON ITS CREATE PAGE (#1132) lands on the register.
     if (page === '/admin/secret-destinations/new' &&
         action === 'add-destination') {

@@ -1963,6 +1963,10 @@
     "en": "efff1aa20f1b29a1",
     "text": "NICHT SPEZIFIZIERT. Womit ein Ziel für Geheimnisse hinzugefügt werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — Bezeichner und Anbieter immer, manche nur bei manchen Anbietern (requiredWhen): die Schreibberechtigung bei allen außer file, die Region bei aws, der Endpunkt bei azure und vault, das Verzeichnis bei file. ES FÜGT NICHTS HINZU: Das Anlegen ist POST /admin-api/secret-destinations/add-destination. Entspricht GET /admin/secret-destinations/new."
   },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "NICHT SPEZIFIZIERT. Die Arten, aus denen eine benannte Richtlinie gemacht werden kann, und für die angefragte Art jedes Feld ihres Speicherns und ob das Speichern ohne es abgelehnt wird — immer der Name, weil ein Speichern ohne Namen die Standardrichtlinie ändert, und jedes Feld, dessen Wert nicht erhalten bleibt, wenn es fehlt. ES SPEICHERT NICHTS: Eine benannte Richtlinie ist der Speichervorgang der Art unter einem Namen, den der Realm noch nicht hat. Entspricht GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "NON-SPEC. DIE ZWEI GESCHLOSSENEN VOKABULARE, DIE EIN ANLEGEN ENTGEGENNIMMT, als JSON: die acht Arten und die vierzehn Protokollfamilien, für die eine Anwendung DEKLARIERT werden darf, jede mit ihrer Bedeutung, plus der Container ou=applications, in dem ein neuer Eintrag landet — DER DIESES VERTRAUENSBEREICHS, weil das Verzeichnis je Vertrauensbereich besteht —, wie viele er aufnehmen wird, und die Attribute, die ein Anlegen nicht entgegennehmen kann, set/add/remove aber schon. ES LEGT NICHTS AN: das Anlegen ist POST /admin-api/applications/create, und dies ist die Liste, gegen die dieser Aufruf prüft, veröffentlicht, damit ein Aufrufer vom Dienst erfährt, was er senden darf, und nicht aus einer Kopie in einem Dokument. Eine Familie zu deklarieren gewährt nichts und verweigert nichts — kein Endpunkt liest appAllowedProtocol. Spiegelt GET /admin/applications/new."

@@ -1071,6 +1071,10 @@
     "en": "a6b78c1984266387",
     "text": "नए सीक्रेट गंतव्य का फ़ॉर्म"
   },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "नई नीति का फ़ॉर्म"
+  },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
     "text": "नया अनुप्रयोग फ़ॉर्म"

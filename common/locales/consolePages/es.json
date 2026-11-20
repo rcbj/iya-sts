@@ -152,5 +152,6 @@
   "title.roles-new": "Nuevo rol",
   "title.devices-new": "Registrar un dispositivo",
   "title.attribute-sources-new": "Añadir un origen de atributos",
-  "title.secret-destinations-new": "Añadir un destino de secretos"
+  "title.secret-destinations-new": "Añadir un destino de secretos",
+  "title.policies-new": "Nueva política"
 }

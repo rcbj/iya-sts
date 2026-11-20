@@ -6446,6 +6446,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'and vault, the directory for file. IT ADDS NOTHING: the create ' +
           'is POST /admin-api/secret-destinations/add-destination. Mirrors ' +
           'GET /admin/secret-destinations/new.' },
+  { path: '/admin-api/policies/new', group: 'Management API',
+    name: 'New policy form', specs: ['rfc4511'],
+    what: 'NON-SPEC. The kinds a named policy may be made of and, for the ' +
+          'kind asked, each field of its save and whether the save ' +
+          'refuses without it — the name always, because a save with no ' +
+          'name changes the default policy, and each field whose value is ' +
+          'not kept when it is left out. IT SAVES NOTHING: a named policy ' +
+          'is the kind\'s save act under a name the realm does not hold ' +
+          'yet. Mirrors GET /admin/policies/new.' },
   { path: '/admin-api/applications/new', group: 'Management API',
     name: 'New application form', specs: ['rfc4511', 'rfc7591'],
     what: 'NON-SPEC. THE TWO CLOSED VOCABULARIES A CREATE TAKES, as JSON: ' +

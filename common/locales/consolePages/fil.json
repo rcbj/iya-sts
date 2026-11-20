@@ -152,5 +152,6 @@
   "title.roles-new": "Bagong role",
   "title.devices-new": "Magrehistro ng device",
   "title.attribute-sources-new": "Magdagdag ng attribute source",
-  "title.secret-destinations-new": "Magdagdag ng secret destination"
+  "title.secret-destinations-new": "Magdagdag ng secret destination",
+  "title.policies-new": "Bagong patakaran"
 }

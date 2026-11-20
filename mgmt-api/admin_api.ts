@@ -10077,6 +10077,26 @@ class AdminApi {
       // it; the module parses both spellings and refuses anything else by
       // name.
       // -----------------------------------------------------------------------
+      // DIRECTORY → POLICIES → NEW POLICY (#1132): the create page's own
+      // view, rule 7's operation for it — the kinds, and the asked kind's
+      // fields with which of them a save refuses without.
+      { method: 'GET', path: BASE + '/policies/new', tag: 'Policies',
+        operationId: 'getNewPolicyForm',
+        mirrors: 'GET /admin/policies/new',
+        parameters: [
+          { name: 'kind', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64,
+                      examples: ['passkey'] },
+            description: 'The kind of policy to make, one of `kinds`. ' +
+                         'Without one, or with one no kind is, ' +
+                         '`createFields` is empty and `kind` null.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API new-policy endpoint.");
+          self.sendJson(res, 200, adminViews.newPolicyJson(req.query));
+          log.debug("Leaving the management API new-policy endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/policies', tag: 'Policies',
         operationId: 'getPolicies',
         mirrors: 'GET /admin/policies',

@@ -767,6 +767,14 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return GroupsPage.newGroupBody(ctx || WebKit.context(), view);
     } },
+  // DIRECTORY → POLICIES → NEW POLICY (#1132): one kind's create form,
+  // reached from that kind's New policy tab, drawn from the policies view.
+  { path: '/admin/policies/new', title: 'New policy',
+    operation: '/admin-api/policies/new',
+    compose: { policies: '/admin-api/policies' },
+    render: function (view: Json, ctx?: Json): string {
+      return PoliciesPage.newPolicyBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/keys', title: 'Key pairs', operation: '/admin-api/keys',
     render: function (view: Json, ctx?: Json): string {
       return CryptoMetadataPage.keysBody(ctx || WebKit.context(), view);

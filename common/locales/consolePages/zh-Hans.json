@@ -152,5 +152,6 @@
   "title.roles-new": "新建角色",
   "title.devices-new": "注册设备",
   "title.attribute-sources-new": "添加属性来源",
-  "title.secret-destinations-new": "添加密钥推送目标"
+  "title.secret-destinations-new": "添加密钥推送目标",
+  "title.policies-new": "新建策略"
 }

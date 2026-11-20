@@ -152,5 +152,6 @@
   "title.roles-new": "دور جديد",
   "title.devices-new": "تسجيل جهاز",
   "title.attribute-sources-new": "إضافة مصدر سمات",
-  "title.secret-destinations-new": "إضافة وجهة أسرار"
+  "title.secret-destinations-new": "إضافة وجهة أسرار",
+  "title.policies-new": "سياسة جديدة"
 }

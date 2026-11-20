@@ -11045,6 +11045,70 @@ class AdminViews {
            this.groupsListJson(req).json;
   }
 
+  // DIRECTORY → POLICIES → NEW POLICY (#1132): which kinds a named policy
+  // may be made of, and for the kind asked, the create's fields and which
+  // of them the save refuses without. A named policy is a save under a name
+  // the realm does not hold yet, so its fields are the kind's own table
+  // (each module's FIELDS, its `optional` rows the ones a save keeps the
+  // value in force for), behind the name — refused when empty or not a
+  // policy name, where a save with no name at all edits the DEFAULT policy,
+  // which is why the page insists on one — and the precedence, which
+  // defaults to 100. Two kinds are their own: the authentication policy's
+  // named create takes `name`, its mechanisms optional (none allows every
+  // one), and the attribute policy's console form sends its list even when
+  // empty. A boolean is required of an API caller and is never empty on the
+  // console's form, where an unticked box is "no".
+  /**
+   * Builds `GET /admin-api/policies/new`: the kinds, and the asked kind's
+   * create fields with which of them are required.
+   *
+   * @param query - the query: `kind`
+   * @returns the JSON
+   */
+  newPolicyJson(query): IyaApi.AdminAnswer<'getNewPolicyForm'> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.newPolicyJson().");
+    const wanted = String((query || {}).kind || '').trim();
+    const kinds = policyKinds.list().filter(function (kind) {
+      return kind.tabbed === true;
+    });
+    const kind = kinds.filter(function (one) {
+      return one.id === wanted;
+    })[0] || null;
+    const out: any = {
+      kinds: kinds.map(function (one) {
+        return { id: one.id, label: one.label };
+      }),
+      kind: kind ? kind.id : null,
+      createFields: []
+    };
+    if (!kind) {
+      log.debug("Leaving AdminViews.newPolicyJson(). No kind, or an " +
+                "unknown one: " + wanted);
+      return out;
+    }
+    if (kind.id === 'authn') {
+      out.createFields = [
+        { name: 'name', required: true },
+        { name: 'description', required: false },
+        { name: 'precedence', required: false },
+        { name: 'mechanisms', required: false },
+        { name: 'secondFactors', required: false }
+      ];
+    } else {
+      out.createFields = [
+        { name: 'profile', required: true },
+        { name: 'precedence', required: false },
+        { name: 'description', required: false }
+      ].concat((kind.module.FIELDS || []).map(function (field) {
+        return { name: String(field.key), required: !field.optional };
+      }));
+    }
+    log.debug("Leaving AdminViews.newPolicyJson(). kind=" + kind.id + ", " +
+              out.createFields.length + " field(s).");
+    return out;
+  }
+
   // DIRECTORY → GROUPS → NEW GROUP (#1132): what the create page draws. No
   // directory scan: the container is the realm's, asked of the directory,
   // and the list of groups is the list page's business.
@@ -16874,6 +16938,7 @@ export = {
   setGroupWriter: slot.forward('setGroupWriter'),
   groupsListJson: slot.forward('groupsListJson'),
   newGroupJson: slot.forward('newGroupJson'),
+  newPolicyJson: slot.forward('newPolicyJson'),
   newRoleJson: slot.forward('newRoleJson'),
   asDriftRows: slot.forward('asDriftRows'),
   asTruthRequest: slot.forward('asTruthRequest'),

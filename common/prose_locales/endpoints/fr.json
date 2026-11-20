@@ -1071,6 +1071,10 @@
     "en": "a6b78c1984266387",
     "text": "Formulaire de nouvelle destination de secrets"
   },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "Formulaire de nouvelle politique"
+  },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
     "text": "Formulaire de nouvelle application"

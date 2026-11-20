@@ -152,6 +152,8 @@ const CONSOLE: Record<string, string> = {
   '/admin/pki': 'pki.html',
   '/admin/pki/trust': 'signer-truststore.html',
   '/admin/policies': 'policies.html',
+  '/admin/policies/new':
+    'admin-console.html#creating-a-named-policy--adminpoliciesnew',
   '/admin/rbac': 'admin-console.html#who-may-use-the-console',
   '/admin/realms': 'trust-realms.html',
   '/admin/risc-accounts': 'signals-received.html',

@@ -1963,6 +1963,10 @@
     "en": "efff1aa20f1b29a1",
     "text": "UTANFÖR SPECIFIKATION. Vad ett mål för hemligheter kan läggas till med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — identifieraren och leverantören alltid, och vissa bara för vissa leverantörer (requiredWhen): skrivuppgiften för alla utom file, regionen för aws, slutpunkten för azure och vault, katalogen för file. DEN LÄGGER INTE TILL NÅGOT: skapandet är POST /admin-api/secret-destinations/add-destination. Speglar GET /admin/secret-destinations/new."
   },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "UTANFÖR SPECIFIKATION. De sorter en namngiven policy kan göras av och, för den efterfrågade sorten, varje fält i dess sparande och om sparandet avvisas utan det — alltid namnet, eftersom ett sparande utan namn ändrar standardpolicyn, och varje fält vars värde inte behålls när det utelämnas. DEN SPARAR INGENTING: en namngiven policy är sortens sparande under ett namn som realmen ännu inte har. Speglar GET /admin/policies/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "ICKE-SPEC. DE TVÅ SLUTNA VOKABULÄRER SOM ETT SKAPANDE TAR, som JSON: de åtta slagen och de fjorton protokollfamiljer som en applikation kan DEKLARERAS för, var och en med vad den betyder, plus den ou=applications-behållare som en ny post skulle hamna i — DEN HÄR SFÄRENS, eftersom katalogen är per sfär — hur många den kommer att innehålla och de attribut som ett skapande inte kan ta men som set/add/remove kan. DEN SKAPAR INGENTING: skapandet är POST /admin-api/applications/create, och detta är listan som det anropet validerar mot, publicerad så att en anropare lär sig vad den får skicka från tjänsten snarare än från en kopia i ett dokument. Att deklarera en familj beviljar och nekar ingenting — ingen slutpunkt läser appAllowedProtocol. Speglar GET /admin/applications/new."

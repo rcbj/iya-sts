@@ -152,5 +152,6 @@
   "title.roles-new": "Nouveau rôle",
   "title.devices-new": "Enregistrer un appareil",
   "title.attribute-sources-new": "Ajouter une source d’attributs",
-  "title.secret-destinations-new": "Ajouter une destination de secret"
+  "title.secret-destinations-new": "Ajouter une destination de secret",
+  "title.policies-new": "Nouvelle politique"
 }

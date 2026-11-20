@@ -2748,6 +2748,14 @@ namespace IyaSts.Api.Management {
     `createFields`?: (`CreateFormField`)[]
   }
 
+@js(#{
+    `description`:"What Directory → Policies → New policy draws (#1132): the kinds a named policy may be made of, and the asked kind's create fields with which of them are required."
+  }) @component model `NewPolicyForm` {
+    `kinds`?: ({ `id`?: string; `label`?: string })[];
+    `kind`?: NullableString;
+    `createFields`?: (`CreateFormField`)[]
+  }
+
 @component model `NewApplicationForm` {
     `directory`?: boolean;
     `container`?: NullableString;
@@ -38055,6 +38063,39 @@ op `setOwnerProtected`(@js(#{`examples`:#[#{`kind`:"role",`name`:"staff",`protec
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors141`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors141`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/policies/new",
+  "get",
+  #{
+    `operationId`:"getNewPolicyForm",
+    `summary`:"The kinds a named policy may be made of, and which of a kind's fields a save requires",
+    `description`:"Every kind whose profiles may be named, in `kinds`, and — with `kind` — that kind's create fields in `createFields`, each with `required`: the name (`profile`, or `name` for the authentication policy) always, since a save with no name edits the DEFAULT policy; the precedence and the description never; and each of the kind's own fields unless the save keeps the value in force when it is left out. **It saves nothing**: a named policy is made by the kind's save act with a name the realm does not hold yet, `POST /admin-api/policies/save-<kind>-policy` (`save-named-authn-policy` for the authentication policy).\n\n**Mirrors** `GET /admin/policies/new` on the admin console.",
+    `tags`:#["Policies"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The kinds, and the asked kind's fields with which are required.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"kind",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The kind of policy to make, one of `kinds`. Without one, or with one no kind is, `createFields` is empty and `kind` null."
+      }
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getNewPolicyForm`(@js(#{`maxLength`:64,`examples`:#["passkey"]}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: `NewPolicyForm`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 

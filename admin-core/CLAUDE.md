@@ -11,6 +11,7 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 | `certificate_views.ts` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
 | `protocol_endpoints.ts` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
 | `policy_transfer.ts` | **a realm's policies, out and back in, signed** (#1713) | `exportPolicies()`, `inspect()`, `importPolicies()`, answered by `admin_actions.ts`'s `policyTransferAction()` — see the section at the foot |
+| `create_forms.ts` | **which fields each directory create takes, and which it refuses without** (#1132) | `CreateForms.fieldsOf()`, answered as `createFields` by every `GET /admin-api/<object>/new` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
@@ -694,3 +695,26 @@ foreign realms, the pin across a third and a fourth realm, refusals,
 revocation, every algorithm, the action layer, the console's question and
 the view);
 `tests/protocol/sts_policy_transfer.js` over HTTP.
+
+## `create_forms.ts`: WHAT EACH DIRECTORY CREATE REQUIRES (#1132, 2026-11-20)
+
+**A field is required exactly when its create refuses without it today, and
+every other field is optional** (rcbj on #1132). So the table DESCRIBES the
+creates' own refusals and is not a second set of rules: nothing reads it to
+refuse anything. That is why it can be one table beside eight doors without
+becoming the thing they disagree with — and why `tests/create_forms.js`
+calls each door without each required field (refused) and with the required
+fields alone (accepted). A field added to a create, or a refusal added to
+one, owes a row here, and that test fails otherwise.
+
+* **A name is the name the form posts and the create takes**, so a caller can
+  build the body from `createFields`.
+* **`requiredWhen`** is a field required for some choices only (a secret
+  destination's region is AWS's). It is `required: false` and says the rest.
+* **The policies are not in the table.** A named policy is a save under a new
+  name, and its fields are the kind's own (each module's `FIELDS`, its
+  `optional` rows the ones a save keeps in force), so `newPolicyJson()` in
+  `admin_views.ts` derives them; a second copy here would be the drift.
+* **A library (rule 3)**: it requires `helpers` alone, so any module may
+  require it without moving a route or closing a cycle.
+

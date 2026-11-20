@@ -814,6 +814,20 @@ policies** and **New policy**. A last tab, **All profiles**, lists every
 profile of every kind. The authentication policy's named profiles use
 `save-named-authn-policy` and `delete-named-authn-policy`.
 
+#### Creating a named policy — `/admin/policies/new`
+
+A kind's **New policy** sub-tab takes you to `/admin/policies/new?kind=<kind>`,
+the kind's create form. **The name is always required**, because a save with
+no name changes the *default* policy instead. It is outlined in red and marked
+*required*, as on `/admin/users/new`, and so is each of the kind's fields that
+the save refuses without; the note above the form names them. A field whose
+value is kept when it is left out (a password policy's hash costs, some of the
+passkey policy's) is optional, and so are the precedence (100 when empty) and
+the description. A checkbox is never marked: unticked means *no*. A refused
+save keeps every box as you typed it; a save lands you on the kind's *Named
+policies*. `GET /admin-api/policies/new?kind=<kind>` answers the same fields,
+each with `required`.
+
 **The password policy** is a minimum length (12), how many previous passwords
 may not be reused (5), a minimum number of symbols (1), and whether an uppercase
 letter and a number are required (both yes). It is the **default profile**,

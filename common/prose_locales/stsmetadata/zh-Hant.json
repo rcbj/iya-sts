@@ -1963,6 +1963,10 @@
     "en": "efff1aa20f1b29a1",
     "text": "非規範。以 JSON 說明新增密鑰推送目標可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——識別碼和提供者一律必填，有些僅對某些提供者必填（requiredWhen）：除 file 外均需寫入憑證，aws 需區域，azure 和 vault 需端點，file 需目錄。它不新增任何內容：建立是 POST /admin-api/secret-destinations/add-destination。對應 GET /admin/secret-destinations/new。"
   },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "2c58d79f3a71506e",
+    "text": "非規範。可以建立具名原則的類型，以及對於所請求的類型，其儲存的每個欄位以及缺少它時儲存是否會被拒絕——名稱一律必填，因為沒有名稱的儲存會變更預設原則；以及省略時不會保留其值的每個欄位。它不儲存任何內容：具名原則是該類型在本領域尚未使用的名稱下的儲存操作。對應 GET /admin/policies/new。"
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "非規格端點。建立操作所接受的兩個封閉詞彙，以 JSON 提供：應用程式可被「宣告」的八種類型與十四個協定系列，各附其意義，加上新項目會放入的 ou=applications 容器——「此領域的」容器，因為目錄是依領域區分的——它將容納多少項目，以及建立時不能接受、但 set/add/remove 可以接受的屬性。它不會建立任何東西：建立是 POST /admin-api/applications/create，而這是該呼叫據以驗證的清單，發布出來讓呼叫端從服務本身得知可以送出什麼，而不是從文件中的複本得知。宣告一個系列不會授予或拒絕任何東西——沒有任何端點會讀取 appAllowedProtocol。對應 GET /admin/applications/new。"

@@ -152,5 +152,6 @@
   "title.roles-new": "Neue Rolle",
   "title.devices-new": "Gerät registrieren",
   "title.attribute-sources-new": "Attributquelle hinzufügen",
-  "title.secret-destinations-new": "Geheimnisziel hinzufügen"
+  "title.secret-destinations-new": "Geheimnisziel hinzufügen",
+  "title.policies-new": "Neue Richtlinie"
 }

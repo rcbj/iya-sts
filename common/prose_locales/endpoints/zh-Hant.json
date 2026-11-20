@@ -1071,6 +1071,10 @@
     "en": "a6b78c1984266387",
     "text": "新增密鑰推送目標表單"
   },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "新增原則表單"
+  },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
     "text": "新應用程式表單"

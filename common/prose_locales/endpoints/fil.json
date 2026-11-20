@@ -1071,6 +1071,10 @@
     "en": "a6b78c1984266387",
     "text": "Form ng bagong secret destination"
   },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "Form ng bagong patakaran"
+  },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
     "text": "Form ng bagong application"

@@ -1196,6 +1196,37 @@ too. A refusal that comes back as `?error=` already floated, through
 `ConsoleRuntime.draw()`. **A new in-place refusal on these pages uses the
 helper, not `kit.warn()`.**
 
+### Every Directory object has a create page, and each calls out its required fields (#1132)
+
+**rcbj, 2026-11-20**: every object under Directory — Users, Groups, Roles,
+Applications, Devices, Attribute sources, Secret destinations, Policies — has a
+create page, and each calls out its required fields the way New user does.
+`/admin/groups/new`, `/admin/roles/new`, `/admin/devices/new`,
+`/admin/attribute-sources/new`, `/admin/secret-destinations/new` and
+`/admin/policies/new?kind=` joined New user and New application. Four rules:
+
+* **ONE CREATE FORM PER OBJECT.** Each list's inline Create (Register, Add)
+  tab became a link to the page (`WebKit.createLink()`), as the Users list's
+  box is; an unmarked second form beside a marked one would be the door that
+  is not. A policy kind keeps its New policy sub-tab, holding the link.
+* **THE SERVER SAYS WHAT IS REQUIRED.** Each page draws from its
+  `GET /admin-api/<object>/new`, whose `createFields` is
+  `admin-core/create_forms.ts`' table (a policy's from its kind, in
+  `newPolicyJson()`): a field is required exactly when the create refuses
+  without it. A page that decided it would outline what the create accepts
+  without, or miss what it refuses.
+* **ONE CELL** (`WebKit.createFields()`, `createForm()`, `requiredNote()`):
+  the field grid's `fg-required` — a red rule, an asterisk, "required" in
+  words — and the browser's `required`, with a note above the form naming
+  what is required. A policy's field table marks its rows the same way
+  (`fg-required-row`); a checkbox is never marked, having no empty state.
+* **A REFUSED CREATE KEEPS WHAT WAS TYPED** (`WebAnswers` `CREATE_PAGES`):
+  each page posts to itself, its action resolved through the object's
+  `mirrors`, so a refusal redraws it with `state.draft` and the reasons in
+  the floating banner, and a create lands on what it made. A policy's form
+  posts to `/admin/policies` as it always did; its refusal keeps the draft
+  under `state.policyDrafts`, and a save lands on the kind's Named policies.
+
 ### Two forms post `action=create` and only one carries it as a button
 
 Worth knowing before editing that form. `action=create` is a HIDDEN FIELD and

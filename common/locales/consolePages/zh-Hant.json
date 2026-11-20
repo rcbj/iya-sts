@@ -152,5 +152,6 @@
   "title.roles-new": "新增角色",
   "title.devices-new": "註冊裝置",
   "title.attribute-sources-new": "新增屬性來源",
-  "title.secret-destinations-new": "新增密鑰推送目標"
+  "title.secret-destinations-new": "新增密鑰推送目標",
+  "title.policies-new": "新增原則"
 }
