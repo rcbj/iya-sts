@@ -4050,6 +4050,22 @@ class Credentials {
                                    'in this realm\'s directory.'] });
     }
     log.info('credentials: a passkey was enrolled for ' + name + '.');
+    // THE HARDWARE TOKEN IT IS ON (#1955 P1): a key whose trusted
+    // enterprise attestation named a device serial is a credential on a
+    // physical token, and the token register records it HERE, at the one
+    // writer, so no enrolment door can miss it. Required at the moment of
+    // use (it reaches this file lazily the other way); a failure there
+    // never undoes the key.
+    try {
+      require('./hardware_tokens').noteFidoKey(name, record, {
+        actor: enrolledBy ? enrolledBy.username : name,
+        via: enrolledBy ? 'admin' : 'webauthn' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-HWTOKEN-0011') +
+                'credentials: the passkey of ' + name + ' was written and ' +
+                'the hardware token it is on could not be recorded: ' +
+                ((e && e.message) || e));
+    }
     // A ROW THIS ONE MAY HAVE REPLACED ON ITS AUTHENTICATOR (#1101). Not
     // for an upgrade, whose write already replaced or marked the old row.
     if (!upgrading) {
@@ -5037,9 +5053,11 @@ class Credentials {
    *
    * @param username - the person
    * @param credentialId - the key's credential id
+   * @param opts - `lost`: the key was reported lost (#1955), so the
+   *   last-way-in guard does not keep it
    * @returns `{ ok: true, remaining }`, or a refusal
    */
-  removeKey(username, credentialId) {
+  removeKey(username, credentialId, opts?) {
     const { log } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
@@ -5091,7 +5109,11 @@ class Credentials {
         kept.some((one) => {
           return !one.possiblyReplacedBy;
         });
-    if (removed && keyIsWayIn &&
+    // A LOST KEY (#1955) IS NOT KEPT AS A WAY IN: its holder no longer has
+    // it and whoever found it does. The person is left to an activation
+    // link or the realm's recovery, which the lost-key act's answer says.
+    const lost = !!(opts && opts.lost);
+    if (removed && keyIsWayIn && !lost &&
         !this.hasPassword(name) && !stillHasKey) {
       log.debug("Leaving Credentials.removeKey().");
       return coded('STS-AUTHN-0070',
@@ -5111,6 +5133,20 @@ class Credentials {
                                    e.message] });
     }
     log.info('credentials: a passkey was removed for ' + name + '.');
+    // The hardware token that listed it (#1955) drops it, unless the
+    // lost-key act is removing it — that act keeps it on the record as
+    // retired. Lazily, and never undoing the removal.
+    if (!lost) {
+      try {
+        require('./hardware_tokens').forgetCredential('fido',
+                                                      String(credentialId));
+      } catch (e) {
+        log.debug('Caught in Credentials.removeKey(): ' +
+                  ((e && e.message) || e));
+        // The token page lists a removed passkey until the token is next
+        // written; the key itself is gone either way.
+      }
+    }
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
   }

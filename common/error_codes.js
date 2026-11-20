@@ -374,6 +374,13 @@ const SUBSYSTEMS = [
           'its attestation, compliance and status, the bounds on how many ' +
           'a person or an application holds, and the console\'s and the ' +
           'management API\'s doors to it.' },
+  { id: 'HWTOKEN', label: 'Hardware tokens',
+    where: 'common/hardware_tokens.ts, admin-ui/hardware_tokens_admin.ts, ' +
+           'portal/account_tokens.ts',
+    what: 'The hardware token register (#1955): one record per physical ' +
+          'token (a YubiKey, a smart card) keyed by vendor and serial, ' +
+          'the serial taken only from attestation, the credentials on it, ' +
+          'and the lost-key act that retires every one of them.' },
   { id: 'SVCACCT', label: 'Service accounts',
     where: 'common/service_accounts.ts, common/service_account_policy.ts, ' +
            'common/service_account_rotation.ts, common/credentials.ts, ' +
@@ -22785,6 +22792,61 @@ const CODES = [
     summary: 'A device of a deleted person could not be removed from the ' +
       'register, so a person made again under the name owns it. Remove it ' +
       'on the Devices page.',
+    spec: '' },
+  // ===== HWTOKEN ===========================================================
+  { code: 'STS-HWTOKEN-0001',
+    summary: 'A hardware token\'s serial was offered with an evidence ' +
+      'source that is not attestation (the FIDO enterprise ' +
+      'attestation, a PIV key attestation or a vendor import); ' +
+      'nothing was recorded (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0002',
+    summary: 'An attestation named no vendor and serial the hardware token ' +
+      'register can key a token by; nothing was recorded (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0003',
+    summary: 'A credential of an unknown kind, or with an empty reference, ' +
+      'was offered to the hardware token register (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0004',
+    summary: 'A hardware token\'s credential named a person with no ' +
+      'directory entry to hold it (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0005',
+    summary: 'The lost-key act named a hardware token that is not in the ' +
+      'realm\'s register, or (at the portal) not held by the caller ' +
+      '(#1955).',
+    spec: 'HTTP 404 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0006',
+    summary: 'The lost-key act named a hardware token already reported ' +
+      'lost (#1955).',
+    spec: 'HTTP 409 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0007',
+    summary: 'A credential on a hardware token reported lost could not be ' +
+      'retired: its kind\'s retire action refused or threw. The ' +
+      'token is marked lost; the credential named on the audit row ' +
+      'is still live and must be removed by hand (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0008',
+    summary: 'A retire action for a hardware token credential kind was ' +
+      'refused at installation: it named an unknown kind, no label ' +
+      'or no retire function (#1955, rule 3e).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0009',
+    summary: 'A credential on a hardware token reported lost is of a kind ' +
+      'no retire action is installed for, so it was not retired and ' +
+      'is still live (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0010',
+    summary: 'At the portal\'s lost-key act a credential on the token was ' +
+      'registered by another person, so it was left for an ' +
+      'administrator to retire (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0011',
+    summary: 'A passkey was written and the hardware token register ' +
+      'could not record the token its attestation named; the key ' +
+      'stands, and the token is recorded when it is next registered ' +
+      '(#1955).',
     spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',

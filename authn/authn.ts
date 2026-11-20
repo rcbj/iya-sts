@@ -14186,8 +14186,13 @@ class Authn {
       { application: application, credential: credential,
         // A key may answer as the second factor (#259).
         deviceAwaited: true });
+    // `swk`, or `hwk` (with `sc` for a smart card) where a hardware token's
+    // attestation evidence covers the certificate's key (#1955 P1): the
+    // door's answer, `GET /tls/sign-in`'s rule.
+    const certificateAmr: string[] = Array.isArray(holder.amr) &&
+      holder.amr.length ? holder.amr.map(String) : ['swk'];
     const second = this.beginSecondFactorAfterWallet(req, res, record,
-      username, { amr: ['swk'], acr: '1' }, assessed,
+      username, { amr: certificateAmr, acr: '1' }, assessed,
       { first: 'certificate' });
     if (second.refused) {
       log.debug("Leaving Authn.certificateSignIn(). Refused.");
@@ -14207,7 +14212,7 @@ class Authn {
                    risk: assessed || undefined, credential: credential,
                    method: 'a TLS client certificate on the connection' };
     pending.delete(record.id);
-    const started = this.startSession(res, username, ['swk'], '1',
+    const started = this.startSession(res, username, certificateAmr, '1',
                                       record.protocol, said);
     if (this.refusedSession(res, base, record, username, started, said)) {
       log.debug("Leaving Authn.certificateSignIn(). The session was " +

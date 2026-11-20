@@ -655,6 +655,18 @@ const ACTIONS = [
   { action: 'webauthn.attestation-revoked', category: 'authentication',
     label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
            'Android attestation status list revokes its chain' },
+  // THE HARDWARE TOKEN REGISTER (#1955): a token recorded from attestation,
+  // a credential added to it, a change of holder, and the lost-key act.
+  // `common/hardware_tokens.ts` writes all four.
+  { action: 'hardware-token.create', category: 'directory',
+    label: 'A hardware token was recorded from attestation' },
+  { action: 'hardware-token.credential-add', category: 'directory',
+    label: 'A credential was added to a hardware token' },
+  { action: 'hardware-token.holder-change', category: 'directory',
+    label: 'A hardware token was registered by another person than the ' +
+           'one who held it' },
+  { action: 'hardware-token.lost', category: 'directory',
+    label: 'A hardware token was reported lost and its credentials retired' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',

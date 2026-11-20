@@ -5514,8 +5514,12 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // added.
   const held = several ? certificateAccountHeld(req, username) : null;
   let session = null;
+  // WHAT THE CERTIFICATE'S KEY EARNS (#1955 P1): `swk` as always, `hwk`
+  // where a hardware token's attestation covers the key, with `sc` where
+  // it says the key is on a smart card. Never inferred here.
+  const amr = certificateAmrOf(cert);
   try {
-    session = authn.startSession(res, username, ['swk'], '1',
+    session = authn.startSession(res, username, amr, '1',
                                  'a client certificate on the ' + mode +
                                  '-client-certificate listener',
                                  // Which certificate, as a thumbprint the
@@ -5595,6 +5599,23 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     answer.account = held ? 'reauthenticated' : 'added';
   }
   return answer;
+}
+
+// The RFC 8176 amr a client certificate's sign-in earns (#1955 P1): what
+// the hardware token register's evidence says of its key, `swk` when it
+// says nothing or cannot be asked. `common/hardware_tokens.ts` argues it.
+function certificateAmrOf(cert) {
+  log.debug('Entering certificateAmrOf().');
+  let amr = ['swk'];
+  try {
+    amr = require('../common/hardware_tokens').certificateAmr(
+      String((cert && cert.serialNumber) || ''));
+  } catch (e) {
+    log.debug('Caught in certificateAmrOf(): ' + ((e && e.message) || e));
+    amr = ['swk'];
+  }
+  log.debug('Leaving certificateAmrOf(). ' + amr.join(','));
+  return amr;
 }
 
 // THE CERTIFICATE ON THE CONNECTION AND WHOM IT NAMES (#1051: moved out of
@@ -5849,6 +5870,9 @@ function screenCertificateHolder(req) {
       ok: true,
       username: peer.username,
       credentialId: String(peer.cert.fingerprint256 || ''),
+      // What the certificate's key earns (#1955 P1), for the screen's
+      // session: `GET /tls/sign-in`'s answer, from the same evidence.
+      amr: certificateAmrOf(peer.cert),
       revocationSaid: revocationSaid,
       // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
       // its session has started, recorded by the screen at the same point.
