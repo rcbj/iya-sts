@@ -667,6 +667,11 @@ const ACTIONS = [
            'one who held it' },
   { action: 'hardware-token.lost', category: 'directory',
     label: 'A hardware token was reported lost and its credentials retired' },
+  // AN ESCROWED PIV KEY RECOVERED (#1955 P2, D7), by its holder or by an
+  // administrator the access-control policy let; a refusal is the same row
+  // with its code. `common/piv_enrolment.ts` writes it.
+  { action: 'piv-escrow.recover', category: 'directory',
+    label: 'An escrowed PIV key-management key was recovered' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',

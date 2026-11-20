@@ -4959,7 +4959,7 @@ Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/
 
 **PIV key attestation.** YubiKey PIV key attestation at certificate enrolment (#1955 P2): the request's attestation read and verified against the realm's PIV attestation anchors and its PIN and touch policy, the four PIV slot profiles, the escrow of piv-key-management keys, and the mapping of an outside PIV or CAC card by its card UUID.
 
-Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_key_escrow.ts, portal/account_tokens.ts, mgmt-api/hardware_tokens_api.ts.
+Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_enrolment.ts, portal/account_tokens.ts, mgmt-api/hardware_tokens_api.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|

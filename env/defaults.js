@@ -1428,13 +1428,14 @@ var config = {
 
   // --- Roles -----------------------------------------------------------
   roles: {
-    claim: true,                     // Carry a roles claim
-    claimName: "roles",              // Role claim name
-    enforceIssuance: true,           // Decide issuance on roles
-    maxRoles: 200,                   // Maximum roles
-    remotePepGroup: "remote-peps",   // Group granting the REMOTE_PEPS role
-    xacmlUserGroup: "xacml-users",   // Group granting the XACML_USER role
-    authzenPepGroup: "authzen-peps"  // Group granting the AUTHZEN_PEPS role
+    claim: true,                             // Carry a roles claim
+    claimName: "roles",                      // Role claim name
+    enforceIssuance: true,                   // Decide issuance on roles
+    maxRoles: 200,                           // Maximum roles
+    remotePepGroup: "remote-peps",           // Group granting the REMOTE_PEPS role
+    xacmlUserGroup: "xacml-users",           // Group granting the XACML_USER role
+    pivKeyRecoveryGroup: "piv-key-recovery", // Group granting the PIV_KEY_RECOVERY role
+    authzenPepGroup: "authzen-peps"          // Group granting the AUTHZEN_PEPS role
   },
 
   // --- Audit export ----------------------------------------------------

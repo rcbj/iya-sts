@@ -558,6 +558,67 @@ class HardwareTokens {
   }
 
   // -------------------------------------------------------------------------
+  // A CREDENTIAL ON A TOKEN THAT IS NOT EVIDENCE (#1955 P2, D7): an escrowed
+  // piv-key-management certificate whose key this service generated and the
+  // holder loaded onto one of their tokens. It RECORDS NO SERIAL — the token
+  // is already in the register, from its own attestation — and its evidence
+  // says `hardware: false`, so `evidenceFor()` earns it nothing; it is here
+  // only so that the lost-key act retires it with the rest of the card. The
+  // token must be active and the holder's.
+  // -------------------------------------------------------------------------
+  /**
+   * Adds a non-evidence credential to an active token its holder names.
+   *
+   * @param spec - `key`, `username`, `credential: { kind, ref, family?,
+   *   label? }`, `actor`
+   * @returns `{ ok, token }`, or a refusal
+   */
+  attachCredential(spec: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.attachCredential().");
+    const s = spec || {};
+    const key = String(s.key || '');
+    const holder = this.holderOf(String(s.username || ''));
+    const held: Json = register.get(key) || null;
+    if (!held || !holder || held.status !== 'active' ||
+        held.holder !== holder) {
+      log.debug("Leaving HardwareTokens.attachCredential(). Not theirs.");
+      return this.refuse('STS-PIV-0025', 'No active hardware token "' +
+        HardwareTokens.text(key) + '" is held by you.');
+    }
+    const cred = s.credential || {};
+    const kind = String(cred.kind || '');
+    const ref = HardwareTokens.refOf(kind, cred.ref);
+    if (CREDENTIAL_KINDS.indexOf(kind) < 0 || !ref) {
+      log.debug("Leaving HardwareTokens.attachCredential(). Credential.");
+      return this.refuse('STS-HWTOKEN-0003', 'Unknown credential kind "' +
+        HardwareTokens.text(kind) + '" or an empty reference.');
+    }
+    const next = JSON.parse(JSON.stringify(held));
+    const entry: TokenCredential = {
+      kind: kind, ref: ref, holder: holder, addedAt: this.nowIso(),
+      evidence: { source: 'escrow', hardware: false, smartCard: false }
+    };
+    if (cred.family) {
+      entry.family = HardwareTokens.text(cred.family);
+    }
+    if (cred.label) {
+      entry.label = HardwareTokens.text(cred.label);
+    }
+    next.credentials = (next.credentials || []).filter(function (c: Json) {
+      return !(c.kind === kind && c.ref === ref);
+    }).concat([entry]).slice(-MAX_CREDENTIALS);
+    next.updatedAt = this.nowIso();
+    register.set(key, next);
+    this.recordAudit('hardware-token.credential-add',
+      String(s.actor || s.username || ''), String(s.username || ''),
+      'An escrowed credential was noted on hardware token ' + key + ' (' +
+      kind + ', not evidence)', { key: key, kind: kind, source: 'escrow' });
+    log.debug("Leaving HardwareTokens.attachCredential(). Attached.");
+    return { ok: true, token: this.view(key, next) };
+  }
+
+  // -------------------------------------------------------------------------
   // THE FIDO DOOR: a key `credentials.addKey()` has just written. Only a key
   // whose attestation this service verified AND trusts, from an enterprise
   // request, carries a serial (`webauthn_attestation.ts` records it only
@@ -1236,6 +1297,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   recordAttested: slot.forward('recordAttested'),
   noteFidoKey: slot.forward('noteFidoKey'),
+  attachCredential: slot.forward('attachCredential'),
   forgetCredential: slot.forward('forgetCredential'),
   byKey: slot.forward('byKey'),
   tokensOf: slot.forward('tokensOf'),

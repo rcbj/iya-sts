@@ -380,6 +380,42 @@ const BUILT_IN = [
       });
     } },
   // -------------------------------------------------------------------------
+  // WHO MAY RECOVER ANOTHER PERSON'S ESCROWED PIV KEY (#1955 P2, D7), AND THE
+  // FOURTH COMPUTED FROM A GROUP.
+  //
+  // XACML_USER's argument, made again: a configured role is absent in every
+  // realm nobody configured, and a built-in one exists in all of them. **IT
+  // IS NOT ADMIN_WRITE.** An escrowed piv-key-management key decrypts the
+  // holder's mail, so recovering it is reading their mail, and the console's
+  // write role must not carry that by default: the access-control policy
+  // asks for this role (`common/piv_enrolment.ts`, resource
+  // `piv-key-escrow`), held by membership of the group
+  // `roles.pivKeyRecoveryGroup` names, which nobody is seeded into. It
+  // authorizes no permission: the act is on `/admin-api` under Admin Write,
+  // and this is the second question the policy asks of it.
+  // -------------------------------------------------------------------------
+  { name: 'PIV_KEY_RECOVERY',
+    what: 'A recoverer of escrowed PIV key-management keys: whoever is a ' +
+          'member of the group named by `roles.pivKeyRecoveryGroup` ' +
+          '(default "piv-key-recovery"). It is what recovering another ' +
+          'person\'s escrowed piv-key-management key through ' +
+          '/admin-api/hardware-tokens/recover-key or the console requires ' +
+          'beside Admin Write, and nothing else: that key decrypts the ' +
+          'holder\'s mail. The holder recovers their own on the portal ' +
+          'without it.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      const wanted = pivKeyRecoveryGroupName().toLowerCase();
+      if (!wanted) {
+        log.debug("Leaving holds().");
+        return false;
+      }
+      log.debug("Leaving holds().");
+      return (who.groups || []).some(function (one) {
+        return String(one).toLowerCase() === wanted;
+      });
+    } },
+  // -------------------------------------------------------------------------
   // THE NINTH AND TENTH: AN OWNER'S TWO ROLES (#607, 2026-10-13).
   //
   // rcbj: "A user that is an owner of these types of objects would be granted
@@ -486,6 +522,14 @@ function xacmlUserGroupName() {
   log.debug("Entering xacmlUserGroupName().");
   log.debug("Leaving xacmlUserGroupName().");
   return String(config.value('roles.xacmlUserGroup') || '').trim();
+}
+
+// The group that grants PIV_KEY_RECOVERY (#1955 P2), on the same terms: ''
+// lets nobody recover another person's escrowed key.
+function pivKeyRecoveryGroupName() {
+  log.debug("Entering pivKeyRecoveryGroupName().");
+  log.debug("Leaving pivKeyRecoveryGroupName().");
+  return String(config.value('roles.pivKeyRecoveryGroup') || '').trim();
 }
 
 // The group that grants AUTHZEN_PEPS (#563), on the same terms: '' closes

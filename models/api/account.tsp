@@ -4852,8 +4852,45 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
   @js(#{`description`:"The caller's own credentials on it."}) `credentials`: (HardwareTokenPortalCredential)[]
 }
 
+// #1955 P2: an escrowed piv-key-management certificate of the caller's, and
+// the realm's PIV rules the enrolment form draws.
+@hoisted model PivEscrowedPortalRow {
+  @js(#{`description`:"The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name."}) `serialHex`: string;
+  `profile`: string;
+  `subject`: string;
+  `notAfter`: string;
+  `issuedAt`: string;
+  @js(#{`description`:"Whether the certificate was revoked; its escrowed key is still recoverable."}) `revoked`: boolean
+}
+
+@hoisted model PivPortalRules {
+  @js(#{`description`:"The PIV slot profiles this realm's EST may issue (est.allowedProfiles)."}) `profiles`: (string)[];
+  @js(#{`description`:"Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation)."}) `requireAttestation`: boolean;
+  @js(#{`description`:"Whether piv-key-management keys may be escrowed (piv.keyEscrow)."}) `keyEscrow`: boolean
+}
+
 @hoisted model HardwareTokensPortalView {
-  @js(#{`description`:"Every token the caller holds or has a credential on, newest first."}) `tokens`: (HardwareTokenPortalRow)[]
+  @js(#{`description`:"Every token the caller holds or has a credential on, newest first."}) `tokens`: (HardwareTokenPortalRow)[];
+  @js(#{`description`:"The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key."}) `escrowed`: (PivEscrowedPortalRow)[];
+  @js(#{`description`:"What the PIV enrolment form may issue here."}) `piv`: PivPortalRules;
+  @js(#{`description`:"`enrol-piv`'s answer only: the certificate issued, drawn once."}) `issued`?: PivIssuedPortal;
+  @js(#{`description`:"`recover-key`'s answer only: the escrowed key and its certificate, drawn once."}) `recovered`?: PivRecoveredPortal
+}
+
+@hoisted model PivIssuedPortal {
+  @js(#{`description`:"The issued certificate's serial, lower-case hex."}) `serialHex`: string;
+  `profile`: string;
+  @js(#{`description`:"The certificate, PEM: import it with ykman piv certificates import."}) `certificatePem`: string;
+  @js(#{`description`:"The issuing chain, PEM, nearest first."}) `chainPem`: (string)[];
+  @js(#{`description`:"Whether a YubiKey PIV attestation of the key verified."}) `attested`: boolean;
+  @js(#{`description`:"The hardware token it was recorded on, `<vendor>/<serial>`, or empty."}) `token`: string
+}
+
+@hoisted model PivRecoveredPortal {
+  `serialHex`: string;
+  @js(#{`description`:"The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card."}) `privateKeyPem`: string;
+  `certificatePem`: string;
+  `chainPem`: (string)[]
 }
 
 @endpoint("/account-api/tokens",
@@ -4909,7 +4946,10 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
 
 @js(#{`description`:"What to do; `lost` where none is named."}) @hoisted union post_account_api_tokens_b_application_json_action {
     EmptyText,
-    "lost"
+    "lost",
+    "enrol-piv",
+    "recover-key",
+    "attach-key"
   }
 
 @endpoint("/account-api/tokens",
@@ -4917,8 +4957,8 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   #{
     `operationId`:"actOnTokens",
     `tags`:#["Devices"],
-    `summary`:"Reports one of your hardware tokens lost",
-    `description`:"`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
+    `summary`:"Reports one of your hardware tokens lost, enrols a PIV certificate, or recovers an escrowed key",
+    `description`:"`lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/tokens`.",
     `parameters`:#[
 
     ],
@@ -4936,7 +4976,11 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `409`:#{
-        `description`:"The token was already reported lost.",
+        `description`:"The token was already reported lost, or the person already holds as many certificates as the realm allows.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The certificate could not be issued or recorded, or an escrowed key could not be opened.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `401`:#{
@@ -4959,7 +5003,12 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   })
 op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_tokens_b_application_json_action;
-    @js(#{`description`:"`lost`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string
+    @js(#{`description`:"`lost` and `attach-key`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string;
+    @js(#{`description`:"`enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth.",`maxLength`:64}) `profile`?: string;
+    @js(#{`description`:"`enrol-piv`: the PKCS#10 certificate request, PEM.",`maxLength`:32768}) `csr`?: string;
+    @js(#{`description`:"`enrol-piv`: the slot's attestation certificate, PEM (ykman piv keys attest).",`maxLength`:32768}) `attestationCertificate`?: string;
+    @js(#{`description`:"`enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it.",`maxLength`:32768}) `attestationIssuer`?: string;
+    @js(#{`description`:"`recover-key` and `attach-key`: the escrowed certificate's serial, hex.",`maxLength`:64}) `serial`?: string
   },
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;
@@ -4979,6 +5028,12 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `view`?: HardwareTokensPortalView
   },
   `responses/409/content/application~1json/schema`: {
+    `ok`: boolean;
+    `errors`: (string)[];
+    `error`?: string;
+    `view`?: HardwareTokensPortalView
+  },
+  `responses/503/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;

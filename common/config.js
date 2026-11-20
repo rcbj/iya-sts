@@ -18022,6 +18022,18 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+  { key: 'roles.pivKeyRecoveryGroup', group: 'Roles',
+    label: 'Group granting the PIV_KEY_RECOVERY role',
+    env: 'STS_ROLES_PIV_KEY_RECOVERY_GROUP', type: 'string',
+    dflt: 'piv-key-recovery', runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'PIV_KEY_RECOVERY role (#1955), which the access-control ' +
+                 'policy requires, beside Admin Write, to recover another ' +
+                 'person\'s escrowed piv-key-management key (piv.keyEscrow). ' +
+                 'That key decrypts the person\'s mail, so nobody holds the ' +
+                 'role until an administrator adds them to the group. Empty ' +
+                 'lets nobody recover another person\'s key; the holder ' +
+                 'recovers their own on the portal.' },
   { key: 'roles.authzenPepGroup', group: 'Roles',
     label: 'Group granting the AUTHZEN_PEPS role',
     env: 'STS_ROLES_AUTHZEN_PEP_GROUP', type: 'string',

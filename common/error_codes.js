@@ -383,7 +383,7 @@ const SUBSYSTEMS = [
           'and the lost-key act that retires every one of them.' },
   { id: 'PIV', label: 'PIV key attestation',
     where: 'common/piv_attestation.ts, common/cert_enrollment.ts, ' +
-           'common/piv_key_escrow.ts, portal/account_tokens.ts, ' +
+           'common/piv_enrolment.ts, portal/account_tokens.ts, ' +
            'mgmt-api/hardware_tokens_api.ts',
     what: 'YubiKey PIV key attestation at certificate enrolment (#1955 ' +
           'P2): the request\'s attestation read and verified against the ' +
