@@ -432,7 +432,7 @@ evaluated gets an error status and a body of the form
 | 400 | the request is not valid: a missing member, a value that breaks the rules below, an undeclared property, or several applications in scope and none named |
 | 401 | the caller did not authenticate; `WWW-Authenticate: Bearer realm="<issuer>"` when tokens are accepted |
 | 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named |
-| 415 | the request's `Content-Type` is not `application/json` (a `charset` parameter is fine), or it has none: section 10.1 requires it. The evaluation, the batch and the three searches answer this once the caller is admitted |
+| 415 | the request's `Content-Type` is not `application/json` (a `charset` parameter is fine), or it has none: section 10.1 requires it. The evaluation, the batch, the three searches and an access request's submission answer this once the caller is admitted (the submission as `application/problem+json`), and so do the remote PEP's evaluation and batch |
 | 500 | the policy could not be evaluated (for example the root policy does not load, or the application enforces fine-grained authorization and its policy is disabled or missing) — never reported as `false` |
 | 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
 

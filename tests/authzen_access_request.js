@@ -20,7 +20,9 @@
 //      (expires_at, endpoint, a binding_token that verifies as the realm's)
 //      and evaluation_id; a delete, denied without the advice, is a plain
 //      false; the metadata names the endpoint, jwks_uri and the capability.
-//   S. THE SUBMISSION: no denial (not_requestable), a changed tuple and
+//   S. THE SUBMISSION: a body not sent as application/json is 415
+//      problem+json (STS-AUTHZEN-0122, #936) and makes no task, one sent
+//      with a charset is read; no denial (not_requestable), a changed tuple and
 //      another caller (invalid_denial_binding), a callback nobody
 //      registered, then 202 with a Task Handle and Location; the same
 //      Idempotency-Key and body is the same task, another body 409.
@@ -378,6 +380,27 @@ async function childBody() {
   // S. THE SUBMISSION
   // -------------------------------------------------------------------------
   let since = marks.length;
+  // S0 (#936): section 10.1's media type, held here as at the evaluation.
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(denied),
+                    { 'content-type': 'text/plain' });
+  t.check(r.status === 415 &&
+          /^application\/problem\+json/.test(
+            String(r.headers['content-type'] || '')) &&
+          r.json && r.json.status === 415 &&
+          r.json.title === 'Unsupported media type' && !r.json.task &&
+          markedSince(since, 'STS-AUTHZEN-0122'),
+          'S0. a submission sent as text/plain is 415 problem+json ' +
+          '(STS-AUTHZEN-0122) and makes no task', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    { subject: { type: 'user', id: 'azalice' },
+                      action: { name: 'read' },
+                      resource: { type: 'document', id: 'doc-1' } },
+                    { 'content-type': 'application/json; charset=utf-8' });
+  t.check(r.status === 400 && /not_requestable$/.test(problemOf(r)),
+          'S0. one sent as application/json with a charset is read',
+          brief(r));
+  since = marks.length;
   r = await request(port, 'POST', SUBMIT, pepCred,
                     { subject: { type: 'user', id: 'azalice' },
                       action: { name: 'read' },

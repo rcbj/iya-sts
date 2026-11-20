@@ -112,6 +112,17 @@ impl Reply {
     }
 }
 
+/// Whether a `Content-Type` value names `application/json`, with or without
+/// parameters, compared case-insensitively (RFC 9110 section 8.3.1) —
+/// `authzen.ts`'s `isJsonType()`. An absent header is not JSON: AuthZEN 1.0
+/// section 10.1's MUST is to include it (#936).
+pub fn is_json_type(value: Option<&str>) -> bool {
+    value
+        .and_then(|v| v.split(';').next())
+        .map(|t| t.trim().eq_ignore_ascii_case("application/json"))
+        .unwrap_or(false)
+}
+
 /// A caller this container admitted.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Caller {
@@ -645,11 +656,13 @@ impl Pep {
     }
 
     /// `POST /access/v1/evaluation` and `POST /access/v1/evaluations`, after
-    /// the request id: the switches, the caller, the body, the answer.
+    /// the request id: the switches, the caller, the media type, the body,
+    /// the answer.
     pub(crate) async fn authzen_post(
         &self,
         batch: bool,
         transport: &Transport,
+        content_type: Option<&str>,
         body: Result<Vec<u8>, ()>,
         id: &str,
     ) -> Reply {
@@ -695,6 +708,20 @@ impl Pep {
             Ok(caller) => caller,
             Err(refused) => return refused,
         };
+        // SECTION 10.1: "Requests MUST include a Content-Type header with
+        // the value application/json"; RFC 9110 section 15.5.16 says what
+        // a server answers otherwise. After the caller is admitted, so a
+        // stranger is told 401 first, and before the body is read — the
+        // service's `notJson()`, with its code (#936). Until then this PDP
+        // read a `text/plain` body as JSON and answered it.
+        if !is_json_type(content_type) {
+            return Reply::error(
+                415,
+                "STS-AUTHZEN-0117",
+                "The request must carry Content-Type: application/json \
+                 (AuthZEN 1.0 section 10.1).",
+            );
+        }
         if batch {
             return self.authzen_batch(&caller, &catalogue, body, id).await;
         }
@@ -1343,6 +1370,17 @@ mod tests {
             code(application_of(&caller(&["a", "b"]), "")),
             Err((400, "STS-AUTHZEN-0027"))
         );
+    }
+
+    #[test]
+    fn reads_only_application_json_as_json() {
+        assert!(is_json_type(Some("application/json")));
+        assert!(is_json_type(Some("Application/JSON; charset=utf-8")));
+        assert!(is_json_type(Some(" application/json ;charset=UTF-8")));
+        assert!(!is_json_type(Some("text/plain")));
+        assert!(!is_json_type(Some("application/json-patch+json")));
+        assert!(!is_json_type(Some("")));
+        assert!(!is_json_type(None));
     }
 
     #[test]

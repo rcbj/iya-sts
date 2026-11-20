@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5758** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5759** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 99
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 299
@@ -5468,6 +5468,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0119` | A remote PEP's access token at /access/v1 does not carry authzen:evaluate, or sts-remote-pep no longer holds the delegated permission grant of it on sts-authzen-api (#1827). | HTTP 403, WWW-Authenticate: DPoP error="insufficient_scope" |
 | `STS-AUTHZEN-0120` | A remote PEP's access token at /access/v1 names no entry under this realm's ou=users, or one that does not hold REMOTE_PEPS: the token of the client every PEP shares admits only a remote PEP (#1827). | HTTP 401 (no entry) or 403 (not a remote PEP) |
 | `STS-AUTHZEN-0121` | A remote PEP's access token arrived at /access/v1 while xacml.pepAuthentication is certificate, which accepts a remote PEP only by its client certificate (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-AUTHZEN-0122` | An AuthZEN access request submission did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), application/problem+json (RFC 9457) |
 
 ## STS-FGA
 

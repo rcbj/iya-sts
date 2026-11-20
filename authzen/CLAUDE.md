@@ -88,7 +88,16 @@ this API read any body as JSON (`app.js`'s text parser takes every type):
 section 10.1's "Requests MUST include a `Content-Type` header with the
 value `application/json`" is now held, 415 `0117` (`notJson()`, after the
 caller is admitted, before the body is read; a parameter is allowed, an
-absent header is refused). And the Resource Search of type `record` found
+absent header is refused). **The same rule holds in the two places it was
+missing (2026-11-20, #936)**:
+- the Access Request profile's submission (`POST /access/v1/access-requests`)
+  answers 415 `0122` as problem+json, titled *Unsupported media type*. The
+  status and the cancellation read no JSON body and are not held to it;
+- the remote PEP's edge PDP (`rust/bins/xacml-pep/src/authzen.rs`,
+  `is_json_type()`) answers 415 `0117` at its evaluation and batch, at the
+  same point.
+
+And the Resource Search of type `record` found
 nothing, since this service has no records: a type with no objects here
 now takes the policy's `resource-id` literals as its candidates (*The
 searches*). **One module is LEDGERED, not fixed**: the batch's
@@ -882,4 +891,5 @@ token, 0115 the no-broadening check; 0116 an answer that is not its model's
 (#936); 0118–0121 a remote PEP's DPoP-bound token from `sts-remote-pep`
 (#1827's follow-up): 0118 refused as a token, 0119 without
 `authzen:evaluate`, 0120 naming no entry or one outside REMOTE_PEPS, 0121
-`xacml.pepAuthentication` set to `certificate`.
+`xacml.pepAuthentication` set to `certificate`; 0122 an access request
+submission whose `Content-Type` is not `application/json` (#936).
