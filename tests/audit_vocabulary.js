@@ -488,7 +488,9 @@ function literalValues(text) {
  */
 function callsOf(text, masked, name) {
   log.debug("Entering callsOf().");
-  const escaped = name.replace(/[.$()]/g, '\\$&');
+  // Every metacharacter, the backslash included, not just the ones a
+  // callee name usually holds.
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp('(^|[^\\w$.])' + escaped + '\\(', 'g');
   const out = [];
   let m;

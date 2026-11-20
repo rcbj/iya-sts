@@ -365,7 +365,8 @@ async function refusalsSection(t, password, aes256) {
   await refused(t, 'the wrong realm', asReq({
     realm: 'OTHER.REALM',
     sname: { type: 2, name: ['krbtgt', 'OTHER.REALM'] } }), 68,
-                new RegExp('serves ' + REALM.replace(/\./g, '\\.')));
+                new RegExp('serves ' +
+                           REALM.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   await refused(t, 'a locked account', asReq({
     cname: { type: 1, name: ['locked'] } }), 18, /disabled or locked/);
   await refused(t, 'an expired password', asReq({

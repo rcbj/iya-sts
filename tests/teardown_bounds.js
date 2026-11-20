@@ -410,7 +410,9 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   // Each mode's own bound in modes.sh, the launcher's shared one otherwise.
   function defaultBoundOf(mode) {
     log.debug("Entering defaultBoundOf().");
-    const own = new RegExp('\\n\\s*' + mode.replace(/-/g, '\\-') +
+    // The name escaped whole, the backslash included.
+    const own = new RegExp('\\n\\s*' +
+      mode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
       '\\)\\s*echo "\\$\\{([A-Z_]+):-(\\d+)\\}"').exec(modes);
     log.debug("Leaving defaultBoundOf().");
     return own ? { variable: own[1], seconds: Number(own[2]) }
