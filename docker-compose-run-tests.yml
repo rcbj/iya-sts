@@ -291,8 +291,11 @@ services:
       - STS_BAO_TLS_IPS=127.0.0.1
     volumes:
       - sts-mariadb-tls:/mariadb-tls
+      # THE CERTIFICATE ALONE, for the runner (2026-11-20): the key stays
+      # in `sts-mariadb-tls`, as `sts-db-ca` keeps postgres's key out.
+      - sts-mariadb-ca:/mariadb-ca
       - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
-    command: ["node", "openbao/generate-tls.js"]
+    command: ["sh", "-c", "node openbao/generate-tls.js && cp /mariadb-tls/tls/server.crt /mariadb-ca/server.crt && chmod 644 /mariadb-ca/server.crt"]
 
   mariadb:
     container_name: ${STS_TEST_MARIADB_CONTAINER_NAME:-sts-mariadb-docker-tests}
@@ -1689,6 +1692,9 @@ services:
       # half instead of dialling the default. The stack sets it in every
       # mode, memory included.
       - STS_TEST_ATTRIBUTE_MYSQL_URL=${STS_TEST_ATTRIBUTE_MYSQL_URL-mysql://root:sts@mariadb:3306/sts}
+      # And the certificate that server presents, which the job's own
+      # connection is verified against (`sts-mariadb-ca`, mounted below).
+      - STS_TEST_ATTRIBUTE_MYSQL_CA=${STS_TEST_ATTRIBUTE_MYSQL_CA-/run/secrets/mariadb-ca/server.crt}
       # THE DATABASE THE PERSISTENCE JOB RESTARTS THE SERVICE AGAINST
       # (moved from the parent project, 2026-10-23): the stack's postgres as
       # its superuser, in which `tests/protocol/sts_persistence_postgres.js`
@@ -1815,6 +1821,9 @@ services:
       # THE DATABASES' CERTIFICATES, read-only, as `sts` mounts them: what
       # STS_TEST_PERSISTENCE_DB_CA names.
       - sts-db-ca:/run/secrets/database-ca:ro
+      # MariaDB's certificate without its key: what
+      # STS_TEST_ATTRIBUTE_MYSQL_CA names.
+      - sts-mariadb-ca:/run/secrets/mariadb-ca:ro
     depends_on:
       # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
       # catcher that will not come up fails sts_mail.js and nothing else.
@@ -1876,6 +1885,8 @@ volumes:
   # MariaDB's listener key and certificate (#356). Not mounted into `sts`:
   # the job reads the certificate off the handshake.
   sts-mariadb-tls:
+  # MariaDB's certificate alone, for the runner (2026-11-20).
+  sts-mariadb-ca:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

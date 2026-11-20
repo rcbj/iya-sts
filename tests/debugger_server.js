@@ -415,6 +415,20 @@ async function run(t) {
     t.equal(back.headers.location, 'http://' + host + '/saml.html',
             'a Location naming the child\'s configured origin is rewritten ' +
             'to the one the browser is using');
+    // The origin compared parsed (2026-11-20): a text prefix also took a
+    // port or a host that merely began the same way.
+    const moved = debuggerServer.DebuggerServer.rewrittenLocation;
+    t.equal(moved('http://child.invalid:1/a?b=c#d', 'http://child.invalid:1',
+                  'https://dbg.test'), 'https://dbg.test/a?b=c#d',
+            'the child\'s own origin is moved, path, query and fragment kept');
+    t.equal(moved('http://child.invalid:10/a', 'http://child.invalid:1',
+                  'https://dbg.test'), 'http://child.invalid:10/a',
+            'a port that only begins with the child\'s is left alone');
+    t.equal(moved('http://child.invalid.evil/a', 'http://child.invalid',
+                  'https://dbg.test'), 'http://child.invalid.evil/a',
+            'a host that only begins with the child\'s is left alone');
+    t.equal(moved('/saml.html', 'http://child.invalid:1', 'https://dbg.test'),
+            '/saml.html', 'a relative Location goes through unchanged');
 
     // -----------------------------------------------------------------------
     // CI run #510: the first /api call after a sign-in found the child being

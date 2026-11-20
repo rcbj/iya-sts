@@ -496,8 +496,15 @@ function driverFor(url, engine) {
   log.debug("Entering driverFor(). " + engine);
   const postgres = require('../persistence/persistence_postgres');
   log.debug("Leaving driverFor().");
+  // VERIFIED, chain and host name, against the CA file the engine's
+  // variable names (STS_TEST_POSTGRES_CA, STS_TEST_MARIADB_CA) or, with
+  // none, node's default store and NODE_EXTRA_CA_CERTS — as the admin
+  // connection below is.
+  const caFile = process.env[engine === 'mariadb' ? 'STS_TEST_MARIADB_CA'
+    : 'STS_TEST_POSTGRES_CA'] || '';
   return postgres.create({
-    url: url, engine: engine, verifyTls: false,
+    url: url, engine: engine, verifyTls: true,
+    tlsCa: caFile ? require('fs').readFileSync(caFile, 'utf8') : '',
     sqlDialect: engine === 'postgres' ? 'portable' : undefined,
     log: require('bunyan').createLogger({ name: 'minted_portable_driver',
       level: process.env.LOG_LEVEL || 'warn' })

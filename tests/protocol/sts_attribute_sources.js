@@ -78,6 +78,11 @@ const MYSQL_URL = String(process.env.STS_TEST_ATTRIBUTE_MYSQL_URL || "");
 // PostgreSQL connections verify against, chain and host name. Without it the
 // PostgreSQL half is skipped, saying why, never dialled unverified.
 const PG_CA = String(process.env.STS_TEST_PERSISTENCE_DB_CA || "");
+// THE STACK'S MARIADB CERTIFICATE (2026-11-20), which the `mariadb-tls`
+// one-shot copies, without its key, into `sts-mariadb-ca` for the runner:
+// the anchor this job's own MariaDB connections verify against, chain and
+// host name. Without it the MariaDB half is skipped, saying why.
+const MY_CA = String(process.env.STS_TEST_ATTRIBUTE_MYSQL_CA || "");
 const STAMP = names.runStamp();
 const SAFE = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
 const REALM = ("attrsrc-" + SAFE).slice(0, 31);
@@ -349,17 +354,11 @@ async function mysqlAdmin(spec, database) {
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: named || undefined,
-    // ENCRYPTED, AND THE ONE CONNECTION HERE NOT VERIFIED. The MariaDB
-    // server's certificate is minted by the `mariadb-tls` one-shot into the
-    // `sts-mariadb-tls` volume, which only `mariadb` mounts (it holds the
-    // key too), and nothing else publishes it: there is no anchor this
-    // container can reach. The certificate read off this handshake is the
-    // one the SERVICE is then made to verify against, so what the job
-    // asserts — the service refusing a chain that did not sign the server
-    // (4.) — does not rest on this connection. Mounting the volume's
-    // certificate into the runner, as `sts-db-ca` is for postgres, is
-    // what would close it.
-    ssl: { rejectUnauthorized: false }
+    // Encrypted AND VERIFIED (2026-11-20; unverified until then) against
+    // the certificate the `mariadb-tls` one-shot published (MY_CA), chain
+    // and host name. The certificate read off this handshake is then the
+    // one the SERVICE is made to verify against (4.).
+    ssl: { ca: fs.readFileSync(MY_CA, "utf8"), servername: url.hostname }
   });
   log.debug("Leaving mysqlAdmin().");
   return conn;
@@ -692,7 +691,12 @@ function dialectsOf(shared) {
       reader: PG_READER, readerPassword: PG_PASSWORD,
       passwordFile: path.join(shared.dir, "attrsrc-" + SAFE + ".pw") });
   }
-  if (MYSQL_URL) {
+  if (MYSQL_URL && !MY_CA) {
+    log.info("MariaDB half skipped: STS_TEST_ATTRIBUTE_MYSQL_CA does not " +
+             "name the stack's MariaDB certificate, and this job never " +
+             "dials it unverified.");
+  }
+  if (MYSQL_URL && MY_CA) {
     specs.push({ dialect: "mysql", label: "MariaDB", sourceId: "hr-mysql",
       state: "my", url: MYSQL_URL, port: 3306, database: MY_DATABASE,
       reader: MY_READER, readerPassword: MY_PASSWORD,
