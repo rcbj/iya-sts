@@ -9,9 +9,9 @@
 // THE CHANGELOG A RELEASE PRINTS (rcbj, 2026-11-20).
 //
 // `tests/tools/release-changelog.js` rewrites GitHub's generated release
-// notes: every ticket is `#NNNN` linked to the ticket, and each entry names
-// the original issue (when its title names one) or its pull request, never
-// both. The build workflow runs it before the draft release rcbj reviews.
+// notes: every ticket is `#NNNN` linked to the ticket, and each entry
+// starts with its pull request and names one ticket. The build workflow
+// runs it before the draft release rcbj reviews.
 //
 // WHY IN PROCESS: it runs in a CI workflow on text GitHub generates; no
 // running service is involved. The command line is driven in a child too,
@@ -36,35 +36,40 @@ function run(t) {
   log.debug("Entering run().");
   const plain = rc.rewriteLine('* A secret setting opens here by ' +
     '@rcbjBlueMars in ' + PULL + '1641', REPO);
-  t.check(plain === '* A secret setting opens here by @rcbjBlueMars in ' +
-          '[#1641](' + PULL + '1641)',
-          'a title naming no ticket is followed by its pull request as ' +
-          '#NNNN, linked', plain);
+  t.check(plain === '* [#1641](' + PULL + '1641) A secret setting opens ' +
+          'here by @rcbjBlueMars',
+          'an entry starts with its pull request as #NNNN, linked', plain);
 
   const named = rc.rewriteLine('* ws-trust: encrypt named elements (#1668) ' +
     'by @rcbjBlueMars in ' + PULL + '1908', REPO);
-  t.check(named === '* ws-trust: encrypt named elements ([#1668](' + ISSUE +
-          '1668)) by @rcbjBlueMars' && named.indexOf('1908') < 0,
-          'a title naming its issue keeps the issue, linked, and drops the ' +
-          'pull request', named);
+  t.check(named === '* [#1908](' + PULL + '1908) ws-trust: encrypt named ' +
+          'elements by @rcbjBlueMars' && named.indexOf('1668') < 0,
+          'a bracketed issue number is dropped, so the line names one ' +
+          'ticket', named);
 
   const two = rc.rewriteLine('* Credential signer SAN (#1878, #1880) by @x ' +
     'in ' + PULL + '1890', REPO);
-  t.check(two === '* Credential signer SAN ([#1878](' + ISSUE + '1878), ' +
-          '[#1880](' + ISSUE + '1880)) by @x' && two.indexOf('1890') < 0,
-          'every ticket a title names is linked', two);
+  t.check(two === '* [#1890](' + PULL + '1890) Credential signer SAN by @x',
+          'a bracket of several ticket numbers is dropped too', two);
 
   const inline = rc.rewriteLine('* and the #1390 gaps are closed. by @x in ' +
     PULL + '1655', REPO);
-  t.check(inline === '* and the [#1390](' + ISSUE + '1390) gaps are ' +
-          'closed. by @x',
+  t.check(inline === '* [#1655](' + PULL + '1655) and the [#1390](' +
+          ISSUE + '1390) gaps are closed. by @x',
           'a ticket named inside the sentence is linked where it stands',
           inline);
 
+  const words = rc.rewriteLine('* A flush race (#877 race) by @x in ' +
+    PULL + '1670', REPO);
+  t.check(words === '* [#1670](' + PULL + '1670) A flush race ([#877](' +
+          ISSUE + '877) race) by @x',
+          'a bracket with words in it is part of the sentence, and kept',
+          words);
+
   const notTickets = rc.rewriteLine('* C# and a#1 and &#39; by @x in ' +
     PULL + '7', REPO);
-  t.check(notTickets === '* C# and a#1 and &#39; by @x in [#7](' + PULL +
-          '7)', 'a # inside a word or an entity is not a ticket', notTickets);
+  t.check(notTickets === '* [#7](' + PULL + '7) C# and a#1 and &#39; by @x',
+          'a # inside a word or an entity is not a ticket', notTickets);
 
   const full = '**Full Changelog**: https://github.com/rcbj/iya-sts/' +
     'compare/v1.0.0...v1.1.0';
@@ -98,8 +103,8 @@ function run(t) {
   const out = cp.spawnSync(process.execPath, [cli, '--repo', REPO],
     { input: body, encoding: 'utf8' });
   t.check(out.status === 0 && out.stdout === '## What\'s Changed\n' +
-          '* One ([#3](' + ISSUE + '3)) by @x\n' +
-          '* Two by @x in [#10](' + PULL + '10)\n\n' + full + '\n',
+          '* [#9](' + PULL + '9) One by @x\n' +
+          '* [#10](' + PULL + '10) Two by @x\n\n' + full + '\n',
           'the command line rewrites stdin to stdout',
           JSON.stringify(out.stdout));
   const bad = cp.spawnSync(process.execPath, [cli], { input: body,
@@ -112,7 +117,7 @@ function run(t) {
 
 module.exports = {
   name: 'release_changelog',
-  describe: 'the changelog a release prints: tickets as #NNNN, the issue ' +
-            'or the pull request, not both',
+  describe: 'the changelog a release prints: each entry starts with its ' +
+            'pull request as #NNNN, and names one ticket',
   run: run
 };

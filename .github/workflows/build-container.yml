@@ -765,9 +765,9 @@ jobs:
       #   * the commit, and whether it is a release build (#1317);
       #   * GitHub's generated notes from the previous `vM.N.P` release tag,
       #     which list the pull requests merged since it, rewritten by
-      #     tests/tools/release-changelog.js (rcbj, 2026-11-20): each ticket
-      #     `#NNNN`, linked, and each entry its issue or its pull request,
-      #     not both.
+      #     tests/tools/release-changelog.js (rcbj, 2026-11-20): each entry
+      #     starts with its pull request as a linked `#NNNN`, and names one
+      #     ticket.
       #
       # IT IS MADE AS A DRAFT (rcbj, 2026-11-20): "for each new release I
       # want to review exactly what gets printed in the change log." Nothing
@@ -839,9 +839,8 @@ jobs:
           # THE CHANGELOG (rcbj, 2026-11-20): GitHub's generated notes since
           # the previous vM.N.P, asked for without making a release (the
           # endpoint `--generate-notes` uses), then rewritten by
-          # tests/tools/release-changelog.js: every ticket `#NNNN`, linked,
-          # and each entry its original issue (named in its title) or its
-          # pull request, not both.
+          # tests/tools/release-changelog.js: each entry starts with its pull
+          # request as a linked `#NNNN`, and names one ticket.
           tag_for_notes="${release}"
           if [ "${CANDIDATE}" = true ]; then
             tag_for_notes="${release}-candidate"

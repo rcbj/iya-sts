@@ -19,12 +19,12 @@
 //
 //   1. A TICKET IS WRITTEN `#NNNN`, linked to the ticket. GitHub prints a
 //      pull request as its full URL; here it is `[#NNNN](url)`.
-//   2. EACH ENTRY NAMES THE ORIGINAL ISSUE OR THE PULL REQUEST, NOT BOTH. This
-//      repository's pull requests name their issue in the title,
-//      "... (#1668)", and close none by keyword, so GitHub links no issue to
-//      them. So: a title that names a ticket keeps it, linked, and the pull
-//      request is dropped from that line. A title that names none is followed
-//      by its pull request.
+//   2. EACH ENTRY STARTS WITH ITS PULL REQUEST, and names one ticket: the
+//      pull request is fine, rather than the issue (rcbj). This
+//      repository's titles name their issue in a bracket, "... (#1668)",
+//      which is dropped so the line does not carry two numbers. A ticket
+//      the sentence itself names ("the #1390 gaps") is what it says, and is
+//      linked where it stands.
 //
 // Every other line (the headings, *Full Changelog*, *New Contributors*) is
 // passed through, a pull request URL in it written as `#NNNN` the same way.
@@ -87,17 +87,15 @@ function rewriteLine(line, repo) {
                            '\\s*$');
   const m = line.match(entry);
   if (m) {
-    const title = m[2];
-    TICKET.lastIndex = 0;
-    const namesTicket = TICKET.test(title);
-    TICKET.lastIndex = 0;
-    if (namesTicket) {
-      log.debug('Leaving rewriteLine(). The title names its ticket.');
-      return m[1] + linkTickets(title, repo) + ' by ' + m[3];
-    }
+    // The pull request first, then its title. A bracket of ticket numbers
+    // and nothing else, "(#1668)" or "(#1878, #1880)", is dropped, so the
+    // line names one ticket; a ticket the sentence itself names ("the #1390
+    // gaps") is part of what it says, and is linked where it stands.
+    const title = m[2].replace(/\s*\(\s*#\d+(\s*,\s*#\d+)*\s*\)/g, '')
+      .trim();
     log.debug('Leaving rewriteLine(). The pull request.');
-    return m[1] + title + ' by ' + m[3] + ' in [#' + m[4] +
-      '](https://github.com/' + repo + '/pull/' + m[4] + ')';
+    return m[1] + '[#' + m[4] + '](https://github.com/' + repo + '/pull/' +
+      m[4] + ') ' + linkTickets(title, repo) + ' by ' + m[3];
   }
   // Anything else: a pull request URL becomes #NNNN, and the rest stays.
   const out = line.replace(new RegExp(pull + '(?![\\w/])', 'g'),
