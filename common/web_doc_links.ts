@@ -66,6 +66,8 @@ const CONSOLE: Record<string, string> = {
     'applications.html#the-console-page-and-the-api',
   '/admin/applications/new': 'applications.html#adminapplicationsnew',
   '/admin/attribute-sources': 'attribute-sources.html',
+  '/admin/attribute-sources/new':
+    'attribute-sources.html#adding-a-source--adminattribute-sourcesnew',
   '/admin/authorization-servers':
     'oauth-oidc.html#multiple-authorization-servers--adminauthorization-servers',
   '/admin/caches': 'caches.html',
@@ -100,6 +102,8 @@ const CONSOLE: Record<string, string> = {
   '/admin/deliveries': 'signing-out.html',
   '/admin/device-registration': 'devices.html',
   '/admin/devices': 'devices.html',
+  '/admin/devices/new':
+    'devices.html#registering-a-device--admindevicesnew',
   '/admin/devices/monitor': 'devices.html',
   '/admin/service-accounts': 'service-accounts.html',
   '/admin/encryption': 'encryption-at-rest.html',
@@ -113,6 +117,8 @@ const CONSOLE: Record<string, string> = {
   '/admin/grants':
     'oauth-oidc.html#grant-management-grant-management-for-oauth-20',
   '/admin/groups': 'admin-console.html#groups--admingroups',
+  '/admin/groups/new':
+    'admin-console.html#creating-a-group--admingroupsnew',
   '/admin/keys':
     'pki.html#signing-key-generations-and-the-crypto-metadata-document',
   '/admin/keys/history':
@@ -153,9 +159,12 @@ const CONSOLE: Record<string, string> = {
   '/admin/risk': 'risk-scoring.html',
   '/admin/risk-scoring': 'risk-scoring.html',
   '/admin/roles': 'admin-console.html#roles--adminroles',
+  '/admin/roles/new': 'admin-console.html#creating-a-role--adminrolesnew',
   '/admin/saml2': 'saml2-sso.html',
   '/admin/scheduler': 'configuration.html#scheduler',
   '/admin/secret-destinations': 'secret-destinations.html',
+  '/admin/secret-destinations/new':
+    'secret-destinations.html#adding-a-destination--adminsecret-destinationsnew',
   '/admin/oidfed': 'oidfed.html',
   '/admin/scim': 'scim.html',
   '/admin/scim/monitor': 'scim.html',

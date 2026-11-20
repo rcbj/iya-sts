@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "已註冊",
   "monitorHtml.thRemoved": "已移除",
   "monitorHtml.thEvicted": "已逐出",
-  "monitorHtml.thCompliance": "合規性：{source}"
+  "monitorHtml.thCompliance": "合規性：{source}",
+  "newDevice.button": "註冊裝置",
+  "newDevice.key": "第一個金鑰",
+  "newDevice.keyHint": "僅在指定類型時記錄"
 }

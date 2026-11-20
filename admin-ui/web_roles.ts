@@ -56,6 +56,58 @@ class RolesPage {
   static readonly MEMBERS_SHOWN = 10;
 
   /**
+   * Draws Directory → Roles → New role (#1132) from the answer of
+   * `GET /admin-api/roles/new`: the one create form, its required fields
+   * called out as New user's are.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer, with `state` after a refused create
+   * @returns the body as HTML
+   */
+  static newRoleBody(ctx, json) {
+    const t = kitEscaping(ctx.t);
+    if (!json.canWrite) {
+      return kit.frame(kit.warn(t.html('consoleRoles.newRole.noStore')));
+    }
+    const choices = (json.applicationChoices || []).map(function (row) {
+      return '<option value="' + kit.esc(row.identifier) + '">' +
+             kit.esc(row.name && row.name !== row.identifier
+               ? row.name + ' — ' + row.identifier : row.identifier) +
+             '</option>';
+    }).join('');
+    return kit.note(t.html('consoleRoles.body.makeNote',
+                           { container: json.container || 'ou=roles' })) +
+      kit.createForm(json, {
+        post: '/admin/roles/new', action: 'create-role',
+        heading: t.html('consoleRoles.body.makeHeading'),
+        button: t.html('consoleRoles.body.create'),
+        // The application box offers the realm's applications, as the
+        // list page's did; any identifier may still be typed.
+        after: '<datalist id="role-create-apps">' + choices + '</datalist>',
+        words: {
+          role: { label: t.html('consoleRoles.body.name') },
+          description: { label: t.html('consoleRoles.body.description') },
+          application: {
+            label: t.html('consoleRoles.body.forApplication'),
+            hint: t.html('consoleRoles.body.forApplicationTitle',
+                         { pattern: '<role>@<application>' }),
+            placeholder: t.text('consoleRoles.body.realmWide'),
+            attrs: { list: 'role-create-apps' } },
+          displayName: { label: t.html('consoleRoles.body.displayName'),
+                         placeholder: t.text('consoleRoles.body.optional') },
+          memberTypes: { label: t.html('consoleRoles.body.mayBeHeldBy'),
+                         type: 'select', choices: [
+                           { value: '',
+                             label: t.text('consoleRoles.body.peopleAndApps') },
+                           { value: 'user',
+                             label: t.text('consoleRoles.body.peopleOnly') },
+                           { value: 'application',
+                             label: t.text('consoleRoles.body.appsOnly') }] }
+        }
+      }, t);
+  }
+
+  /**
    * Draws the page's body from its view.
    *
    * @param ctx - the render context (`WebKit.context()`)
@@ -194,40 +246,13 @@ class RolesPage {
 
       '<h3 id="create" data-tab="create">' +
       t.html('consoleRoles.body.makeHeading') + '</h3>' +
+      // THE CREATE TAB IS THE WAY TO THE CREATE PAGE (#1132): New role
+      // draws the one create form, its required fields called out as New
+      // user's are.
       kit.frame(kit.note(t.html('consoleRoles.body.makeNote',
                       { container: register.container || 'ou=roles' })) +
-      '<form method="post" action="/admin/roles">' +
-      RolesPage.rolesBack(listView) +
-      '<input type="hidden" name="action" value="create-role"><div ' +
-      'class="formrow"><label>' + t.html('consoleRoles.body.name') +
-      ' <input type="text" name="role" ' +
-      'required></label><label>' + t.html('consoleRoles.body.description') +
-      ' <input type="text" ' +
-      'name="description" size="50"></label>' +
-      // FOR ONE APPLICATION (#310), or for the realm when left empty. The
-      // tooltip's `<role>@<application>` is a parameter, so the translator
-      // escapes it as kit.esc() did the whole sentence.
-      '<label title="' + t.html('consoleRoles.body.forApplicationTitle',
-                                { pattern: '<role>@<application>' }) +
-      '">' + t.html('consoleRoles.body.forApplication') + ' ' +
-      '<input type="text" name="application" list="role-create-apps" ' +
-      'placeholder="' + kit.esc(t.text('consoleRoles.body.realmWide')) +
-      '"></label><datalist id="role-create-apps">' +
-      applicationOptions + '</datalist>' +
-      // ITS LABEL AND WHO MAY HOLD IT (#93).
-      '<label>' + t.html('consoleRoles.body.displayName') +
-      ' <input type="text" name="displayName" ' +
-      'placeholder="' + kit.esc(t.text('consoleRoles.body.optional')) +
-      '"></label><label>' + t.html('consoleRoles.body.mayBeHeldBy') +
-      ' <select ' +
-      'name="memberTypes"><option value="">' +
-      t.html('consoleRoles.body.peopleAndApps') +
-      '</option><option value="user">' +
-      t.html('consoleRoles.body.peopleOnly') + '</option><option ' +
-      'value="application">' + t.html('consoleRoles.body.appsOnly') +
-      '</option></select></label>' +
-      '<button type="submit">' + t.html('consoleRoles.body.create') +
-      '</button></div></form>') +
+        kit.createLink('/admin/roles/new',
+                       t.html('consoleRoles.newRole.button'))) +
 
       // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.
       //

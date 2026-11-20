@@ -187,5 +187,8 @@
   "monitorHtml.thRegistered": "Nairehistro",
   "monitorHtml.thRemoved": "Inalis",
   "monitorHtml.thEvicted": "Pinaalis",
-  "monitorHtml.thCompliance": "Compliance: {source}"
+  "monitorHtml.thCompliance": "Compliance: {source}",
+  "newDevice.button": "Magrehistro ng device",
+  "newDevice.key": "Unang key",
+  "newDevice.keyHint": "itinatala lang kasama ang uri nito"
 }

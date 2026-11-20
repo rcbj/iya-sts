@@ -2188,6 +2188,7 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
     `max`?: NullableNumber;
     `applicationCount`?: integer;
     `realm`?: WithIdName;
+    `createFields`?: (`CreateFormField`)[];
     `kinds`?: (WithKindLabelWhat)[];
     `protocols`?: ({
       `id`?: string;

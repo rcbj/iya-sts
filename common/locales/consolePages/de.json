@@ -147,5 +147,10 @@
   "title.worker-pools": "Worker-Pools",
   "title.broadcast": "Broadcast-Ankündigung",
   "title.sign-in-appearance": "Erscheinungsbild der Anmeldung",
-  "title.post-login-activities": "Aktivitäten nach der Anmeldung"
+  "title.post-login-activities": "Aktivitäten nach der Anmeldung",
+  "title.groups-new": "Neue Gruppe",
+  "title.roles-new": "Neue Rolle",
+  "title.devices-new": "Gerät registrieren",
+  "title.attribute-sources-new": "Attributquelle hinzufügen",
+  "title.secret-destinations-new": "Geheimnisziel hinzufügen"
 }

@@ -71,5 +71,7 @@
   "jobOn": "المهمة على",
   "scheduler": "المجدول",
   "jobOnEnd": ".",
-  "settings": "الإعدادات"
+  "settings": "الإعدادات",
+  "newSource.button": "إضافة مصدر",
+  "newSource.yes": "نعم"
 }

@@ -129,5 +129,10 @@
   "ownerProtection.save": "保存",
   "ownerProtection.closedAnyway": "无论复选框如何，它都对所有者关闭：",
   "ownerProtection.isMarked": "管理员已将其对所有者关闭。",
-  "ownerProtection.notMarked": "没有管理员将其对所有者关闭。"
+  "ownerProtection.notMarked": "没有管理员将其对所有者关闭。",
+  "newGroup.button": "新建组",
+  "newGroup.linkNote": "新建组的表单，必填字段以红色框出。",
+  "newGroup.noDirectory": "此进程没有可创建组的目录。",
+  "newGroup.groupHint": "组的名称，也是其 RDN",
+  "newGroup.membersHint": "每行一个或以逗号分隔：用户名或任意 DN"
 }

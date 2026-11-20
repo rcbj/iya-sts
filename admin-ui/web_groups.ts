@@ -187,50 +187,62 @@ class GroupsPage {
       kit.frame(kit.note(t.html('consoleGroups.body.whatAGroupIs',
                       { groupsDn: json.groupsDn, usersDn: json.usersDn })) +
       kit.note(t.html('consoleGroups.body.counts'))) + '</div>' +
-      // THE ONE CONTROL ON THIS LIST (rule 7's mirror is
-      // POST /admin-api/groups/create). Below the table rather than above it,
-      // because the question this page is usually open to answer is "what is
-      // in this directory" and a create form at the top would answer a
-      // different one first. A REAL BUTTON AND NO SCRIPT, like every other
-      // form on this console.
+      // Below the table rather than above it, because the question this
+      // page is usually open to answer is "what is in this directory".
+      // THE CREATE TAB IS THE WAY TO THE CREATE PAGE (#1132), as the
+      // applications list's New application is: `/admin/groups/new` draws
+      // the one create form, its required fields called out as New user's
+      // are, and a second unmarked form here would be the door that is not.
       (json.canWrite
         ? '<h2 data-tab="create">' +
           t.html('consoleGroups.body.createHeading') + '</h2>' +
-          kit.frame('<form method="post" action="/admin/groups">' +
-          '<input type="hidden" name="action" value="create">' +
-          '<input type="hidden" name="back" value="' +
-          kit.esc(kit.queryWith(listView, {})) + '">' +
-          '<div class="formrow">' +
-          '<label for="newgroup">cn</label>' +
-          '<input type="text" id="newgroup" name="group" size="28" required ' +
-          'placeholder="developers">' +
-          '<label for="newnote">' + t.html('consoleGroups.body.description') +
-          '</label>' +
-          '<input type="text" id="newnote" name="note" size="40" ' +
-          'placeholder="' + kit.esc(t.text('consoleGroups.body.noteHint')) +
-          '">' +
-          '</div><div class="formrow">' +
-          // The group's own email address (#989), optional.
-          '<label for="newmail">' + t.html('consoleGroups.body.mail') +
-          '</label>' +
-          '<input type="email" id="newmail" name="mail" size="40" ' +
-          'placeholder="' + kit.esc(t.text('consoleGroups.body.mailHint')) +
-          '">' +
-          '</div><div class="formrow">' +
-          '<label for="newmembers">' + t.html('consoleGroups.body.thMembers') +
-          '</label>' +
-          '<textarea id="newmembers" name="members" rows="3" cols="60" ' +
-          'placeholder="alice&#10;bob&#10;cn=another-group,' +
-          kit.esc(json.groupsDn) + '"></textarea>' +
-          '<button type="submit">' + t.html('consoleGroups.body.create') +
-          '</button>' +
-          '</div></form>' +
-          kit.note(t.html('consoleGroups.body.createNote',
-                          { groupsDn: json.groupsDn })))
+          kit.frame(kit.createLink('/admin/groups/new',
+            t.html('consoleGroups.newGroup.button'),
+            t.html('consoleGroups.newGroup.linkNote')))
         : kit.frame(kit.note(t.html('consoleGroups.body.noWriter')))) +
       SettingsForms.forms(json.settings, '/admin/groups', undefined, t) +
       GroupsPage.groupsCaveat(t, json.adminGroups) +
       GroupsPage.groupsLinks(t);
+  }
+
+  /**
+   * Draws Directory → Groups → New group (#1132) from the answer of
+   * `GET /admin-api/groups/new`: the one create form, its required fields
+   * called out as New user's are.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer, with `state` after a refused create
+   * @returns the body as HTML
+   */
+  static newGroupBody(ctx, json) {
+    const t = kitEscaping(ctx.t);
+    if (!json.directory) {
+      return kit.frame(kit.warn(t.html('consoleGroups.newGroup.noDirectory')));
+    }
+    if (!json.canWrite) {
+      return kit.frame(kit.note(t.html('consoleGroups.body.noWriter')));
+    }
+    return kit.note(t.html('consoleGroups.body.createNote',
+                           { groupsDn: json.groupsDn })) +
+      kit.createForm(json, {
+        post: '/admin/groups/new', action: 'create',
+        heading: t.html('consoleGroups.body.createHeading'),
+        button: t.html('consoleGroups.body.create'),
+        words: {
+          group: { label: '<code>cn</code>',
+                   hint: t.html('consoleGroups.newGroup.groupHint'),
+                   placeholder: 'developers' },
+          note: { label: t.html('consoleGroups.body.description'),
+                  placeholder: t.text('consoleGroups.body.noteHint') },
+          mail: { label: t.html('consoleGroups.body.mail'), type: 'email',
+                  placeholder: t.text('consoleGroups.body.mailHint') },
+          members: { label: t.html('consoleGroups.body.thMembers'),
+                     type: 'long',
+                     hint: t.html('consoleGroups.newGroup.membersHint'),
+                     placeholder: 'alice\nbob\ncn=another-group,' +
+                       json.groupsDn }
+        }
+      }, t) + GroupsPage.groupsLinks(t);
   }
 
   /**

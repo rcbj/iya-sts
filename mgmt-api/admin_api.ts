@@ -3731,6 +3731,17 @@ class AdminApi {
       // nobody and self-asserted whichever door it came through; neither
       // surface forwards a proof or an attestation from a body.
       // ---------------------------------------------------------------------
+      // DIRECTORY → DEVICES → REGISTER A DEVICE (#1132): the create page's
+      // own view, rule 7's operation for it.
+      { method: 'GET', path: BASE + '/devices/new', tag: 'Devices',
+        operationId: 'getNewDeviceForm',
+        mirrors: 'GET /admin/devices/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-device endpoint.");
+          self.sendJson(res, 200, devicesAdmin.newView());
+          log.debug("Leaving the management API new-device endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/devices', tag: 'Devices',
         operationId: 'getDevices',
         mirrors: 'GET /admin/devices',
@@ -3786,7 +3797,9 @@ class AdminApi {
 
       ApiRows.actions({ method: 'POST',
         route: BASE + '/devices/:action', tag: 'Devices',
-        mirrors: 'POST /admin/devices',
+        // Directory → Devices → Register a device posts its create to its
+        // own path (#1132), so a refusal redraws that page.
+        mirrors: 'POST /admin/devices and POST /admin/devices/new',
         handler: function (req, res) {
           log.debug("Entering the management API devices action.");
           const result = devicesAdmin.action(
@@ -5467,6 +5480,18 @@ class AdminApi {
           log.debug("Leaving the management API groups endpoint.");
         } },
 
+      // DIRECTORY → GROUPS → NEW GROUP (#1132): the create page's own view,
+      // rule 7's operation for it — which fields the create takes and which
+      // it refuses without (`admin-core/create_forms.ts`).
+      { method: 'GET', path: BASE + '/groups/new', tag: 'Groups',
+        operationId: 'getNewGroupForm',
+        mirrors: 'GET /admin/groups/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-group endpoint.");
+          self.sendJson(res, 200, adminViews.newGroupJson());
+          log.debug("Leaving the management API new-group endpoint.");
+        } },
+
       // -----------------------------------------------------------------------
       // AND THE TWO WRITES (2026-09-06), WHICH CLOSED A HOLE RATHER THAN ADDING
       // A FEATURE.
@@ -5497,7 +5522,10 @@ class AdminApi {
         // to /admin/groups/owners, so its Find and Add are told apart from the
         // page's other forms; its Add and Remove reach `add-owner` and
         // `remove-owner` here.
-        mirrors: 'POST /admin/groups and POST /admin/groups/owners',
+        // AND A THIRD SINCE #1132: Directory → Groups → New group posts its
+        // create to its own path, so a refusal redraws that page.
+        mirrors: 'POST /admin/groups, POST /admin/groups/new and ' +
+                 'POST /admin/groups/owners',
         handler: function (req, res) {
           log.debug("Entering the management API groups action endpoint.");
           const body = parseBody(req);
@@ -9807,6 +9835,17 @@ class AdminApi {
       // caller that got a decision by adding two parameters to a listing would
       // have no way to discover it.
       // -----------------------------------------------------------------------
+      // DIRECTORY → ROLES → NEW ROLE (#1132): the create page's own view,
+      // rule 7's operation for it (`admin-core/create_forms.ts`).
+      { method: 'GET', path: BASE + '/roles/new', tag: 'Roles',
+        operationId: 'getNewRoleForm',
+        mirrors: 'GET /admin/roles/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-role endpoint.");
+          self.sendJson(res, 200, adminViews.newRoleJson());
+          log.debug("Leaving the management API new-role endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/roles', tag: 'Roles',
         operationId: 'getRoles',
         mirrors: 'GET /admin/roles',
@@ -9913,7 +9952,10 @@ class AdminApi {
         // to /admin/roles/owners, so its Find and Add are told apart from
         // the page's other forms; its Add and Remove reach `add-owner` and
         // `remove-owner` here.
-        mirrors: 'POST /admin/roles and POST /admin/roles/owners',
+        // Directory → Roles → New role posts its create to its own path
+        // (#1132), so a refusal redraws that page.
+        mirrors: 'POST /admin/roles, POST /admin/roles/new and ' +
+                 'POST /admin/roles/owners',
         handler: function (req, res) {
           log.debug("Entering the management API roles action endpoint.");
           const body = parseBody(req);

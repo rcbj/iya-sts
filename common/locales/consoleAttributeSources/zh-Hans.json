@@ -71,5 +71,7 @@
   "jobOn": "任务，见",
   "scheduler": "调度器",
   "jobOnEnd": "。",
-  "settings": "设置"
+  "settings": "设置",
+  "newSource.button": "添加来源",
+  "newSource.yes": "是"
 }

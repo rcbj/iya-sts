@@ -2443,6 +2443,205 @@ class WebKit {
     }).join('');
   }
 
+  // A DIRECTORY OBJECT'S CREATE FORM (#1132): every create page under
+  // Directory calls out its required fields the way New user does — the
+  // field grid's `fg-required` (a red rule down the cell's left, a red
+  // asterisk after its name, and "required" in words, so the colour is
+  // never the only sign) — and the browser refuses an empty one as the
+  // server would. WHICH fields are required is the server's: each page's
+  // `GET /admin-api/<object>/new` answers its `fields`, each with
+  // `required`, so a page cannot outline a field its create accepts
+  // without, nor miss one it refuses without. The page supplies only the
+  // words (`label`, `hint`) and the control's shape.
+
+  /**
+   * Draws the fields of a directory object's create form as a field grid.
+   *
+   * @param rows - each field: `name` (the posted name), `label` (HTML),
+   *   `hint` (HTML, optional), `type` (`text`, `email`, `number`,
+   *   `password`, `long` for a text area, `select`, `checkbox` for one
+   *   box, `checks` for a box per choice), `choices` for a select or boxes
+   *   (`value`, `label`), `checkedValue` and `boxLabel` for one box,
+   *   `value` (what it starts with), `required`, `placeholder`, and `attrs`
+   *   (more attributes of the control, by name: `maxlength`, `pattern`, …)
+   * @param values - optional; what each field holds, by name (a refused
+   *   create's own fields)
+   * @param t - optional; the translator (#539), the default when left out
+   * @returns the grid as HTML
+   */
+  static createFields(rows, values?,
+                      t = webMessages.WebTranslator.fallback()) {
+    const held = values || {};
+    return '<div class="fg">' + rows.map(function (row) {
+      const id = 'new-' + String(row.name).replace(/[^A-Za-z0-9_-]/g, '-');
+      // What a refused create posted, else the field's own starting value
+      // (`value`, the create's default where it has one to show).
+      const raw = held[row.name] !== undefined ? held[row.name] : row.value;
+      const value = Array.isArray(raw) ? raw.join('\n')
+        : raw === undefined || raw === null ? '' : String(raw);
+      const ticked = [].concat(raw === undefined || raw === null ? [] : raw)
+        .map(String);
+      const attrs = Object.keys(row.attrs || {}).map(function (name) {
+        return ' ' + WebKit.esc(name) + '="' +
+          WebKit.esc(String(row.attrs[name])) + '"';
+      }).join('') +
+        (row.placeholder
+          ? ' placeholder="' + WebKit.esc(row.placeholder) + '"' : '') +
+        (row.required ? ' required aria-required="true"' : '');
+      let control;
+      if (row.type === 'checkbox' || row.type === 'checks') {
+        // ONE BOX, or A BOX PER CHOICE: what a form posts for a ticked box,
+        // and nothing for an unticked one, so neither is ever required.
+        const boxes = row.type === 'checkbox'
+          ? [{ value: row.checkedValue || 'true', label: row.boxLabel || '' }]
+          : row.choices || [];
+        control = '<div class="fg-checks" role="group" aria-labelledby="' +
+          WebKit.esc(id) + '-name">' + boxes.map(function (one) {
+            return '<label class="fg-radio"><input type="checkbox" name="' +
+              WebKit.esc(row.name) + '" value="' + WebKit.esc(one.value) +
+              '"' + (ticked.indexOf(String(one.value)) >= 0 ? ' checked'
+                                                            : '') + '>' +
+              WebKit.esc(one.label) + '</label>';
+          }).join('') + '</div>';
+      } else if (row.type === 'select') {
+        control = '<select id="' + WebKit.esc(id) + '" name="' +
+          WebKit.esc(row.name) + '"' + attrs + '>' +
+          (row.choices || []).map(function (one) {
+            return '<option value="' + WebKit.esc(one.value) + '"' +
+              (String(one.value) === value ? ' selected' : '') + '>' +
+              WebKit.esc(one.label) + '</option>';
+          }).join('') + '</select>';
+      } else if (row.type === 'long') {
+        control = '<textarea id="' + WebKit.esc(id) + '" name="' +
+          WebKit.esc(row.name) + '" rows="3"' + attrs + '>' +
+          WebKit.esc(value) + '</textarea>';
+      } else {
+        const type = ['email', 'number', 'password'].indexOf(row.type) >= 0
+          ? row.type : 'text';
+        // A password is never drawn back into its box.
+        control = '<input type="' + type + '" id="' + WebKit.esc(id) +
+          '" name="' + WebKit.esc(row.name) + '"' +
+          (type === 'password' ? '' : ' value="' + WebKit.esc(value) + '"') +
+          attrs + '>';
+      }
+      // A box list's name heads the cell; a label names one control.
+      const grouped = row.type === 'checkbox' || row.type === 'checks';
+      return '<div id="fgc-' + WebKit.esc(id) + '" class="fg-cell' +
+        (row.required ? ' fg-required' : '') + '">' +
+        (grouped
+          ? '<span class="fg-name" id="' + WebKit.esc(id) + '-name">' +
+            row.label + '</span>'
+          : '<label class="fg-name" for="' + WebKit.esc(id) + '">' +
+            row.label + '</label>') +
+        '<span class="fg-for">' + (row.hint || '') +
+        (row.required ? t.html('consoleKit.grid.required') : '') +
+        // REQUIRED ONLY FOR SOME CHOICES (a secret destination's region is
+        // AWS's): said in words, and not outlined, because the outline means
+        // the create refuses without it whatever else is chosen.
+        (!row.required && row.requiredWhen
+          ? t.html('consoleKit.create.requiredWhen',
+                   { field: String(row.requiredWhen.field),
+                     values: (row.requiredWhen.values || []).join(', ') })
+          : '') +
+        '</span>' + control + '</div>';
+    }).join('') + '</div>';
+  }
+
+  /**
+   * The note above a create form naming the fields it requires (#1132).
+   *
+   * @param rows - the form's fields, as `createFields()` takes them
+   * @param t - optional; the translator (#539), the default when left out
+   * @returns the note as HTML
+   */
+  static requiredNote(rows, t = webMessages.WebTranslator.fallback()) {
+    const named = rows.filter(function (row) {
+      return row.required;
+    }).map(function (row) {
+      // A parameter is text, escaped by the translator: the label's words.
+      return WebKit.unescapeText(WebKit.plainTextOf(row.label));
+    });
+    return WebKit.note(named.length
+      ? t.html('consoleKit.create.requiredFields',
+               { list: named.join(', ') })
+      : t.html('consoleKit.create.nothingRequired'));
+  }
+
+  /**
+   * Joins a create page's words to the server's field list (#1132): the
+   * server says which fields there are and which are required, the page
+   * what each is called and what control it is.
+   *
+   * @param served - `createFields` from the page's `/new` answer: `name`,
+   *   `required`
+   * @param words - the page's own rows by name, as `createFields()` takes
+   *   them, without `required`
+   * @returns the rows to draw, in the server's order; a field the page has
+   *   no words for is drawn as a text box under its own name
+   */
+  static createRows(served, words) {
+    return (served || []).map(function (one) {
+      const own = words[one.name] || { label: WebKit.esc(one.name),
+                                       type: 'text' };
+      return Object.assign({}, own, { name: one.name,
+                                      required: !!one.required,
+                                      requiredWhen: one.requiredWhen ||
+                                                    null });
+    });
+  }
+
+  // THE CREATE FORM EVERY DIRECTORY CREATE PAGE DRAWS (#1132), in New
+  // user's order: a refusal floating over the form (`refusalBanner()`),
+  // the note naming what is required, the fields as a grid, and the button.
+  // A refused create comes back with every box as it was typed: the answer
+  // carries the posted fields as `state.draft` (`WebAnswers.redraw()`).
+  /**
+   * Draws a directory object's create form.
+   *
+   * @param json - the page's `/new` answer, with `createFields` and, after
+   *   a refusal, `state` (`draft`, `error`)
+   * @param spec - `post` (the path the form posts to), `action` (the
+   *   hidden action), `words` (each field's words by name, as
+   *   `createRows()` takes them), `heading` and `button` (HTML), and
+   *   optionally `hidden` (more hidden fields by name), `before` (HTML
+   *   drawn above the fields) and `after` (HTML below the button)
+   * @param t - optional; the translator (#539), the default when left out
+   * @returns the form as HTML
+   */
+  static createForm(json, spec, t = webMessages.WebTranslator.fallback()) {
+    const state = json.state || {};
+    const rows = WebKit.createRows(json.createFields, spec.words || {});
+    const hidden = Object.assign({ action: spec.action }, spec.hidden || {});
+    return WebKit.refusalBanner(state.error) +
+      '<form method="post" action="' + WebKit.esc(spec.post) +
+      '" class="newapp">' +
+      Object.keys(hidden).map(function (name) {
+        return '<input type="hidden" name="' + WebKit.esc(name) +
+          '" value="' + WebKit.esc(String(hidden[name])) + '">';
+      }).join('') +
+      WebKit.frame('<h2>' + spec.heading + '</h2>' +
+        WebKit.requiredNote(rows, t) + (spec.before || '') +
+        WebKit.createFields(rows, state.draft, t) +
+        '<div class="formrow"><button type="submit">' + spec.button +
+        '</button></div>' + (spec.after || '')) +
+      '</form>';
+  }
+
+  /**
+   * The way from a list page to its create page (#1132): a link that looks
+   * like the next action, which is what it is — nothing is written by
+   * pressing it. `/admin/applications`' New application is the model.
+   *
+   * @param href - the create page
+   * @param label - the button's words (HTML)
+   * @param note - optional; a note under it (HTML)
+   * @returns the link as HTML
+   */
+  static createLink(href, label, note?) {
+    return '<p><a class="btn" href="' + WebKit.esc(href) + '">' + label +
+      '</a></p>' + (note ? WebKit.note(note) : '');
+  }
+
   /**
    * Reads the grid's values out of a posted form, keeping every list box —
    * an empty one included — in box order, and applies a "+" or a delete.

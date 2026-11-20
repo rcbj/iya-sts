@@ -40,5 +40,6 @@
   "body.testPush": "<strong>测试推送</strong>会把一个金丝雀值（一个无人使用的随机密码）写入专供测试的机密；服务账户轮换所用的机密会被拒绝。",
   "body.add": "添加目标",
   "body.identifier": "标识符",
-  "body.addButton": "添加"
+  "body.addButton": "添加",
+  "newDestination.button": "添加目标"
 }

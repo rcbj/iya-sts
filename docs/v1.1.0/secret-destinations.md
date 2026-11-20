@@ -43,6 +43,19 @@ The `json` payload is:
 A consumer takes the password out of it by its field, as this service does
 with its own secrets (`keys.kekField` and the like).
 
+### Adding a destination — `/admin/secret-destinations/new`
+
+The **Add a destination** tab takes you to the form. **The identifier and the
+provider are required**, outlined in red and marked *required* as on
+`/admin/users/new`. The fields one provider needs say so in words — *required
+when provider is aws* beside the region, and likewise the endpoint (azure,
+vault), the directory (file) and the write credential (every provider but
+file) — without the red outline, since the create needs them only for that
+provider. Everything else is optional. A refused add keeps every box as you
+typed it except the credential, which is never drawn back.
+`GET /admin-api/secret-destinations/new` answers the same fields, each with
+`required` and, where it applies, `requiredWhen`.
+
 ## The write credential
 
 Each destination has **its own** credential, separate from the read-only ones

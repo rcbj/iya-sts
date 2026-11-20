@@ -40,5 +40,6 @@
   "body.testPush": "Un <strong>envío de prueba</strong> escribe un canario —una contraseña aleatoria que nadie usa— en un secreto reservado para pruebas; se rechaza el secreto en el que rota una cuenta de servicio.",
   "body.add": "Agregar un destino",
   "body.identifier": "Identificador",
-  "body.addButton": "Agregar"
+  "body.addButton": "Agregar",
+  "newDestination.button": "Añadir un destino"
 }

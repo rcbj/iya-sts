@@ -40,5 +40,6 @@
   "body.testPush": "A <strong>test push</strong> writes a canary — a random password nobody uses — to a secret kept for testing; the secret a service account rotates into is refused.",
   "body.add": "Add a destination",
   "body.identifier": "Identifier",
-  "body.addButton": "Add"
+  "body.addButton": "Add",
+  "newDestination.button": "Add a destination"
 }

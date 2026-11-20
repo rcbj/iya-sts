@@ -129,5 +129,10 @@
   "ownerProtection.save": "Spara",
   "ownerProtection.closedAnyway": "Det är stängt för sina ägare oavsett vad rutan säger:",
   "ownerProtection.isMarked": "En administratör har stängt det för sina ägare.",
-  "ownerProtection.notMarked": "Ingen administratör har stängt det för sina ägare."
+  "ownerProtection.notMarked": "Ingen administratör har stängt det för sina ägare.",
+  "newGroup.button": "Ny grupp",
+  "newGroup.linkNote": "Formuläret för en ny grupp, med det obligatoriska fältet rödmarkerat.",
+  "newGroup.noDirectory": "Den här processen har ingen katalog att skapa en grupp i.",
+  "newGroup.groupHint": "gruppens namn och dess RDN",
+  "newGroup.membersHint": "en per rad eller kommaseparerade: ett användarnamn eller valfritt DN"
 }

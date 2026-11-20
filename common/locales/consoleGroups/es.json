@@ -129,5 +129,10 @@
   "ownerProtection.save": "Guardar",
   "ownerProtection.closedAnyway": "Está cerrado a sus propietarios diga lo que diga la casilla:",
   "ownerProtection.isMarked": "Un administrador lo ha cerrado a sus propietarios.",
-  "ownerProtection.notMarked": "Ningún administrador lo ha cerrado a sus propietarios."
+  "ownerProtection.notMarked": "Ningún administrador lo ha cerrado a sus propietarios.",
+  "newGroup.button": "Nuevo grupo",
+  "newGroup.linkNote": "El formulario de un grupo nuevo, con su campo obligatorio marcado en rojo.",
+  "newGroup.noDirectory": "Este proceso no tiene un directorio donde crear un grupo.",
+  "newGroup.groupHint": "el nombre del grupo y su RDN",
+  "newGroup.membersHint": "uno por línea o separados por comas: un nombre de usuario o cualquier DN"
 }
