@@ -265,6 +265,12 @@ impl Pep {
                     .and_then(|v| v.to_str().ok()),
             );
             let batch = path == authzen::EVALUATIONS_PATH;
+            // Read before the body consumes the request (#936).
+            let content_type = request
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.to_string());
             let limit = if batch {
                 self.options
                     .now()
@@ -281,6 +287,7 @@ impl Pep {
                 .authzen_post(
                     batch,
                     &transport,
+                    content_type.as_deref(),
                     body,
                     id.as_deref().unwrap_or(""),
                 )

@@ -1579,6 +1579,18 @@ class AuthzenSurface {
         log.debug('Leaving POST ' + REQUESTS + '. Refused.');
         return;
       }
+      // SECTION 10.1'S MUST, as `notJson()` holds it for the evaluation,
+      // batch and search endpoints (#936), in the profile's own error
+      // shape: after the caller is admitted, before the body is read. The
+      // status and the cancellation read no body that has to be JSON (a
+      // DELETE carries none), so they are not held to it.
+      if (!AuthzenSurface.isJsonType(req.headers['content-type'])) {
+        ar.problem(res, 415, '', 'STS-AUTHZEN-0122', 'The request must ' +
+                   'carry Content-Type: application/json (AuthZEN 1.0 ' +
+                   'section 10.1).');
+        log.debug('Leaving POST ' + REQUESTS + '. Not JSON.');
+        return;
+      }
       ar.submit(req, res, caller, AuthzenSurface.bodyOf(req),
                 function (who: any, application: string): any {
                   return self.deps.caller.applicationOf(who, application);

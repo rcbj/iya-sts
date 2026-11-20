@@ -620,10 +620,14 @@ class AccessRequests {
     // THE TYPE AND ITS TITLE ARE THE MODEL'S (`ProblemTypes`, #1579); a
     // refusal with none is `about:blank`, titled by its status.
     const named = type ? authzenModel.problemType(type) : null;
+    // A 415 (#936) is titled for what it is: `about:blank`'s title is the
+    // status's phrase (RFC 9457 section 4.2.1), and "Bad request" would
+    // tell the caller the body was wrong when it was never read.
+    const untitled = status >= 500 ? 'Server error'
+      : status === 415 ? 'Unsupported media type' : 'Bad request';
     const body: Json = {
       type: named ? named.uri : 'about:blank',
-      title: named ? named.title : (status >= 500 ? 'Server error'
-                                                  : 'Bad request'),
+      title: named ? named.title : untitled,
       status: status, detail: detail };
     authzenModel.hold('problem', body, 'an access request endpoint');
     res.status(status).type('application/problem+json')

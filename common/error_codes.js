@@ -25419,6 +25419,12 @@ const CODES = [
       'xacml.pepAuthentication is certificate, which accepts a remote PEP ' +
       'only by its client certificate (#1827).',
     spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-AUTHZEN-0122',
+    summary: 'An AuthZEN access request submission did not carry ' +
+      'Content-Type: application/json, which AuthZEN 1.0 section 10.1 ' +
+      'requires; refused before its body was read (#936).',
+    spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), ' +
+      'application/problem+json (RFC 9457)' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
