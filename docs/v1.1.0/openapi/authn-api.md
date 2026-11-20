@@ -1432,6 +1432,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.separate` | boolean |  |  |
 | `view.postLogin.snoozeDays` | number |  |  |
 | `view.primary` | boolean |  |  |
+| `view.roles` | object |  |  |
+| `view.roles.offered` | list |  |  |
+| `view.roles.offered[].description` | string |  |  |
+| `view.roles.offered[].exclusiveGroup` | string |  |  |
+| `view.roles.offered[].label` | string |  |  |
+| `view.roles.offered[].name` | string |  |  |
+| `view.roles.offered[].required` | boolean |  |  |
+| `view.roles.required` | boolean |  |  |
 | `view.seconds` | number |  |  |
 | `view.sentence` | string |  |  |
 | `view.setup` | object |  |  |
@@ -1554,6 +1562,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.separate` | boolean |  |  |
 | `view.postLogin.snoozeDays` | number |  |  |
 | `view.primary` | boolean |  |  |
+| `view.roles` | object |  |  |
+| `view.roles.offered` | list |  |  |
+| `view.roles.offered[].description` | string |  |  |
+| `view.roles.offered[].exclusiveGroup` | string |  |  |
+| `view.roles.offered[].label` | string |  |  |
+| `view.roles.offered[].name` | string |  |  |
+| `view.roles.offered[].required` | boolean |  |  |
+| `view.roles.required` | boolean |  |  |
 | `view.seconds` | number |  |  |
 | `view.sentence` | string |  |  |
 | `view.setup` | object |  |  |
@@ -2558,6 +2574,160 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 **Request body**
 
 An empty object.
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**400**: Refused: `{ ok: false, errors }` — the body, the id, or the act itself.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**403**: No Origin of this service, or no CSRF token bound to this browser's session.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**415**: Not a JSON body.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**429**: Too many attempts.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+## POST /authn-api/mfa/{id}/roles
+
+`chooseRoles`
+
+**Chooses the dynamic roles to use for this sign-in**
+
+The role step (#1072): the dynamic selectable roles ticked, by name, from those the step offered. The choice is held against the step's own offer — never what the browser says was offered — and against each role's eligibility policy now: a role not offered (STS-XACML-0325), two of one exclusive group (0326), a required role left out (0327) or a role no longer eligible (0328) is refused, and the step is drawn again. Accepted, the session the sign-in was held for starts with the choice on it, for the application this sign-in is for. An empty list chooses none, where no role offered is required.
+
+The door of the sign-in surface's `POST /authn/roles`.
+
+Sent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `roles` | list |  |  |
+| `roles[]` | empty, or string |  |  |
 
 **200**: The answer.
 
@@ -4436,6 +4606,7 @@ The door of the sign-in surface's `GET /authn/login`.
 | `view.certificate` | object |  |  |
 | `view.certificate.mfaNote` | boolean |  |  |
 | `view.certificate.name` | string |  |  |
+| `view.chooseRoles` | boolean |  |  |
 | `view.clientDisplay` | object |  |  |
 | `view.clientDisplay.logo` | string |  |  |
 | `view.clientDisplay.logoOrigin` | string |  |  |
@@ -5212,6 +5383,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `choose_roles` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 | `device_fp` | string |  |  |
 | `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 
@@ -5525,6 +5697,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `choose_roles` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 | `device_fp` | string |  |  |
 | `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 
@@ -5683,6 +5856,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `choose_roles` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 | `device_fp` | string |  |  |
 | `kind` | one of `code`, `link` | yes |  |
 | `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
@@ -5904,6 +6078,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `choose_roles` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 | `credential` | string |  |  |
 | `device_fp` | string |  |  |
 | `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
@@ -6184,6 +6359,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `choose_roles` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 | `device_fp` | string |  |  |
 | `password` | string |  |  |
 | `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |

@@ -1852,8 +1852,8 @@
     "text": "TRUE cuando este servidor de recursos UMA 2.0 puede registrar recursos de los que ES PROPIETARIO ÉL MISMO, mediante un token de la API de protección obtenido con client_credentials. Ausente o FALSE, el valor predeterminado, significa que un PAT debe ser de una persona (el flujo de código) y que esa persona es propietaria de lo que registra."
   },
   "applications.schema.attributes.appDynamicRoleSelection.what": {
-    "en": "8d2e7ba443673616",
-    "text": "FALSE desactiva la selección dinámica de roles para los inicios de sesión en esta aplicación (#1072): la página de inicio de sesión no ofrece la casilla «Elegir roles para este inicio de sesión», no se ofrece ningún rol y un token para esta aplicación no lleva ningún rol seleccionado dinámicamente. Ausente o TRUE, el valor predeterminado, lo deja al ajuste roles.dynamicSelection del dominio."
+    "en": "b508dc418113551c",
+    "text": "TRUE o FALSE: si se ofrecen roles dinámicos seleccionables en los inicios de sesión en esta aplicación (#1072), en lugar de roles.dynamicSelection. FALSE no muestra la casilla «Elegir roles para este inicio de sesión», no ofrece ningún rol, y un token para esta aplicación no lleva ningún rol seleccionado dinámicamente."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

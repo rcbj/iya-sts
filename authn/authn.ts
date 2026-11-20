@@ -21174,6 +21174,10 @@ export = {
   SELECT_IDP_PATH: SELECT_IDP_PATH,
   PASSWORD_CHANGE_PATH: PASSWORD_CHANGE_PATH,
   screenView: slot.forward('screenView'),
+  // Dynamic selectable roles (#1072): the role step's act, and whether the
+  // sign-in screen draws its box.
+  rolesAct: slot.forward('rolesAct'),
+  roleBoxOffered: slot.forward('roleBoxOffered'),
   screenProblem: slot.forward('screenProblem'),
   screenAct: slot.forward('screenAct'),
   // Whether a sign-in must be a passkey with no username (#608).

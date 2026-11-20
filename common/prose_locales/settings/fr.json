@@ -9375,6 +9375,14 @@
     "en": "05185a4a554d5f71",
     "text": "Activé, chaque jeton d’accès, ID Token, assertion SAML 2.0 et assertion SAML 1.1 nomme les rôles que détient son sujet. ACTIVÉ par défaut, et cela ne change toujours rien pour la plupart des appelants, pour la même raison que la revendication de groupes est activée par défaut : la revendication est ENTIÈREMENT OMISE pour quiconque ne détient aucun rôle CONFIGURÉ, et les six rôles intégrés n’y figurent jamais — EVERYBODY et ALL_AUTHENTICATED_USERS sont vrais pour presque tous les jetons ici ; les porter ajouterait deux membres dénués de sens à chaque jeton qu’analyse chaque client existant et n’apprendrait à une partie de confiance rien qu’elle ne sache déjà en détenant le jeton. Ils existent pour être EXIGÉS, pas pour être portés."
   },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Proposer des rôles dynamiques à la connexion"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Si une personne qui se connecte peut choisir des rôles dynamiques sélectionnables (#1072) : dans un domaine qui définit au moins un rôle dynamique, la page de connexion propose une case « Choisir des rôles pour cette connexion », et une case cochée affiche les rôles que l’éligibilité de la personne permet. ACTIVÉ par défaut ; appDynamicRoleSelection sur l’entrée d’une application le remplace pour cette application. Désactivé, aucune case n’est affichée, aucun rôle n’est proposé, aucun rôle dynamique obligatoire n’est demandé, et aucun jeton ne porte de rôle sélectionné dynamiquement."
+  },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
     "text": "Nom de la revendication de rôles"

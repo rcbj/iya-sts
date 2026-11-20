@@ -1852,8 +1852,8 @@
     "text": "TRUE kapag puwedeng mag-register ang UMA 2.0 resource server na ito ng mga resource na SARILI NITONG PAG-AARI, gamit ang protection API token na nakuha sa client_credentials. Kapag wala o FALSE, ang default, ang PAT ay dapat sa isang tao (ang code flow) at ang taong iyon ang may-ari ng nire-register nito."
   },
   "applications.schema.attributes.appDynamicRoleSelection.what": {
-    "en": "8d2e7ba443673616",
-    "text": "Pinapatay ng FALSE ang dynamic na pagpili ng tungkulin para sa mga pag-sign in sa application na ito (#1072): walang kahong \"Pumili ng mga tungkulin para sa pag-sign in na ito\" sa pahina ng pag-sign in, walang tungkuling iniaalok, at walang dinamikong napiling tungkulin ang isang token para sa application na ito. Kapag wala o TRUE, ang default, ang setting na roles.dynamicSelection ng realm ang magpapasya."
+    "en": "b508dc418113551c",
+    "text": "TRUE o FALSE: iniaalok ba ang mga dynamic na mapipiling tungkulin sa mga pag-sign in sa application na ito (#1072), kapalit ng roles.dynamicSelection. Ang FALSE ay walang kahong \"Pumili ng mga tungkulin para sa pag-sign in na ito\", walang iniaalok na tungkulin, at walang dinamikong napiling tungkulin ang token para sa application na ito."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

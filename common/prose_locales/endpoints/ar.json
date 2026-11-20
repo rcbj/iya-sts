@@ -1219,6 +1219,10 @@
     "en": "c2e62734c4466542",
     "text": "هل سيُصدَر هذا؟"
   },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "هل هذا الشخص مؤهل لهذا الدور الديناميكي؟"
+  },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
     "text": "إنشاء الأدوار وتغييرها"
@@ -1847,6 +1851,10 @@
     "en": "69876d051e66729c",
     "text": "خطوة نشاط ما بعد تسجيل الدخول"
   },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "خطوة الأدوار الديناميكية"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "خطوة العامل الثاني بالرمز لمرة واحدة"
@@ -2002,6 +2010,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "تأجيل نشاط ما بعد تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "اختيار الأدوار الديناميكية لتسجيل الدخول هذا"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

@@ -1791,6 +1791,22 @@
     "en": "28d96273b40dea3f",
     "text": "L’éligibilité d’une personne à un rôle dynamique a été décidée"
   },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Des rôles dynamiques ont été proposés lors d’une connexion"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Des rôles dynamiques ont été choisis lors d’une connexion"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "Le choix de rôles dynamiques d’une connexion a été refusé"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "Un rôle dynamique choisi a été retiré d’un jeton"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Un ramasse-miettes complet a été exécuté dans un processus ou un thread de travail d’un nœud"

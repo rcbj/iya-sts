@@ -1791,6 +1791,22 @@
     "en": "28d96273b40dea3f",
     "text": "किसी गतिशील भूमिका के लिए किसी व्यक्ति की पात्रता तय की गई"
   },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "किसी साइन-इन पर गतिशील भूमिकाएँ पेश की गईं"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "किसी साइन-इन पर गतिशील भूमिकाएँ चुनी गईं"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "किसी साइन-इन की गतिशील भूमिकाओं का चयन अस्वीकार किया गया"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "चुनी गई एक गतिशील भूमिका किसी टोकन से हटा दी गई"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "एक नोड की किसी प्रक्रिया या वर्कर थ्रेड में पूर्ण कचरा संग्रहण चलाया गया"

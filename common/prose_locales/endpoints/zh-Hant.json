@@ -1219,6 +1219,10 @@
     "en": "c2e62734c4466542",
     "text": "這會被簽發嗎？"
   },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "此人是否具備此動態角色的資格？"
+  },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
     "text": "建立與變更角色"
@@ -1847,6 +1851,10 @@
     "en": "69876d051e66729c",
     "text": "登入後活動步驟"
   },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "動態角色步驟"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "一次性代碼第二因素步驟"
@@ -2002,6 +2010,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "延後一項登入後活動"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "選擇此次登入的動態角色"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

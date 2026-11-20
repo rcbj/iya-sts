@@ -2143,6 +2143,10 @@
     "en": "efc872210c98747b",
     "text": "ICKE-SPEC. Ett utfärdandebeslut, fattat och bortkastat: ingenting utfärdas och ingenting registreras. Det går genom SAMMA anrop som de nio utfärdandeställena gör — issuance_gate.check(), den inbäddade PEP:n och PDP:n mot den policy som xacml.issuancePolicy namnger — så en förhandsvisning som stämde med upprätthållandet bara av en slump är omöjlig, vilket är det enda skälet till att den finns. Det är INTE POST /xacml/pdp, som frågar samma motor om förrådets ROT: det dokumentet besvarar frågor om någon ANNANS gräns och det här besvarar en fråga om den här tjänsten. `application` och `subject` krävs båda, eftersom ett utfärdande som inte namnger något av dem är tillåtet per definition snarare än enligt policy. `kind` blir XACML-action-id, så en policy kan tillåta en åtkomsttoken och neka en uppdateringstoken. `available: false` betyder att motorn inte är laddad här. Speglar provkörningen på /admin/roles."
   },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "UTANFÖR SPECIFIKATION (#1072). En dynamiskt valbar rolls egen XACML-behörighetspolicy, beslutad av PDP:n för en person så som en inloggning till `application` skulle fråga, utan inloggning: behörig eller inte, koden om inte, beslutet och statusen (ett saknat attribut namnges där). Endast Permit ger behörighet. Inget skrivs utom granskningsraden roles.eligibility, och varken policyn eller personens attribut visas. Både `role` och `user` behövs; saknas något blir svaret `answered: false`. Motsvarar testet på en dynamisk rolls sida /admin/roles."
+  },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
     "text": "create-role, delete-role, describe-role, add-member och remove-member — samma fem som konsolens formulär postar till /admin/roles, via samma funktion, så att ingen av dörrarna kan upprätthålla en regel som den andra inte gör. `kind` på de två medlemsåtgärderna väljer vilken av TRE listor värdet hamnar i och de slås upp på tre olika ställen, så att ange fel lista lyckas och skriver något som aldrig kommer att matcha. `member` namnges skilt från `role` avsiktligt: en kropp som blandade ihop dem skulle lyckas och skapa en roll som heter alice. En INBYGGD roll nekas med namn snarare än att falla igenom till \"ingen sådan roll\", eftersom de sex ritas i varje meny på sidan och inte har något medlemskap att redigera. delete-role LYCKAS även där applikationer fortfarande kräver rollen och NAMNGER dem: var och en av dem får nu ingenting alls utfärdat, och att säga det i det ögonblick det sker är bättre än att neka tills varje applikationspost har redigerats. Ingenting som redan UTFÄRDATS berörs av någon av de fem."
@@ -3027,6 +3031,14 @@
     "en": "9547cda6898c37a6",
     "text": "ber om en postkvantnyckel efter en inloggning och etablerar sedan inloggningssessionen som den höll kvar"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "DYNAMISKT VALBARA ROLLER (#1072). Efter alla faktorer HÅLLS en inloggning till ett program vars sfär definierar en dynamisk roll (om inte roles.dynamicSelection eller programmets appDynamicRoleSelection stänger av det) medan varje dynamisk rolls XACML-behörighetspolicy beslutas för personen; endast Permit erbjuder en roll. Om personen markerade ”Välj roller för den här inloggningen”, eller en obligatorisk roll erbjuds, visar sidan vad som kan väljas; Fortsätt (/authn-api/mfa/{id}/roles) prövar valet mot stegets erbjudande och åter mot policyerna, och startar sessionen med valet på sessionsposten, aldrig i katalogen. En token för programmet bär sedan de valda rollerna, var och en prövad mot sin policy vid varje utfärdande. Kräver ett ?mfa=-id från den hållna inloggningen; utan det blir svaret 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "frågar vilka dynamiskt valbara roller som ska användas för inloggningen och startar sedan den hållna sessionen med valet"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "DEN ANDRA ANDRA FAKTORN (2026-09-10). Ett lösenordssteg som lyckades för någon som har en autentiseringsapp registrerad landar här, och den här slutpunkten ber om de sex siffror som deras app visar. Vid framgång registrerar sessionen amr [\"pwd\",\"otp\"] — RFC 8176:s värde, vars registerpost namnger RFC 4226 och RFC 6238 — och acr \"mfa\", vilket är det enda fall där den här tjänsten ärligt kan säga två faktorer. **KODEN KONTROLLERAS PÅ RIKTIGT I BÅDA LÄGENA**, till skillnad från lösenordet framför den: en verifierare av engångslösenord som godtog vilka sex siffror som helst vore inte tillåtande, den vore trasig, och det är SPNEGO-argumentet läst en andra gång. Hastighetsbegränsad per identitet OCH per adress, eftersom sex siffror är en miljon värden och detta är det minsta sökutrymmet i tjänsten. GET ÄR LÄNKEN *använd en kod i stället* från säkerhetsnyckelskärmen och skapar ingenting — den ritar sidan för ett steg som redan finns, och vägrar ett för någon som inte har någon registrering. **DEN REGISTRERAR INGEN**, vilket är hela skillnaden mot /authn/webauthn bredvid: att registrera innebär att få se en delad hemlighet, så det sker på /portal/mfa eller medan en aktiveringslänk förbrukas, och aldrig på en inloggningsskärm. En sida på inloggningsytan sedan #572: koden går till /authn-api/mfa/{id}/totp."
@@ -3206,6 +3218,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). I profilens snoozeDays; nekas när den tilldelade tiden har gått. Den kvarhållna sessionen startar."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "UTANFÖR SPECIFIKATION (#1072). Rollstegets val, prövat mot stegets erbjudande och varje rolls behörighetspolicy; den hållna sessionen startar med det."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

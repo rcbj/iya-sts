@@ -2143,6 +2143,10 @@
     "en": "efc872210c98747b",
     "text": "非规范。作出一次签发决策然后丢弃：不签发任何东西，也不记录任何东西。它经过与九个签发点相同的调用——issuance_gate.check()、嵌入式 PEP 以及依照 xacml.issuancePolicy 所指策略的 PDP——因此预览与执行结果只是碰巧一致的情况是不可能的，这正是它存在的唯一理由。它不是 POST /xacml/pdp，后者就存储库根策略询问同一个引擎：那份文档回答的是关于他人边界的问题，而这里回答的是关于本服务的问题。`application` 和 `subject` 都是必需的，因为两者都未指定的签发按定义就是允许的，而不是由策略允许的。`kind` 成为 XACML action-id，因此策略可以允许访问令牌而拒绝刷新令牌。`available: false` 表示此处未加载引擎。对应 /admin/roles 上的试运行。"
   },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "非规范（#1072）。一个可动态选择角色自身的 XACML 资格策略，由 PDP 针对一个人按照登录 `application` 时的方式判定，而无需登录：是否具备资格、不具备时的代码、决定和状态（缺少的属性会在其中注明）。只有 Permit 才具备资格。除 roles.eligibility 审计行外不写入任何内容，也从不显示策略或此人的属性。`role` 和 `user` 都是必需的；缺少任一项时返回 `answered: false`。对应动态角色在 /admin/roles 页面上的测试。"
+  },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
     "text": "create-role、delete-role、describe-role、add-member 和 remove-member——与控制台表单提交到 /admin/roles 的相同五个操作，通过同一个函数执行，因此两个入口都不可能执行对方不执行的规则。两个成员操作上的 `kind` 选择值放入三个列表中的哪一个，而它们在三个不同的地方查找，因此指定错误的列表也会成功，并写入一个永远不会匹配的值。`member` 刻意与 `role` 分开命名：把两者弄混的主体会成功执行，并创建一个名为 alice 的角色。内置角色会按名称被拒绝，而不是落到 “没有这样的角色”，因为这六个角色出现在页面的每个菜单中，并且没有可编辑的成员关系。即使仍有应用要求该角色，delete-role 也会成功，并指明这些应用：它们中的每一个此后都将无法获得任何签发，而在发生的那一刻说明这一点，好过在每个应用条目都编辑完之前一直拒绝。这五个操作都不会触及任何已经签发的内容。"
@@ -3027,6 +3031,14 @@
     "en": "9547cda6898c37a6",
     "text": "在登录后要求一个后量子通行密钥，然后建立其暂扣的单点登录会话"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "可动态选择的角色（#1072）。完成所有认证因素后，对于其领域定义了动态角色的应用程序（除非 roles.dynamicSelection 或应用程序的 appDynamicRoleSelection 将其关闭），登录会被暂停，同时为此人判定每个动态角色自身的 XACML 资格策略；只有 Permit 才会提供角色。如果此人勾选了“为此次登录选择角色”，或者提供了必选角色，此页面会列出可选的角色；“继续”（/authn-api/mfa/{id}/roles）会将选择与该步骤的提供内容以及策略再次核对，然后启动会话，并将选择记录在会话记录中，绝不写入目录。之后该应用程序的令牌会携带所选角色，每次签发时都会再次按其策略判定。需要由被暂停的登录生成的 ?mfa= 标识；直接访问会返回 400。"
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "询问此次登录要使用哪些可动态选择的角色，然后以该选择启动被暂停的会话"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "第二种第二因素（2026-09-10）。对于已注册身份验证器应用的人，密码步骤成功后会来到这里，此端点会索要其应用上显示的六位数字。成功时会话记录 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其注册表条目引用 RFC 4226 和 RFC 6238——以及 acr \"mfa\"，这是本服务能够诚实地说出两个因素的唯一情形。**代码在两种模式下都会真正检查**，这与其前面的密码不同：接受任意六位数字的一次性密码验证器不是宽松，而是坏了，这正是把 SPNEGO 的论证再读一遍。按身份和地址两者进行速率限制，因为六位数字只有一百万个取值，这是本服务中最小的搜索空间。GET 是安全密钥界面上的“改用代码”链接，不创建任何东西——它只为已存在的步骤绘制页面，并拒绝为没有注册的人绘制。**它不为任何人注册**，这就是它与旁边的 /authn/webauthn 的全部区别：注册意味着要被展示一个共享密钥，因此它在 /portal/mfa 上或使用激活链接时进行，绝不在登录界面上进行。自 #572 起是登录界面的一个页面：代码发送到 /authn-api/mfa/{id}/totp。"
@@ -3206,6 +3218,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC（#1096）。按配置文件的 snoozeDays 推迟；给定期限已过则被拒绝。被暂扣的会话随即开始。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "非规范（#1072）。角色步骤的选择，按该步骤的提供内容和每个角色的资格策略核对；被暂停的会话随之启动。"
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

@@ -1852,8 +1852,8 @@
     "text": "TRUE när den här UMA 2.0-resursservern får registrera resurser den SJÄLV ÄGER, med en skydds-API-token som skaffats med client_credentials. Saknas eller FALSE, standardvärdet, betyder att en PAT måste tillhöra en person (kodflödet) och att den personen äger det den registrerar."
   },
   "applications.schema.attributes.appDynamicRoleSelection.what": {
-    "en": "8d2e7ba443673616",
-    "text": "FALSE stänger av dynamiskt rollval för inloggningar till det här programmet (#1072): inloggningssidan erbjuder ingen ruta ”Välj roller för den här inloggningen”, ingen roll erbjuds och en token för programmet bär ingen dynamiskt vald roll. Saknas värdet eller är det TRUE, standardvärdet, avgör sfärens inställning roles.dynamicSelection."
+    "en": "b508dc418113551c",
+    "text": "TRUE eller FALSE: erbjuds dynamiskt valbara roller vid inloggningar till det här programmet (#1072), i stället för roles.dynamicSelection. FALSE visar ingen ruta ”Välj roller för den här inloggningen”, erbjuder ingen roll, och en token för programmet bär ingen dynamiskt vald roll."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

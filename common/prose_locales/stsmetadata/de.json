@@ -2143,6 +2143,10 @@
     "en": "efc872210c98747b",
     "text": "NON-SPEC. Eine Ausstellungsentscheidung, getroffen und verworfen: nichts wird ausgestellt und nichts wird aufgezeichnet. Sie geht durch DENSELBEN Aufruf, den die neun Ausstellungsstellen machen — issuance_gate.check(), der eingebettete PEP und der PDP gegen die Richtlinie, die xacml.issuancePolicy nennt —, sodass eine Vorschau, die mit der Durchsetzung nur zufällig übereinstimmte, unmöglich ist, und nur darum gibt es sie. Sie ist NICHT POST /xacml/pdp, das dieselbe Engine nach der ROOT des Repository fragt: jenes Dokument beantwortet Fragen über die Grenze von jemand ANDEREM, und dieses beantwortet eine Frage über diesen Dienst. `application` und `subject` sind beide erforderlich, weil eine Ausstellung, die mit keinem von beiden benannt ist, per Definition erlaubt ist und nicht durch eine Richtlinie. `kind` wird zur action-id von XACML, sodass eine Richtlinie ein Zugriffstoken erlauben und ein Refresh-Token ablehnen darf. `available: false` bedeutet, dass die Engine hier nicht geladen ist. Spiegelt den Probelauf auf /admin/roles."
   },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "NICHT SPEZIFIZIERT (#1072). Die eigene XACML-Berechtigungsrichtlinie einer dynamisch auswählbaren Rolle, vom PDP für eine Person so entschieden, wie eine Anmeldung an `application` sie fragen würde, ohne Anmeldung: berechtigt oder nicht, der Code, wenn nicht, Entscheidung und Status (ein fehlendes Attribut nennt sich dort). Nur Permit berechtigt. Geschrieben wird nur die Auditzeile roles.eligibility; Richtlinie und Attribute der Person werden nie gezeigt. `role` und `user` sind beide nötig; fehlt eines, lautet die Antwort `answered: false`. Entspricht dem Test auf der /admin/roles-Seite einer dynamischen Rolle."
+  },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
     "text": "create-role, delete-role, describe-role, add-member und remove-member — dieselben fünf, die die Formulare der Konsole an /admin/roles senden, über dieselbe Funktion, sodass keine Tür eine Regel durchsetzen kann, die die andere nicht durchsetzt. `kind` wählt an den zwei Aktionen für Mitglieder, in welche von DREI Listen der Wert kommt, und sie werden an drei verschiedenen Stellen nachgeschlagen, sodass die falsche zu nennen gelingt und etwas schreibt, das niemals passen wird. `member` ist bewusst getrennt von `role` benannt: ein Body, der sie verwechselte, würde gelingen und eine Rolle namens alice anlegen. Eine EINGEBAUTE Rolle wird nach dem Namen abgelehnt, statt auf „no such role“ durchzufallen, weil jene sechs in jedem Menü der Seite dargestellt werden und keine Mitgliedschaft haben, die zu bearbeiten wäre. delete-role GELINGT auch dort, wo Anwendungen die Rolle noch fordern, und NENNT sie: jeder von diesen wird nun überhaupt nichts mehr ausgestellt, und das in dem Moment zu sagen, in dem es geschieht, ist besser, als abzulehnen, bis jeder Anwendungseintrag bearbeitet worden ist. Nichts bereits AUSGESTELLTES wird von irgendeiner der fünf berührt."
@@ -3027,6 +3031,14 @@
     "en": "9547cda6898c37a6",
     "text": "verlangt nach einer Anmeldung einen Post-Quantum-Passkey und richtet dann die Anmeldesitzung ein, die es gehalten hat"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "DYNAMISCH AUSWÄHLBARE ROLLEN (#1072). Nach allen Faktoren wird eine Anmeldung an einer Anwendung, deren Bereich eine dynamische Rolle definiert (sofern roles.dynamicSelection oder appDynamicRoleSelection der Anwendung es nicht abschalten), ANGEHALTEN, während für die Person die XACML-Berechtigungsrichtlinie jeder dynamischen Rolle entschieden wird; nur Permit bietet eine Rolle an. Hat die Person „Rollen für diese Anmeldung wählen“ angekreuzt oder wird eine erforderliche Rolle angeboten, listet diese Seite die Wahlmöglichkeiten; Weiter (/authn-api/mfa/{id}/roles) prüft die Wahl gegen das Angebot des Schritts und erneut gegen die Richtlinien und startet die Sitzung mit der Wahl im Sitzungsdatensatz, nie im Verzeichnis. Ein Token für diese Anwendung trägt dann die gewählten Rollen, jede bei jeder Ausstellung erneut gegen ihre Richtlinie geprüft. Benötigt eine von der angehaltenen Anmeldung erzeugte ?mfa=-Kennung; ohne sie lautet die Antwort 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "fragt, welche dynamisch auswählbaren Rollen für diese Anmeldung verwendet werden sollen, und startet dann die angehaltene Sitzung mit dieser Wahl"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "DER ZWEITE ZWEITE FAKTOR (2026-09-10). Ein Passwortschritt, der für jemanden mit einer registrierten Authenticator-App gelungen ist, landet hier, und dieser Endpunkt fragt nach den sechs Ziffern, die die App anzeigt. Bei Erfolg zeichnet die Sitzung amr [\"pwd\",\"otp\"] auf — den Wert aus RFC 8176, dessen Registry-Eintrag RFC 4226 und RFC 6238 nennt — und acr \"mfa\", der eine Fall, in dem dieser Dienst ehrlich von zwei Faktoren sprechen kann. **DER CODE WIRD IN BEIDEN MODI WIRKLICH GEPRÜFT**, anders als das Passwort davor: Ein Prüfer für Einmalpasswörter, der beliebige sechs Ziffern akzeptierte, wäre nicht permissiv, er wäre defekt, und es ist das SPNEGO-Argument, zum zweiten Mal gelesen. In der Rate begrenzt nach Identität UND nach Adresse, weil sechs Ziffern eine Million Werte sind und dies der kleinste Suchraum im Dienst ist. DAS GET IST DER *stattdessen einen Code verwenden*-LINK vom Bildschirm des Sicherheitsschlüssels und erzeugt nichts — es zeichnet die Seite für einen Schritt, der bereits existiert, und lehnt einen für jemanden ab, der keine Registrierung besitzt. **ES REGISTRIERT NIEMANDEN**, und das ist der ganze Unterschied zu /authn/webauthn daneben: Registrieren heißt, ein gemeinsames Geheimnis gezeigt zu bekommen, daher geschieht es unter /portal/mfa oder während ein Aktivierungslink verbraucht wird, und niemals auf einem Anmeldebildschirm. Eine Seite der Anmeldeoberfläche seit #572: Der Code geht an /authn-api/mfa/{id}/totp."
@@ -3206,6 +3218,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NICHT-SPEZ (#1096). Für die snoozeDays des Profils; abgelehnt, sobald die zugeteilte Zeit verstrichen ist. Die gehaltene Sitzung startet."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "NICHT SPEZIFIZIERT (#1072). Die Wahl im Rollenschritt, geprüft gegen das Angebot des Schritts und die Berechtigungsrichtlinie jeder Rolle; die angehaltene Sitzung startet damit."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

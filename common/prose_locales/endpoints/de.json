@@ -1219,6 +1219,10 @@
     "en": "c2e62734c4466542",
     "text": "Würde dies ausgestellt?"
   },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "Ist diese Person für diese dynamische Rolle berechtigt?"
+  },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
     "text": "Rollen anlegen und ändern"
@@ -1847,6 +1851,10 @@
     "en": "69876d051e66729c",
     "text": "Schritt der Aktivität nach der Anmeldung"
   },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "Schritt für dynamische Rollen"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Schritt des zweiten Faktors per Einmalcode"
@@ -2002,6 +2010,10 @@
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
     "en": "3d081a5b28f53bd6",
     "text": "Eine Aktivität nach der Anmeldung aufschieben"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "Die dynamischen Rollen dieser Anmeldung wählen"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

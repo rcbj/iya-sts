@@ -1791,6 +1791,22 @@
     "en": "28d96273b40dea3f",
     "text": "已判定某人對某個動態角色的資格"
   },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "登入時提供了動態角色"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "登入時選擇了動態角色"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "某次登入對動態角色的選擇被拒絕"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "某個已選擇的動態角色未被放入權杖"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "在某個節點的處理程序或工作執行緒中執行了一次完整垃圾回收"

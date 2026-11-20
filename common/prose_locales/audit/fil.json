@@ -1791,6 +1791,22 @@
     "en": "28d96273b40dea3f",
     "text": "Napagpasyahan ang pagiging karapat-dapat ng isang tao sa isang dynamic na tungkulin"
   },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Inialok ang mga dynamic na tungkulin sa isang pag-sign in"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Pinili ang mga dynamic na tungkulin sa isang pag-sign in"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "Tinanggihan ang pagpili ng mga dynamic na tungkulin ng isang pag-sign in"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "Inalis sa isang token ang isang piniling dynamic na tungkulin"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "Nagpatakbo ng buong garbage collection sa isang proseso o worker thread ng isang node"

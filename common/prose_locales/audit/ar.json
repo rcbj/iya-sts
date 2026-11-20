@@ -1791,6 +1791,22 @@
     "en": "28d96273b40dea3f",
     "text": "تقرّرت أهلية شخص لدور ديناميكي"
   },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "عُرضت أدوار ديناميكية عند تسجيل دخول"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "اختيرت أدوار ديناميكية عند تسجيل دخول"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "رُفض اختيار الأدوار الديناميكية لتسجيل دخول"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "أُسقط دور ديناميكي مختار من رمز"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "أُجري جمع قمامة كامل في عملية أو خيط عامل لعقدة"

@@ -1852,8 +1852,8 @@
     "text": "當此 UMA 2.0 資源伺服器可透過以 client_credentials 取得的保護 API 權杖，註冊其「自身擁有」的資源時為 TRUE。缺少或 FALSE（預設值）表示 PAT 必須屬於某個人（授權碼流程），並由該人擁有其所註冊的內容。"
   },
   "applications.schema.attributes.appDynamicRoleSelection.what": {
-    "en": "8d2e7ba443673616",
-    "text": "FALSE 會關閉此應用程式登入時的動態角色選擇（#1072）：登入頁不提供「為此次登入選擇角色」核取方塊，不提供任何角色，此應用程式的權杖也不攜帶任何動態選擇的角色。缺省或為 TRUE（預設值）時，由領域的 roles.dynamicSelection 設定決定。"
+    "en": "b508dc418113551c",
+    "text": "TRUE 或 FALSE：登入此應用程式時是否提供可動態選擇的角色（#1072），覆寫 roles.dynamicSelection。FALSE 不顯示「為此次登入選擇角色」核取方塊，不提供任何角色，此應用程式的權杖也不攜帶任何動態選擇的角色。"
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

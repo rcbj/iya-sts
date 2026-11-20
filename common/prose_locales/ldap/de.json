@@ -1852,8 +1852,8 @@
     "text": "TRUE, wenn dieser Ressourcenserver nach UMA 2.0 Ressourcen registrieren darf, die er SELBST BESITZT, über ein Protection-API-Token, das mit client_credentials bezogen wurde. Abwesend oder FALSE, der Standard, bedeutet, dass ein PAT einer Person gehören muss (der Code-Flow) und dass diese Person besitzt, was es registriert."
   },
   "applications.schema.attributes.appDynamicRoleSelection.what": {
-    "en": "8d2e7ba443673616",
-    "text": "FALSE schaltet die dynamische Rollenauswahl für Anmeldungen an dieser Anwendung ab (#1072): Die Anmeldeseite bietet kein Kästchen „Rollen für diese Anmeldung wählen“ an, keine Rolle wird angeboten, und ein Token für diese Anwendung trägt keine dynamisch gewählte Rolle. Fehlt der Wert oder ist er TRUE (die Vorgabe), entscheidet die Einstellung roles.dynamicSelection des Bereichs."
+    "en": "b508dc418113551c",
+    "text": "TRUE oder FALSE: Werden bei Anmeldungen an dieser Anwendung dynamisch auswählbare Rollen angeboten (#1072), anstelle von roles.dynamicSelection. FALSE zeigt kein Kästchen „Rollen für diese Anmeldung wählen“, bietet keine Rolle an, und ein Token für diese Anwendung trägt keine dynamisch gewählte Rolle."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

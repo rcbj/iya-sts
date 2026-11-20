@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5780** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5787** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 244
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 251
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 99
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5236,6 +5236,13 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0320` | A dynamic role that belongs to one application was asked about for a sign-in to another (#1072); it is offered only on its own application's. | — |
 | `STS-XACML-0321` | A dynamic role's eligibility policy was given as neither or both of document (XACML XML) and alfa (#1072). | — |
 | `STS-XACML-0322` | A dynamic role would not take the reference to its new eligibility policy (#1072); a new policy was taken back. | — |
+| `STS-XACML-0324` | The reader of a session's chosen dynamic roles threw while roles were resolved (#1072); no dynamic role was held. | — |
+| `STS-XACML-0325` | A sign-in's role step was submitted with a role it did not offer (#1072): fabricated, from another realm, application or sign-in, or not eligible when the step was drawn. Nothing was chosen. | HTTP 400 |
+| `STS-XACML-0326` | A sign-in's role step was submitted with two roles of one exclusive group (#1072). Nothing was chosen. | HTTP 400 |
+| `STS-XACML-0327` | A sign-in's role step was submitted without any of the required roles it offered (#1072). Nothing was chosen. | HTTP 400 |
+| `STS-XACML-0328` | A role chosen at a sign-in's role step was no longer eligible when it was submitted (#1072); the step is drawn again. | HTTP 400 |
+| `STS-XACML-0329` | A session was refused at a door that cannot draw the role step (federation, a wallet, SPNEGO, a certificate) because a required dynamic role was offered to the person (#1072). | — |
+| `STS-XACML-0330` | A sign-in held for the role step had no pending sign-in to draw the step on, so it was refused (#1072). | — |
 
 ## STS-XPEP
 

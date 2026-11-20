@@ -1852,8 +1852,8 @@
     "text": "当此 UMA 2.0 资源服务器可通过以 client_credentials 获取的保护 API 令牌注册其自身拥有的资源时为 TRUE。缺失或 FALSE（默认值）表示 PAT 必须属于某个人（授权码流程），并由该人拥有其注册的内容。"
   },
   "applications.schema.attributes.appDynamicRoleSelection.what": {
-    "en": "8d2e7ba443673616",
-    "text": "FALSE 会关闭此应用程序登录时的动态角色选择（#1072）：登录页不提供“为此次登录选择角色”复选框，不提供任何角色，此应用程序的令牌也不携带任何动态选择的角色。缺省或为 TRUE（默认值）时，由领域的 roles.dynamicSelection 设置决定。"
+    "en": "b508dc418113551c",
+    "text": "TRUE 或 FALSE：登录此应用程序时是否提供可动态选择的角色（#1072），覆盖 roles.dynamicSelection。FALSE 不显示“为此次登录选择角色”复选框，不提供任何角色，此应用程序的令牌也不携带任何动态选择的角色。"
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

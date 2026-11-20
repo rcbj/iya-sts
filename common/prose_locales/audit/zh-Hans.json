@@ -1791,6 +1791,22 @@
     "en": "28d96273b40dea3f",
     "text": "已判定某人对某个动态角色的资格"
   },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "登录时提供了动态角色"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "登录时选择了动态角色"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "某次登录对动态角色的选择被拒绝"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "某个已选择的动态角色未被放入令牌"
+  },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
     "text": "在某个节点的进程或工作线程中执行了一次完整垃圾回收"

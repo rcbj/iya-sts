@@ -150,6 +150,10 @@ const { AuthorizationRequest } = xacmlRequest;
 
 // The question an issuance site asks, through `common/issuance_gate.js`.
 interface IssuanceQuestion {
+  // (#1072) The sign-on session the issuance rests on, as
+  // `common/issuance_gate.js` documents `request.session`: its id is what
+  // reads the dynamic roles it chose.
+  session?: any;
   application?: any;
   kind?: string;
   subject?: any;

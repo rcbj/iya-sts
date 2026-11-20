@@ -1852,8 +1852,8 @@
     "text": "TRUE lorsque ce serveur de ressources UMA 2.0 peut enregistrer des ressources DONT IL EST LUI-MÊME PROPRIÉTAIRE, au moyen d’un jeton d’API de protection obtenu par client_credentials. Absent ou FALSE, la valeur par défaut, signifie qu’un PAT doit être celui d’une personne (le flux de code) et que cette personne possède ce qu’il enregistre."
   },
   "applications.schema.attributes.appDynamicRoleSelection.what": {
-    "en": "8d2e7ba443673616",
-    "text": "FALSE désactive la sélection dynamique des rôles pour les connexions à cette application (#1072) : la page de connexion ne propose pas la case « Choisir des rôles pour cette connexion », aucun rôle n’est proposé et un jeton pour cette application ne porte aucun rôle sélectionné dynamiquement. Absent ou TRUE, la valeur par défaut, laisse la décision au paramètre roles.dynamicSelection du domaine."
+    "en": "b508dc418113551c",
+    "text": "TRUE ou FALSE : des rôles dynamiques sélectionnables sont-ils proposés lors des connexions à cette application (#1072), en remplacement de roles.dynamicSelection. FALSE n’affiche pas la case « Choisir des rôles pour cette connexion », ne propose aucun rôle, et un jeton pour cette application ne porte aucun rôle sélectionné dynamiquement."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

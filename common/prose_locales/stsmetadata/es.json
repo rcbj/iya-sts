@@ -2143,6 +2143,10 @@
     "en": "efc872210c98747b",
     "text": "NO ESTÁNDAR. Una decisión de emisión, tomada y descartada: no se emite nada y no se registra nada. Pasa por la MISMA llamada que hacen los nueve puntos de emisión (issuance_gate.check(), el PEP integrado y el PDP contra la política que nombra xacml.issuancePolicy), de modo que es imposible una vista previa que coincida con la aplicación solo por casualidad, que es la única razón por la que existe. NO es POST /xacml/pdp, que pregunta al mismo motor sobre la RAÍZ del repositorio: ese documento responde preguntas sobre el límite de OTRO y este responde una pregunta sobre este servicio. `application` y `subject` son ambos obligatorios, porque una emisión sin ninguno de los dos se permite por definición y no por política. `kind` se convierte en el action-id de XACML, así que una política puede permitir un token de acceso y rechazar un token de actualización. `available: false` significa que el motor no está cargado aquí. Refleja la simulación de /admin/roles."
   },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "NO ESPECIFICADO (#1072). La política de elegibilidad XACML propia de un rol dinámico seleccionable, decidida por el PDP para una persona como la pediría un inicio de sesión en `application`, sin iniciar sesión: elegible o no, el código cuando no lo es, la decisión y el estado (un atributo ausente se nombra allí). Solo Permit hace elegible. No escribe nada salvo la fila de auditoría roles.eligibility y nunca muestra la política ni los atributos de la persona. Se necesitan `role` y `user`; si falta alguno responde `answered: false`. Refleja la prueba de la página /admin/roles de un rol dinámico."
+  },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
     "text": "create-role, delete-role, describe-role, add-member y remove-member: las mismas cinco que envían los formularios de la consola a /admin/roles, mediante la misma función, de modo que ninguna puerta puede aplicar una regla que la otra no aplique. `kind` en las dos acciones de miembros elige en cuál de TRES listas va el valor, y se buscan en tres lugares distintos, así que nombrar la equivocada tiene éxito y escribe algo que nunca coincidirá. `member` se nombra aparte de `role` deliberadamente: un cuerpo que los confundiera tendría éxito y crearía un rol llamado alice. Un rol INTEGRADO se rechaza por nombre en lugar de caer en \"no existe ese rol\", porque esos seis se dibujan en cada menú de la página y no tienen pertenencia que editar. delete-role TIENE ÉXITO incluso cuando hay aplicaciones que siguen requiriendo el rol y las NOMBRA: a cada una de ellas ya no se le emite nada en absoluto, y decirlo en el momento en que ocurre es mejor que rechazarlo hasta que se haya editado cada entrada de aplicación. Ninguna de las cinco toca nada que ya se haya EMITIDO."
@@ -3027,6 +3031,14 @@
     "en": "9547cda6898c37a6",
     "text": "pide una llave de acceso poscuántica después de un inicio de sesión y luego establece la sesión de inicio de sesión que retenía"
   },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "ROLES DINÁMICOS SELECCIONABLES (#1072). Tras todos los factores, un inicio de sesión en una aplicación cuyo dominio define un rol dinámico (salvo que roles.dynamicSelection o appDynamicRoleSelection de la aplicación lo desactiven) queda RETENIDO mientras se decide para la persona la política de elegibilidad XACML de cada rol dinámico; solo Permit ofrece un rol. Si la persona marcó «Elegir roles para este inicio de sesión» o se ofrece un rol obligatorio, esta página enumera lo que puede elegirse; Continuar (/authn-api/mfa/{id}/roles) contrasta la elección con la oferta del paso y de nuevo con las políticas, y inicia la sesión con ella en el registro de sesión, nunca en el directorio. Un token para esa aplicación lleva entonces los roles elegidos, cada uno consultado de nuevo con su política en cada emisión. Necesita un identificador ?mfa= emitido por el inicio de sesión retenido; seguido sin él responde 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "pregunta qué roles dinámicos seleccionables usar en este inicio de sesión y luego establece la sesión retenida con esa elección"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "EL SEGUNDO SEGUNDO FACTOR (2026-09-10). Un paso de contraseña que tuvo éxito para alguien con una aplicación de autenticación registrada llega aquí, y este endpoint pide los seis dígitos que muestra su aplicación. Si tiene éxito, la sesión registra amr [\"pwd\",\"otp\"] (el valor de RFC 8176, cuya entrada en el registro nombra RFC 4226 y RFC 6238) y acr \"mfa\", que es el único caso en que este servicio puede decir dos factores con honestidad. **EL CÓDIGO SE COMPRUEBA DE VERDAD EN AMBOS MODOS**, a diferencia de la contraseña que lo precede: un verificador de contraseñas de un solo uso que aceptara cualesquiera seis dígitos no sería permisivo, estaría roto, y es el argumento de SPNEGO leído por segunda vez. Con límite de frecuencia por identidad Y por dirección, porque seis dígitos son un millón de valores y este es el espacio de búsqueda más pequeño del servicio. EL GET ES EL ENLACE *usar un código en su lugar* de la pantalla de llave de seguridad y no crea nada: dibuja la página para un paso que ya existe, y la rechaza para alguien que no tiene ningún registro. **NO REGISTRA A NADIE**, que es toda la diferencia con /authn/webauthn a su lado: registrarse significa que se le muestre a uno un secreto compartido, así que ocurre en /portal/mfa o mientras se gasta un enlace de activación, y nunca en una pantalla de inicio de sesión. Una página de la superficie de inicio de sesión desde #572: el código va a /authn-api/mfa/{id}/totp."
@@ -3206,6 +3218,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Durante el snoozeDays del perfil; se rechaza una vez que ha pasado el plazo concedido. La sesión retenida se inicia."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "NO ESPECIFICADO (#1072). La elección del paso de roles, contrastada con la oferta del paso y con la política de elegibilidad de cada rol; la sesión retenida se inicia con ella."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
