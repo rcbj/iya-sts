@@ -1684,10 +1684,12 @@ mod tests {
         let slow = forward_to(&client, &ask("slow"), "payments", "", 200).await;
         assert_eq!((slow.status, slow.code), (504, "STS-XPEP-0055"));
 
-        // NOBODY LISTENING: a port bound and released.
-        let gone = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let dead = gone.local_addr().unwrap().port();
-        drop(gone);
+        // NOBODY LISTENING: a port bound and not listening, held to the
+        // end, so the kernel cannot hand it to another test's listener
+        // in between (a port bound and RELEASED could be, #1935).
+        let held = tokio::net::TcpSocket::new_v4().unwrap();
+        held.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let dead = held.local_addr().unwrap().port();
         options.pdp_url = format!("http://127.0.0.1:{}/realm/r1", dead);
         let nowhere = PdpClient::new(&options).unwrap();
         let down =

@@ -1564,5 +1564,10 @@ async fn a_request_that_cannot_be_parsed_is_a_bare_status() {
         assert!(body.is_empty(), "{}: a body {:?}", label, body);
         assert!(!text.contains("STS-"), "{}", label);
     }
-    assert_eq!(hits(&h), 0, "nothing reached the application");
+    assert_eq!(
+        hits(&h),
+        0,
+        "nothing reached the application, but it saw:\n{}",
+        seen(&h)
+    );
 }
