@@ -54,6 +54,9 @@
 // management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -236,7 +239,7 @@ async function codeGrant(who, app, scope, extra) {
       code_challenge: pair.challenge, code_challenge_method: "S256" })
       .toString());
   const authorized = r;
-  for (let n = 0; n < 8 && r.location && r.location.indexOf(root) === 0 &&
+  for (let n = 0; n < 8 && r.location && urls.isUnder(r.location, root) &&
                   !consentScreen.isConsentScreen(r.location); n += 1) {
     if (/\/authn\/login\?/.test(r.location)) {
       // THE SCREEN OVER `/authn-api` (#571), through the one helper, with
@@ -423,8 +426,8 @@ async function test() {
         function () {
     assert.strictEqual(stream.status, 201, stream.text.slice(0, 400));
     const delivered = stream.json.events_delivered || [];
-    assert.ok(delivered.indexOf(CAEP + "session-presented") >= 0 &&
-              delivered.indexOf(CAEP + "credential-change") >= 0,
+    assert.ok(urls.holds(delivered, CAEP + "session-presented") &&
+              urls.holds(delivered, CAEP + "credential-change"),
               JSON.stringify(delivered));
   });
   const streamId = stream.json.stream_id;

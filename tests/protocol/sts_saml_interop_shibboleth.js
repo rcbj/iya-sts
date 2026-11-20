@@ -48,6 +48,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const kitFactory = require("./saml_peer_kit.js");
@@ -260,7 +263,7 @@ async function serviceHasSession(w, b) {
   log.debug("Entering serviceHasSession().");
   const walked = await kit.walk(b, login({ entityID: w.idp2 }), {
     stopAt: function (url) {
-      return url.indexOf(PEER + "/peer/env") === 0;
+      return urls.isAt(url, PEER + "/peer/env");
     } });
   // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571: a static page whose script
   // is /authn/signin.js, and where the walk stops when it has no name.
@@ -275,7 +278,7 @@ async function signIn(w, b, loginUrl) {
   const walked = await kit.walk(b, loginUrl, {
     username: w.person, password: PASSWORD,
     stopAt: function (url) {
-      return url.indexOf(PEER + "/peer/env") === 0;
+      return urls.isAt(url, PEER + "/peer/env");
     } });
   log.debug("Leaving signIn().");
   return walked;
@@ -577,7 +580,7 @@ async function singleLogout(w) {
     const walked = await kit.walk(b, PEER + "/Shibboleth.sso/Logout?return=" +
                                   encodeURIComponent(PEER + "/done"), {
       stopAt: function (url) {
-        return url.indexOf(PEER + "/done") === 0;
+        return urls.isAt(url, PEER + "/done");
       } });
     const after = await sessionAt(b);
     const stillSignedIn = await serviceHasSession(w, b);

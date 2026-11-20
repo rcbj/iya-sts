@@ -177,6 +177,9 @@ function registry(t) {
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.R91_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.R91_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -460,7 +463,7 @@ function childMain() {
     };
     const codeAt = function (r, state) {
       const loc = String((r && r.headers && r.headers.location) || '');
-      return r && r.status === 302 && loc.indexOf(REDIRECT) === 0 &&
+      return r && r.status === 302 && urls.isAt(loc, REDIRECT) &&
              /[?&]code=/.test(loc) &&
              (!state || loc.indexOf('state=' + state) >= 0);
     };

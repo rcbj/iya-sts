@@ -195,6 +195,9 @@
 //
 // Needs the STS mock and a Chrome. No Keycloak, no client, no other service.
 // ---------------------------------------------------------------------------
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { Builder, By, until } = require("selenium-webdriver");
@@ -471,8 +474,7 @@ async function go(driver, url) {
   // switcher, which keeps their token and moves the page under the realm's
   // prefix. So a realm page is visited that way, as a person would.
   const inRealm = base + "/realm/" + REALM + "/admin";
-  if (url === inRealm || url.indexOf(inRealm + "/") === 0 ||
-      url.indexOf(inRealm + "?") === 0 || url.indexOf(inRealm + "#") === 0) {
+  if (urls.isUnder(url, inRealm)) {
     const reached = await goThroughTheSwitcher(driver,
       url.slice((base + "/realm/" + REALM).length));
     log.debug("Leaving go(). Through the switcher, status=" + reached.status);
@@ -1975,7 +1977,7 @@ async function everyLinkResolves(driver, links) {
     const href = String(raw).split("#")[0];
     if (!href || seen[href]) { return; }
     seen[href] = true;
-    if (href.indexOf(base + "/") !== 0 && href !== base) {
+    if (!urls.isUnder(href, base)) {
       elsewhere.push(href);
       return;
     }
@@ -4675,7 +4677,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
 
   const defined = await survey(driver);
   check("the permission is on the page, by its whole identifier", function () {
-    assert.ok(defined.text.indexOf(baseUri + "write") >= 0,
+    assert.ok(urls.namesAddress(defined.text, baseUri + "write"),
       "AND THE PAGE MUST SHOW THE COMPOSED IDENTIFIER, not the name alone: " +
       baseUri + "write is the string a client actually puts in a `scope`, " +
       "and it is the one thing on this page somebody copies. The page says " +
@@ -4713,7 +4715,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
 
   const granted = await survey(driver);
   check("the grant is read back on the client's own page", function () {
-    assert.ok(granted.text.indexOf(baseUri + "write") >= 0,
+    assert.ok(urls.namesAddress(granted.text, baseUri + "write"),
       "AND THE READ-BACK IS OFF THE PAGE THAT DREW THE CONTROL. The grant " +
       "lands on the CLIENT's entry as a value of oauthDelegatedPermission, " +
       "so a form that wrote it to the RESOURCE instead would still answer " +
@@ -4745,7 +4747,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
   const register = await open(driver, realm(
     "/admin/delegation#delegation-tab-register"));
   check("the delegation page's register agrees with it", function () {
-    assert.ok(register.text.indexOf(baseUri + "write") >= 0,
+    assert.ok(urls.namesAddress(register.text, baseUri + "write"),
       "ONE WRITE, TWO PAGES. The grant was typed on the application's page " +
       "and the register that draws every grant in the service must show the " +
       "same one — the two are the same directory attribute read through the " +
@@ -4782,11 +4784,11 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "and /admin/delegation-settings should draw a Remove button on the row " +
       "of every " +
       "permission defined; it drew remove=" + removeForm);
-    assert.ok(revoked.text.indexOf(baseUri + "write") < 0 ||
+    assert.ok(!urls.namesAddress(revoked.text, baseUri + "write") ||
               /It holds none/i.test(revoked.text),
       "after the revoke the client should no longer hold it. Its page still " +
       "says: " + revoked.text.slice(0, 400));
-    assert.ok(cleared.text.indexOf(baseUri + "write") < 0,
+    assert.ok(!urls.namesAddress(cleared.text, baseUri + "write"),
       "and afterwards the permission should be gone from the register too. " +
       "It still says: " + cleared.text.slice(0, 400));
   });
@@ -4809,7 +4811,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
                      { name: "read", description: "Pressed on its own page" });
   const afterDefine = await survey(driver);
   check("and the permission is read back on that page", function () {
-    assert.ok(afterDefine.text.indexOf(baseUri + "read") >= 0,
+    assert.ok(urls.namesAddress(afterDefine.text, baseUri + "read"),
       "a permission defined on the resource's page should be listed there " +
       "by its whole identifier. The page says " +
       afterDefine.text.slice(0, 400));
@@ -4858,7 +4860,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
     "/admin/applications?application=" + encodeURIComponent(client) +
     "#tab-permissions"));
   check("and the grant lands on the CLIENT's entry", function () {
-    assert.ok(clientPage.text.indexOf(baseUri + "read") >= 0,
+    assert.ok(urls.namesAddress(clientPage.text, baseUri + "read"),
       "a grant made from the resource's page is still a value of " +
       "oauthDelegatedPermission on the CLIENT, so the client's own page " +
       "must list it as something it holds. It says " +
@@ -4880,7 +4882,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "the resource's page should draw Revoke on each grant of its " +
       "permissions and Remove on each permission; it drew revoke=" +
       ownRevoke + " remove=" + ownRemove);
-    assert.ok(ownCleared.text.indexOf(baseUri + "read") < 0,
+    assert.ok(!urls.namesAddress(ownCleared.text, baseUri + "read"),
       "and afterwards the permission should be gone from it. It says " +
       ownCleared.text.slice(0, 400));
   });
@@ -4977,13 +4979,13 @@ async function theObservedAddressesArePressed(driver) {
                                 encodeURIComponent(rpId));
     listed = ((reply.body && reply.body.returnAddressesObserved) || [])
       .map(function (row) { return row.value; });
-    if (listed.indexOf(ONE) >= 0 && listed.indexOf(TWO) >= 0) {
+    if (urls.holds(listed, ONE) && urls.holds(listed, TWO)) {
       break;
     }
     await new Promise(function (resolve) { setTimeout(resolve, 250); });
   }
   check("both shires are marked observed on the entry", function () {
-    assert.ok(listed.indexOf(ONE) >= 0 && listed.indexOf(TWO) >= 0,
+    assert.ok(urls.holds(listed, ONE) && urls.holds(listed, TWO),
       "GET /admin-api/applications?application=" + rpId + " should list both " +
       "sighted addresses under returnAddressesObserved; it " +
       "listed " + JSON.stringify(listed));
@@ -4995,7 +4997,8 @@ async function theObservedAddressesArePressed(driver) {
   check("the application page draws the observed addresses with both buttons",
         function () {
     assert.ok(/Return addresses nobody registered/.test(drawn.text) &&
-              drawn.text.indexOf(ONE) >= 0 && drawn.text.indexOf(TWO) >= 0,
+              urls.namesAddress(drawn.text, ONE) &&
+              urls.namesAddress(drawn.text, TWO),
       "the drill-down should draw a section listing both observed addresses; " +
       "it says " +
       drawn.text.slice(0, 500));
@@ -5036,10 +5039,10 @@ async function theObservedAddressesArePressed(driver) {
   const still = (entry.returnAddressesObserved || []).map(
       function (row) { return row.value; });
   check("Confirm kept its address and Discard removed its own", function () {
-    assert.ok(still.indexOf(ONE) < 0 && acs.indexOf(ONE) >= 0,
+    assert.ok(!urls.holds(still, ONE) && urls.holds(acs, ONE),
       "after Confirm the address must be REGISTERED — on the entry with no " +
       "mark; the entry holds " + JSON.stringify({ acs: acs, observed: still }));
-    assert.ok(still.indexOf(TWO) < 0 && acs.indexOf(TWO) < 0,
+    assert.ok(!urls.holds(still, TWO) && !urls.holds(acs, TWO),
       "after Discard the address must be gone, mark and value; the entry holds " +
       JSON.stringify({ acs: acs, observed: still }));
   });

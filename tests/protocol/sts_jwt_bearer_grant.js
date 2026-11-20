@@ -54,6 +54,9 @@
 // realm afterwards; see *No job removes a realm* in `tests/CLAUDE.md`.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -781,7 +784,7 @@ async function test() {
         "the token themselves", function () {
           const row = acts[0];
           const text = JSON.stringify(row);
-          assert.ok(text.indexOf(ISS) >= 0,
+          assert.ok(urls.namesAddress(text, ISS),
             "the issuer is not on the row: " + text.slice(0, 400));
         });
 

@@ -69,6 +69,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const tokens = require("../tools/admin-api-token.js");
@@ -505,7 +508,7 @@ async function theDocumentDescribesTheGate() {
     const flow = (((document.components || {}).securitySchemes || {}).oauth2 ||
                   {}).flows || {};
     const url = (flow.clientCredentials || {}).tokenUrl || "";
-    assert.ok(url.indexOf(base) === 0,
+    assert.ok(urls.isUnder(url, base),
       "the document sends a client to " + url + " for a token and this " +
       "service is at " + base + ". `servers[0].url` is built from the " +
       "request, and this must be too, or a document fetched through a proxy " +

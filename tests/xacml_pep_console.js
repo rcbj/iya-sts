@@ -87,6 +87,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const log = require('bunyan').createLogger({ name: 'xacml_pep_console',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -218,7 +221,7 @@ async function run(t) {
                                             settingsInUse: rejectedUse });
   t.check(rejected.indexOf('never nudged') >= 0 &&
           rejected.indexOf('rejected by the PEP') >= 0 &&
-          rejected.indexOf('http://old:9090/notify') >= 0 &&
+          urls.namesAddress(rejected, 'http://old:9090/notify') &&
           rejected.indexOf('xacml-alert') >= 0 &&
           none.indexOf('rejected') < 0 && derived.indexOf('rejected') < 0,
           'N10. a notify URL the PEP rejected is said so in the cell, with ' +
@@ -234,7 +237,7 @@ async function run(t) {
       notifyUrl: rejectedUse.values.notifyUrl,
       resource: { value: 'r', source: 'environment' } } } });
   const notifyCells = settingsTab.split('PEP_RESOURCE')[0];
-  t.check(notifyCells.indexOf('http://old:9090/notify') >= 0 &&
+  t.check(urls.namesAddress(notifyCells, 'http://old:9090/notify') &&
           notifyCells.indexOf('rejected: not https') >= 0 &&
           settingsTab.split('PEP_RESOURCE')[1].indexOf('rejected') < 0,
           'N11. the Settings tab shows the rejected notify URL as ' +
@@ -351,7 +354,7 @@ async function run(t) {
           'first (Visual is xacml_pep_picture.js\'s)', split);
   t.check(routesPanel.indexOf('/admin/xacml/pep/route?pep=pep-1&amp;' +
                               'route=orders-api') >= 0 &&
-          routesPanel.indexOf('http://companion:9700') >= 0 &&
+          urls.namesAddress(routesPanel, 'http://companion:9700') &&
           routesPanel.indexOf('Enabled.') >= 0 &&
           // The whole sentence, so the address is bounded on both sides.
           /A browser reaches it at https:\/\/orders\.example\.test\.(?:\s|<)/

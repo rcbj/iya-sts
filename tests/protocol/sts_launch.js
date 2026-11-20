@@ -37,6 +37,9 @@
 // OWNED HERE (local: true): this repository's own door and registry.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -470,13 +473,13 @@ async function test() {
            code_challenge: p.challenge, code_challenge_method: "S256" }));
   const app = await api(REALM, "GET", "/applications?application=" +
                         encodeURIComponent(RP_SEEN));
-  const observedOnEntry = JSON.stringify(app.body || {})
-    .indexOf(OBSERVED) >= 0;
+  const observedOnEntry = urls.namesAddress(JSON.stringify(app.body || {}),
+                                            OBSERVED);
   await check("e3c (precondition). in development the authorization request " +
               "is answered and the address is OBSERVED on the entry, not " +
               "registered", async function () {
     expect((seen.status === 302 || seen.status === 303) &&
-           seen.location.indexOf(OBSERVED) === 0,
+           urls.isAt(seen.location, OBSERVED),
            seen.status + " " + seen.location);
     expect(observedOnEntry, JSON.stringify(app.body).slice(0, 600));
   });

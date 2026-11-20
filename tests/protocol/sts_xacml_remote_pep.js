@@ -229,6 +229,9 @@
 //     produces, which is the other half of the same claim.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const fs = require("fs");
 const net = require("net");
@@ -713,7 +716,7 @@ function findTheNetwork() {
   const port = target.port ||
                (target.protocol === "https:" ? "443" : "80");
   const local = ["localhost", "127.0.0.1", "::1", "[::1]"];
-  if (local.indexOf(target.hostname) < 0) {
+  if (!urls.holds(local, target.hostname)) {
     // The service is somewhere this job cannot reason about — which in practice
     // means a containerized runner dialling a compose name, and that runner has
     // no docker and never reaches this function. Said plainly rather than
@@ -2145,7 +2148,7 @@ async function theListenerServesARealmCertificate() {
       "Root a client installs");
     assert.strictEqual(got.realm, REALM,
       "it was issued by the realm the PEP registered to");
-    assert.ok(got.dnsNames.concat(got.ipAddresses).indexOf(host) >= 0 &&
+    assert.ok(urls.holds(got.dnsNames.concat(got.ipAddresses), host) &&
               got.dnsNames.indexOf(PEP_NAME) >= 0,
       "it names the host this job dials (" + host + ") and the PEP's " +
       "registered name; it names " +

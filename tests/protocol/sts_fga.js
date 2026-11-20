@@ -74,6 +74,9 @@
 // branch are this repository's.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const https = require("https");
@@ -762,7 +765,7 @@ async function aPolicyDenyingDelete() {
   const refused = await authorize(["read", "delete"]);
   check("the authorization endpoint redirects access_denied, before consent",
         function () {
-    assert.ok(refused.location.indexOf(REDIRECT) === 0 &&
+    assert.ok(urls.isAt(refused.location, REDIRECT) &&
               refused.query.get("error") === "access_denied" &&
               !refused.query.get("code") && refused.screens === 0,
       "the flow ended at " + refused.location + " after " + refused.screens +
@@ -779,7 +782,7 @@ async function aCodeAndTheExchange() {
   log.info("=== 6. a code for read, and the token exchange's bound ===");
   const flow = await authorize(["read"]);
   check("the authorization endpoint issues a code for read", function () {
-    assert.ok(flow.location.indexOf(REDIRECT) === 0 &&
+    assert.ok(urls.isAt(flow.location, REDIRECT) &&
               !!flow.query.get("code"),
       "the flow ended at " + flow.location);
   });

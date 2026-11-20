@@ -56,6 +56,9 @@
 // register.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -354,8 +357,8 @@ async function codeStep(b, step, offset) {
 function atClient(r) {
   log.debug("Entering atClient().");
   log.debug("Leaving atClient().");
-  return !!(r && r.location && r.location.indexOf(REDIRECT + "?code=") ===
-            0);
+  return !!(r && urls.isAt(r.location, REDIRECT) &&
+            /^\?code=/.test(new URL(r.location).search));
 }
 
 const state = { secret: "", cookieName: "" };

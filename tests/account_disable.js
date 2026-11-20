@@ -87,6 +87,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.AD_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.AD_OUT;
   const PRODUCT = process.env.AD_MODE === 'product';
   const http = require('http');
@@ -308,7 +311,7 @@ function childMain() {
         r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
-      const code = r.status === 302 && loc.indexOf(REDIRECT) === 0
+      const code = r.status === 302 && urls.isAt(loc, REDIRECT)
         ? new URL(loc).searchParams.get('code') : null;
       if (!code) {
         return { screen: r, token: null };

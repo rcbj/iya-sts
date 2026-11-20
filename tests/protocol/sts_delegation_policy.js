@@ -37,6 +37,9 @@
 // OWNED HERE (local: true): the policy is this repository's own.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -459,7 +462,7 @@ async function tokenExchange() {
                        JSON.stringify(claims.act));
     assert.strictEqual(claims.act.iss, claims.iss, "the act entry names " +
                        "this issuer (#471): " + JSON.stringify(claims));
-    assert.ok([].concat(claims.aud).indexOf(TARGET) >= 0,
+    assert.ok(urls.holds(claims.aud, TARGET),
               JSON.stringify(claims.aud));
   });
   r = await exchange(BACK, forMid);
@@ -529,7 +532,7 @@ async function tokenExchange() {
         function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 300));
           assert.ok(!claims.act, JSON.stringify(claims.act));
-          assert.ok([].concat(claims.aud).indexOf(url(MID)) >= 0,
+          assert.ok(urls.holds(claims.aud, url(MID)),
                     JSON.stringify(claims.aud));
         });
   // Authority lost since the subject token was issued. The CLIENT is R

@@ -50,6 +50,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.UAM_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.UAM_OUT;
   const https = require('https');
   const zlib = require('zlib');
@@ -193,7 +196,7 @@ function childMain() {
           continue;
         }
         if (r.status >= 300 && r.status < 400 && to) {
-          if (to.indexOf('http') === 0 && to.indexOf(ORIGIN) !== 0) {
+          if (to.indexOf('http') === 0 && !urls.isUnder(to, ORIGIN)) {
             break;
           }
           r = await call({ jar: jar, path: to, cert: cert, key: key });

@@ -37,6 +37,9 @@
 // OWNED HERE (local: true): this repository's own management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const authnSignin = require("./authn_signin");
@@ -89,14 +92,14 @@ async function authorize(realm, b, clientId, redirect, signIn) {
   for (let hops = 0; hops < 6; hops++) {
     const loc = /^https?:/.test(r.location) ? r.location
       : K.base + r.location;
-    if (loc.indexOf(redirect) === 0) {
+    if (urls.isAt(loc, redirect)) {
       break;
     }
     if (authnSignin.isConsent(loc)) {
       consented = true;
       r = await authnSignin.consentWithJar(loc, "allow", b.jar);
     } else if ((r.status === 302 || r.status === 303) &&
-               loc.indexOf(K.base) === 0) {
+               urls.isUnder(loc, K.base)) {
       r = await b.go(loc);
     } else {
       break;
@@ -105,7 +108,7 @@ async function authorize(realm, b, clientId, redirect, signIn) {
   log.debug("Leaving authorize().");
   return { r: r, screened: screened, consented: consented,
            coded: /[?&]code=/.test(String(r.location)) &&
-                  String(r.location).indexOf(redirect) === 0 };
+                  urls.isAt(r.location, redirect) };
 }
 
 async function attempts(realm, application) {

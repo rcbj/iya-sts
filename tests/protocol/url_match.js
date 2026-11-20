@@ -26,6 +26,20 @@
 // BE a URL: the first compares `URL.origin`, the second reads `URL.host`,
 // and neither answers anything but false or '' for text that does not
 // parse.
+//
+// THE SAME FOR A VALUE THAT IS ONE ADDRESS, OR A LIST OF THEM (2026-11-20,
+// the rest of the sweep). A redirect's `Location` was asked
+// `loc.indexOf(REDIRECT) === 0`, which `https://rp.example/cbx?code=` and
+// `https://rp.example/cb.evil.test/` both pass. `isAt()` parses the value
+// and answers whether it is the address — origin and path equal, any query
+// or fragment after them, which is where a code or a state goes.
+// `isUnder()` is for a value that should be somewhere BELOW a base (the
+// service's own base URL, a partner's `/oauth2/`): the same origin, and a
+// path that is the base's or continues it at a `/`, so `/realm/acme` is
+// not under `/realm/ac`. `holds()` is for a list of addresses (`aud`, a
+// list of ACS URLs, the events a stream delivers): an element compared
+// whole, and a single string taken as a list of one, so an `aud` that is
+// a string is compared whole too rather than searched.
 // ---------------------------------------------------------------------------
 
 const log = require("bunyan").createLogger({ name: "url_match",
@@ -146,6 +160,86 @@ function hostOf(value) {
   return out;
 }
 
+/**
+ * A value parsed as an absolute URL, or null when it does not parse.
+ *
+ * @param {*} value - the value
+ * @returns {URL|null} the URL
+ */
+function parsed(value) {
+  log.debug("Entering parsed().");
+  let out = null;
+  try {
+    out = new URL(String(value));
+  } catch (e) {
+    log.debug("Caught in parsed(): " + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug("Leaving parsed().");
+  return out;
+}
+
+/**
+ * Whether a value is an address: it parses, and its origin and path are
+ * the address's. A query or a fragment after them is allowed.
+ *
+ * @param {*} value - the value, e.g. a `Location` header
+ * @param {string} address - an absolute http(s) URL
+ * @returns {boolean} true when it is that address
+ */
+function isAt(value, address) {
+  log.debug("Entering isAt(). " + address);
+  const one = parsed(value);
+  const want = new URL(String(address));
+  const out = !!one && one.origin === want.origin &&
+    one.pathname === want.pathname;
+  log.debug("Leaving isAt(). " + out);
+  return out;
+}
+
+/**
+ * Whether a value is at or below a base: it parses, its origin is the
+ * base's, and its path is the base's or continues it at a `/`. A base
+ * whose path ends in `/` asks for a path starting with it.
+ *
+ * @param {*} value - the value, e.g. a `Location` header
+ * @param {string} base - an absolute http(s) URL
+ * @returns {boolean} true when it is at or below the base
+ */
+function isUnder(value, base) {
+  log.debug("Entering isUnder(). " + base);
+  const one = parsed(value);
+  const want = new URL(String(base));
+  const p = want.pathname;
+  let out = !!one && one.origin === want.origin;
+  if (out && /\/$/.test(p)) {
+    out = one.pathname.indexOf(p) === 0;
+  } else if (out) {
+    out = one.pathname === p || one.pathname.indexOf(p + "/") === 0;
+  }
+  log.debug("Leaving isUnder(). " + out);
+  return out;
+}
+
+/**
+ * Whether a list holds a value, compared whole. A value that is not an
+ * array is taken as a list of one; undefined and null as an empty list.
+ *
+ * @param {*} list - the list, e.g. a token's `aud`
+ * @param {*} value - the element looked for
+ * @returns {boolean} true when an element is equal to it
+ */
+function holds(list, value) {
+  log.debug("Entering holds().");
+  const all = list === undefined || list === null ? [] : [].concat(list);
+  const out = all.some(function (one) {
+    return one === value;
+  });
+  log.debug("Leaving holds(). " + out);
+  return out;
+}
+
 module.exports = { urlsIn: urlsIn, namesAddress: namesAddress,
                    namesOrigin: namesOrigin, sameOrigin: sameOrigin,
-                   hostOf: hostOf };
+                   hostOf: hostOf, isAt: isAt, isUnder: isUnder,
+                   holds: holds };

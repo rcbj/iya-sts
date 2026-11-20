@@ -540,7 +540,7 @@ async function stepUp() {
               assert.ok(/The class was not earned/.test(x.text));
               assert.strictEqual(/hardware-protected/.test(x.text), hardware);
               assert.ok(x.text.indexOf("STS-WSFED-0030") < 0);
-              assert.ok(x.text.indexOf(uri) >= 0);
+              assert.ok(urls.namesAddress(x.text, uri));
               assert.ok(!toSignIn(x));
               assert.ok(backAgain.rose >= 1);
             });

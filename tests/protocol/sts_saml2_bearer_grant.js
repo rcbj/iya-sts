@@ -61,6 +61,9 @@
 // realm afterwards; see *No job removes a realm* in `tests/CLAUDE.md`.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -950,7 +953,7 @@ async function test() {
             return one.purpose === "saml";
           })[0];
           assert.strictEqual(saml2.handleLabel, "thumbprint");
-          assert.ok(saml2.assertionIssuers.indexOf(ISS) >= 0,
+          assert.ok(urls.holds(saml2.assertionIssuers, ISS),
             "the SAML row does not carry the declared issuer: " +
             JSON.stringify(saml2.assertionIssuers));
         });

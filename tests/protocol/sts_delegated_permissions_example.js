@@ -130,6 +130,9 @@
 //
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 // ---------------------------------------------------------------------------
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
@@ -946,7 +949,7 @@ async function theTokenSaysBothHalves() {
   const token = reply.body.access_token;
   const audience = claimOf(token, "aud");
   const audiences = Array.isArray(audience) ? audience : [audience];
-  assert.ok(audiences.indexOf(SPENT_ON.baseUri) >= 0,
+  assert.ok(urls.holds(audiences, SPENT_ON.baseUri),
     "THE ACCESS TOKEN SHOULD BE AUDIENCED TO " + SPENT_ON.baseUri + " — the " +
     "base URI of the application whose permissions were asked for, and not " +
     "one of the other four. That is what a resource server checks once " +
@@ -1042,7 +1045,7 @@ async function theClientCredentialsGrantNeedsARole() {
     "answered " + withRole.status + " " + String(withRole.raw).slice(0, 300));
   const token = withRole.body.access_token;
   const audience = claimOf(token, "aud");
-  assert.ok([].concat(audience).indexOf(SPENT_ON.baseUri) >= 0,
+  assert.ok(urls.holds(audience, SPENT_ON.baseUri),
     "the token is addressed to " + SPENT_ON.baseUri + "; it carried " +
     JSON.stringify(audience));
   const scopes = String(claimOf(token, "scope")).split(/\s+/);

@@ -27,6 +27,9 @@
 // OWNED HERE (local: true): this repository's own OpenID Provider.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -167,7 +170,7 @@ async function test() {
   check("the OP iframe is framable by the registered relying party and " +
         "nobody else", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
-    assert.ok(ancestors.indexOf(RP) >= 0, csp);
+    assert.ok(urls.holds(ancestors, RP), csp);
     assert.ok(ancestors.indexOf("*") < 0 &&
               ancestors.indexOf("'none'") < 0, csp);
     assert.strictEqual(r.headers.get("x-frame-options"), null);
@@ -219,7 +222,7 @@ async function test() {
   check("login_required, carrying a session_state over the empty browser " +
         "state (section 3, computed here)", function () {
     assert.strictEqual(r.status, 302, r.raw.slice(0, 300));
-    assert.ok(location.indexOf(REDIRECT) === 0, location);
+    assert.ok(urls.isAt(location, REDIRECT), location);
     assert.strictEqual(params.get("error"), "login_required", location);
     assert.ok(holds(clientId, params.get("session_state"), ""), location);
   });
@@ -227,7 +230,7 @@ async function test() {
   const other = String(r.headers.get("location") || "");
   check("an OAuth request without openid carries no session_state",
         function () {
-    assert.ok(other.indexOf(REDIRECT) === 0, other);
+    assert.ok(urls.isAt(other, REDIRECT), other);
     assert.ok(!/session_state=/.test(other), other);
   });
 

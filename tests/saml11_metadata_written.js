@@ -34,6 +34,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const nodeCrypto = require('crypto');
 const kit = require('./tools/saml_signing_kit');
 
@@ -148,7 +151,7 @@ async function run(t) {
       (/[?&]SAMLart=([^&]+)/.exec(art.location || '') || [])[1] || '');
     const raw = Buffer.from(sAMLart, 'base64');
     t.check(art.statusCode === 303 &&
-            String(art.location).indexOf(artifact) === 0 &&
+            urls.isAt(art.location, artifact) &&
             /[?&]TARGET=/.test(art.location) && raw.length === 42 &&
             raw.readUInt16BE(0) === 1,
             label + ': the shire registered on artifact-01 is answered on ' +
@@ -238,7 +241,7 @@ async function run(t) {
         'profile', JSON.stringify(endpoints));
     const acs = [].concat(applications.get(rp).fields
       .samlAssertionConsumerService || []).map(String);
-    t.check(acs.indexOf(unbound) >= 0 && acs.indexOf(artifact) >= 0,
+    t.check(urls.holds(acs, unbound) && urls.holds(acs, artifact),
             'A3. the consumer registered by hand is kept beside the ' +
             'document\'s', JSON.stringify(acs));
     t.check(String(applications.get(rp).fields.samlSpMetadata || '') ===

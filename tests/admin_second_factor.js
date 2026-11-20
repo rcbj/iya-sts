@@ -45,6 +45,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.RD_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.RD_OUT;
   const http = require('http');
   const findings = [];
@@ -264,10 +267,13 @@ function childMain() {
          String(offeredPage.text).slice(0, 160));
     const ignored = await setupAct(b1, offeredPage, 'skip');
     const landed = await followTo(b1, ignored,
+                                  // The whole address: its path ends there.
                                   new RegExp('^' + REDIRECT.replace(
-                                    /[.*+?^${}()|[\]\\/]/g, '\\$&')));
-    note(String(landed.headers.location || '').indexOf(REDIRECT + '?code=') ===
-           0 && auditOf('authn.mfa.enrolment.offered', 'asf-alice').length &&
+                                    /[.*+?^${}()|[\]\\/]/g, '\\$&') +
+                                    '(?:[?#]|$)'));
+    note(urls.isAt(String(landed.headers.location || ''), REDIRECT) &&
+         /^\?code=/.test(new URL(landed.headers.location).search) &&
+         auditOf('authn.mfa.enrolment.offered', 'asf-alice').length &&
          auditOf('authn.mfa.enrolment.declined', 'asf-alice').length,
          'C2. Ignore signs them in on their password, and the offer and ' +
          'the refusal of it are both on the audit log',

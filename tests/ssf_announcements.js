@@ -36,6 +36,9 @@ const ROOT = path.join(__dirname, '..');
 // Runs in a child, with the whole stack loaded, and writes its findings.
 function childMain() {
   const ROOT = process.env.SA_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SA_OUT;
   const fs = require('fs');
   const findings = [];
@@ -62,8 +65,8 @@ function childMain() {
     const ids = ['admin-console', 'user-portal', 'report'];
     const asks = ids.map(function (id) {
       const record = receivers.streamFor(id);
-      return !!record && record.events_requested.indexOf(uri) >= 0 &&
-             record.events_delivered.indexOf(uri) >= 0;
+      return !!record && urls.holds(record.events_requested, uri) &&
+             urls.holds(record.events_delivered, uri);
     });
     note(asks.every(Boolean), 'A1. each of the three receiver streams asks ' +
          'for the announcement event and is agreed it', JSON.stringify(asks));
@@ -76,8 +79,8 @@ function childMain() {
     });
     receivers.seedStreams();
     const again = receivers.streamFor('report');
-    note(again.events_requested.indexOf(uri) >= 0 &&
-         again.events_delivered.indexOf(uri) >= 0,
+    note(urls.holds(again.events_requested, uri) &&
+         urls.holds(again.events_delivered, uri),
          'A2. a stream seeded before the event existed asks for it at the ' +
          'next seeding');
 
@@ -112,7 +115,7 @@ function childMain() {
         .filter(function (one) {
           const claims = one && (one.claims || one.set || {});
           const evs = claims.events || {};
-          return !!evs[uri] || JSON.stringify(one).indexOf(uri) >= 0;
+          return !!evs[uri] || urls.namesAddress(JSON.stringify(one), uri);
         }).length;
     };
     const before = ids.map(queued);
@@ -144,14 +147,14 @@ function childMain() {
       surfaces: ['admin-console'], by: 'a test' });
     note(fromStale.ok && fromStale.sent === 1 &&
          queued('admin-console') === consoleBefore + 1 &&
-         stale.events_delivered.indexOf(uri) >= 0,
+         urls.holds(stale.events_delivered, uri),
          'C1b. a stream carried over from the store without the event is ' +
          'made to take it and is sent to (#1091)', JSON.stringify(fromStale));
     stale.events_delivered = stale.events_delivered.filter(function (one) {
       return one !== uri;
     });
     receivers.askForAnnouncements(receivers.surfaceOf('admin-console'), stale);
-    note(stale.events_delivered.indexOf(uri) >= 0,
+    note(urls.holds(stale.events_delivered, uri),
          'C1c. a stream that requests the event but is not agreed it is ' +
          'agreed it (#1091)', JSON.stringify(stale.events_delivered));
 

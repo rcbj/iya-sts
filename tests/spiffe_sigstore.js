@@ -41,6 +41,9 @@
 //      attestation (the connection is refused), never a missing selector.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
@@ -373,11 +376,11 @@ function registry(images, asked) {
                                body: Buffer.from(body || ''),
                                why: 'HTTP ' + status });
     };
-    if (url.indexOf('https://auth.test/token') === 0) {
+    if (urls.isAt(url, 'https://auth.test/token')) {
       return reply(200, JSON.stringify({ token: 'pull-token' }));
     }
     const base = 'https://' + REGISTRY + '/v2/' + REPO + '/';
-    if (url.indexOf(base) !== 0) {
+    if (!urls.isUnder(url, base)) {
       return reply(404, '');
     }
     if (headers.Authorization !== 'Bearer pull-token') {
@@ -458,7 +461,7 @@ async function keyed(t, m) {
           'image-signature selectors (no subject or issuer: no certificate)',
           show(got));
   t.check(asked.some(function (u) {
-            return u.indexOf('https://auth.test/token?') === 0 &&
+            return urls.isAt(u, 'https://auth.test/token') &&
                    u.indexOf('scope=repository%3Ateam%2Fapp%3Apull') >= 0;
           }),
           'the registry\'s Bearer challenge was answered with a pull token ' +
@@ -751,10 +754,11 @@ async function tuf(t, m) {
           'verifies timestamp, snapshot and targets, and keeps the ' +
           'trusted_root.json whose length and hashes the targets name',
           show(got) + ' ' + show(first));
-  t.check(fetched.indexOf('https://tuf.test/3.root.json') >= 0 &&
-          fetched.indexOf('https://tuf.test/5.snapshot.json') >= 0 &&
-          fetched.indexOf('https://tuf.test/targets/' + sha256(target) +
-                          '.trusted_root.json') >= 0,
+  t.check(urls.holds(fetched, 'https://tuf.test/3.root.json') &&
+          urls.holds(fetched, 'https://tuf.test/5.snapshot.json') &&
+          urls.holds(fetched,
+                     'https://tuf.test/targets/' + sha256(target) +
+                     '.trusted_root.json'),
           'with consistent snapshots, by version and by hash', show(fetched));
 
   const refused = async function (label, versions, spoil) {

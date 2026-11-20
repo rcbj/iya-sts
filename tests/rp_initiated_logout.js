@@ -60,6 +60,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.RL_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.RL_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -284,7 +287,7 @@ function childMain() {
                        post_logout_redirect_uri: 'https://evil.example/x' });
     why = whyOf(w.text);
     note(boxOf(w.text) === boxFor('notRegistered', 'https://evil.example/x') &&
-           leads(w.text) && why === '' && w.text.indexOf(BACK) < 0,
+           leads(w.text) && why === '' && !urls.namesAddress(w.text, BACK),
          'b1d. no hint and an address the named client did not register: ' +
          'the same box, its own reason, the address sent and never the ' +
          'registered one', boxOf(w.text) || w.text.slice(0, 400));
@@ -328,7 +331,7 @@ function childMain() {
     d = await request(port, 'POST', '/oauth2/logout',
       { form: Object.assign({}, asked, { confirm: 'yes' }) });
     const back = String(d.headers.location || '');
-    note(d.status === 302 && back.indexOf(BACK) === 0 &&
+    note(d.status === 302 && urls.isAt(back, BACK) &&
            /[?&]state=st-b(&|$)/.test(back) && !(await alive()),
          'b5. the page\'s own form signs out and returns to the registered ' +
          'address WITH state', d.status + ' ' + back);
@@ -337,7 +340,7 @@ function childMain() {
     idToken = await signIn('rl-alice');
     r = await logout({ id_token_hint: idToken, post_logout_redirect_uri: BACK,
                        state: 'st-c' });
-    note(r.status === 302 && String(r.headers.location).indexOf(BACK) === 0 &&
+    note(r.status === 302 && urls.isAt(r.headers.location, BACK) &&
            /state=st-c/.test(String(r.headers.location)) && !(await alive()),
          'c1. a verified hint for this session signs out at once, with state',
          r.status + ' ' + r.headers.location);
@@ -427,7 +430,7 @@ function childMain() {
              .test(r.text) &&
            /<h1>Sign-out request partly refused<\/h1>/.test(r.text) &&
            /<title>Sign-out request partly refused<\/title>/.test(r.text) &&
-           r.text.indexOf(BACK) < 0,
+           !urls.namesAddress(r.text, BACK),
          'd1b. and the page says so in a warning box as prominent as the ' +
          '"signed out" banner, above it: not one this client registered, ' +
          'not followed, the address asked for and the section, and nowhere ' +
@@ -453,7 +456,7 @@ function childMain() {
              ROOT, 'common', 'locales', 'oauthPages', 'fr.json'), 'utf8'))[
              'signedOut.notRegistered'].split('<code>')[0]) > 0 &&
            warningOf(r.text).indexOf('<code>https://evil.example/x</code>') >
-             0 && r.text.indexOf(BACK) < 0 &&
+             0 && !urls.namesAddress(r.text, BACK) &&
            /<h1>Demande de déconnexion refusée en partie<\/h1>/.test(r.text),
          'd1d. ui_locales=fr: the box and the heading in French, the ' +
          'addresses as they are',
@@ -506,7 +509,7 @@ function childMain() {
     note(plain.status === 400 && !plain.headers.location &&
            plain.json && plain.json.error === 'invalid_request' &&
            described.indexOf(SENTENCE) >= 0 &&
-           described.indexOf(REDIRECT) < 0 &&
+           !urls.namesAddress(described, REDIRECT) &&
            !/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(described),
          'e1. an unregistered redirect_uri is a 400, never redirected, and ' +
          'says it is not the redirect URI registered for this client, with ' +
@@ -516,7 +519,7 @@ function childMain() {
            /<h1>This request could not be completed<\/h1>/.test(page.text) &&
            page.text.indexOf('invalid_request') >= 0 &&
            page.text.replace(/&#39;|&#x27;|&apos;/g, '\'')
-             .indexOf(SENTENCE) >= 0 && page.text.indexOf(REDIRECT) < 0,
+             .indexOf(SENTENCE) >= 0 && !urls.namesAddress(page.text, REDIRECT),
          'e2. and a browser is shown that refusal on the error page, with ' +
          'the same status, error and description',
          page.status + ' ' + page.headers['content-type'] + ' ' +
@@ -719,7 +722,7 @@ function childMain() {
          'f3. prompt=select_account: the account picker, as it was — not a ' +
          'reason the notice names', f.at);
     f = await screenAfter({ max_age: '3600' });
-    note(!f.view && /[?&]code=/.test(f.at) && f.at.indexOf(REDIRECT) === 0,
+    note(!f.view && /[?&]code=/.test(f.at) && urls.isAt(f.at, REDIRECT),
          'f4. a max_age the session meets: answered at once, as it was',
          f.at.slice(0, 120));
     await new Promise(function (done) { setTimeout(done, 2100); });

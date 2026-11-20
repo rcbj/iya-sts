@@ -54,6 +54,9 @@
 // OWNED HERE (local: true). Its realms are removed only on a private probe.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const https = require("https");
 const zlib = require("zlib");
@@ -518,8 +521,8 @@ async function singleLogout() {
           "consumed SingleLogoutService ResponseLocation, on the Redirect " +
           "binding, with a LogoutResponse", function () {
     assert.strictEqual(ok.status, 303, K.shown(ok));
-    assert.strictEqual(ok.location.indexOf(m.host + "/slo-response?"), 0,
-                       ok.location);
+    assert.ok(urls.isAt(ok.location, m.host + "/slo-response") &&
+              new URL(ok.location).search !== "", ok.location);
     assert.ok(/LogoutResponse/.test(inflated(ok.location, "SAMLResponse")));
   });
   let c = await codeRose([P], "STS-SAML-0061", function () {

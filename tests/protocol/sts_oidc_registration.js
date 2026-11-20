@@ -453,7 +453,7 @@ async function encryptionAndDisplay() {
     ["oauthLogoUri", "oauthPolicyUri", "oauthTosUri"].forEach(function (k) {
       assert.ok(entry.indexOf(k) >= 0, k + " " + entry.slice(0, 300));
     });
-    assert.ok(entry.indexOf(LOGO) >= 0);
+    assert.ok(urls.namesAddress(entry, LOGO));
   });
   for (const bad of [{ logo_uri: "http://cdn.or.example/logo.png" },
                      { policy_uri: "/privacy" },

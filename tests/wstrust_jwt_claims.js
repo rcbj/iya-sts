@@ -106,6 +106,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const config = require('../common/config');
 const realms = require('../common/realms');
 require('../common/app');
@@ -642,7 +645,8 @@ function jwtCredential(t) {
             out.claims.aud === BACK &&
             out.claims.client_id === 'wj-front-client';
         } else {
-          ok = ok && body.indexOf('wj-alice') > 0 && body.indexOf(BACK) > 0;
+          ok = ok && body.indexOf('wj-alice') > 0 &&
+            urls.namesAddress(body, BACK);
         }
         t.check(ok, 'R1 (' + m + ', ' + kind[0] + '). the tier\'s own JWT ' +
                 'in the security header authenticates its OnBehalfOf',

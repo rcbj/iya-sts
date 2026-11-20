@@ -116,7 +116,10 @@ async function push(tenant, request) {
                    decoded.claims.iss + ", not " + conf.issuer + ".", seen);
   }
   if (tenant.ssf.audience &&
-      [].concat(decoded.claims.aud || []).indexOf(tenant.ssf.audience) < 0) {
+      // Each audience compared whole, never searched for as text.
+      ![].concat(decoded.claims.aud || []).some(function (one) {
+        return one === tenant.ssf.audience;
+      })) {
     log.debug("Leaving push(). Audience.");
     return refusal(tenant, 400, "invalid_audience", "The SET's aud is " +
                    JSON.stringify(decoded.claims.aud) + ", not " +

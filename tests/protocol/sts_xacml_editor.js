@@ -106,6 +106,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { Builder, By } = require("selenium-webdriver");
@@ -440,8 +443,7 @@ async function open(driver, url) {
   // no sign-on session; it reaches the realm's console the way the console
   // offers it, through the realm switcher, which keeps its token.
   const inRealm = base + "/realm/" + REALM + "/admin";
-  if (url === inRealm || url.indexOf(inRealm + "/") === 0 ||
-      url.indexOf(inRealm + "?") === 0) {
+  if (urls.isUnder(url, inRealm)) {
     await throughTheSwitcher(driver, url.slice((base + "/realm/" +
                                                  REALM).length));
     log.debug("Leaving open(). Through the switcher.");

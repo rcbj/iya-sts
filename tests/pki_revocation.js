@@ -47,6 +47,9 @@
 // file must not inherit a CONFIG_FILE from whatever launched the run.
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -770,7 +773,7 @@ async function run(t) {
     t.check(described.extensions.some(function (one) {
               return one.oid === '1.3.6.1.5.5.7.1.1';
             }) && flat.indexOf(pointsFor.ocsp) >= 0 &&
-            flat.indexOf(pointsFor.caIssuers) >= 0,
+            urls.namesAddress(flat, pointsFor.caIssuers),
             'and an Authority Information Access (1.3.6.1.5.5.7.1.1) naming ' +
             'that CA\'s OCSP responder and caIssuers address');
     t.check(revocation.issuedHere(REALM, 'assertions', cert.serialNumber),

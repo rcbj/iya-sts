@@ -185,6 +185,9 @@ function registry(t) {
 // ---------------------------------------------------------------------------
 function childMain() {
   const ROOT_DIR = process.env.M_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.M_OUT;
   const M = JSON.parse(process.env.M_MATERIAL);
   const fsC = require('fs');
@@ -979,7 +982,7 @@ function childMain() {
     }
     const implicitAt = String((landed.headers && landed.headers.location) ||
                               '');
-    note(landed.status === 302 && implicitAt.indexOf(IMPLICIT_CB) === 0 &&
+    note(landed.status === 302 && urls.isAt(implicitAt, IMPLICIT_CB) &&
          /error=invalid_request/.test(implicitAt) &&
          !/access_token=/.test(implicitAt) &&
          (await codeCount('STS-OAUTH-0490')) > implicitBefore,

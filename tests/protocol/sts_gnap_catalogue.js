@@ -53,6 +53,9 @@
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -532,7 +535,7 @@ async function test() {
     let res = first;
     for (let hop = 0; hop < 14; hop++) {
       if (res.status === 302 || res.status === 303) {
-        if (res.location.indexOf(RP_REDIRECT) === 0) {
+        if (urls.isAt(res.location, RP_REDIRECT)) {
           break;
         }
         // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE

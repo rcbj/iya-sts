@@ -98,6 +98,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -310,7 +313,7 @@ async function follow(cookies, url, options) {
     const loc = r.headers.get("location");
     if (!loc) break;
     const next = new URL(loc, r.url).toString();
-    if (next.indexOf(base) !== 0) {
+    if (!urls.isUnder(next, base)) {
       log.debug("Leaving follow().");
       return { r: r, landed: next };
     }

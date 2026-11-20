@@ -45,6 +45,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.RD_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.RD_OUT;
   const http = require('http');
   const findings = [];
@@ -317,12 +320,13 @@ function childMain() {
     const third = await passwordStep(b1f, authorizeAt, 'bd-alice', false);
     let landed = third.answer;
     for (let i = 0; i < 5 && landed.status >= 300 && landed.status < 400 &&
-         String(landed.headers.location || '').indexOf(REDIRECT) !== 0; i++) {
+         !urls.isAt(String(landed.headers.location || ''), REDIRECT); i++) {
       landed = await b1f.go('GET', pathOf(landed.headers.location));
     }
     const gen3Cookie = b1f.jar[cookieName];
-    note(String(landed.headers.location || '').indexOf(REDIRECT + '?code=') ===
-         0 && auditOf('authn.second-factor.skipped', 'bd-alice').length === 1,
+    note(urls.isAt(String(landed.headers.location || ''), REDIRECT) &&
+         /^\?code=/.test(new URL(landed.headers.location).search) &&
+         auditOf('authn.second-factor.skipped', 'bd-alice').length === 1,
          'F1. with the policy on, the password alone signs in on the ' +
          'remembered browser, and the audit log says the factor was skipped',
          third.answer.status + ' ' + String(landed.headers.location || ''));
@@ -370,7 +374,7 @@ function childMain() {
     };
     const refusedAt = copyDone === copy.answer ? copy.answer : copyDone;
     note((clearedIn(copy.answer) || clearedIn(copyDone)) &&
-         !String(refusedAt.headers.location || '').startsWith(REDIRECT),
+         !urls.isAt(String(refusedAt.headers.location || ''), REDIRECT),
          'H2. the sign-in on the compromised device does not reach the ' +
          'client, and the cookie is cleared so the next attempt is not ' +
          'refused on it', refusedAt.status + ' ' +

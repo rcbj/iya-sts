@@ -66,6 +66,9 @@
 // OWNED HERE (local: true): this repository's own OpenID Provider.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const http = require("http");
 const nodeCrypto = require("crypto");
@@ -367,11 +370,11 @@ async function authorize(jar, clientId, username, scope) {
       { action: "login", username: username, password: PASSWORD }, jar);
   }
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops += 1) {
+       !urls.isAt(r.location, REDIRECT); hops += 1) {
     r = await call("GET", /^https?:/.test(r.location) ? r.location
       : ORIGIN + r.location, undefined, {}, jar);
   }
-  const code = String(r.location).indexOf(REDIRECT) === 0
+  const code = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   assert.ok(code, "no code for " + clientId + ": " + r.status + " " +
             r.location + " " + String(r.text).slice(0, 300));

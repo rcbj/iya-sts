@@ -49,6 +49,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const https = require('https');
 const nodeCrypto = require('crypto');
@@ -351,7 +354,7 @@ async function childBody() {
     claims = null;
   }
   t.check(!!claims && claims.iss === own &&
-          [].concat(claims.aud).indexOf(ar.endpoint) >= 0 &&
+          urls.holds(claims.aud, ar.endpoint) &&
           claims.resource && claims.resource.id === 'doc-1' &&
           claims.denial_expires_at === ar.expires_at,
           'R2. the binding_token is the realm\'s JWS over the denied tuple, ' +

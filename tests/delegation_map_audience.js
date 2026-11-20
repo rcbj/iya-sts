@@ -27,6 +27,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const applications = require('../common/applications');
 require('../ldap/ldap_server');
 const adminActions = require('../admin-core/admin_actions');
@@ -94,7 +97,7 @@ function run(t) {
             JSON.stringify(nodes.map(function (n) { return n.id; })));
     const box = apiNodes[0] || {};
     t.check(box.application === API &&
-            (box.aliases || []).indexOf(AUDIENCE) >= 0 &&
+            urls.holds(box.aliases, AUDIENCE) &&
             (box.aliases || []).indexOf(CLIENT) >= 0,
             '1. the box is the registered application, with the audience and ' +
             'the client_id kept as the names it was also given',

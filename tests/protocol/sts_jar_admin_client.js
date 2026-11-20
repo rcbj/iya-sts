@@ -40,6 +40,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const http = require("http");
 const https = require("https");
@@ -303,7 +306,7 @@ function sentToSignIn(r) {
 function refusalOf(r) {
   log.debug("Entering refusalOf().");
   let error = "";
-  if (r.location && r.location.indexOf(REDIRECT) === 0) {
+  if (r.location && urls.isAt(r.location, REDIRECT)) {
     error = new URL(r.location).searchParams.get("error") || "";
   } else {
     const found = new RegExp("\\b(invalid_request_uri|" +
@@ -373,10 +376,10 @@ async function goodRequest(realm, host) {
   r = await authnSignin.signInWithJar(rb, r.location,
     { action: "login", username: PERSON, password: PASSWORD }, b.jar);
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops++) {
+       !urls.isAt(r.location, REDIRECT); hops++) {
     r = await b.go("GET", r.location);
   }
-  const back = String(r.location).indexOf(REDIRECT) === 0
+  const back = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams : new URLSearchParams();
   check(realm + ": the flow ends at the client with a code and the " +
         "OBJECT's state, not the query's", function () {

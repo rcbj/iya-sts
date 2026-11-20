@@ -40,6 +40,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const https = require('https');
 const path = require('path');
@@ -339,7 +342,7 @@ async function childBody() {
   const back = await get(port, b.jar, done.location, pem(mine),
                          mine.issued.privateKeyPem);
   const landed = String(back.headers.location || '');
-  t.check(landed.indexOf(REDIRECT) === 0 && /[?&]code=/.test(landed),
+  t.check(urls.isAt(landed, REDIRECT) && /[?&]code=/.test(landed),
           'A6: and the authorization endpoint answers the relying party ' +
           'with a code — the protocol endpoint itself is unchanged',
           back.status + ' ' + landed);

@@ -49,6 +49,9 @@
 // OWNED HERE (local: true): this repository's own sign-in and provider.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -440,7 +443,7 @@ async function signIn(who, how, key, extra, given) {
                     text: JSON.stringify(answer.json || {}) };
     }
   }
-  if (out.final.location.indexOf(REDIRECT) === 0) {
+  if (urls.isAt(out.final.location, REDIRECT)) {
     out.params = new URL(out.final.location).searchParams;
     if (out.params.get("code")) {
       const t = await send(realmBase(REALM) + "/oauth2/token", {

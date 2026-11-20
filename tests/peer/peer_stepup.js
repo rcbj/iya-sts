@@ -146,7 +146,10 @@ async function resource(tenant, name, authorization) {
     log.debug("Leaving resource(). Expired.");
     return refused(tenant, name, "it has expired.");
   }
-  if ([].concat(claims.aud || []).indexOf(config.audience) < 0) {
+  // Each audience compared whole, never searched for as text.
+  if (![].concat(claims.aud || []).some(function (one) {
+    return one === config.audience;
+  })) {
     log.debug("Leaving resource(). Audience.");
     return refused(tenant, name, "it is addressed to " +
                    JSON.stringify(claims.aud) + ", not to " +
