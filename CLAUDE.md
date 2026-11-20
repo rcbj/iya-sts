@@ -226,11 +226,18 @@ home:
   why each is a variable (`STS_IMAGE`, `*_CONTAINER_NAME`,
   `STS_NETWORK_SUBNET`). `tests/stack_network.js` holds the subnet default
   outside every launcher's range.
-* **The `sts` healthcheck picks its scheme** from `STS_HTTPS`, or from
-  `STS_OAUTH2_RFC9700` / `STS_OAUTH2_OAUTH21` when that is unset, and does not
-  verify the certificate. A probe speaking the wrong scheme marks a working
-  container `unhealthy`. It uses `node -e` rather than curl so that it needs
-  only the runtime, and it fails on a non-200, not just on a closed port.
+* **The `sts` healthcheck is `common/healthcheck_probe.js`** (2026-11-20),
+  which picks its scheme from `STS_HTTPS`, or from `STS_OAUTH2_RFC9700` /
+  `STS_OAUTH2_OAUTH21` when that is unset, and over TLS VERIFIES the
+  certificate against the Root the service publishes on its loopback
+  revocation listener (8082), chain and name; its header argues the anchors.
+  A probe speaking the wrong scheme marks a working container `unhealthy`. It
+  is node rather than curl so that it needs only the runtime, and it fails on
+  a non-200, not just on a closed port. **This file and
+  `docker-compose-quick.yml` pull the published image by default, and 1.1.0
+  has no probe**, so they run it when the image has it and the old
+  unverified one-liner only when it does not; drop the fall back once no
+  supported image lacks the file.
 * **The `sts` build context is the repository root with the default
   Dockerfile** (`COPY . ./`, `.dockerignore` deciding what goes in).
   **`image:` defaults to the PUBLISHED name, `iyasec/iya-sts`** (and

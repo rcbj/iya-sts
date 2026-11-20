@@ -893,12 +893,12 @@ services:
     tmpfs:
       - /run/sts-startup:mode=0700,uid=10001,gid=10001
     healthcheck:
-      # The scheme follows the mode in this service — oauth2.rfc9700 derives
-      # global.https — so the probe decides which module to use the same way
-      # config.js does rather than assuming http. `rejectUnauthorized: false`
-      # because the certificate is regenerated on every start and nothing can
-      # have an anchor for it: liveness is this check's question, not trust.
-      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      # common/healthcheck_probe.js (2026-11-20): the scheme decided as
+      # config.js derives global.https, and over TLS the certificate VERIFIED
+      # against the Root the service publishes on its loopback revocation
+      # listener (8082), chain and name — a listener presenting a chain that
+      # does not reach it is unhealthy. Its header argues the anchors.
+      test: ["CMD", "node", "/usr/src/sts/common/healthcheck_probe.js"]
       interval: 5s
       timeout: 5s
       retries: 24

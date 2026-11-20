@@ -196,8 +196,11 @@ uid 10001.
 else.** It carries the `node` binary but not npm, corepack or a compiler, and
 of the operating system's tools only the base's and `iproute2` (for `ip addr
 add`, which a realm's SPIFFE listeners on an address of their own need). There
-is no `curl`, `wget` or `jq` in it: a health check is `node -e`, as the compose
-file's is. To add a package to an image of your own, build `FROM` this one
+is no `curl`, `wget` or `jq` in it: a health check is node, as the compose
+file's is — `node /usr/src/sts/common/healthcheck_probe.js`, which verifies
+the certificate against the Root the service publishes on its plain-HTTP
+port 8082 (an image older than 1.1.1 does not have it, which is why the file
+below falls back to an unverified check there). To add a package to an image of your own, build `FROM` this one
 and install it there. A cloud SDK is a build argument instead
 (`STS_CLOUD_SDKS`).
 
@@ -424,7 +427,7 @@ services:
         exec setpriv --reuid=10001 --regid=10001 --clear-groups \
           --inh-caps=-all --bounding-set=-all --no-new-privs node server.js
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "if [ -f /usr/src/sts/common/healthcheck_probe.js ]; then exec node /usr/src/sts/common/healthcheck_probe.js; fi; node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 6
