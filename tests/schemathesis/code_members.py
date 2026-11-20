@@ -90,6 +90,12 @@ HELP_TEXT_BY_ROUTE = {
     "/admin-api/caches": (
         ".caches[].bound",
     ),
+    # The one setting `config/set` answers with: config.js's row, the same
+    # fixed help text as `.settings[].description` (fuzz run #569, where
+    # webauthn.insecureAlgorithms's names STS-AUTHN-0294).
+    "/admin-api/config/set": (
+        ".setting.description",
+    ),
     "/admin-api/crypto": (
         ".families[].algorithms[].how",
     ),
