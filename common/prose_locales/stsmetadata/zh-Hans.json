@@ -1943,6 +1943,26 @@
     "en": "ee45e233f511ee47",
     "text": "非规范。创建操作接受的封闭属性目录，以 JSON 形式提供：本目录中可以赋予一个人的每个属性，每个属性都指明它在签发的令牌或凭证中对应的声明，以及其名称来源的文档——这很重要，因为本目录没有模式，在任何地方都不会拒绝其中任何属性——此外还有新人员将落入的 ou=users 容器（本领域的容器，因为目录按领域划分），以及可以为其提供进入方式的四种途径。uid 不在列表中，因为它就是用户名；userPassword 也不在，因为密码通过凭据选项设置，以便被哈希而不是直接写下。它不创建任何人：创建操作是 POST /admin-api/users/create，而这是该调用据以校验的列表——不在列表中的属性名称会被拒绝，整个创建都会失败，因此先读取此列表的调用方不会在事后被告知其发送的内容有一半被忽略了。对应 GET /admin/users/new。"
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "非规范。以 JSON 说明创建组可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——cn 为必填，描述、地址和成员不是——以及新组将落入的 ou=groups 容器，即本领域的容器。它不创建任何内容：创建是 POST /admin-api/groups/create。对应 GET /admin/groups/new。"
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "非规范。以 JSON 说明创建角色可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——名称为必填，其余不是——以及存储角色的容器和角色可以适用的应用。它不创建任何内容：创建是 POST /admin-api/roles/create-role。对应 GET /admin/roles/new。"
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "非规范。以 JSON 说明注册设备可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——所有者为必填，其余不是——以及其选项所来自的封闭集合。它不注册任何内容：创建是 POST /admin-api/devices/create。对应 GET /admin/devices/new。"
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "非规范。以 JSON 说明添加属性来源可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——id、主机、数据库、用户、表、其键列以及至少一个列映射为必填，其余有默认值——以及其选项所来自的封闭集合。它不添加任何内容：创建是 POST /admin-api/attribute-sources/add-source。对应 GET /admin/attribute-sources/new。"
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "非规范。以 JSON 说明添加密钥推送目标可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——标识符和提供方始终必填，有些仅对某些提供方必填（requiredWhen）：除 file 外均需写入凭据，aws 需区域，azure 和 vault 需端点，file 需目录。它不添加任何内容：创建是 POST /admin-api/secret-destinations/add-destination。对应 GET /admin/secret-destinations/new。"
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "非规范。创建操作接受的两套封闭词汇，以 JSON 形式提供：应用可以声明的八种种类和十四个协议系列，每项附带其含义，此外还有新条目将落入的 ou=applications 容器——本领域的容器，因为目录按领域划分——它将容纳多少个，以及创建时不能接受但 set/add/remove 可以接受的属性。它不创建任何东西：创建操作是 POST /admin-api/applications/create，而这是该调用据以校验的列表，发布它是为了让调用方从服务本身而不是从文档中的副本了解可以发送什么。声明一个系列不授予也不拒绝任何东西——没有任何端点读取 appAllowedProtocol。对应 GET /admin/applications/new。"

@@ -225,9 +225,9 @@ class SecretDestinationsPage {
         return { value: one, label: one };
       });
     };
-    const field = function (name: string, example?: string): Json {
-      return { label: t.html('consoleSecretDestinations.fields.' + name),
-               placeholder: example };
+    // Each label's key written out whole, so the catalog check can find it.
+    const field = function (key: string, example?: string): Json {
+      return { label: t.html(key), placeholder: example };
     };
     // The file provider is offered in development mode only, and its
     // directory with it.
@@ -248,20 +248,28 @@ class SecretDestinationsPage {
             placeholder: 'vault-prod' },
           name: { label: t.html('consoleSecretDestinations.row.name'),
                   placeholder: 'Production Vault' },
-          provider: Object.assign(field('provider'), {
+          provider: Object.assign(field(
+            'consoleSecretDestinations.fields.provider'), {
             type: 'select', choices: listed(json.providers) }),
-          payload: Object.assign(field('payload'), {
+          payload: Object.assign(field(
+            'consoleSecretDestinations.fields.payload'), {
             type: 'select', choices: listed(json.payloads),
             value: 'password' }),
-          region: field('region', 'us-east-1'),
-          project: field('project', 'my-project'),
-          endpoint: field('endpoint', 'https://vault.example.com:8200'),
-          mount: field('mount', 'secret'),
-          field: field('field', 'value'),
-          directory: field('directory', '/run/sts-test-secrets'),
-          caCertificates: Object.assign(field('caCertificates',
+          region: field('consoleSecretDestinations.fields.region',
+                        'us-east-1'),
+          project: field('consoleSecretDestinations.fields.project',
+                         'my-project'),
+          endpoint: field('consoleSecretDestinations.fields.endpoint',
+                          'https://vault.example.com:8200'),
+          mount: field('consoleSecretDestinations.fields.mount', 'secret'),
+          field: field('consoleSecretDestinations.fields.field', 'value'),
+          directory: field('consoleSecretDestinations.fields.directory',
+                           '/run/sts-test-secrets'),
+          caCertificates: Object.assign(field(
+            'consoleSecretDestinations.fields.caCertificates',
             '-----BEGIN CERTIFICATE-----'), { type: 'long' }),
-          credential: Object.assign(field('credential'), {
+          credential: Object.assign(field(
+            'consoleSecretDestinations.fields.credential'), {
             type: 'password', attrs: { autocomplete: 'off' } })
         }
       }, t);

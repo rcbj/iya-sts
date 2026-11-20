@@ -338,7 +338,7 @@ Scope: `admin:read`.
 
 Adds one value to the role's `roleConferredBy` (#454): every PERSON who signs in through that client holds the role on the access token the client is issued, beside the roles they hold themselves, and on no other token. It is how the console's client, `sts-admin-console`, gives everybody who signs in to the console ADMIN_CONSOLE. The client must be registered in this realm. A role only applications may hold, and the two console roles, cannot be conferred.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -394,7 +394,7 @@ It is NOT the same relation as `appRequiredRole` on an application entry, which 
 
 A BUILT-IN role is refused by name: those six are computed and have no membership to edit.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -449,7 +449,7 @@ An owner must name somebody: one that names no person and no group here is refus
 
 **AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything; the user portal lists what a person owns.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -513,7 +513,7 @@ Adds one value to the role's `rolePermission` (#303). **A scope is a request and
 
 **The native permissions `admin:read` and `admin:write` are refused**: they are authorized by the console roles ADMIN_READ and ADMIN_WRITE alone, whose permissions are fixed. Put an application in one of those with `add-member`.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -565,7 +565,7 @@ Writes one entry under `ou=roles` with no members. Adding members is `add-member
 
 The name becomes an LDAP RDN and a value in a token claim, so it is up to 64 characters of letters, digits, and `. _ : @ -` or a space. **It may not be one of the six built-in roles**: those are computed and answered first, so a stored role of the same name could never be reached.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -617,7 +617,7 @@ Deletes the entry. **Applications that still REQUIRE it are named in the reply a
 
 Nothing already ISSUED is touched. A token minted while somebody held the role is still valid and still carries it in the roles claim.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -666,7 +666,7 @@ Scope: `admin:write`.
 
 Replaces the `description` — and, where given, the `displayName` and `memberTypes` (#93) — and leaves the membership exactly as it was. It is an action of its own rather than a field on `create-role` because creating an existing role is refused: roles are edited in place.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -706,6 +706,46 @@ Scope: `admin:write`.
 | `message` | string |  |  |
 | `name` | string |  |  |
 | `ok` | boolean | yes |  |
+
+## GET /admin-api/roles/new
+
+`getNewRoleForm`
+
+**What a role may be created with, and which of it is required**
+
+The create's fields in `createFields`, each with `required` — `role`, the name, is the one the create refuses without; `description`, `application`, `displayName` and `memberTypes` are optional — plus the container roles are stored in (empty when this process has no directory to store one in, when `canWrite` is false too) and the applications a role may be for. **It creates nothing**: the create is `POST /admin-api/roles/create-role`.
+
+**Mirrors** `GET /admin/roles/new` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The fields, which are required, the container and the application choices.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `applicationChoices` | list |  |  |
+| `applicationChoices[].identifier` | string |  |  |
+| `applicationChoices[].name` | string |  |  |
+| `canWrite` | boolean |  |  |
+| `container` | string |  |  |
+| `createFields` | list |  |  |
+| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
+| `createFields[].name` | string | yes |  |
+| `createFields[].required` | boolean | yes |  |
+| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
+| `createFields[].requiredWhen.field` | string | yes |  |
+| `createFields[].requiredWhen.values` | list | yes |  |
+| `createFields[].requiredWhen.values[]` | string |  |  |
+| `realm` | object |  |  |
+| `realm.id` | string |  |  |
+| `realm.name` | string |  |  |
 
 ## GET /admin-api/roles/preview
 
@@ -817,7 +857,7 @@ Scope: `admin:read`.
 
 Removes one value from the role's `roleConferredBy` (#454). The client's tokens stop carrying the role at once at `/admin-api`, whose gate asks on every call, and at the next issuance everywhere else. Taking `sts-admin-console` off ADMIN_CONSOLE leaves the console unable to draw itself until it is put back.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -867,7 +907,7 @@ Removes one value from the role entry. Matched case-insensitively, for the reaso
 
 **Nothing already ISSUED is touched**, exactly as revoking a delegated permission does not re-judge a grant already made. The next issuance is decided without the role; a token minted a minute ago still carries it.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -918,7 +958,7 @@ Scope: `admin:write`.
 
 Takes one `owner` value off the role and writes at once (#604). `owner` is the DN the role lists; one it does not list is refused. The last owner may go: a role needs none.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -978,7 +1018,7 @@ Scope: `admin:write`.
 
 Removes one value from the role's `rolePermission` (#303). The next issuance is decided without it; a token already issued keeps what it carries, except at `/admin-api`, whose gate asks the roles again on every call.
 
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 

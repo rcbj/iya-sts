@@ -1943,6 +1943,26 @@
     "en": "ee45e233f511ee47",
     "text": "ICKE-SPEC. DEN SLUTNA ATTRIBUTKATALOG SOM ETT SKAPANDE TAR, som JSON: varje attribut som en person i den här katalogen kan få, vart och ett med det anspråk det når i en utfärdad token eller ett utfärdat intyg och det dokument som dess namn kommer från — vilket spelar roll eftersom den här katalogen INTE HAR NÅGOT SCHEMA och inte skulle neka något av dem någonstans — plus den ou=users-behållare som en ny person skulle hamna i (DEN HÄR SFÄRENS, eftersom katalogen är per sfär) och de fyra sätten personen kan få en väg in. uid finns inte i listan eftersom det ÄR användarnamnet, och userPassword finns inte eftersom ett lösenord går via alternativet för inloggningsuppgift så att det hashas snarare än skrivs ner. DEN SKAPAR INGEN: skapandet är POST /admin-api/users/create, och detta är listan som det anropet validerar mot — ett attributnamn som inte finns på den nekas och hela skapandet misslyckas, så en anropare som läser detta först kan inte i efterhand få veta att hälften av det den skickade ignorerades. Speglar GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "UTANFÖR SPECIFIKATION. Vad en grupp kan skapas med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — cn krävs, beskrivningen, adressen och medlemmarna gör det inte — plus behållaren ou=groups där en ny grupp skulle hamna, DENNA REALMS. DEN SKAPAR INGENTING: skapandet är POST /admin-api/groups/create. Speglar GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "UTANFÖR SPECIFIKATION. Vad en roll kan skapas med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — namnet krävs, resten gör det inte — plus behållaren där roller lagras och de program en roll kan gälla. DEN SKAPAR INGENTING: skapandet är POST /admin-api/roles/create-role. Speglar GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "UTANFÖR SPECIFIKATION. Vad en enhet kan registreras med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — ägaren krävs, resten gör det inte — plus de slutna mängder dess val kommer från. DEN REGISTRERAR INGENTING: skapandet är POST /admin-api/devices/create. Speglar GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "UTANFÖR SPECIFIKATION. Vad en attributkälla kan läggas till med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — id, värd, databas, användare, tabell, dess nyckelkolumn och minst en kolumnmappning krävs, resten har standardvärden — plus de slutna mängder dess val kommer från. DEN LÄGGER INTE TILL NÅGOT: skapandet är POST /admin-api/attribute-sources/add-source. Speglar GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "UTANFÖR SPECIFIKATION. Vad ett mål för hemligheter kan läggas till med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — identifieraren och leverantören alltid, och vissa bara för vissa leverantörer (requiredWhen): skrivuppgiften för alla utom file, regionen för aws, slutpunkten för azure och vault, katalogen för file. DEN LÄGGER INTE TILL NÅGOT: skapandet är POST /admin-api/secret-destinations/add-destination. Speglar GET /admin/secret-destinations/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "ICKE-SPEC. DE TVÅ SLUTNA VOKABULÄRER SOM ETT SKAPANDE TAR, som JSON: de åtta slagen och de fjorton protokollfamiljer som en applikation kan DEKLARERAS för, var och en med vad den betyder, plus den ou=applications-behållare som en ny post skulle hamna i — DEN HÄR SFÄRENS, eftersom katalogen är per sfär — hur många den kommer att innehålla och de attribut som ett skapande inte kan ta men som set/add/remove kan. DEN SKAPAR INGENTING: skapandet är POST /admin-api/applications/create, och detta är listan som det anropet validerar mot, publicerad så att en anropare lär sig vad den får skicka från tjänsten snarare än från en kopia i ett dokument. Att deklarera en familj beviljar och nekar ingenting — ingen slutpunkt läser appAllowedProtocol. Speglar GET /admin/applications/new."

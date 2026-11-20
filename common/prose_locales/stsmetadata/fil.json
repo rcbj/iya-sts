@@ -1943,6 +1943,26 @@
     "en": "ee45e233f511ee47",
     "text": "NON-SPEC. ANG SARADONG ATTRIBUTE CATALOGUE NA TINATANGGAP NG CREATE, bilang JSON: bawat attribute na puwedeng ibigay sa isang tao sa directory na ito, bawat isa ay nagpapangalan sa claim na naaabot nito sa in-issue na token o credential at sa dokumentong pinagmulan ng pangalan nito — na mahalaga dahil WALANG SCHEMA ang directory na ito at walang tatanggihan sa mga iyon saanman — at ang ou=users container na kalalagyan ng bagong tao (SA REALM NA ITO, dahil per realm ang directory) at ang apat na paraan para mabigyan siya ng daan papasok. Wala sa listahan ang uid dahil ito ANG username, at wala ang userPassword dahil dumadaan ang password sa credential option para ma-hash ito sa halip na isulat. WALA ITONG GINAGAWANG TAO: ang create ay POST /admin-api/users/create, at ito ang listahang pinagva-validate-an ng tawag na iyon — tinatanggihan ang pangalan ng attribute na wala rito at nabibigo ang buong create, kaya ang caller na unang bumasa nito ay hindi masasabihan pagkatapos na binalewala ang kalahati ng ipinadala nito. Sinasalamin ang GET /admin/users/new."
   },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipanglikha ng grupo, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang cn, hindi ang paglalarawan, ang address at ang mga miyembro — pati ang container na ou=groups kung saan mapupunta ang bagong grupo, ang sa REALM NA ITO. WALA ITONG NILILIKHA: ang paglikha ay POST /admin-api/groups/create. Katumbas ng GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipanglikha ng role, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang pangalan, hindi ang iba — pati ang container kung saan iniimbak ang mga role at ang mga application na maaaring para sa isang role. WALA ITONG NILILIKHA: ang paglikha ay POST /admin-api/roles/create-role. Katumbas ng GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipangrehistro ng device, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang may-ari, hindi ang iba — pati ang mga saradong set na pinagmumulan ng mga pagpipilian nito. WALA ITONG NIREREHISTRO: ang paglikha ay POST /admin-api/devices/create. Katumbas ng GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipangdagdag ng attribute source, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — kailangan ang id, ang host, ang database, ang user, ang table, ang key column nito at kahit isang column mapping, may mga default ang iba — pati ang mga saradong set na pinagmumulan ng mga pagpipilian nito. WALA ITONG IDINARAGDAG: ang paglikha ay POST /admin-api/attribute-sources/add-source. Katumbas ng GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "HINDI SPEC. Kung ano ang maaaring ipangdagdag ng secret destination, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — ang identifier at ang provider palagi, at ilan para sa ilang provider lamang (requiredWhen): ang write credential para sa lahat maliban sa file, ang region para sa aws, ang endpoint para sa azure at vault, ang directory para sa file. WALA ITONG IDINARAGDAG: ang paglikha ay POST /admin-api/secret-destinations/add-destination. Katumbas ng GET /admin/secret-destinations/new."
+  },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
     "text": "NON-SPEC. ANG DALAWANG SARADONG BOKABULARYONG TINATANGGAP NG CREATE, bilang JSON: ang walong uri at ang labing-apat na protocol family na puwedeng IDEKLARA para sa isang application, bawat isa kasama ang ibig sabihin nito, at ang ou=applications container na kalalagyan ng bagong entry — SA REALM NA ITO, dahil per realm ang directory — kung ilan ang mahahawakan nito, at ang mga attribute na hindi tinatanggap ng create pero tinatanggap ng set/add/remove. WALA ITONG GINAGAWA: ang create ay POST /admin-api/applications/create, at ito ang listahang pinagva-validate-an ng tawag na iyon, inilathala para malaman ng caller kung ano ang puwede nitong ipadala mula sa serbisyo at hindi mula sa isang kopya sa dokumento. Walang ibinibigay o tinatanggihan ang pagdedeklara ng family — walang endpoint na bumabasa ng appAllowedProtocol. Sinasalamin ang GET /admin/applications/new."

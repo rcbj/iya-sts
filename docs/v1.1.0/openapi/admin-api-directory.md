@@ -193,7 +193,7 @@ Scope: `admin:read`.
 
 A database this realm reads people's attributes from. Refused for an attribute another source writes, one no outside source may write, a host attributeSources.hostPatterns does not allow, or a name that is not an identifier. Audited.
 
-**Mirrors** `POST /admin/attribute-sources` on the admin console.
+**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -213,7 +213,7 @@ Scope: `admin:write`.
 | `columns` | map | yes | { "&lt;column>": "&lt;directory attribute>" }. No attribute this service keeps, no identity or group membership, no mail; an attribute has one source. |
 | `columns.{key}` | string |  |  |
 | `database` | string | yes |  |
-| `dialect` | one of `postgres`, `mysql` | yes | PostgreSQL, or MySQL / MariaDB. |
+| `dialect` | one of `postgres`, `mysql` |  | PostgreSQL, or MySQL / MariaDB: `postgres` when absent. Sent empty, it is refused. |
 | `enabled` | boolean |  |  |
 | `host` | string | yes | The database host; attributeSources.hostPatterns may narrow it. |
 | `id` | string | yes | The source's id in this realm. |
@@ -323,6 +323,47 @@ Scope: `admin:write`.
 | `source.user` | string |  |  |
 | `why` | string |  |  |
 
+## GET /admin-api/attribute-sources/new
+
+`getNewAttributeSourceForm`
+
+**What an attribute source may be added with, and which of it is required**
+
+The create's fields in `createFields`, each with `required` — `id`, `host`, `database`, `user`, `table`, `keyColumn` and `columns` (at least one `column=attribute`) are refused when empty; every other field is optional, with the default the create applies when it is absent — plus the closed sets the form's choices come from and `attributeSources.hostPatterns`. **It adds nothing**: the create is `POST /admin-api/attribute-sources/add-source`.
+
+**Mirrors** `GET /admin/attribute-sources/new` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The fields, which are required, and the choices.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `createFields` | list |  |  |
+| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
+| `createFields[].name` | string | yes |  |
+| `createFields[].required` | boolean | yes |  |
+| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
+| `createFields[].requiredWhen.field` | string | yes |  |
+| `createFields[].requiredWhen.values` | list | yes |  |
+| `createFields[].requiredWhen.values[]` | string |  |  |
+| `dialects` | list |  |  |
+| `dialects[]` | string |  |  |
+| `hostPatterns` | string |  |  |
+| `modes` | list |  |  |
+| `modes[]` | string |  |  |
+| `onFailure` | list |  |  |
+| `onFailure[]` | string |  |  |
+| `passwordProviders` | list |  |  |
+| `passwordProviders[]` | string |  |  |
+
 ## POST /admin-api/attribute-sources/refresh-person
 
 `refreshAttributeSourcePerson`
@@ -331,7 +372,7 @@ Scope: `admin:write`.
 
 From every source that allows on-demand, or the one named by `id`. Audited.
 
-**Mirrors** `POST /admin/attribute-sources` on the admin console.
+**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -447,7 +488,7 @@ Scope: `admin:write`.
 
 Queues the scheduled refresh for this source, which reads the realm's people a page at a time. Audited.
 
-**Mirrors** `POST /admin/attribute-sources` on the admin console.
+**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -562,7 +603,7 @@ Scope: `admin:write`.
 
 It leaves the register; what it wrote on people's entries stays. Audited.
 
-**Mirrors** `POST /admin/attribute-sources` on the admin console.
+**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -677,7 +718,7 @@ Scope: `admin:write`.
 
 Reads the row for a person (by `username`, whose key attribute is used) or for a `key` given outright, and returns it. Nothing is written.
 
-**Mirrors** `POST /admin/attribute-sources` on the admin console.
+**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -794,7 +835,7 @@ Scope: `admin:write`.
 
 The members given replace the source's; the rest are kept. Checked as add-source is. Audited.
 
-**Mirrors** `POST /admin/attribute-sources` on the admin console.
+**Mirrors** `POST /admin/attribute-sources and POST /admin/attribute-sources/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1374,7 +1415,7 @@ Scope: `admin:read`.
 
 Creates an application entry declared for the secret-destination family, with its location and its write credential (sealed, write-only). Refused for an unknown provider or payload, a missing location, a credential that is not its provider's shape, a plain http address, or a file in product mode. Audited, without the credential.
 
-**Mirrors** `POST /admin/secret-destinations` on the admin console.
+**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1390,9 +1431,9 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `caCertificates` | string |  | vault: PEM certificates of the CA its listener chains to. |
-| `credential` | string |  | The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. On a change, empty keeps the one set. |
-| `directory` | string |  | file: the absolute directory a secret name is a file in. |
-| `endpoint` | string |  | azure: the vault URL; vault: its address. https only. |
+| `credential` | string |  | The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. Required for every provider but file. On a change, empty keeps the one set. |
+| `directory` | string |  | file: the absolute directory a secret name is a file in. Required for file. |
+| `endpoint` | string |  | azure: the vault URL; vault: its address. https only. Required for azure and vault. |
 | `field` | string |  | vault, password payload: the field written; value when empty. |
 | `identifier` | string | yes | The destination's application identifier (add only): the entry it is filed under in ou=applications. |
 | `mount` | string |  | vault: the KV version 2 mount; secret when empty. |
@@ -1400,7 +1441,7 @@ Scope: `admin:write`.
 | `payload` | one of `password`, `json` |  | password (the bare password) or json ({username, password, realm, rotatedAt}). |
 | `project` | string |  | gcp: the project a short secret name is in. |
 | `provider` | one of `aws`, `gcp`, `azure`, `vault`, `file` | yes | aws, gcp, azure, vault, or file (development mode only). |
-| `region` | string |  | aws: the region. |
+| `region` | string |  | aws: the region. Required for aws. |
 
 **200**: The destination as the register now answers it.
 
@@ -1464,6 +1505,45 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `version` | number, or string, or null |  |  |
 
+## GET /admin-api/secret-destinations/new
+
+`getNewSecretDestinationForm`
+
+**What a secret destination may be added with, and which of it is required**
+
+The create's fields in `createFields`, each with `required` — `identifier` and `provider` are refused when empty — and, for a field required for some providers only, `requiredWhen`: the write `credential` for every provider but `file`, AWS's `region`, Azure's and Vault's `endpoint`, the file provider's `directory`. Every other field is optional. Plus the closed sets the form's choices come from. **It adds nothing**: the create is `POST /admin-api/secret-destinations/add-destination`.
+
+**Mirrors** `GET /admin/secret-destinations/new` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The fields, which are required, and the choices.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `createFields` | list |  |  |
+| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
+| `createFields[].name` | string | yes |  |
+| `createFields[].required` | boolean | yes |  |
+| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
+| `createFields[].requiredWhen.field` | string | yes |  |
+| `createFields[].requiredWhen.values` | list | yes |  |
+| `createFields[].requiredWhen.values[]` | string |  |  |
+| `credentialShapes` | map |  |  |
+| `credentialShapes.{key}` | string |  |  |
+| `fileAllowed` | boolean |  |  |
+| `payloads` | list |  |  |
+| `payloads[]` | string |  |  |
+| `providers` | list |  |  |
+| `providers[]` | string |  |  |
+
 ## POST /admin-api/secret-destinations/remove-destination
 
 `removeSecretDestination`
@@ -1472,7 +1552,7 @@ Scope: `admin:write`.
 
 Deletes its application entry, credential and all. Nothing at the secrets manager changes. Audited.
 
-**Mirrors** `POST /admin/secret-destinations` on the admin console.
+**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1559,7 +1639,7 @@ Scope: `admin:write`.
 
 Writes a random password nobody uses, as the destination's payload, to `secretName` — which must already exist and must be kept for testing: a secret a service account's rotation writes is refused. Proves the credential, the address and the secret. Audited.
 
-**Mirrors** `POST /admin/secret-destinations` on the admin console.
+**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1647,7 +1727,7 @@ Scope: `admin:write`.
 
 The members given replace the destination's; the rest are kept, the credential included when none is given. Checked as add-destination is. Audited, without the credential.
 
-**Mirrors** `POST /admin/secret-destinations` on the admin console.
+**Mirrors** `POST /admin/secret-destinations and POST /admin/secret-destinations/new` on the admin console.
 
 Scope: `admin:write`.
 
