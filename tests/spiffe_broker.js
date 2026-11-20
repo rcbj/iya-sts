@@ -51,6 +51,9 @@
 // reason.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
@@ -605,7 +608,7 @@ function childMain() {
             svids[0].spiffe_id === spiffeIdLib.make(td, '/by-pid') &&
             svids[0].hint === 'internal' &&
             claims.sub === svids[0].spiffe_id &&
-            [].concat(claims.aud).indexOf('https://api.test') >= 0,
+            urls.holds(claims.aud, 'https://api.test'),
             'a PROCESS reference is attested by the unix attestor and ' +
             'answered with its entry\'s JWT-SVID — the admin entry left out, ' +
             'the duplicate hint dropped', { err: a.err, svids: svids });

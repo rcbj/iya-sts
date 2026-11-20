@@ -60,6 +60,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -284,7 +287,7 @@ function childMain() {
       note(r.status === 200 && claims.act &&
            claims.act.sub === clientSubIn(m, 'txp-front') &&
            claims.act.iss === claims.iss && !!claims.iss &&
-           [].concat(claims.aud).indexOf(BACK) >= 0 && row &&
+           urls.holds(claims.aud, BACK) && row &&
            /issuance policy allowed delegation/.test(row.authorizedBy) &&
            row.intermediary &&
            row.intermediary.presented === clientSubIn(m, 'txp-front'),

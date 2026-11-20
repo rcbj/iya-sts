@@ -324,8 +324,9 @@ function childMain() {
       landed = await b1f.go('GET', pathOf(landed.headers.location));
     }
     const gen3Cookie = b1f.jar[cookieName];
-    note(String(landed.headers.location || '').indexOf(REDIRECT + '?code=') ===
-         0 && auditOf('authn.second-factor.skipped', 'bd-alice').length === 1,
+    note(urls.isAt(String(landed.headers.location || ''), REDIRECT) &&
+         /^\?code=/.test(new URL(landed.headers.location).search) &&
+         auditOf('authn.second-factor.skipped', 'bd-alice').length === 1,
          'F1. with the policy on, the password alone signs in on the ' +
          'remembered browser, and the audit log says the factor was skipped',
          third.answer.status + ' ' + String(landed.headers.location || ''));

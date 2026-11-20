@@ -36,6 +36,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -478,7 +481,7 @@ function childMain() {
                       protocol: 'http' };
     const view = adminViews.applicationDetailJson(fakeReq, PUBLISHER);
     const section = view.json && view.json.softwareStatements;
-    note(section && section.declaredIssuers.indexOf(ISS) >= 0 &&
+    note(section && urls.holds(section.declaredIssuers, ISS) &&
          section.usableKeys === 1 && section.issued &&
          section.issued.verifies === true &&
          section.issued.statement === noExpiry.softwareStatement,

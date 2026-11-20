@@ -57,6 +57,9 @@
 //      for by a poll-now.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -660,7 +663,7 @@ function childMain() {
       return r.url === CF + '/stream' && r.method === 'POST';
     })[0] || { body: {} };
     note(cfMade.ok && cfFound.ok && cfCreated.ok &&
-         jwksForgotten.indexOf(CF + '/jwks') >= 0 &&
+         urls.holds(jwksForgotten, CF + '/jwks') &&
          /scope=ssf\.read\+ssf\.manage/.test(cfTokenCall.raw) &&
          created.body.delivery.endpoint_url ===
            'https://rx.test/realm/r/federation/signals/conf' &&

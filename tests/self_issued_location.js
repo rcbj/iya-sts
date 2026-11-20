@@ -36,6 +36,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const kit = require('./wallet_kit');
 
 const log = require('bunyan').createLogger({ name: 'self_issued_location',
@@ -85,7 +88,7 @@ function childMain() {
     const webUri = view.webWallet ? requestUriOf(view.webWallet) : '';
     const appUri = view.sameDevice ? requestUriOf(view.sameDevice) : '';
     note(/\/oid4vp\/request\/[^?]+\?via=web$/.test(webUri) &&
-         view.webWallet.indexOf(WALLET) === 0 &&
+         urls.isUnder(view.webWallet, WALLET) &&
          /\/oid4vp\/request\/[^?]+$/.test(appUri) &&
          /^siopv2:\/\//.test(view.sameDevice) &&
          webUri.replace(/\?via=web$/, '') === appUri,

@@ -39,6 +39,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -114,7 +117,7 @@ function childMain() {
       return row && row.family === 'sts' && row.subject === 'none' &&
              j(row.required) === j(['realm', 'rotated', 'reason']);
     }) && uris.every(function (uri) {
-      return offered.indexOf(uri) >= 0;
+      return urls.holds(offered, uri);
     }), 'A1. the three are this service\'s own (family sts, no subject), ' +
         'require realm, rotated and reason as signing-key-rotated does, and ' +
         'are always offered', j(uris));

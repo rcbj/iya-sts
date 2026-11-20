@@ -44,6 +44,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const config = require('../common/config');
 const realms = require('../common/realms');
 require('../common/app');
@@ -462,7 +465,9 @@ function everyRefusal(t) {
       body: '<wst:KeyType>' + WST + '/PublicKey</wst:KeyType>' }),
     'application/soap+xml');
   });
-  t.check(String(asked.body).indexOf(WST + '/Bearer</wst:KeyType>') > 0 &&
+  // The element's whole value, bounded by its tags on both sides.
+  t.check(String(asked.body).indexOf('<wst:KeyType>' + WST +
+                                     '/Bearer</wst:KeyType>') > 0 &&
           String(asked.body).indexOf('/PublicKey') < 0,
           'E. the RSTR states Bearer when PublicKey was asked for',
           String(asked.body).slice(0, 400));

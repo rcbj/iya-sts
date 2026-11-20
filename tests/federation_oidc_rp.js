@@ -93,6 +93,9 @@
 // refusal's code and that nothing is dialled after it.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -691,7 +694,7 @@ function childMain() {
     op.scenario = { issuer: opBase, base: opBase };
     let started = await begin(DISCO, {});
     note(started.status === 302 &&
-         started.location.indexOf(opBase + 'disco-authorize?') === 0 &&
+         urls.isAt(started.location, opBase + 'disco-authorize') &&
          op.calls.some(function (c) {
            return c.path === '/op/.well-known/openid-configuration';
          }),
@@ -965,8 +968,8 @@ function childMain() {
     const registeredBefore = op.registrations;
     r = await call('GET', String(view.continueHref || ''));
     note(r.status === 302 &&
-         String(r.headers.location).indexOf(opBase + 'disco-authorize') ===
-           0 && op.registrations === registeredBefore + 1 &&
+         urls.isAt(r.headers.location, opBase + 'disco-authorize') &&
+         op.registrations === registeredBefore + 1 &&
          federation.get(DYN).fedRegisteredIssuer === opBase + 'tenant7',
          '8d. continuing signs in at that issuer, registering there first',
          r.status + ' ' + r.headers.location);
@@ -1037,7 +1040,7 @@ function childMain() {
       target_link_uri: 'https://elsewhere.example/steal' });
     const sent = new URL(String(r.headers.location || 'http://x/'));
     note(r.status === 302 &&
-         String(r.headers.location).indexOf(opBase + 'authorize?') === 0 &&
+         urls.isAt(r.headers.location, opBase + 'authorize') &&
          sent.searchParams.get('login_hint') === 'frp@example.org',
          '5c. the partner\'s own issuer starts the sign-in, its login_hint ' +
          'passed on and a foreign target dropped', r.status + ' ' +
@@ -1429,8 +1432,8 @@ function childMain() {
                                             username: 'ada' });
     note(linkReady && linkRecord.fedProvider === 'generic-oidc' &&
          opened.ok === true &&
-         String(opened.location || '').indexOf(opBase + 'authorize?') ===
-           0 && op.calls.length === callsAtLink,
+         urls.isAt(opened.location, opBase + 'authorize') &&
+         op.calls.length === callsAtLink,
          '10n. a consumer relationship can be connected, and that door ' +
          'dials nothing',
          JSON.stringify({ ok: opened.ok, location: opened.location,

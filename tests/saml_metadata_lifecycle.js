@@ -61,6 +61,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const http = require('http');
 const zlib = require('zlib');
 const nodeCrypto = require('crypto');
@@ -336,8 +339,8 @@ async function run(t) {
             'the earlier one', fieldsOf(spChain).samlSpMetadataValidUntil);
     t.equal(fieldsOf(spChain).samlSpMetadataCacheDuration, 'PT10M',
             'and the effective cacheDuration the shortest');
-    t.check([].concat(fieldsOf(spChain).samlSingleLogoutService || [])
-              .indexOf('https://sp.test/acs/slo') >= 0 &&
+    t.check(urls.holds(fieldsOf(spChain).samlSingleLogoutService,
+                       'https://sp.test/acs/slo') &&
             [].concat(fieldsOf(spChain).samlAssertionConsumerService || [])
               .length === 1,
             'and what it registered is this entity\'s alone');
@@ -376,10 +379,10 @@ async function run(t) {
             'one sweep of the refresher REFRESHED it', JSON.stringify(swept));
     t.equal(hits['/md/refreshed'], hitsBefore + 1,
             'with one request to the local server');
-    t.check([].concat(fieldsOf(spR).samlAssertionConsumerService || [])
-              .indexOf('https://two.test/acs') >= 0 &&
-            [].concat(fieldsOf(spR).samlAssertionConsumerService || [])
-              .indexOf('https://one.test/acs') < 0,
+    t.check(urls.holds(fieldsOf(spR).samlAssertionConsumerService,
+                       'https://two.test/acs') &&
+            !urls.holds(fieldsOf(spR).samlAssertionConsumerService,
+                        'https://one.test/acs'),
             'and the entry now holds the NEW document\'s endpoint',
             JSON.stringify(fieldsOf(spR).samlAssertionConsumerService));
     t.check(spMetadata.refreshStatus(spR).ok,
@@ -428,7 +431,7 @@ async function run(t) {
             'a SAML 1.1-only application refreshes its own metadata',
             JSON.stringify(refreshed11.errors || ''));
     t.check(endpoint11.indexOf(B_SAML11_ARTIFACT) >= 0 &&
-            endpoint11.indexOf(acs11) >= 0,
+            urls.namesAddress(endpoint11, acs11),
             'refresh consumes the SAML 1.1 artifact ACS and its binding',
             endpoint11);
     const sp2Rejects11 = newSp('saml11-metadata-refused');
@@ -444,8 +447,8 @@ async function run(t) {
       action: 'upload-metadata', sp: dual, family: 'saml11',
       document: saml11Entity(dual, dualAcs11) });
     t.check(dual11.ok &&
-            [].concat(fieldsOf(dual).samlAcsEndpoint || []).join(' ')
-              .indexOf(dualAcs11) >= 0,
+            urls.namesAddress([].concat(fieldsOf(dual).samlAcsEndpoint ||
+                                        []).join(' '), dualAcs11),
             'the SAML 1.1 sub-tab imports SAML 1.1 metadata for a dual-family ' +
             'application', JSON.stringify(dual11.errors || dual11));
     const dualAcs2 = 'https://dual-sp.test/saml2/acs';
@@ -453,8 +456,8 @@ async function run(t) {
       action: 'upload-metadata', sp: dual, family: 'saml2',
       document: entity(dual, { acs: dualAcs2 }) });
     t.check(dual2.ok &&
-            [].concat(fieldsOf(dual).samlAcsEndpoint || []).join(' ')
-              .indexOf(dualAcs2) >= 0,
+            urls.namesAddress([].concat(fieldsOf(dual).samlAcsEndpoint ||
+                                        []).join(' '), dualAcs2),
             'the SAML 2.0 sub-tab imports SAML 2.0 metadata for the same ' +
             'dual-family application', JSON.stringify(dual2.errors || dual2));
     const beforeInvalid = fieldsOf(dual);
@@ -638,8 +641,8 @@ async function run(t) {
                               cacheDuration: 'PT0S' }) };
     await spMetadata.refresh(mdqName);
     t.check(spMetadata.freshness(fieldsOf(mdqName)).refreshable &&
-            [].concat(fieldsOf(mdqName).samlAssertionConsumerService || [])
-              .indexOf('https://mdq2.test/acs') >= 0,
+            urls.holds(fieldsOf(mdqName).samlAssertionConsumerService,
+                       'https://mdq2.test/acs'),
             'an entry with no URL is refreshed FROM the MDQ responder, and ' +
             'is refreshable in the background');
 
@@ -821,8 +824,8 @@ async function run(t) {
         }
         t.check(applications.get(goodName) &&
                 fieldsOf(goodName).samlSpMetadataSignature === 'verified' &&
-                [].concat(fieldsOf(goodName).samlAssertionConsumerService ||
-                          []).indexOf('https://good.test/acs') >= 0,
+                urls.holds(fieldsOf(goodName).samlAssertionConsumerService,
+                           'https://good.test/acs'),
                 'an answer that VERIFIES against the realm anchor registers ' +
                 'the service provider', JSON.stringify(fieldsOf(goodName)
                   .samlSpMetadataSignature));
@@ -926,8 +929,8 @@ async function run(t) {
         { signing: anchor.cert.b64, acs: 'https://named-again.test/acs' }));
       t.check(again.ok && again.signature === 'unsigned' &&
               anchorOf(named) === anchor.cert.b64 &&
-              [].concat(fieldsOf(named).samlAssertionConsumerService || [])
-                .indexOf('https://named-again.test/acs') >= 0,
+              urls.holds(fieldsOf(named).samlAssertionConsumerService,
+                         'https://named-again.test/acs'),
               'an unsigned document that keeps the held anchor is consumed, ' +
               'its other fields updated', JSON.stringify(again.errors));
       const noKey = spMetadata.upload(named, entity(named,
@@ -953,8 +956,8 @@ async function run(t) {
         { signing: anchor.cert.b64, acs: 'https://named-swapped.test/acs' }) };
       const swappedAcs = await spMetadata.refresh(named, { quiet: true });
       t.check(!swappedAcs.ok &&
-              [].concat(fieldsOf(named).samlAssertionConsumerService || [])
-                .indexOf('https://named-swapped.test/acs') < 0,
+              !urls.holds(fieldsOf(named).samlAssertionConsumerService,
+                          'https://named-swapped.test/acs'),
               'nor one that merely names the anchor and changes the addresses',
               JSON.stringify(swappedAcs.errors));
 

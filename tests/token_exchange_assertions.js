@@ -44,6 +44,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -316,7 +319,7 @@ function childMain() {
       const forwarded = lastExchange();
       note(r.status === 200 && subOf(r) === aliceSub && forwarded &&
            /FORWARDED/.test(JSON.stringify(forwarded.consumed)),
-           [].concat(claimsOf(r.json.access_token).aud).indexOf(FRONT) >= 0,
+           urls.holds(claimsOf(r.json.access_token).aud, FRONT),
            '4b. any-declared-relying-party: the same assertion is exchanged ' +
            'by that relying party, for its own audience, and the act says ' +
            'it was FORWARDED',

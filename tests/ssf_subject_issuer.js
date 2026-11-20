@@ -23,6 +23,9 @@
 // subject's member) is the SET's `iss`. A partner's subject is left alone,
 // which is the control that the rewrite is not "every iss becomes ours".
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -124,7 +127,7 @@ function child() {
         // it stopped the wait before the person's own had been queued
         // (the full run, cluster and memory mode).
         const types = sets.filter(function (c) {
-          return issuersIn(c.sub_id).indexOf('https://partner.example') < 0;
+          return !urls.holds(issuersIn(c.sub_id), 'https://partner.example');
         }).map(function (c) {
           return Object.keys(c.events || {})[0];
         });
@@ -139,7 +142,7 @@ function child() {
       wanted.forEach(function (uri) {
         const mine = sets.filter(function (c) {
           return (c.events || {})[uri] &&
-            issuersIn(c.sub_id).indexOf('https://partner.example') < 0;
+            !urls.holds(issuersIn(c.sub_id), 'https://partner.example');
         });
         const name = uri.split('/').pop();
         note(mine.length > 0, label + ': a ' + name + ' about the person ' +
@@ -156,7 +159,7 @@ function child() {
       });
       if (partnerExpected) {
         const partner = sets.filter(function (c) {
-          return issuersIn(c.sub_id).indexOf('https://partner.example') >= 0;
+          return urls.holds(issuersIn(c.sub_id), 'https://partner.example');
         });
         note(partner.length === 1, label + ': a partner\'s subject keeps ' +
              'its partner\'s issuer — the control', partner.length);

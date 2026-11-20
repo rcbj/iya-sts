@@ -50,6 +50,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -347,7 +350,7 @@ function childMain() {
          'C1. with nothing configured, an access token from /oauth2/token ' +
          'carries x5u and not x5c', r.status + ' ' + JSON.stringify(aHeader));
     const expectedPrefix = origin + '/pki/chain/default/';
-    note(String(aHeader.x5u).indexOf(expectedPrefix) === 0 &&
+    note(urls.isUnder(aHeader.x5u, expectedPrefix) &&
          /\/[0-9a-f]{64}\.pem$/.test(String(aHeader.x5u)),
          'C2. and it names this service\'s own origin — the one the request ' +
          'arrived at — the default realm\'s scope and a SHA-256',
@@ -494,8 +497,8 @@ function childMain() {
          'C14. a realm carrying x5c gets its OWN leaf inline, under the same ' +
          'Root',
          inRealm.status + ' ' + JSON.stringify(Object.keys(realmHeader)));
-    note(String(realmIdHeader.x5u).indexOf(origin + '/pki/chain/' + REALM +
-                                          '/') === 0,
+    note(urls.isUnder(realmIdHeader.x5u,
+                      origin + '/pki/chain/' + REALM + '/'),
          'C15. and its ID Token\'s x5u names the realm\'s scope',
          realmIdHeader.x5u);
     r = await issue('');

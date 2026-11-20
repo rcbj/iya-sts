@@ -440,7 +440,7 @@ function childMain() {
       return found.length === 1 ? found[0].slice(name.length + 1) : null;
     };
     const ancestors = directive('frame-ancestors') || '';
-    note(r.status === 200 && ancestors.split(' ').indexOf(RP) >= 0 &&
+    note(r.status === 200 && urls.holds(ancestors.split(' '), RP) &&
            ancestors.indexOf('*') < 0 && ancestors.indexOf("'none'") < 0 &&
            directive('base-uri') === "'none'" &&
            directive('default-src') === "'none'" &&

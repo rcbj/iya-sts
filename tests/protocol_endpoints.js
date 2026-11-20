@@ -33,6 +33,9 @@
 // shared with every file after this one.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -126,7 +129,7 @@ function childMain() {
         if (row.name === row.route) {
           undescribed.push(page + ' ' + row.route);
         }
-        if (row.url.indexOf(base + '/') !== 0 || /\/:/.test(row.url)) {
+        if (!urls.isUnder(row.url, base + '/') || /\/:/.test(row.url)) {
           notConcrete.push(page + ' ' + row.url);
         }
       });
@@ -175,7 +178,7 @@ function childMain() {
       const outside = [];
       table.pages().forEach(function (page) {
         table.forPage(fakeReq(page), page).forEach(function (row) {
-          if (row.route && row.url.indexOf(prefix) !== 0) {
+          if (row.route && !urls.isUnder(row.url, prefix)) {
             outside.push(page + ' ' + row.url);
           }
         });

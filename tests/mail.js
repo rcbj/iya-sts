@@ -77,6 +77,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -1188,7 +1191,10 @@ async function uses(t) {
       return /Reset your/.test(x.subject);
     })[0];
     t.check(resetMail && resetMail.to === 'jan@example.com' &&
-            resetMail.text.indexOf('https://idp.example/realm/') >= 0 &&
+            // A link in the text on the pinned origin, under /realm/.
+            urls.urlsIn(resetMail.text).some(function (one) {
+              return urls.isUnder(one.href, 'https://idp.example/realm/');
+            }) &&
             resetMail.text.indexOf('/portal/reset-password?user=jan#token=' +
                                    'tok-jan') > 0,
             '11i. the reset link goes to the entry\'s address on the pinned ' +

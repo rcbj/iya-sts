@@ -40,6 +40,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -192,13 +195,16 @@ async function run(t) {
                                                   accept: 'text/html' } });
     t.equal(home.status, 303, 'a browser with no session is redirected');
     const to = String(home.headers.location || '');
-    t.check(to.indexOf(debuggerServer.authorizationBaseOf({
-              headers: { host: host } }) + '/oauth2/authorize?') === 0,
+    const atAuthorize = urls.isAt(to, debuggerServer.authorizationBaseOf({
+      headers: { host: host } }) + '/oauth2/authorize');
+    t.check(atAuthorize,
             'to THIS service\'s authorization endpoint on its main port',
             to.slice(0, 100));
     t.check(to.indexOf('client_id=' + access.UI_CLIENT_ID) > 0 &&
-            to.indexOf(encodeURIComponent('http://' + host +
-                                          '/_sts/callback')) > 0,
+            // The callback is the request's redirect_uri, as a parameter.
+            atAuthorize &&
+            new URL(to).searchParams.get('redirect_uri') ===
+              'http://' + host + '/_sts/callback',
             'as the debugger client, back to the debugger origin\'s ' +
             'callback', to);
     t.check(to.indexOf('debugger-api') < 0,
@@ -341,7 +347,7 @@ async function run(t) {
             'with this service\'s own base put where the placeholder was');
     const script = await request(port, { method: 'GET', path: '/app.js',
       headers: { host: host, cookie: aliceCookie } });
-    t.check(script.body.indexOf(base) > 0 &&
+    t.check(urls.namesAddress(script.body, base) &&
             script.body.indexOf('__STS_EMBED') < 0 &&
             /javascript/.test(String(script.headers['content-type'])),
             'in a bundle too', script.body);

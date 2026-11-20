@@ -32,6 +32,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -158,7 +161,7 @@ function childMain() {
          JSON.stringify(scheme.DistributionPoints) ===
            JSON.stringify([listUrl]) &&
          pointer.LoTELocation === listUrl &&
-         String(scheme.LoTEType).indexOf(listUrl + '/') === 0 &&
+         urls.isUnder(scheme.LoTEType, listUrl + '/') &&
          JSON.stringify(kinds) === JSON.stringify(['Issuance', 'Revocation']) &&
          anchorsRoot && (lote.TrustedEntitiesList || []).length === 1,
          '2. sequence 1, NextUpdate a day on, its own distribution point and ' +

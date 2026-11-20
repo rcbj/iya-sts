@@ -29,6 +29,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -182,7 +185,7 @@ function childMain() {
            !/name="attributes" value="mail" checked/.test(html) &&
            html.indexOf('set-permission-claims') >= 0 &&
            html.indexOf('clear-permission-claims') >= 0 &&
-           html.indexOf(HR + 'hr.read') >= 0,
+           urls.namesAddress(html, HR + 'hr.read'),
            'E2. the markup: the mapped box ticked, Save and Clear',
            html.slice(0, 400));
       const readOnly = page.applicationScopeClaimsSection(ctxOf({}, false),

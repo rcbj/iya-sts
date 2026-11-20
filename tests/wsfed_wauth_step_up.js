@@ -55,6 +55,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -625,7 +628,7 @@ function childMain() {
          /The class was not earned/.test(phrBack.text) &&
          phrBack.text.indexOf('hardware-protected') < 0 &&
          phrBack.text.indexOf('STS-WSFED-0030') < 0 &&
-         phrBack.text.indexOf(PHR) >= 0 && !toSignIn(phrBack),
+         urls.namesAddress(phrBack.text, PHR) && !toSignIn(phrBack),
          'k2. coming back without earning the class is the refusal page, ' +
          'once, and the code is not in the body',
          phrBack.status + ' ' +
@@ -659,23 +662,23 @@ function childMain() {
     r = await bob.go('GET', signInUrl({ wauth: PASSWORD,
                                         tokenType: 'saml2' }));
     note(r.status === 200 && classRefOf(r.text) === PPT &&
-         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         !urls.namesAddress(r.text, PHR) && !urls.namesAddress(r.text, PHRH),
          'm1. a password wauth still issues PasswordProtectedTransport, ' +
          'with neither EAP URI',
          r.status + ' ' + classRefOf(r.text));
     r = await bob.go('GET', signInUrl({ tokenType: 'saml2' }));
     note(r.status === 200 && classRefOf(r.text) === PPT &&
-         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         !urls.namesAddress(r.text, PHR) && !urls.namesAddress(r.text, PHRH),
          'm2. a request with no wauth is unchanged',
          classRefOf(r.text));
     r = await alice.go('GET', signInUrl({ wauth: MFA, tokenType: 'saml2' }));
     note(r.status === 200 && classRefOf(r.text) === MFA &&
-         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         !urls.namesAddress(r.text, PHR) && !urls.namesAddress(r.text, PHRH),
          'm3. a multi-factor wauth still issues multipleauthn',
          classRefOf(r.text));
     r = await bob.go('GET', signInUrl({ wauth: PASSWORD }));
     note(r.status === 200 && methodOf(r.text) === PASSWORD &&
-         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         !urls.namesAddress(r.text, PHR) && !urls.namesAddress(r.text, PHRH),
          'm4. the default SAML 1.1 token keeps am:password',
          methodOf(r.text));
 
@@ -735,7 +738,7 @@ function childMain() {
     const n2 = await passkeyAnswer('wa-phr', PHR, { tokenType: 'saml2' });
     note(n2.mode === 'get' && n2.answer.status === 200 &&
          classRefOf(n2.answer.text) === PHR &&
-         n2.answer.text.indexOf(PHRH) < 0,
+         !urls.namesAddress(n2.answer.text, PHRH),
          'n2. an assertion with the same key earns phr, and the SAML 2.0 ' +
          'class ref is that URI',
          n2.mode + ' ' + n2.answer.status + ' ' +
@@ -747,7 +750,7 @@ function childMain() {
          n3.status + ' ' + methodOf(n3.text));
     const n4 = await n2.browser.go('GET', signInUrl({ tokenType: 'saml2' }));
     note(n4.status === 200 && classRefOf(n4.text) === UNSPECIFIED &&
-         n4.text.indexOf(PHR) < 0 && n4.text.indexOf(PHRH) < 0,
+         !urls.namesAddress(n4.text, PHR) && !urls.namesAddress(n4.text, PHRH),
          'n4. a request that does not ask keeps unspecified, even though ' +
          'the session earned phr',
          classRefOf(n4.text));

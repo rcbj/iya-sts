@@ -78,6 +78,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const fs = require('fs');
 const nodeCrypto = require('crypto');
@@ -968,7 +971,7 @@ function childMain() {
     }
     const implicitAt = String((landed.headers && landed.headers.location) ||
                               '');
-    note(landed.status === 302 && implicitAt.indexOf(IMPLICIT_CB) === 0 &&
+    note(landed.status === 302 && urls.isAt(implicitAt, IMPLICIT_CB) &&
          /error=invalid_request/.test(implicitAt) &&
          !/access_token=/.test(implicitAt) &&
          (await codeCount('STS-OAUTH-0490')) > implicitBefore,

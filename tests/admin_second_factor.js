@@ -32,6 +32,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -264,10 +267,13 @@ function childMain() {
          String(offeredPage.text).slice(0, 160));
     const ignored = await setupAct(b1, offeredPage, 'skip');
     const landed = await followTo(b1, ignored,
+                                  // The whole address: its path ends there.
                                   new RegExp('^' + REDIRECT.replace(
-                                    /[.*+?^${}()|[\]\\/]/g, '\\$&')));
-    note(String(landed.headers.location || '').indexOf(REDIRECT + '?code=') ===
-           0 && auditOf('authn.mfa.enrolment.offered', 'asf-alice').length &&
+                                    /[.*+?^${}()|[\]\\/]/g, '\\$&') +
+                                    '(?:[?#]|$)'));
+    note(urls.isAt(String(landed.headers.location || ''), REDIRECT) &&
+         /^\?code=/.test(new URL(landed.headers.location).search) &&
+         auditOf('authn.mfa.enrolment.offered', 'asf-alice').length &&
          auditOf('authn.mfa.enrolment.declined', 'asf-alice').length,
          'C2. Ignore signs them in on their password, and the offer and ' +
          'the refusal of it are both on the audit log',
