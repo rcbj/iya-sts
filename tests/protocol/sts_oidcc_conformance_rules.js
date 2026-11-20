@@ -680,7 +680,7 @@ async function registeredListSection() {
         "the page names no registered address", function () {
     assert.ok(out.status === 200 || out.status === 400,
               out.status + " " + out.location);
-    assert.ok(out.location.indexOf("https://c.example/out") !== 0);
+    assert.ok(!urls.isAt(out.location, "https://c.example/out"));
     assert.ok(!discloses(out.text), out.text.slice(0, 600));
   });
   log.debug("Leaving registeredListSection().");

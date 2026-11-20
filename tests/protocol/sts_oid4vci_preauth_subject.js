@@ -197,7 +197,7 @@ async function follow(b, path, stopAt) {
   log.debug("Entering follow(). " + path);
   let r = await b.go("GET", path);
   for (let n = 0; n < 16; n += 1) {
-    if (stopAt && r.location.indexOf(stopAt) === 0) {
+    if (stopAt && urls.isAt(r.location, stopAt)) {
       break;
     }
     // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:

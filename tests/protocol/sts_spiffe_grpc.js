@@ -146,6 +146,9 @@
 // OWNED HERE (local: true): no counterpart exists in the parent project.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const fs = require("fs");
@@ -1338,7 +1341,7 @@ async function test() {
       assert.ok(fields.exp && Number(fields.exp.numberValue) ===
                 Number(jwt.payload.exp), JSON.stringify(fields.exp));
       assert.ok(fields.aud, "aud is in the claims");
-      assert.ok(JSON.stringify(fields.aud).indexOf(AUDIENCE) >= 0,
+      assert.ok(urls.holds(fields.aud, AUDIENCE),
                 JSON.stringify(fields.aud));
     });
     const refusals = [

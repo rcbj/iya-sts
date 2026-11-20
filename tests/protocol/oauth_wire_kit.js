@@ -354,7 +354,7 @@ function kit(name) {
     log.debug("Entering answerAt().");
     const loc = String((r && r.location) || "");
     if (!r || (r.status !== 302 && r.status !== 303) ||
-        loc.indexOf(target) !== 0) {
+        !urls.isAt(loc, target)) {
       log.debug("Leaving answerAt(). Not there.");
       return null;
     }

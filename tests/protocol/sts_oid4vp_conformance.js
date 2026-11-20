@@ -56,6 +56,9 @@
 // OWNED HERE (local: true): this repository's Verifier.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -298,7 +301,7 @@ function userFor(plan, prepared) {
           plan.haip && !product ? { redirect_uri: COMPLETION } : {}),
         "started a verification");
       const to = String(r.walletUrl || "");
-      assert.ok(to.indexOf(oidf.SUITE) === 0, "the start sent nobody to " +
+      assert.ok(urls.isUnder(to, oidf.SUITE), "the start sent nobody to " +
                 "the suite: " + JSON.stringify(r).slice(0, 300));
       const got = await oidf.suite("GET", to.slice(oidf.SUITE.length));
       log.info("  sent the End-User to the wallet: " + got.status);

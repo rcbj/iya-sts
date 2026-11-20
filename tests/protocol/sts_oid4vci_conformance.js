@@ -41,6 +41,9 @@
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -369,7 +372,7 @@ function operatorFor(plan, prepared) {
       const wants = await oidf.exposed(id);
       const url = String(wants.tx_code_endpoint || "")
         .replace("your_tx_code", encodeURIComponent(mine.txCode));
-      if (url.indexOf(oidf.SUITE) === 0) {
+      if (urls.isUnder(url, oidf.SUITE)) {
         mine.codes += 1;
         const r = await oidf.suite("GET", url.slice(oidf.SUITE.length));
         log.info("  handed the suite the transaction code: " + r.status);
@@ -410,7 +413,7 @@ function operatorFor(plan, prepared) {
       mine.txCode = String(offer.txCode || "");
       said = made.status + " " + made.text.slice(0, 300);
     }
-    assert.ok(link.indexOf(oidf.SUITE) === 0, "the offer named no link " +
+    assert.ok(urls.isUnder(link, oidf.SUITE), "the offer named no link " +
               "to the suite: " + said);
     const r = await oidf.suite("GET", link.slice(oidf.SUITE.length));
     log.info("  delivered a " + plan.offer + " credential offer: " + r.status +

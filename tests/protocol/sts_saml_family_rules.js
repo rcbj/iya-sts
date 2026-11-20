@@ -49,6 +49,9 @@
 // OWNED HERE (local: true). Its realms are removed only on a private probe.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const K = require("./oauth_wire_kit.js").kit("sts_saml_family_rules");
 const S = require("./saml_wire_kit.js").samlKit(K);
@@ -122,12 +125,14 @@ async function delivery() {
     assert.strictEqual(refused.status, 400, K.shown(refused));
     assert.ok(/samlAssertionConsumerService/.test(text(refused)),
               text(refused).slice(0, 600));
-    assert.ok(text(refused).indexOf(evil) >= 0, text(refused).slice(0, 600));
+    assert.ok(urls.namesAddress(text(refused), evil),
+              text(refused).slice(0, 600));
   });
   K.check("B3. and it names neither the registered addresses nor their " +
           "number (#1331)", function () {
     const at = text(refused).indexOf(reg);
-    assert.ok(at < 0, text(refused).slice(Math.max(0, at - 300), at + 200));
+    assert.ok(!urls.namesAddress(text(refused), reg),
+              text(refused).slice(Math.max(0, at - 300), at + 200));
     assert.ok(!/address\(es\)/.test(text(refused)));
   });
   const dotted = await K.send(authnAt(P, prodSp, reg.replace(/acs$/,

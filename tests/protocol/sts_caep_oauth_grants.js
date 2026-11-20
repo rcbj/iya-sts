@@ -239,7 +239,7 @@ async function follow(b, path, stopAt) {
   let at = path;
   let r = await b.go("GET", path);
   for (let n = 0; n < 16; n += 1) {
-    if (stopAt && r.location.indexOf(stopAt) === 0) {
+    if (stopAt && urls.isAt(r.location, stopAt)) {
       break;
     }
     // THE SIGN-IN SCREEN'S SHELL (#571): signed in over `/authn-api`

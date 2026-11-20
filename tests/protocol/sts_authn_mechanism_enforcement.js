@@ -48,6 +48,9 @@
 // OWNED HERE (local: true): this repository's authentication policy.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const names = require("./random_username.js");
@@ -519,7 +522,7 @@ async function sectionFG(rb, plain) {
   check("F2. with prompt=none it is login_required at the client instead, " +
         "STS-OAUTH-0946", function () {
     assert.strictEqual(passive.status, 302);
-    assert.ok(passive.location.indexOf(RP + "/" + oauth) === 0 &&
+    assert.ok(urls.isAt(passive.location, RP + "/" + oauth) &&
               /error=login_required/.test(passive.location),
               passive.location);
     assert.ok(after > before, before + " -> " + after);
@@ -586,7 +589,8 @@ async function sectionFG(rb, plain) {
   const oneFactor = await authz(rb, keys, cookie);
   check("F5. a session on a password alone is issued to: the list says " +
         "which second factor, never whether one is needed", function () {
-    assert.ok(oneFactor.location.indexOf(RP + "/" + keys + "?code=") === 0,
+    assert.ok(urls.isAt(oneFactor.location, RP + "/" + keys) &&
+              /^\?code=/.test(new URL(oneFactor.location).search),
               oneFactor.location);
   });
   const wsKeys = "urn:amec:wsfed-keys:" + STAMP;

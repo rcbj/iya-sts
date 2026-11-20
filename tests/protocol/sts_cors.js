@@ -51,6 +51,9 @@
 // OWNED HERE (local: true): this repository's own HTTP spine.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const https = require("https");
 const names = require("./random_username.js");
@@ -311,7 +314,7 @@ async function sectionWrites() {
   const afterAdd = await corsOf(id);
   check("an add is accepted and stored normalised", function () {
     assert.strictEqual(added.status, 200, added.raw.slice(0, 300));
-    assert.ok(afterAdd.indexOf("http://localhost:5173") >= 0 &&
+    assert.ok(urls.holds(afterAdd, "http://localhost:5173") &&
               afterAdd.indexOf("HTTP://LocalHost:5173/") < 0,
               JSON.stringify(afterAdd));
   });

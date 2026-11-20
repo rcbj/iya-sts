@@ -246,7 +246,7 @@ async function follow(who, first) {
       continue;
     }
     if (!(r.status === 302 || r.status === 303) ||
-        r.location.indexOf(root + "/") !== 0) {
+        !urls.isUnder(r.location, root + "/")) {
       break;
     }
     r = await hop(who, "GET", r.location);
@@ -400,8 +400,9 @@ async function test() {
     authorizeUrl(client, { domain_hint: "nowhere-" + TAG + ".example" }).url);
   check("a listed domain goes to that relationship's login; another goes " +
         "to the sign-in screen", function () {
-    assert.ok(hinted.location.indexOf(base + "/federation/login/" + fed) ===
-              0 || hinted.location.indexOf("/federation/login/" + fed) >= 0,
+    assert.ok(urls.isUnder(hinted.location,
+                           base + "/federation/login/" + fed) ||
+              hinted.location.indexOf("/federation/login/" + fed) >= 0,
               hinted.status + " " + hinted.location);
     assert.ok(/\/authn\/login/.test(elsewhere.location),
               elsewhere.status + " " + elsewhere.location);

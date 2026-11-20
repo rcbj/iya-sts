@@ -824,7 +824,7 @@ async function aOneFactorTokenIsChallenged() {
         "auth_time, and is addressed to the API", function () {
     assert.strictEqual(at.acr, "1", JSON.stringify(at));
     assert.strictEqual(typeof at.auth_time, "number", JSON.stringify(at));
-    assert.ok([].concat(at.aud).indexOf(API) >= 0, JSON.stringify(at.aud));
+    assert.ok(urls.holds(at.aud, API), JSON.stringify(at.aud));
   });
 
   r = await stepUpResource(tokens.access_token);

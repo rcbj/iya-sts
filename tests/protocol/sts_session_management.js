@@ -170,7 +170,7 @@ async function test() {
   check("the OP iframe is framable by the registered relying party and " +
         "nobody else", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
-    assert.ok(ancestors.indexOf(RP) >= 0, csp);
+    assert.ok(urls.holds(ancestors, RP), csp);
     assert.ok(ancestors.indexOf("*") < 0 &&
               ancestors.indexOf("'none'") < 0, csp);
     assert.strictEqual(r.headers.get("x-frame-options"), null);

@@ -51,6 +51,9 @@
 // process holds — `console_signin.js`'s `ensureConsoleAccount()`.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
@@ -221,8 +224,13 @@ async function signInToThePortal(base, user, log2, options) {
 
   function fromLocation(location) {
     const url = new URL(String(location || ""), base).toString();
-    return opts.publicBase && url.indexOf(opts.publicBase + "/") === 0
-      ? base + url.slice(opts.publicBase.length) : url;
+    // Below the public base by parsing, not by a text prefix; the part
+    // kept is read off the base as `URL` spells it, which is how `url`
+    // above is spelled.
+    if (!opts.publicBase || !urls.isUnder(url, opts.publicBase + "/")) {
+      return url;
+    }
+    return base + url.slice(new URL(opts.publicBase + "/").href.length - 1);
   }
 
   async function fetchKeeping(url, init) {

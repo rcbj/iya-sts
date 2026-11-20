@@ -1129,7 +1129,7 @@ async function implicitResponses() {
   check("m10. an implicit response carrying an /admin-api token for a " +
         "tls_client_auth client is refused invalid_request, STS-OAUTH-0490",
         function () {
-    assert.ok(String(landed.location).indexOf(CB) === 0, landed.status +
+    assert.ok(urls.isAt(landed.location, CB), landed.status +
               " " + String(landed.location).slice(0, 300));
     assert.ok(/error=invalid_request/.test(landed.location), landed.location);
     assert.ok(!/access_token=/.test(landed.location));

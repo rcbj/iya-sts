@@ -40,6 +40,9 @@
 //   7. ACME turned off in the realm: the card goes and the door refuses.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const path = require("path");
@@ -275,8 +278,10 @@ async function test() {
                        "the HMAC key is not 32 bytes");
     assert.ok(/no-store/.test(made.headers.get("cache-control") || ""),
               "the page carrying the secret is cacheable");
+    // The address ends where the line's word does, so a longer path at
+    // the same base is not taken for the directory.
     assert.ok(new RegExp("--server " + base.replace(/[.*+?^${}()|[\]\\]/g,
-      "\\$&") + "/enroll/acme/directory").test(made.text),
+      "\\$&") + "/enroll/acme/directory(?:[\\s\"'<&]|$)").test(made.text),
               "no certbot line naming this service's ACME directory");
   });
   const again = await page(owner);

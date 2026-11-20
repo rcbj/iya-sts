@@ -43,6 +43,9 @@
 // otherwise the service's host on 636.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const ldapjs = require("ldapjs");
@@ -306,8 +309,8 @@ async function test() {
         "account-credential-change-required", function () {
     assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
     const delivered = created.body.events_delivered || [];
-    assert.ok(delivered.indexOf(CAEP + "credential-change") >= 0 &&
-              delivered.indexOf(RISC + "credential-compromise") >= 0,
+    assert.ok(urls.holds(delivered, CAEP + "credential-change") &&
+              urls.holds(delivered, RISC + "credential-compromise"),
               JSON.stringify(delivered));
   });
   const streamId = created.body.stream_id;

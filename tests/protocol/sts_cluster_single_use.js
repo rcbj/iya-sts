@@ -656,7 +656,7 @@ async function secondFactors() {
                                            { cookie: cookie() });
   check("f. the TOTP code that confirmed the enrolment at A is refused as a " +
         "replay at B's sign-in", function () {
-    assert.ok(String(shown.step.base).indexOf(NODE_B) === 0 ||
+    assert.ok(urls.isUnder(shown.step.base, NODE_B) ||
               NODE_A === NODE_B, "the step was not node B's: " +
               shown.step.base);
     assert.strictEqual(replay.status, 400, replay.status + " " +

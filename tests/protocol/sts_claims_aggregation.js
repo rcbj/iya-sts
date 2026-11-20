@@ -35,6 +35,9 @@
 // and management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -260,7 +263,7 @@ async function follow(who, first) {
       continue;
     }
     if (!(r.status === 302 || r.status === 303) ||
-        r.location.indexOf(root + "/") !== 0) {
+        !urls.isUnder(r.location, root + "/")) {
       break;
     }
     at = r.location;
@@ -526,7 +529,7 @@ async function test() {
         function () {
     assert.strictEqual(unknown.status, 400, unknown.text.slice(0, 300));
     assert.strictEqual(started.status, 200, started.text.slice(0, 300));
-    assert.ok(away.indexOf(cpBase + "/oauth2/authorize?") === 0, away);
+    assert.ok(urls.isAt(away, cpBase + "/oauth2/authorize"), away);
     assert.ok(/code_challenge_method=S256/.test(away));
     // The callback's own words: a failure names its cause.
     assert.ok(!said.problem, "the callback refused the link: " +

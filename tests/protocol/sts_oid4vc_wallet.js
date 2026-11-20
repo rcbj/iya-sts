@@ -572,7 +572,7 @@ async function signIn(wallet, siop, approve, subject) {
   }
   const out = await throughTheWallet(wallet, who, query, approve, subject);
   let at = out.collected.status === 303 ? out.collected.location : "";
-  for (let n = 0; n < 6 && at && at.indexOf(root) === 0 &&
+  for (let n = 0; n < 6 && at && urls.isUnder(at, root) &&
                   !consentScreen.isConsentScreen(at); n += 1) {
     at = (await hop(who, "GET", at)).location;
   }
@@ -712,7 +712,7 @@ async function acceptOffer(wallet, state) {
     copies.forEach(function (c) {
       assert.strictEqual(c.typ, "dc+sd-jwt", JSON.stringify(c));
       assert.ok(Number.isInteger(c.idx) && c.idx >= 0, JSON.stringify(c));
-      assert.ok(c.uri.indexOf(base + "/") === 0, c.uri);
+      assert.ok(urls.isUnder(c.uri, base + "/"), c.uri);
       assert.strictEqual(c.uri, copies[0].uri);
     });
     assert.strictEqual(new Set(copies.map(function (c) {

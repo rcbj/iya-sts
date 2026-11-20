@@ -48,6 +48,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -796,7 +799,7 @@ async function samlRealmToRealm(world) {
                 "session here and is answered with a signed LogoutResponse " +
                 "to the partner's SingleLogoutService", async function () {
       assert.strictEqual(answered.status, 303, squash(answered.body));
-      assert.ok(answered.location.indexOf(world.idpSlo) === 0,
+      assert.ok(urls.isAt(answered.location, world.idpSlo),
                 answered.location);
       const said = messageIn(answered.location, "SAMLResponse");
       assert.ok(said.signed && said.codes[0] === "Success",
@@ -836,7 +839,7 @@ async function samlRealmToRealm(world) {
                 "with a LogoutResponse to this relationship's " +
                 "SingleLogoutService", async function () {
       assert.strictEqual(atPartner.status, 303, squash(atPartner.body));
-      assert.ok(atPartner.location.indexOf(world.samlSlo) === 0,
+      assert.ok(urls.isAt(atPartner.location, world.samlSlo),
                 atPartner.location);
     });
     if (atPartner.location) {
@@ -950,7 +953,7 @@ async function samlPartnerWrittenHere(world) {
               "LogoutResponse, Requester/UnknownPrincipal, and ends nothing",
               async function () {
     assert.strictEqual(unknown.status, 303, squash(unknown.body));
-    assert.ok(unknown.location.indexOf(PARTNER_SLO) === 0, unknown.location);
+    assert.ok(urls.isAt(unknown.location, PARTNER_SLO), unknown.location);
     const said = messageIn(unknown.location, "SAMLResponse");
     assert.ok(said.signed && said.codes.indexOf("Requester") >= 0 &&
               said.codes.indexOf("UnknownPrincipal") >= 0 &&

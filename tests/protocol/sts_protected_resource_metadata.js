@@ -475,7 +475,7 @@ async function serversSection() {
     const issuers = none.body.authorizationServers.realm.map(function (x) {
       return x.issuer;
     });
-    assert.ok(issuers.indexOf(issuer) >= 0, JSON.stringify(issuers));
+    assert.ok(urls.holds(issuers, issuer), JSON.stringify(issuers));
   });
   log.debug("Leaving serversSection().");
 }

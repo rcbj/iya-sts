@@ -60,6 +60,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -1087,7 +1090,7 @@ async function samlFromPartner(world) {
   await check("the IdP realm sent an EncryptedAssertion under rsa-oaep and " +
               "no assertion in clear", async function () {
     assert.ok(/EncryptedAssertion/.test(xml) &&
-              xml.indexOf(XENC11 + "rsa-oaep") >= 0 &&
+              xml.indexOf('Algorithm="' + XENC11 + 'rsa-oaep"') >= 0 &&
               !/<saml2?:Assertion[ >]/.test(xml), xml.slice(0, 600));
   });
   await signedIn("and it signs the person in", await deliver(cookies, door));
