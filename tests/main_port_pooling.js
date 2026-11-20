@@ -48,6 +48,12 @@ const log = bunyan.createLogger({ name: 'main_port_pooling',
   level: process.env.STS_LOG_LEVEL || 'info' });
 
 const pepCredential = require('./tools/pep-credential');
+// The run-time CA the two nodes' listener certificate is issued under.
+const testCa = require('./protocol/outbound_test_ca');
+
+// That CA's certificate, which every client below verifies a node against;
+// set when the nodes are built.
+const SERVER_CA = { value: '' };
 
 function makeDeps(store, state) {
   log.debug("Entering makeDeps().");
@@ -77,15 +83,19 @@ function makeDeps(store, state) {
   };
 }
 
-// A node: an HTTPS listener with the main port's posture, answering what the
-// socket carried — after the wait, as the main port's middleware does.
+// A node: an HTTPS listener with the main port's posture — a client
+// certificate asked for and not required at the handshake,
+// `clientAuthOptions('optional')`, the function `server.js` builds that port
+// with — answering what the socket carried, after the wait, as the main
+// port's middleware does. `authorized` below is OpenSSL's verdict on the
+// client's chain, which is what a resumed session has to carry across.
 function node(serverPki, anchorPem, revocation) {
   log.debug("Entering node().");
-  const server = https.createServer({
-    key: serverPki.keyPem, cert: serverPki.certPem,
-    requestCert: true, rejectUnauthorized: false, ca: [anchorPem],
+  const server = https.createServer(Object.assign({
+    key: serverPki.keyPem, cert: serverPki.certPem, ca: [anchorPem],
     sessionTimeout: 60
-  }, function (req, res) {
+  }, require('../tls/tls_server').clientAuthOptions('optional')),
+  function (req, res) {
     const started = Date.now();
     revocation.awaitResumedChain(req.socket).then(function (arrived) {
       const input = revocation.fromSocket(req.socket);
@@ -121,7 +131,7 @@ function ask(port, pki, session) {
     let issued = null;
     const socket = tls.connect({
       host: '127.0.0.1', port: port, cert: pki.certPem, key: pki.keyPem,
-      session: session || undefined, rejectUnauthorized: false,
+      session: session || undefined, ca: [SERVER_CA.value],
       maxVersion: 'TLSv1.3'
     }, function () {
       socket.write('GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
@@ -183,8 +193,13 @@ async function run(t) {
   revocation.resetCache();
   const client = await pepCredential.mint({ subject: 'CN=pooler,O=tests',
                                             crlBase: false });
-  const serverPki = await pepCredential.mint({
-    subject: 'CN=127.0.0.1,O=tests', crlBase: false });
+  // The nodes' listener certificate, for 127.0.0.1 under a CA of this
+  // test's own, which every client verifies them against: which certificate
+  // a node presents is not under test, and nothing here dials unverified.
+  const serverCa = await testCa.makeCa();
+  const serverLeaf = await testCa.listenerCertificate(serverCa, '127.0.0.1');
+  const serverPki = { keyPem: serverLeaf.key, certPem: serverLeaf.cert };
+  SERVER_CA.value = serverCa.certPem;
   const shared = new Map();
   const state = { intervalS: 3600, activeActive: true };
   const ticketsA = new ticketsModule.SessionTickets(makeDeps(shared, state));
