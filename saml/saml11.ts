@@ -462,10 +462,16 @@ class Saml11Assertions {
     // namespace, which is where a relying party is already looking.
     // `application` (#487, #483's member): the entry whose settings govern,
     // where the caller resolved it — WS-Trust's AppliesTo application.
+    // `session_id` (#1072), as saml2.ts carries it: the browser profile's
+    // sign-on session, whose chosen dynamic roles the roles attribute may
+    // carry; a WS-Trust Issue names none.
     const custom = stats.samlAttributes('saml11',
                                         Object.assign({ subject: opts.subject,
                                                         audience:
-                                                          opts.audience },
+                                                          opts.audience,
+                                                        session_id:
+                                                          opts.sessionId ||
+                                                          '' },
                                           opts.application
                                             ? { application: opts.application }
                                             : {}));

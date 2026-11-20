@@ -17767,6 +17767,24 @@ const SETTINGS = [
                  'from holding the token. They exist to be REQUIRED, not to ' +
                  'be carried.' },
 
+  // DYNAMIC SELECTABLE ROLES (#1072, rcbj's decision 2): the sign-in page's
+  // "Choose roles for this sign-in" box, offered in a realm that defines a
+  // dynamic role, unless this or the application's appDynamicRoleSelection
+  // turns it off.
+  { key: 'roles.dynamicSelection', group: 'Roles',
+    label: 'Offer dynamic roles at sign-in',
+    env: 'STS_ROLES_DYNAMIC_SELECTION', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a person signing in may choose dynamic selectable ' +
+                 'roles (#1072): the sign-in page offers a "Choose roles for ' +
+                 'this sign-in" box in a realm that defines at least one ' +
+                 'dynamic role, and a ticked box shows the roles the ' +
+                 'person\'s eligibility permits. ON by default; ' +
+                 'appDynamicRoleSelection on an application\'s entry ' +
+                 'overrides it for that application. Off, no box is drawn, ' +
+                 'no role is offered, a required dynamic role is not asked ' +
+                 'for, and a token carries no dynamically selected role.' },
+
   { key: 'roles.claimName', group: 'Roles', label: 'Role claim name',
     env: 'STS_ROLES_CLAIM_NAME', type: 'string', dflt: 'roles', runtime: true,
     description: 'What the claim is called, and ALSO what is looked for on ' +

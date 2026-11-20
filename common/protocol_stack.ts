@@ -2041,6 +2041,12 @@ class ProtocolStack {
     // fills no slot: the role step and the issuance re-check reach it.
     this.build('xacml/role_eligibility', require('../xacml/role_eligibility'),
                'RoleEligibility');
+    // #1072: what a sign-in chose, read at every issuance. Its wire step
+    // fills `roles.setSelectionReader()` (rule 3e): this line is what lets
+    // a token carry a dynamic role at all. It reaches `authn` and the
+    // eligibility module above lazily, inside a call.
+    this.build('authn/role_selection', require('../authn/role_selection'),
+               'RoleSelection');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');

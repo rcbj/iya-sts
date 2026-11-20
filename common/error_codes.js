@@ -24210,6 +24210,36 @@ const CODES = [
     summary: 'A dynamic role would not take the reference to its new ' +
       'eligibility policy (#1072); a new policy was taken back.',
     spec: '' },
+  { code: 'STS-XACML-0324',
+    summary: 'The reader of a session\'s chosen dynamic roles threw while ' +
+      'roles were resolved (#1072); no dynamic role was held.',
+    spec: '' },
+  { code: 'STS-XACML-0325',
+    summary: 'A sign-in\'s role step was submitted with a role it did not ' +
+      'offer (#1072): fabricated, from another realm, application or ' +
+      'sign-in, or not eligible when the step was drawn. Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0326',
+    summary: 'A sign-in\'s role step was submitted with two roles of one ' +
+      'exclusive group (#1072). Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0327',
+    summary: 'A sign-in\'s role step was submitted without any of the ' +
+      'required roles it offered (#1072). Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0328',
+    summary: 'A role chosen at a sign-in\'s role step was no longer eligible ' +
+      'when it was submitted (#1072); the step is drawn again.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0329',
+    summary: 'A session was refused at a door that cannot draw the role ' +
+      'step (federation, a wallet, SPNEGO, a certificate) because a ' +
+      'required dynamic role was offered to the person (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0330',
+    summary: 'A sign-in held for the role step had no pending sign-in to ' +
+      'draw the step on, so it was refused (#1072).',
+    spec: '' },
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
       'or ../common/error_codes; the container starts anyway and ' +

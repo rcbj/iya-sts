@@ -1458,6 +1458,8 @@ class Saml11Sso {
     const authnInstant = new Date((authn.sessionView(session).authTime || 0) *
                                   1000).toISOString();
     const assertion = buildSaml11Assertion({
+      // The sign-on session (#1072): its chosen dynamic roles.
+      sessionId: session.id,
       subject: user.username,
       audience: ctx.rpId,
       lifetimeMin: lifetimeMin,

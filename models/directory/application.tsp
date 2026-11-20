@@ -3924,7 +3924,8 @@ model Application {
     editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
-    what: "FALSE turns off dynamic role selection for sign-ins to this application (#1072): the sign-in page offers no \"Choose roles for this sign-in\" box, no role is offered, and a token for this application carries no dynamically selected role. Absent or TRUE, the default, leaves it to the realm's roles.dynamicSelection setting."
+    overrides: "roles.dynamicSelection",
+    what: "TRUE or FALSE: are dynamic selectable roles offered on sign-ins to this application (#1072), overriding roles.dynamicSelection. FALSE draws no \"Choose roles for this sign-in\" box, offers no role, and a token for this application carries no dynamically selected role."
   })
   appDynamicRoleSelection?: string;
 }

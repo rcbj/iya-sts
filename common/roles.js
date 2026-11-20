@@ -937,6 +937,75 @@ function dynamicRoles() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE SELECTION READER (#1072, rule 3e): which dynamic roles a SESSION chose,
+// and still holds. A slot rather than a require, BOTH WAYS ROUND: this file
+// is a leaf (`common/CLAUDE.md` 3u) and `authn/role_selection.ts`, which
+// answers, requires it — so a require from here would close a cycle; and
+// the answer needs the session and the eligibility decision, neither of
+// which a leaf may reach. Filled by `role_selection.ts`'s wire step at 23c.
+//
+// **EMPTY IS NOBODY'S CHOICE**: with no reader installed, or one that
+// throws, no dynamic role is held anywhere — the fail-closed reading the
+// ticket's 11.4 asks for. A dynamic role is never held any other way.
+// ---------------------------------------------------------------------------
+let selectionReader = null;
+
+/**
+ * Installs the reader of a session's chosen dynamic roles (#1072).
+ *
+ * @param reader - `{ selectedFor(context) }`, answering the role names (an
+ *   application's as `<role>@<application>`) the context's session chose
+ *   for the context's applications and is still eligible for; or null
+ */
+function setSelectionReader(reader) {
+  log.debug("Entering setSelectionReader().");
+  selectionReader = reader && typeof reader.selectedFor === 'function'
+    ? reader : null;
+  log.debug("Leaving setSelectionReader(). " +
+            (selectionReader ? 'Installed.' : 'Empty.'));
+}
+
+/**
+ * Returns what the selection slot holds, so a test that stubs it can put
+ * back what was there.
+ *
+ * @returns the installed reader, or null
+ */
+function selectionReaderInstalled() {
+  log.debug("Entering selectionReaderInstalled().");
+  log.debug("Leaving selectionReaderInstalled().");
+  return selectionReader;
+}
+
+// The dynamic roles a context's session chose for its applications: full
+// names, each a dynamic role of this realm. Nothing without a session, a
+// person and a reader; a throw is nothing, logged.
+function selectedRolesOf(context) {
+  log.debug("Entering selectedRolesOf().");
+  if (!selectionReader || context.kind !== 'user' || !context.name ||
+      !context.sessionId || context.crossRealm) {
+    log.debug("Leaving selectedRolesOf(). None asked.");
+    return [];
+  }
+  let named = [];
+  try {
+    named = selectionReader.selectedFor({
+      username: context.name, sessionId: context.sessionId,
+      applications: (context.selectionApplications ||
+                     context.applications).slice() }) || [];
+  } catch (error) {
+    log.debug("Caught in selectedRolesOf(): " +
+              ((error && error.message) || error));
+    log.error(errorCodes.tag('STS-XACML-0324') + 'roles: the selection ' +
+              'reader threw for "' + context.name + '"; no dynamic role is ' +
+              'held: ' + ((error && error.message) || error));
+    named = [];
+  }
+  log.debug("Leaving selectedRolesOf(). " + named.length + " role(s).");
+  return named.map(String);
+}
+
 function trimmedValues(values) {
   log.debug("Entering trimmedValues().");
   const out = (values || []).map(function (one) {
@@ -1912,7 +1981,17 @@ function normalizeContext(who) {
     // after SID filtering: explicit grants only (see THE RESOLVER).
     crossRealm: given.crossRealm === true,
     sids: Array.isArray(given.sids) ? given.sids.map(String).filter(Boolean)
-                                    : []
+                                    : [],
+    // THE SIGN-ON SESSION THIS DECISION OR TOKEN RESTS ON (#1072): the one
+    // whose chosen dynamic roles it may carry. Absent, none.
+    sessionId: String(given.sessionId || ''),
+    // THE APPLICATIONS WHOSE CHOICE APPLIES (#1072): the ones the token is
+    // for and the client it is issued to — a person chooses roles signing
+    // in to a CLIENT, and its access token is often for another resource.
+    // `applications` above still decides where an application's own role
+    // is carried (#310). Absent, `applications`.
+    selectionApplications: Array.isArray(given.selectionApplications)
+      ? given.selectionApplications.map(String).filter(Boolean) : null
   };
 }
 
@@ -1971,8 +2050,22 @@ function configuredRolesOf(context) {
   const lowerGroups = groups.map(function (one) {
     return String(one).toLowerCase();
   });
+  // THE DYNAMIC ROLES THE SESSION CHOSE (#1072), by full name; each is a
+  // dynamic role, so the membership tests below never match it.
+  const chosen = selectedRolesOf(context).map(function (one) {
+    return one.toLowerCase();
+  });
   log.debug("Leaving configuredRolesOf().");
   return all().filter(function (role) {
+    if (chosen.length && isDynamic(role) &&
+        chosen.indexOf(String(role.name).toLowerCase()) >= 0) {
+      return true;
+    }
+    if (isDynamic(role)) {
+      // A dynamic role is held only by being chosen, whatever its entry
+      // says (an ldapmodify can put a member on one).
+      return false;
+    }
     if (context.kind === 'application') {
       return contains(role.applications, context.name);
     }
@@ -2538,6 +2631,8 @@ module.exports = {
   SELECTION_KINDS: SELECTION_KINDS,
   isDynamic: isDynamic,
   dynamicRoles: dynamicRoles,
+  setSelectionReader: setSelectionReader,
+  selectionReaderInstalled: selectionReaderInstalled,
   BUILT_IN: BUILT_IN,
   BUILT_IN_NAMES: BUILT_IN_NAMES,
   DEFAULT_REQUIRED_ROLE: DEFAULT_REQUIRED_ROLE,
