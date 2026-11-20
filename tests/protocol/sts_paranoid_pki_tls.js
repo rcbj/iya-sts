@@ -23,6 +23,7 @@
 
 const assert = require("assert");
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const credentials = require("../tools/pep-credential.js");
@@ -109,7 +110,7 @@ function tlsRequest(method, path, body, client, headers) {
     const req = https.request({
       method: method, hostname: target.hostname, port: target.port,
       path: target.pathname + target.search, cert: client.pem, key: client.key,
-      rejectUnauthorized: false, agent: false,
+      ca: serviceTrust.trustedCa(), agent: false,
       headers: Object.assign({ accept: "application/json" }, headers || {},
         body ? { "content-type": "application/x-www-form-urlencoded",
                  "content-length": Buffer.byteLength(body) } : {})

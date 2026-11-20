@@ -124,7 +124,11 @@ function selfSigned(dir, name, args) {
   const cert = path.join(dir, name + '.crt');
   const made = childProcess.spawnSync('openssl', ['req', '-x509', '-newkey']
     .concat(args).concat(['-keyout', key, '-out', cert, '-days', '1',
-                          '-nodes', '-subj', '/CN=' + name]),
+                          '-nodes', '-subj', '/CN=' + name,
+                          // The address the kit dials, so its VERIFIED
+                          // handshake (each certificate its own anchor)
+                          // checks the name too.
+                          '-addext', 'subjectAltName=IP:127.0.0.1']),
     { encoding: 'utf8' });
   if (made.status !== 0) {
     log.debug('Leaving selfSigned(). openssl ' + made.status);
@@ -171,6 +175,7 @@ function serve(pair) {
       log.debug('Leaving serve(). ' + server.address().port);
       resolve({
         port: server.address().port,
+        cert: pair.cert,
         close: function () {
           log.debug('Entering close().');
           return new Promise(function (done) {
@@ -199,12 +204,19 @@ async function presented(t, dir) {
     servers.push(p384);
     const ed = await serve(selfSigned(dir, 'ed25519', ['ed25519']));
     servers.push(ed);
-    const rsaCert = await kit.presentedCertificate('127.0.0.1', rsa.port);
-    const p256Cert = await kit.presentedCertificate('127.0.0.1', p256.port);
-    const p384Cert = await kit.presentedCertificate('127.0.0.1', p384.port);
-    const edCert = await kit.presentedCertificate('127.0.0.1', ed.port);
+    // Each listener's certificate is the anchor its handshake verifies
+    // against: the kit never reads a certificate it did not verify.
+    const rsaCert = await kit.presentedCertificate('127.0.0.1', rsa.port,
+                                                   [rsa.cert]);
+    const p256Cert = await kit.presentedCertificate('127.0.0.1', p256.port,
+                                                    [p256.cert]);
+    const p384Cert = await kit.presentedCertificate('127.0.0.1', p384.port,
+                                                    [p384.cert]);
+    const edCert = await kit.presentedCertificate('127.0.0.1', ed.port,
+                                                  [ed.cert]);
     const closedPort = await unusedPort();
-    const closed = await kit.presentedCertificate('127.0.0.1', closedPort);
+    const closed = await kit.presentedCertificate('127.0.0.1', closedPort,
+                                                  [rsa.cert]);
     t.equal(rsaCert.type, 'rsa', 'an RSA listener is read as RSA');
     t.equal(rsaCert.curve, '', 'an RSA listener has no curve');
     t.equal(p256Cert.type, 'ec', 'a P-256 listener is read as ECDSA');

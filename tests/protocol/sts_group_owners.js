@@ -43,6 +43,7 @@
 
 const assert = require("assert");
 const ldapjs = require("ldapjs");
+const serviceTrust = require("../tools/service_trust.js");
 const names = require("./random_username.js");
 
 var appconfig;
@@ -190,7 +191,9 @@ function ldapDelete(dn) {
   log.debug("Entering ldapDelete(). " + dn);
   return new Promise(function (resolve) {
     const client = ldapjs.createClient({ url: ldapsUrl(),
-      tlsOptions: { rejectUnauthorized: false } });
+      // Verified against the service's chain (tools/service_trust.js):
+      // LDAPS presents the shared listener certificate.
+      tlsOptions: { ca: serviceTrust.trustedCa() } });
     client.on("error", function (e) {
       log.debug("Caught in ldapDelete(): " + ((e && e.message) || e));
       resolve({ ok: false, name: e && e.name });

@@ -239,6 +239,7 @@ const credentials = require("../tools/pep-credential.js");
 // does not take the anchor with it. tests/CLAUDE.md.
 const addedAnchors = [];
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 
 var xacmlUser = null;
 
@@ -268,7 +269,7 @@ function certJson(url) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: "GET",
-      rejectUnauthorized: false,
+      ca: serviceTrust.trustedCa(),
       cert: xacmlUser ? xacmlUser.certPem : undefined,
       key: xacmlUser ? xacmlUser.keyPem : undefined
     }, function (response) {

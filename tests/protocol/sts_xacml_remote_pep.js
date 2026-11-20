@@ -392,6 +392,7 @@ function sleep(ms) {
 // deployment and not an inconvenience.
 // ---------------------------------------------------------------------------
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 const credentials = require("../tools/pep-credential.js");
 // Roots this job minted. Removed when it finishes, pass or fail (#335). The
 // launcher's PEP anchor is not one of them: the container stays up for the
@@ -504,7 +505,7 @@ function certPostJson(url, payload) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: "POST",
-      rejectUnauthorized: false,
+      ca: serviceTrust.trustedCa(),
       cert: xacmlUser ? xacmlUser.certPem : undefined,
       key: xacmlUser ? xacmlUser.keyPem : undefined,
       // A full handshake every time (#406): the main port's sessions resume on

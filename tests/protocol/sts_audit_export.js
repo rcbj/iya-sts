@@ -63,6 +63,7 @@ const dgram = require("dgram");
 const http = require("http");
 const net = require("net");
 const ldapjs = require("ldapjs");
+const serviceTrust = require("../tools/service_trust.js");
 const names = require("./random_username.js");
 
 var appconfig;
@@ -739,7 +740,9 @@ function ldapBind(dn) {
     const url = process.env.STS_LDAPS_URL ||
       ("ldaps://" + hostOf(base) + ":" + (process.env.STS_LDAPS_PORT || 636));
     const client = ldapjs.createClient({ url: url,
-      tlsOptions: { rejectUnauthorized: false } });
+      // Verified against the service's chain (tools/service_trust.js):
+      // LDAPS presents the shared listener certificate.
+      tlsOptions: { ca: serviceTrust.trustedCa() } });
     client.on("error", function (e) {
       log.debug("Caught in ldapBind(): " + ((e && e.message) || e));
       resolve(false);
