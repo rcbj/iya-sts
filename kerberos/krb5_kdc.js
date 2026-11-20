@@ -5908,8 +5908,22 @@ async function answerTgsReq(request, state) {
 // its clear after that sign-out's stamp — last writer wins on the whole row,
 // section 3 of the issue. Milliseconds wide, not a replication interval.
 //
-// Only with `logout.kerberosSignOut` on, and only in active-active: nothing
-// else reads replicated state here, and a single node is exactly as it was.
+// ~~Only with `logout.kerberosSignOut` on~~ — **EVERY KDC REQUEST IN
+// ACTIVE-ACTIVE SINCE 2026-11-19 (GitHub run #569, cluster mode).** "Nothing
+// else reads replicated state here" was wrong: the principal table is
+// replicated, and the development KDC WRITES it on first sight. Samba's
+// `fast_tests.test_fast_ad_fx_fast_armor` had an AS-REQ for a fresh name
+// answered on node A (04:01:38.567) and its TGS-REQ, 22 ms later, answered
+// on node B from a copy without the principal — a service ticket with NO
+// PAC, which the test refused. A password set, an account disabled, a
+// second factor required and a krbtgt rotated on another node are the same
+// shape. So the pull is `cluster_barrier.catchUp()`, LDAP's arrangement
+// since run #510, whatever the setting says, and its counters and its
+// warning (STS-CLUSTER-0018) are the barrier's; STS-KRB-0118 is still
+// logged beside it when the setting is on, because it names what a sign-out
+// costs. The other half — a reply HELD until what its request wrote has
+// committed, rule 2, without which no pull on B could have found A's row —
+// is `handleMessage()`'s, below. A single node is exactly as it was.
 // The requires are LAZY and guarded, so a process that loads this file on
 // its own (an in-process test, say) needs neither module; both are already
 // loaded through common/app.js. (They were made lazy for the parent
@@ -5970,29 +5984,35 @@ async function catchUpWithWorkers() {
   log.debug('Leaving catchUpWithWorkers().');
 }
 
+// The cluster barrier, or null in a process that cannot load it — the LAZY,
+// guarded require the two functions here and handleMessage() share.
+function clusterBarrier() {
+  log.debug('Entering clusterBarrier().');
+  try {
+    log.debug('Leaving clusterBarrier().');
+    return require('../cluster/cluster_barrier');
+  } catch (e) {
+    log.debug('Caught in clusterBarrier(): ' + ((e && e.message) || e));
+    log.debug('Leaving clusterBarrier(). No cluster layer here.');
+    return null;
+  }
+}
+
 async function catchUpWithCluster() {
   log.debug('Entering catchUpWithCluster().');
   await catchUpWithWorkers();
-  if (!config.value('logout.kerberosSignOut')) {
-    log.debug('Leaving catchUpWithCluster(). Sign-out stamps are off.');
-    return null;
-  }
-  let cluster = null;
-  let barrier = null;
-  try {
-    cluster = require('../cluster/cluster');
-    barrier = require('../cluster/cluster_barrier');
-  } catch (e) {
-    log.debug('Caught in catchUpWithCluster(): ' + ((e && e.message) || e));
+  const barrier = clusterBarrier();
+  if (!barrier) {
     log.debug('Leaving catchUpWithCluster(). No cluster layer here.');
     return null;
   }
-  if (!cluster.isActiveActive() || !cluster.enabled()) {
+  if (!barrier.isActive()) {
     log.debug('Leaving catchUpWithCluster(). Not active-active.');
     return null;
   }
-  const answer = await barrier.syncShared();
-  if (!answer || !answer.caughtUp) {
+  const answer = await barrier.catchUp('a Kerberos request');
+  if (config.value('logout.kerberosSignOut') &&
+      (!answer || !answer.caughtUp)) {
     log.warn(errorCodes.tag('STS-KRB-0118') + 'krb5: a KDC request is ' +
              'answered before this node caught up with the others (' +
              JSON.stringify(answer || {}) + '); a sign-out committed on ' +
@@ -6129,8 +6149,34 @@ async function handleMessage(bytes, options) {
             eText: route.refusal.eText
           });
         }
+        // AND HELD UNTIL WHAT IT WROTE HAS COMMITTED (2026-11-19, run #569):
+        // `cluster_barrier.js`'s rule 2, which an HTTP response and an LDAP
+        // result already had. An AS-REP for a principal created on first
+        // sight went before that row committed, and the TGS-REQ that
+        // followed on the other node was answered without it. A commit that
+        // fails is KDC_ERR_SVC_UNAVAILABLE (29), which MIT's and Heimdal's
+        // clients retry, as for a worker that failed (STS-KRB-0204): a
+        // ticket whose principal the store does not hold is an
+        // acknowledgement this process can lose.
+        const barrier = clusterBarrier();
+        const arrival = barrier ? barrier.writePosition() : null;
+        const reply = await (isAs ? handleAsReq(request)
+                                  : handleTgsReq(request));
+        const failed = barrier ? await barrier.commitAnswered(arrival) : [];
+        if (failed.length) {
+          log.error(errorCodes.tag('STS-KRB-0259') + 'krb5: ' +
+                    (isAs ? 'an AS-REQ' : 'a TGS-REQ') + ' changed the ' +
+                    'store and the commit of that change failed (' +
+                    failed.join('; ') + '); it is answered ' +
+                    'KDC_ERR_SVC_UNAVAILABLE instead of its reply. The ' +
+                    'change is still in memory and its write is retried.');
+          log.debug("Leaving the answer. Its commit failed.");
+          return errorReply(29, { errorCode: 'STS-KRB-0259',
+            realm: ourRealm(), sname: request.reqBody.sname,
+            eText: 'the KDC could not complete this request; try again' });
+        }
         log.debug("Leaving the answer.");
-        return isAs ? handleAsReq(request) : handleTgsReq(request);
+        return reply;
       });
     }
     log.info('krb5: received ' + identified.name + ', which is not a request ' +

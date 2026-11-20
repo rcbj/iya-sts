@@ -15841,6 +15841,11 @@ const CODES = [
     summary: 'GET /authn/spnego was asked to withhold the AP-REP ' +
       '(?mutual=off) where the test controls are closed (#896).',
     spec: 'none (RFC 4120 section 3.2.5; a development test control)' },
+  { code: 'STS-KRB-0259',
+    summary: 'An AS-REQ or TGS-REQ changed the store and the commit of ' +
+      'that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE ' +
+      'instead of its reply; the change is retried (GitHub run #569).',
+    spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
