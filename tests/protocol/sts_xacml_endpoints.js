@@ -138,6 +138,7 @@
 
 const assert = require("assert");
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 const { URL } = require("url");
 const { Command, Option } = require("commander");
 const forge = require("node-forge");
@@ -503,7 +504,8 @@ function pepRequest(method, url, identity, payload, rawBody) {
       port: target.port || 443,
       path: target.pathname + target.search,
       method: method,
-      rejectUnauthorized: false,
+      // The SERVER is verified too (tools/service_trust.js): chain and name.
+      ca: serviceTrust.trustedCa(),
       cert: identity ? identity.certPem : undefined,
       key: identity ? identity.keyPem : undefined,
       headers: data ? { "Content-Type": "application/json",
@@ -637,10 +639,11 @@ function postWithCertificate(url, payload, identity) {
       port: target.port || 443,
       path: target.pathname + target.search,
       method: "POST",
-      // THE SERVER'S certificate is not the subject here and is regenerated on
-      // every start; `tests/tools/trust.js` hands the run an anchor for it and
-      // node uses it, but a hand-run without one must still reach the door.
-      rejectUnauthorized: false,
+      // THE SERVER'S certificate is not the subject here, and is verified
+      // anyway: regenerated on every start, it is anchored by the chain
+      // `tests/tools/trust.js` fetched (tools/service_trust.js), which a
+      // hand run names with STS_TRUST_BUNDLE.
+      ca: serviceTrust.trustedCa(),
       cert: identity.cert,
       key: identity.key,
       headers: { "Content-Type": "application/json",

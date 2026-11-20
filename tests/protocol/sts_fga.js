@@ -77,6 +77,7 @@
 const assert = require("assert");
 const crypto = require("crypto");
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 const { URL } = require("url");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -284,7 +285,7 @@ function withCertificate(method, path, identity, payload) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: method,
-      rejectUnauthorized: false,
+      ca: serviceTrust.trustedCa(),
       cert: identity ? identity.certPem : undefined,
       key: identity ? identity.keyPem : undefined,
       headers: data ? { "Content-Type": "application/json",

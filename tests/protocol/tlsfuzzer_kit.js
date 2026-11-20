@@ -64,6 +64,7 @@ const fs = require("fs");
 const nodeCrypto = require("crypto");
 const path = require("path");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -1295,9 +1296,16 @@ function curveName(named) {
 
 // The key type and curve of the certificate a listener presents. type is
 // "" when the handshake fails, which the caller reads as "not detected".
-function presentedCertificate(host, port) {
+//
+// THE HANDSHAKE IS VERIFIED (2026-11-20), against `ca` when given (an
+// in-process test's own listener, tests/tlsfuzzer_plan.js) and otherwise
+// against the service's chain (tools/service_trust.js), chain and name.
+// Reading the key needs no trust, but a handshake this client refuses is
+// the anchor gone stale, and it REJECTS rather than reading as "not
+// detected": a stale anchor would otherwise quietly pick the RSA plan.
+function presentedCertificate(host, port, ca) {
   log.debug("Entering presentedCertificate().");
-  const answer = new Promise(function (resolve) {
+  const answer = new Promise(function (resolve, reject) {
     const finish = function (found) {
       log.debug("Entering finish().");
       log.debug("Leaving finish(). " + (found.type || "no handshake") +
@@ -1308,7 +1316,7 @@ function presentedCertificate(host, port) {
     // later node ignores it, so the handshake that only reads the
     // certificate sends SNI for a hostname alone.
     const options = { host: host, port: Number(port),
-      rejectUnauthorized: false };
+      ca: ca || serviceTrust.trustedCa() };
     if (!/^[0-9.]+$/.test(host) && host.indexOf(":") < 0) {
       options.servername = host;
     }
@@ -1332,6 +1340,10 @@ function presentedCertificate(host, port) {
     socket.on("error", function (e) {
       log.debug("Caught in presentedCertificate(): " +
                 ((e && e.message) || e));
+      if (serviceTrust.isUntrusted(e)) {
+        reject(e);
+        return;
+      }
       finish({ type: "", curve: "" });
     });
   });

@@ -52,6 +52,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const kitFactory = require("./saml_peer_kit.js");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 
 const kit = kitFactory.create("sts_saml_interop_shibboleth");
 const log = kit.log;
@@ -192,9 +193,10 @@ async function presentedCertificate() {
     const socket = tls.connect({
       host: u.hostname, port: Number(u.port) || 443,
       servername: /^[\d.]+$/.test(u.hostname) ? undefined : u.hostname,
-      // Reading the certificate, not trusting it: the question is WHICH
-      // certificate arrives, and the answer is compared with the metadata.
-      rejectUnauthorized: false
+      // The question is WHICH certificate arrives, and the answer is
+      // compared with the metadata; the handshake is verified all the same
+      // (tools/service_trust.js), so the one read is one this client took.
+      ca: serviceTrust.trustedCa()
     }, function () {
       const cert = socket.getPeerCertificate();
       socket.end();

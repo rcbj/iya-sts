@@ -41,7 +41,7 @@ const assert = require("assert");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
@@ -344,8 +344,8 @@ async function rpTokens(browser, client) {
 
 // THE OP REALM MUST TRUST THIS SERVICE, because the Claims Provider it dials
 // is a realm of this same service, whose certificate is issued under a Root
-// made at start that its own outbound client does not know. The Root is read
-// off the handshake and published in the directory shared with the service —
+// made at start that its own outbound client does not know. The Root is
+// fetched, verified, and published in the directory shared with the service —
 // a file of this job's own, so no other job's CA file is replaced — and named
 // as the OP realm's federation.outboundCaFile, which product honours (#171).
 // With no shared directory a development service is told to skip
@@ -355,25 +355,11 @@ async function trustThisService(product) {
   log.debug("Entering trustThisService().");
   const where = testCa.caLocation();
   if (where) {
-    const target = new URL(root);
-    const rootPem = await new Promise(function (resolve, reject) {
-      const socket = tls.connect({ host: target.hostname,
-        port: Number(target.port || 443), servername: target.hostname,
-        rejectUnauthorized: false }, function () {
-          let cert = socket.getPeerCertificate(true);
-          while (cert && cert.issuerCertificate &&
-                 cert.issuerCertificate !== cert &&
-                 cert.issuerCertificate.fingerprint256 !==
-                   cert.fingerprint256) {
-            cert = cert.issuerCertificate;
-          }
-          socket.end();
-          resolve("-----BEGIN CERTIFICATE-----\n" +
-            cert.raw.toString("base64").match(/.{1,64}/g).join("\n") +
-            "\n-----END CERTIFICATE-----\n");
-        });
-      socket.on("error", reject);
-    });
+    // The Root from `/pki/ca/service/root.cer`, fetched VERIFIED against
+    // the chain the runner handed this job (tools/service_trust.js) —
+    // the same certificate the handshake's chain ends in, which this
+    // read off a handshake it did not verify until 2026-11-20.
+    const rootPem = await serviceTrust.serviceRoot(root);
     const name = "claims-aggregation-root-" + TAG + ".crt";
     fs.mkdirSync(where.dir, { recursive: true });
     fs.writeFileSync(path.join(where.dir, name), rootPem, { mode: 0o644 });
