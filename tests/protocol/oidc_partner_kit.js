@@ -42,6 +42,7 @@ const http = require("http");
 const https = require("https");
 const nodeCrypto = require("crypto");
 const outboundCa = require("./outbound_test_ca.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = require("bunyan").createLogger({ name: "oidc_partner_kit",
   level: process.env.LOG_LEVEL || "info" });
@@ -306,8 +307,17 @@ async function partner(K, o) {
   await new Promise(function (resolve) {
     tls.listen(0, "0.0.0.0", resolve);
   });
+  // THE MUTUAL-TLS PARTNER VERIFIES THE CERTIFICATE IT IS SHOWN, as a FAPI
+  // 1.0 Advanced authorization server does (RFC 8705 section 2): the
+  // relationship's client certificate is issued under the service Root and
+  // presented with its chain (federation_client_certificate.ts), so the
+  // Root fetched from `/pki/ca/service/root.cer` is the whole truststore,
+  // and a handshake without a certificate, or with anybody else's, is
+  // refused before a request is read. Every case dialling `mtlsBase`
+  // presents one (sts_federation_fapi_client.js).
   const mtls = https.createServer({ key: leaf.key, cert: leaf.cert,
-    requestCert: true, rejectUnauthorized: false }, handle);
+    requestCert: true, ca: [await serviceTrust.serviceRoot(K.base)] },
+    handle);
   await new Promise(function (resolve) {
     mtls.listen(0, "0.0.0.0", resolve);
   });

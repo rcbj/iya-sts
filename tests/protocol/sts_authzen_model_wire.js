@@ -56,6 +56,7 @@ const https = require("https");
 const path = require("path");
 const K = require("./oauth_wire_kit.js").kit("sts_authzen_model_wire");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = K.log;
 const SNAPSHOT = process.env.AUTHZEN_WIRE_SNAPSHOT ||
@@ -165,7 +166,7 @@ function request(method, urlPath, cred, body, headers) {
                                headers || {});
     const req = https.request({ host: target.hostname,
       port: target.port || 443, path: urlPath, method: method,
-      headers: sent, rejectUnauthorized: false,
+      headers: sent, ca: serviceTrust.trustedCa(),
       cert: cred ? cred.certPem : undefined,
       key: cred ? cred.keyPem : undefined, agent: false },
     function (res) {

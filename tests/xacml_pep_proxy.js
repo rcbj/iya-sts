@@ -617,7 +617,11 @@ async function childBody() {
   const listener = https.createServer(Object.assign({
     cert: serverLeaf.cert, key: serverLeaf.key,
     ca: tls.clientTruststoreOptions().ca,
-    requestCert: true, rejectUnauthorized: false
+    // The main port's own posture, from the function server.js builds it
+    // with: a certificate asked for and not required at the handshake,
+    // and verified against the truststore by trustClientCertificatesOn()
+    // (tls/tls_server.js argues why the handshake cannot do it).
+    ...tls.clientAuthOptions('optional')
   }, tls.protocolOptions()), app);
   tls.trustClientCertificatesOn(listener, 'the xacml_pep_proxy listener',
     function () {

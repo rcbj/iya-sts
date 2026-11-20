@@ -71,6 +71,7 @@ const { Command, Option } = require("commander");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -1065,7 +1066,7 @@ async function productDirectory(prod, dev) {
       const url = new URL(ldapsUrl());
       const s = tls.connect({ host: url.hostname, port: Number(url.port),
                               servername: url.hostname, maxVersion: maxVersion,
-                              rejectUnauthorized: false }, function () {
+                              ca: serviceTrust.trustedCa() }, function () {
         const v = s.getProtocol();
         s.destroy();
         resolve(v);

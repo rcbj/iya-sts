@@ -406,7 +406,11 @@ function childMain() {
     // A CERTIFICATE-BOUND TOKEN, over a TLS listener of its own.
     const secure = https.createServer(Object.assign({
       cert: tlsPair.cert, key: tlsPair.key,
-      requestCert: true, rejectUnauthorized: false
+      // The main port's own posture, from the function server.js builds it
+      // with: a certificate asked for and not required at the handshake
+      // (tls/tls_server.js argues why), so 'mTLS, no certificate' reaches
+      // the token endpoint and is answered there, as on the main port.
+      ...tlsServer.clientAuthOptions('optional')
     }, tlsServer.protocolOptions()), require(ROOT + '/common/app'));
     await new Promise(function (resolve) {
       secure.listen(0, '127.0.0.1', resolve);

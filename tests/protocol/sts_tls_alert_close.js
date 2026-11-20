@@ -45,6 +45,7 @@ const assert = require("assert");
 const crypto = require("crypto");
 const net = require("net");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const { Duplex } = require("stream");
 
 var appconfig;
@@ -123,7 +124,7 @@ function failAfterHandshake(alpn, version) {
     });
     raw.on("connect", function () {
       const s = tls.connect({ socket: pipe, servername: HOST,
-                              rejectUnauthorized: false,
+                              ca: serviceTrust.trustedCa(),
                               ALPNProtocols: [alpn],
                               minVersion: version, maxVersion: version },
       function () {

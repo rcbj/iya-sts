@@ -257,6 +257,7 @@ const bunyan = require('bunyan');
 
 const service = require('./service');
 const trust = require('./trust');
+const serviceTrust = require('./service_trust');
 const manifest = require('../protocol/MANIFEST.js');
 const coverage = require('./coverage-report');
 
@@ -2251,6 +2252,11 @@ async function main() {
   if (instance) {
     try {
       trusted = await trust.trustTheService(instance.url, runDir, log);
+      // AND THIS PROCESS VERIFIES AGAINST IT TOO (2026-11-20): its own calls
+      // to the service — a realm removed, a cluster restarted — carry a
+      // management-API token, and tools/service_trust.js reads the file at
+      // every call, so refreshTrust()'s rewrite reaches them as well.
+      serviceTrust.useBundle(trusted.pemPath || '');
     } catch (e) {
       log.warn('could not fetch IYA STS\'s certificate from ' +
                instance.url + trust.CERTIFICATE_PATH + ' (' + e.message +

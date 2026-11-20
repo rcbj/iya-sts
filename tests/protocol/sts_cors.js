@@ -54,6 +54,7 @@
 const assert = require("assert");
 const https = require("https");
 const names = require("./random_username.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -122,7 +123,7 @@ function rawRequest(url, method, headers, body) {
   log.debug("Leaving rawRequest().");
   return new Promise(function (resolve, reject) {
     const req = https.request(url, { method: method, headers: headers,
-                                     rejectUnauthorized: false },
+                                     ca: serviceTrust.trustedCa() },
                               function (res) {
       let raw = "";
       res.on("data", function (c) {

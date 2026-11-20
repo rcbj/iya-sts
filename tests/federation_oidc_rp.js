@@ -362,12 +362,24 @@ function childMain() {
     const tlsHost = '127.0.0.1:' + tlsPartner.address().port;
     // AND OVER MUTUAL TLS (#931): the same partner asking for a client
     // certificate, as a FAPI 1.0 Advanced authorization server's token and
-    // UserInfo endpoints do. It verifies nothing about the chain itself:
-    // what it records is which certificate came, which is the claim.
+    // UserInfo endpoints do, and VERIFYING it as one does (RFC 8705
+    // section 2): the relationship's certificate is issued under this
+    // process's service Root and presented with its chain, so that Root is
+    // the partner's whole truststore. It is set by `trustServiceRoot()`
+    // just before the first mutual-TLS case, once the Root the certificate
+    // is issued under exists; until then the partner trusts nobody.
     const mtlsPartner = require('https').createServer(
-      { key: tlsPair.privatePem, cert: tlsCert.pem, requestCert: true,
-        rejectUnauthorized: false },
+      { key: tlsPair.privatePem, cert: tlsCert.pem, requestCert: true },
       partner.listeners('request')[0]);
+    const trustServiceRoot = function () {
+      const root = require(ROOT_DIR + '/common/pki').serviceRoot();
+      if (!root || !root.certificatePem) {
+        throw new Error('the service holds no Root for the mutual-TLS ' +
+                        'partner to trust');
+      }
+      mtlsPartner.setSecureContext({ key: tlsPair.privatePem,
+        cert: tlsCert.pem, ca: [root.certificatePem] });
+    };
     await new Promise(function (r) {
       mtlsPartner.listen(0, '127.0.0.1', r);
     });
@@ -1796,6 +1808,7 @@ function childMain() {
     };
     const MTLS = make('frp-fapi1-mtls-' + stamp, { fedFapi: '1-advanced',
       fedTokenUrl: mtlsBase + 'token', fedUserinfoUrl: mtlsBase + 'userinfo' });
+    trustServiceRoot();
     op.boundAnswered = 0;
     got = await mtlsSignIn(MTLS);
     const mtlsView = fedClientCert.viewOf(federation.get(MTLS)) || {};

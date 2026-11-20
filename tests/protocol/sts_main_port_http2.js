@@ -61,6 +61,7 @@ const https = require("https");
 const tls = require("tls");
 const forge = require("node-forge");
 const names = require("./random_username.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -138,7 +139,7 @@ function h1(method, path, options) {
     const req = https.request({
       method: method, hostname: TARGET.hostname, port: TARGET.port,
       path: path, headers: headers, agent: false,
-      rejectUnauthorized: false, cert: o.cert, key: o.key,
+      ca: serviceTrust.trustedCa(), cert: o.cert, key: o.key,
       ALPNProtocols: ["http/1.1"]
     }, function (res) {
       const chunks = [];
@@ -162,7 +163,7 @@ function session(options) {
   const o = options || {};
   log.debug("Leaving session().");
   return new Promise(function (resolve, reject) {
-    const s = http2.connect(base, { rejectUnauthorized: false,
+    const s = http2.connect(base, { ca: serviceTrust.trustedCa(),
                                     cert: o.cert, key: o.key });
     const state = { goaway: false, closed: false };
     s.on("goaway", function () {
@@ -320,7 +321,7 @@ function connectOverH1() {
   log.debug("Leaving connectOverH1().");
   return new Promise(function (resolve, reject) {
     const socket = tls.connect({ host: TARGET.hostname,
-      port: Number(TARGET.port), rejectUnauthorized: false,
+      port: Number(TARGET.port), ca: serviceTrust.trustedCa(),
       servername: TARGET.hostname, ALPNProtocols: ["http/1.1"] },
     function () {
       socket.write("CONNECT example.com:443 HTTP/1.1\r\nHost: " +
@@ -591,7 +592,7 @@ async function test() {
     const offered = await h1("GET", "/.well-known/openid-configuration");
     const alpnOff = await new Promise(function (resolve, reject) {
       const sock = tls.connect({ host: TARGET.hostname,
-        port: Number(TARGET.port), rejectUnauthorized: false,
+        port: Number(TARGET.port), ca: serviceTrust.trustedCa(),
         servername: TARGET.hostname, ALPNProtocols: ["h2", "http/1.1"] },
       function () {
         resolve(sock.alpnProtocol);
@@ -612,7 +613,7 @@ async function test() {
     await sleep(300);
     const alpnOn = await new Promise(function (resolve, reject) {
       const sock = tls.connect({ host: TARGET.hostname,
-        port: Number(TARGET.port), rejectUnauthorized: false,
+        port: Number(TARGET.port), ca: serviceTrust.trustedCa(),
         servername: TARGET.hostname, ALPNProtocols: ["h2", "http/1.1"] },
       function () {
         resolve(sock.alpnProtocol);
