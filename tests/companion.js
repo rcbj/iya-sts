@@ -58,7 +58,8 @@
 //      the JWKS, a changed one echoed as not verified; the ACS accepting a
 //      signed response for its audience and setting `pep_app_saml`, the
 //      next echo carrying that session, and a tampered, foreign-audience or
-//      unsigned response refused with no cookie.
+//      unsigned response refused with no cookie; a JWKS URL at any origin
+//      but the companion's service URL refused before anything is dialled.
 //
 // In process: the companion requires nothing of the service, so nothing
 // here loads the protocol stack.
@@ -852,8 +853,12 @@ async function pepApplicationIdentity(t) {
     jwks.listen(0, '127.0.0.1', resolve);
   });
   const { Companion } = require(path.join(ROOT, 'companion', 'companion.js'));
+  // The JWKS's origin is the companion's service URL: `/pep-app` dials
+  // that origin and no other.
+  const jwksOrigin = 'http://127.0.0.1:' + jwks.address().port;
   const companion = new Companion({ port: 0, publicUrl: PUBLIC,
-                                    walletUrl: '' }, { sts: standIn() });
+                                    walletUrl: '', stsUrl: jwksOrigin },
+                                  { sts: standIn() });
   const server = await companion.listen();
   const port = server.address().port;
   const AUD = 'https://sp.example.test/saml';
@@ -890,6 +895,40 @@ async function pepApplicationIdentity(t) {
             r.json.jwt.payload.sub === 'urn:uuid:2',
             '10c. a JWT whose payload was changed is echoed as not verified',
             r.text);
+    // 10g. A URL at any other origin is refused before anything is
+    // dialled, and the setup in force stays: the userinfo form puts the
+    // configured origin's text in front of another host, which is what a
+    // substring or prefix test would have let through.
+    let dialled = 0;
+    const elsewhereServer = http.createServer(function (req, res) {
+      dialled += 1;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ keys: [] }));
+    });
+    await new Promise(function (resolve) {
+      elsewhereServer.listen(0, '127.0.0.1', resolve);
+    });
+    const other = 'http://127.0.0.1:' + elsewhereServer.address().port;
+    const refusals = [];
+    for (const url of [other + '/jwks',
+                       jwksOrigin + '@localhost:' +
+                         elsewhereServer.address().port + '/jwks',
+                       'file:///etc/passwd']) {
+      const one = await raw(port, 'POST', '/pep-app/saml/_setup',
+        { 'content-type': 'application/json' }, JSON.stringify({
+          audience: AUD, certificates: [publicPem], jwksUrl: url }));
+      refusals.push(one.status + ' ' + one.text);
+    }
+    r = await raw(port, 'GET', '/pep-app/api/items',
+                  { authorization: 'Bearer ' + token });
+    elsewhereServer.close();
+    t.check(refusals.every(function (one) {
+              return /^400 /.test(one) && /dials only/.test(one);
+            }) && dialled === 0 && !!r.json && !!r.json.jwt &&
+            r.json.jwt.verified === true,
+            '10g. a JWKS URL at another origin is refused with 400, nothing ' +
+            'is dialled, and the setup in force still verifies',
+            refusals.join(' | ') + ' dialled=' + dialled + ' ' + r.text);
     const good = signedResponse(privatePem, AUD, 'alice');
     const post = function (xml) {
       log.debug("Entering post().");

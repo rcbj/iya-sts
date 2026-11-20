@@ -336,7 +336,7 @@ only its own credentials afterwards.
 | `COMPANION_STS_URL` | `https://sts:8081` | Where the companion dials the service |
 | `COMPANION_STS_PUBLIC_URL` | `https://localhost:8081` | Where a browser and a wallet reach the service, a realm's prefix included (`…/realm/acme`). Sent as the `Host`, so the addresses the service builds are reachable |
 | `COMPANION_STS_CA_FILE` | empty | The service Root to verify its certificate against |
-| `COMPANION_STS_TLS_INSECURE` | `true` | With no CA file, do not verify the service's certificate. Development only |
+| `COMPANION_STS_TLS_INSECURE` | `true` | With no CA file, the demonstrations do not verify the service's certificate. Development only. The remote PEP's dummy application (`/pep-app`) ignores it and always verifies |
 | `COMPANION_WALLET_URL` | empty | A wallet's issuance page for the offer's link, besides the `openid-credential-offer://` link and QR code |
 | `COMPANION_KRB5_SPN` | empty | The Kerberos demonstration's service principal; empty is `HTTP/<the host of COMPANION_PUBLIC_URL>` |
 | `COMPANION_KRB5_SERVICE_PORT` | `8888` | The protected TCP service's port inside the container; `off` binds none |
