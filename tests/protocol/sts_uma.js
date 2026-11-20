@@ -71,6 +71,9 @@
 // OWNED HERE (local: true): UMA exists in this repository and nowhere else.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const childProcess = require("child_process");
 const crypto = require("crypto");
@@ -879,7 +882,7 @@ async function test() {
                        walked.location);
     assert.ok(walked.ticket, walked.location);
     assert.strictEqual(walked.state, walked.sentState, walked.location);
-    assert.ok(walked.location.indexOf(CLAIMS_REDIRECT) === 0,
+    assert.ok(urls.isAt(walked.location, CLAIMS_REDIRECT),
               walked.location);
   });
   r = await token(CLIENT, { grant_type: GRANT, ticket: walked.ticket });

@@ -62,6 +62,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const gnap = require("./gnap_client.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -297,7 +300,7 @@ async function authorize(realm, resource) {
   const r = await send(base + "/realm/" + realm + "/oauth2/authorize?" +
                        query.toString());
   let error = "";
-  if (String(r.location).indexOf(REDIRECT) === 0) {
+  if (urls.isAt(r.location, REDIRECT)) {
     error = new URL(r.location).searchParams.get("error") || "";
   }
   log.debug("Leaving authorize().");

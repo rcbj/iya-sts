@@ -42,6 +42,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -156,7 +159,7 @@ function childMain() {
           continue;
         }
         if (r.status >= 300 && r.status < 400 && to &&
-            (to.indexOf('http') !== 0 || to.indexOf(ORIGIN) === 0) &&
+            (to.indexOf('http') !== 0 || urls.isUnder(to, ORIGIN)) &&
             !/\/authn\/(accounts|login)\?/.test(to)) {
           r = await get(jar, to);
           continue;
@@ -170,7 +173,7 @@ function childMain() {
     const oidcSignIn = async function (jar, username) {
       const r = await drive(jar, authorize({ prompt: 'login' }), username);
       const loc = String((r.headers && r.headers.location) || '');
-      const code = loc.indexOf(REDIRECT) === 0
+      const code = urls.isAt(loc, REDIRECT)
         ? new URLSearchParams(loc.slice(loc.indexOf('?') + 1)).get('code')
         : '';
       if (!code) {

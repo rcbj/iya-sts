@@ -56,6 +56,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -265,7 +268,7 @@ async function codeVia(node, realm, authorize) {
   r = await authnSignin.signInWithJar(node + "/realm/" + realm, r.location,
     { action: "login", username: PERSON, password: PASSWORD }, b.jar);
   for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops++) {
+       !urls.isAt(r.location, REDIRECT); hops++) {
     if (authnSignin.isConsent(r.location)) {
       // offline_access asks the person; the screen is answered "allow".
       r = await authnSignin.consentWithJar(new URL(r.location, node)
@@ -274,7 +277,7 @@ async function codeVia(node, realm, authorize) {
       r = await b.go("GET", r.location);
     }
   }
-  assert.ok(String(r.location).indexOf(REDIRECT) === 0,
+  assert.ok(urls.isAt(r.location, REDIRECT),
             "the flow should end at the client; it answered " + r.status +
             " " + r.location + " " + String(r.text).slice(0, 300));
   const code = new URL(r.location).searchParams.get("code");

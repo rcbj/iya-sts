@@ -32,6 +32,9 @@
 //      as a second factor in an amr.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -317,7 +320,7 @@ function childMain() {
     const third = await passwordStep(b1f, authorizeAt, 'bd-alice', false);
     let landed = third.answer;
     for (let i = 0; i < 5 && landed.status >= 300 && landed.status < 400 &&
-         String(landed.headers.location || '').indexOf(REDIRECT) !== 0; i++) {
+         !urls.isAt(String(landed.headers.location || ''), REDIRECT); i++) {
       landed = await b1f.go('GET', pathOf(landed.headers.location));
     }
     const gen3Cookie = b1f.jar[cookieName];
@@ -370,7 +373,7 @@ function childMain() {
     };
     const refusedAt = copyDone === copy.answer ? copy.answer : copyDone;
     note((clearedIn(copy.answer) || clearedIn(copyDone)) &&
-         !String(refusedAt.headers.location || '').startsWith(REDIRECT),
+         !urls.isAt(String(refusedAt.headers.location || ''), REDIRECT),
          'H2. the sign-in on the compromised device does not reach the ' +
          'client, and the cookie is cleared so the next attempt is not ' +
          'refused on it', refusedAt.status + ' ' +

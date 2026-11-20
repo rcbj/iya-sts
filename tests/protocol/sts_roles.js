@@ -103,6 +103,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -949,7 +952,7 @@ async function theAuthorizationEndpointRefuses() {
   });
   const back = await holderBrowser.go("GET", signedIn.location);
   check("and the authorization endpoint hands them a code", function () {
-    assert.ok(back.location.indexOf(REDIRECT_URI) === 0 &&
+    assert.ok(urls.isAt(back.location, REDIRECT_URI) &&
               /[?&]code=/.test(back.location),
       "it went to " + back.location);
   });
@@ -968,7 +971,7 @@ async function theAuthorizationEndpointRefuses() {
   const second = await holderBrowser.go("GET",
     authorizeUrl("roles-second-app"));
   check("a LIVE session is refused at the authorization endpoint", function () {
-    assert.ok(second.location.indexOf(REDIRECT_URI) === 0,
+    assert.ok(urls.isAt(second.location, REDIRECT_URI),
       "the refusal goes to the redirect_uri the client controls and NOT to a " +
       "page on this service; it went to " + second.location);
   });

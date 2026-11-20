@@ -42,6 +42,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -378,7 +381,7 @@ function childMain() {
     r = await authorize(RP_CLIENT);
     const fresh = String(r.headers.location || '');
     note(fresh.indexOf('error=unauthorized_client') < 0 &&
-         fresh.indexOf(REDIRECT) === 0 && /[?&]code=/.test(fresh),
+         urls.isAt(fresh, REDIRECT) && /[?&]code=/.test(fresh),
          'f1. within the window, the launched client\'s authorization ' +
          'request is answered', r.status + ' ' + fresh.slice(0, 200));
     note(!(session.launches || {})[RP_CLIENT],

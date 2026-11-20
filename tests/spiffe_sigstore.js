@@ -41,6 +41,9 @@
 //      attestation (the connection is refused), never a missing selector.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
@@ -377,7 +380,7 @@ function registry(images, asked) {
       return reply(200, JSON.stringify({ token: 'pull-token' }));
     }
     const base = 'https://' + REGISTRY + '/v2/' + REPO + '/';
-    if (url.indexOf(base) !== 0) {
+    if (!urls.isUnder(url, base)) {
       return reply(404, '');
     }
     if (headers.Authorization !== 'Bearer pull-token') {

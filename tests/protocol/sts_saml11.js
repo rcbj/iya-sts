@@ -130,6 +130,9 @@
 // typed. A test that asserted otherwise would be asserting a bug.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require('./url_match.js');
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require('./authn_signin');
 const assert = require('assert');
@@ -687,7 +690,7 @@ async function theTestPeerRelyingParty(target) {
   check('the shire registered on artifact-01 redirects to the peer\'s ' +
         'artifact consumer',
         res.status === 303 && !!artifactAcs &&
-        location.indexOf(artifactAcs + '?') === 0 &&
+        urls.isAt(location, artifactAcs) &&
         /[?&]SAMLart=/.test(location), 'status ' + res.status + ' ' + location);
   res = await request('GET', location);
   seen = await peerSaw(peer11, 'saml11', since);

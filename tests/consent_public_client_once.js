@@ -32,6 +32,9 @@
 //      request issues a code at once.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -109,7 +112,7 @@ function childMain() {
     };
     const codeOf = function (r, state) {
       const at = where(r);
-      if (r.status !== 302 || at.indexOf(REDIRECT) !== 0) {
+      if (r.status !== 302 || !urls.isAt(at, REDIRECT)) {
         return '';
       }
       const q = new URL(at).searchParams;

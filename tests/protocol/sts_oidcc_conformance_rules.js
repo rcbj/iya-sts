@@ -75,6 +75,9 @@
 // OWNED HERE (local: true): this repository's own OpenID Provider.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const http = require("http");
 const nodeCrypto = require("crypto");
@@ -262,7 +265,7 @@ async function authorize(realm, query, username, jarIn) {
       { action: "login", username: username, password: PASSWORD }, jar);
   }
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops += 1) {
+       !urls.isAt(r.location, REDIRECT); hops += 1) {
     const next = /^https?:/.test(r.location) ? r.location
       : new URL(base).origin + r.location;
     r = await call("GET", next, undefined, {}, jar);
@@ -608,7 +611,7 @@ async function responseTypeSection() {
     // error is answered in the FRAGMENT (OAuth 2.0 Multiple Response Types
     // section 5's default for anything but `code`); a missing one in the
     // query.
-    const back = r.location.indexOf(REDIRECT) !== 0 ? new URLSearchParams()
+    const back = !urls.isAt(r.location, REDIRECT) ? new URLSearchParams()
       : (/#/.test(r.location) ? fragmentOf(r.location)
                               : new URL(r.location).searchParams);
     return { error: back.get("error"), description:

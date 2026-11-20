@@ -245,7 +245,7 @@ async function signIn() {
   r = await authnSignin.signInWithJar(RB, r.location,
     { action: "login", username: PERSON, password: PASSWORD }, S.jar);
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops += 1) {
+       !urls.isAt(r.location, REDIRECT); hops += 1) {
     r = await call("GET", /^https?:/.test(r.location) ? r.location
       : ORIGIN + r.location, {}, S.jar);
   }
@@ -481,7 +481,7 @@ async function confirmSection() {
   check("b5. the page's own form signs out and returns to the registered " +
         "address WITH state", function () {
     assert.strictEqual(d.status, 302, d.text.slice(0, 200));
-    assert.ok(d.location.indexOf(BACK) === 0, d.location);
+    assert.ok(urls.isAt(d.location, BACK), d.location);
     assert.ok(/[?&]state=st-b(&|$)/.test(d.location));
     assert.ok(!live);
   });
@@ -498,7 +498,7 @@ async function hintSection() {
   check("c1. a verified hint for this session signs out at once, with state",
         function () {
     assert.strictEqual(r.status, 302, r.text.slice(0, 200));
-    assert.ok(r.location.indexOf(BACK) === 0);
+    assert.ok(urls.isAt(r.location, BACK));
     assert.ok(/state=st-c/.test(r.location));
     assert.ok(!live);
   });
@@ -902,7 +902,7 @@ async function reasonSection() {
   f = await screenAfter({ max_age: "3600" });
   check("f4. a max_age the session meets: answered at once", function () {
     assert.ok(!f.view);
-    assert.ok(/[?&]code=/.test(f.at) && f.at.indexOf(REDIRECT) === 0, f.at);
+    assert.ok(/[?&]code=/.test(f.at) && urls.isAt(f.at, REDIRECT), f.at);
   });
   await new Promise(function (done) {
     setTimeout(done, 2100);

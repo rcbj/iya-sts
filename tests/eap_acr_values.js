@@ -59,6 +59,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -543,7 +546,7 @@ function childMain() {
     const atRedirect = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
       return (r.status === 302 || r.status === 303) &&
-        loc.indexOf(REDIRECT) === 0 ? new URL(loc).searchParams : null;
+        urls.isAt(loc, REDIRECT) ? new URL(loc).searchParams : null;
     };
     const redeem = async function (b, client, params) {
       const r = await b.go('POST', '/oauth2/token', { noCookies: true,

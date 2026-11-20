@@ -47,6 +47,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -328,7 +331,7 @@ function childMain() {
     d = await request(port, 'POST', '/oauth2/logout',
       { form: Object.assign({}, asked, { confirm: 'yes' }) });
     const back = String(d.headers.location || '');
-    note(d.status === 302 && back.indexOf(BACK) === 0 &&
+    note(d.status === 302 && urls.isAt(back, BACK) &&
            /[?&]state=st-b(&|$)/.test(back) && !(await alive()),
          'b5. the page\'s own form signs out and returns to the registered ' +
          'address WITH state', d.status + ' ' + back);
@@ -337,7 +340,7 @@ function childMain() {
     idToken = await signIn('rl-alice');
     r = await logout({ id_token_hint: idToken, post_logout_redirect_uri: BACK,
                        state: 'st-c' });
-    note(r.status === 302 && String(r.headers.location).indexOf(BACK) === 0 &&
+    note(r.status === 302 && urls.isAt(r.headers.location, BACK) &&
            /state=st-c/.test(String(r.headers.location)) && !(await alive()),
          'c1. a verified hint for this session signs out at once, with state',
          r.status + ' ' + r.headers.location);
@@ -719,7 +722,7 @@ function childMain() {
          'f3. prompt=select_account: the account picker, as it was — not a ' +
          'reason the notice names', f.at);
     f = await screenAfter({ max_age: '3600' });
-    note(!f.view && /[?&]code=/.test(f.at) && f.at.indexOf(REDIRECT) === 0,
+    note(!f.view && /[?&]code=/.test(f.at) && urls.isAt(f.at, REDIRECT),
          'f4. a max_age the session meets: answered at once, as it was',
          f.at.slice(0, 120));
     await new Promise(function (done) { setTimeout(done, 2100); });

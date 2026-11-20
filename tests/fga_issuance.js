@@ -43,6 +43,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -443,7 +446,7 @@ function childMain() {
       for (let hop = 0; hop < 12; hop++) {
         const where = String(r.headers.location || '');
         if ((r.status !== 302 && r.status !== 303) ||
-            where.indexOf(REDIRECT) === 0) {
+            urls.isAt(where, REDIRECT)) {
           break;
         }
         if (/\/authn\/login/.test(where)) {
@@ -591,7 +594,7 @@ function childMain() {
     r = await authorize({ prompt: 'none',
       authorization_details: JSON.stringify([doc(['delete'])]) }, true);
     const noneAt = String(r.headers.location || '');
-    note(noneAt.indexOf(REDIRECT) === 0 && /error=access_denied/.test(noneAt),
+    note(urls.isAt(noneAt, REDIRECT) && /error=access_denied/.test(noneAt),
          '3l. with prompt=none too — access_denied, not consent_required',
          noneAt);
     r = await par({ authorization_details: JSON.stringify([doc(['delete'])]) });

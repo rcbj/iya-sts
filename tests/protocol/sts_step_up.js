@@ -111,6 +111,9 @@
 // the client is given a global consent for the one scope it asks for.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -436,7 +439,7 @@ function toSignIn(r) {
 function atClient(r) {
   log.debug("Entering atClient().");
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(REDIRECT) !== 0) {
+      !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }

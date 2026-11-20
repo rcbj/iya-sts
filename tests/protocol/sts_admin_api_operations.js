@@ -117,6 +117,9 @@
 //
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 // ---------------------------------------------------------------------------
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
@@ -1940,7 +1943,7 @@ async function theDeclaredFlowsAreEnforced() {
                 [])[1] || "";
   const target = location ||
     (asked.status === 400 ? link.replace(/&amp;/g, "&") : "");
-  assert.ok(target.indexOf(MINT_REDIRECT_URI) === 0 &&
+  assert.ok(urls.isAt(target, MINT_REDIRECT_URI) &&
             /[?&#]error=unauthorized_client/.test(target),
     "a response type the client did not declare should be sent back to its " +
     "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1), by a " +

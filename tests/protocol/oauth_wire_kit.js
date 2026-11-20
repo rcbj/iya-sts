@@ -30,6 +30,9 @@
 // OWNED HERE (MANIFEST.js's LOCAL_HELPERS).
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const http = require("http");
 const nodeCrypto = require("crypto");
@@ -318,7 +321,7 @@ function kit(name) {
     let consent = "";
     for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
          (/^\//.test(r.location) ||
-          String(r.location).indexOf(base) === 0); hops++) {
+          urls.isUnder(r.location, base)); hops++) {
       if (authnSignin.isConsent(r.location)) {
         consent = /^https?:/.test(r.location) ? r.location
                                                : base + r.location;
@@ -339,7 +342,7 @@ function kit(name) {
     const opened = r.opened;
     for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
          (/^\//.test(r.location) ||
-          String(r.location).indexOf(base) === 0); hops++) {
+          urls.isUnder(r.location, base)); hops++) {
       r = await b.go(r.location);
     }
     log.debug("Leaving consent(). " + r.status);

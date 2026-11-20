@@ -31,6 +31,9 @@
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -234,7 +237,7 @@ async function idTokenOf(b) {
       .digest("base64url"), code_challenge_method: "S256" };
   const r = await follow(b, R + "/oauth2/authorize?" + form(params),
                          REDIRECT);
-  const code = r.location.indexOf(REDIRECT) === 0
+  const code = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   assert.ok(code, "the code flow reaches the client: " + r.status + " " +
             r.location + " " + r.text.slice(0, 300));

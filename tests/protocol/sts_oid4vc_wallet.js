@@ -73,6 +73,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const childProcess = require("child_process");
 const crypto = require("crypto");
@@ -578,7 +581,7 @@ async function signIn(wallet, siop, approve, subject) {
       base: base, location: at, cookie: who.header() });
     at = settled.location || at;
   }
-  const code = at && at.indexOf(REDIRECT_URI) === 0
+  const code = at && urls.isAt(at, REDIRECT_URI)
     ? new URL(at).searchParams.get("code") : null;
   const tokens = code ? await hop(null, "POST", base + "/oauth2/token", {
     form: { grant_type: "authorization_code", code: code,

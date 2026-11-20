@@ -35,6 +35,9 @@
 // The STS mock is located from WSTRUST_STS_URL, as the other STS-backed tests
 // are; OAUTH_METADATA_URL overrides the metadata URL outright.
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -544,7 +547,7 @@ async function testLoginScreen(meta, verify) {
         "endpoint. Got: " + authz.viaAuthorize);
   assert.ok(authz.viaAuthorize.indexOf("prompt") < 0,
     "the redirect back must drop prompt, or the login screen would loop.");
-  assert.ok(authz.location.indexOf(REDIRECT_URI) === 0,
+  assert.ok(urls.isAt(authz.location, REDIRECT_URI),
     "the authorization response should go to the client's redirect_uri. Got: " +
         authz.location);
   const code = authz.params.get("code");

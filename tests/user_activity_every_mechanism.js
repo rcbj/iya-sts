@@ -34,6 +34,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -193,7 +196,7 @@ function childMain() {
           continue;
         }
         if (r.status >= 300 && r.status < 400 && to) {
-          if (to.indexOf('http') === 0 && to.indexOf(ORIGIN) !== 0) {
+          if (to.indexOf('http') === 0 && !urls.isUnder(to, ORIGIN)) {
             break;
           }
           r = await call({ jar: jar, path: to, cert: cert, key: key });

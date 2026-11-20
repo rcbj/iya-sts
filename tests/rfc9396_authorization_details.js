@@ -50,6 +50,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -482,7 +485,7 @@ function childMain() {
         if (r.status !== 302 && r.status !== 303) {
           break;
         }
-        if (where.indexOf(REDIRECT) === 0) {
+        if (urls.isAt(where, REDIRECT)) {
           break;
         }
         if (/\/authn\/login/.test(where)) {

@@ -47,6 +47,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -288,7 +291,7 @@ function childMain() {
       return { verifier: verifier, start: start };
     };
     const codeIn = function (location) {
-      return location && String(location).indexOf(REDIRECT) === 0
+      return location && urls.isAt(location, REDIRECT)
         ? new URL(String(location)).searchParams.get('code') : null;
     };
     const redeem = async function (b, code, verifier) {

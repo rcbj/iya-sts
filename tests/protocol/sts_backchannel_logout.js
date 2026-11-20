@@ -45,6 +45,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const navigation = require("./navigation.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
@@ -238,10 +241,10 @@ async function signIn(realm) {
   r = await authnSignin.signInWithJar(rb, r.location,
     { action: "login", username: PERSON, password: PASSWORD }, b.jar);
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       String(r.location).indexOf(REDIRECT) !== 0; hops++) {
+       !urls.isAt(r.location, REDIRECT); hops++) {
     r = await b.go("GET", r.location);
   }
-  const code = String(r.location).indexOf(REDIRECT) === 0
+  const code = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   assert.ok(code, "no code at the client: " + r.status + " " + r.location);
   const t = await call("POST", rb + "/oauth2/token",

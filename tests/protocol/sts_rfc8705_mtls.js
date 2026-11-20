@@ -77,6 +77,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const childProcess = require("child_process");
 const fs = require("fs");
 const https = require("https");
@@ -326,7 +329,7 @@ async function follow(realm, b, first, who, password) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(base) !== 0) {
+    if (!urls.isUnder(where, base)) {
       break;
     }
     if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {

@@ -26,6 +26,9 @@
 // OWNED HERE (local: true): this repository's authorization server and API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -363,10 +366,11 @@ async function test() {
   check("another realm's tenant is refused invalid_request at the client; " +
         "this realm's is accepted", function () {
     assert.ok(/error=invalid_request/.test(other.location) &&
-              other.location.indexOf(RP_REDIRECT) === 0,
+              urls.isAt(other.location, RP_REDIRECT),
               other.status + " " + other.location);
-    assert.ok(same.status === 302 && same.location.indexOf(RP_REDIRECT) !==
-              0, same.status + " " + same.location);
+    assert.ok(same.status === 302 &&
+              !urls.isAt(same.location, RP_REDIRECT),
+              same.status + " " + same.location);
   });
 
   log.info("=== 5. domain_hint ===");

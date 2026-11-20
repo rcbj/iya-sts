@@ -71,6 +71,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -875,7 +878,7 @@ async function signInThroughAnotherClient(realmBase, user, password,
   // this service's own (`/oauth2/consent`, #576): Allow, as a person would.
   let at = await hop(answered.location || authorize);
   for (let i = 0; i < 6 && (at.status === 302 || at.status === 303) &&
-       String(at.headers.get("location") || "").indexOf(callback) !== 0;
+       !urls.isAt(String(at.headers.get("location") || ""), callback);
        i++) {
     const next = new URL(at.headers.get("location"), base).toString();
     if (authnSignin.isConsent(next)) {

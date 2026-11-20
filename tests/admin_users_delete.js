@@ -42,6 +42,9 @@
 //      lands on the list without the person.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -264,7 +267,7 @@ function childMain() {
     const honoured = async function (b) {
       const r = await authorize(b);
       return r.status === 302 &&
-        String(r.headers.location || '').indexOf(REDIRECT) === 0;
+        urls.isAt(String(r.headers.location || ''), REDIRECT);
     };
     const authnScreen = require(ROOT_DIR + '/tests/tools/authn_screen');
     const signIn = async function (b, username) {
@@ -281,7 +284,7 @@ function childMain() {
         r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
-      const code = r.status === 302 && loc.indexOf(REDIRECT) === 0
+      const code = r.status === 302 && urls.isAt(loc, REDIRECT)
         ? new URL(loc).searchParams.get('code') : null;
       if (!code) {
         return null;

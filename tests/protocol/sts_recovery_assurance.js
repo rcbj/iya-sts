@@ -69,6 +69,9 @@
 // OWNED HERE (local: true): this repository's own API, portal and screen.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const authnSignin = require("./authn_signin");
 const portal = require("./portal_signin.js");
@@ -197,7 +200,7 @@ async function follow(realm, answer) {
     k.BROWSER) });
   const to = r.headers.get("location") || "";
   log.debug("Leaving follow(). " + r.status + " " + to);
-  if ((/[?&]code=/.test(to) && to.indexOf(k.REDIRECT) === 0) ||
+  if ((/[?&]code=/.test(to) && urls.isAt(to, k.REDIRECT)) ||
       /\/oauth2\/consent\?/.test(to)) {
     return "session";
   }

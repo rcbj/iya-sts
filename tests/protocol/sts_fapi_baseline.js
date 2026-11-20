@@ -47,6 +47,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -227,7 +230,7 @@ function pkce() {
 function atClient(r) {
   log.debug("Entering atClient().");
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(REDIRECT) !== 0) {
+      !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -258,7 +261,7 @@ async function follow(b, first, who, onConsent) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(base) !== 0) {
+    if (!urls.isUnder(where, base)) {
       break;
     }
     if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {

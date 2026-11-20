@@ -44,6 +44,9 @@
 // applications.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -424,7 +427,7 @@ function answeredWithCode(r, redirect) {
   log.debug("Entering answeredWithCode().");
   log.debug("Leaving answeredWithCode().");
   return (r.status === 302 || r.status === 303) &&
-    r.location.indexOf(redirect) === 0 && /[?&]code=/.test(r.location);
+    urls.isAt(r.location, redirect) && /[?&]code=/.test(r.location);
 }
 
 async function test() {

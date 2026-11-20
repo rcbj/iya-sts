@@ -45,6 +45,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -354,7 +357,7 @@ function childMain() {
     const signed = await signIn(port, screen, CHROME, APP, REDIRECT, USER,
                                  PASSWORD);
     const coded = /[?&]code=/.test(signed.location) &&
-      signed.location.indexOf(REDIRECT) === 0;
+      urls.isAt(signed.location, REDIRECT);
     note(coded, '2. the user finishes the authorization-code sign-in',
          safe(signed.status + ' ' + signed.next + ' ' +
               (signed.errors || []).join('; ') + ' ' + signed.location,

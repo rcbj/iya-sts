@@ -47,6 +47,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -579,7 +582,7 @@ function childMain() {
     };
     const codeFrom = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
-      if (!r || r.status !== 302 || loc.indexOf(REDIRECT) !== 0) {
+      if (!r || r.status !== 302 || !urls.isAt(loc, REDIRECT)) {
         return '';
       }
       return new URL(loc).searchParams.get('code') || '';
