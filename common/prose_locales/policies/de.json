@@ -1247,6 +1247,22 @@
     "en": "5098a9645fefe2ff",
     "text": "STANDARDMÄSSIG AUS. Eingeschaltet wartet eine Ausstellung an eine Anwendung, die dieses Profil abdeckt, bis die Anmeldesitzung an den Schlüssel des Browsers gebunden ist, und wird abgelehnt, wenn der Browser diese Registrierung übersprungen hat oder die Wartezeit ohne Bindung verstrichen ist. Eine Sitzung, der nie eine Registrierung angeboten wurde, wird von dieser Zeile nicht abgelehnt. Abgelehnt, solange authn.deviceBoundSessions aus ist."
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "Schutz der Anmeldedaten, den eine Registrierung von einem Sicherheitsschlüssel verlangt"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` STANDARDMÄSSIG: Eine Registrierung verlangt keinen Schutz der Anmeldedaten, und ihre Optionen sind, was sie immer waren. Andernfalls bittet eine Registrierung den Authentifikator (CTAP 2.1 Abschnitt 12.1, die Erweiterung credProtect), die neue Anmeldedaten auf dieser Stufe zu schützen: `userVerificationOptional` (Stufe 1, was Anmeldedaten ohne die Erweiterung haben), `userVerificationOptionalWithCredentialIDList` (Stufe 2: Der Schlüssel gibt die Anmeldedaten ohne Benutzerüberprüfung weder preis noch verwendet er sie, es sei denn, die Relying Party nennt sie in allowCredentials, sodass niemand, der den Schlüssel hält, darauf auffindbare Anmeldedaten finden kann) oder `userVerificationRequired` (Stufe 3: Der Schlüssel verwendet die Anmeldedaten nur nach einer PIN oder biometrischen Prüfung). Die Stufe, die der Schlüssel meldet, wird am Passkey festgehalten. Die meisten Plattform- und synchronisierten Passkeys melden nichts. Bei einem Speichern weggelassen, bleibt der eingebaute Standardwert erhalten."
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "Einen Schlüssel ablehnen, der diesen Schutz nicht anwendet"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "STANDARDMÄSSIG AUS. Eingeschaltet wird der Browser gebeten, die Zeile darüber durchzusetzen (enforceCredentialProtectionPolicy), und eine Registrierung, deren Authentifikator eine niedrigere Stufe meldet, als die Zeile darüber verlangt, wird abgelehnt; ein Schlüssel, der nichts meldet, ist auf Stufe 1. Benötigt die Zeile darüber auf einer anderen Stufe als none. Bei einem Speichern weggelassen, bleibt der eingebaute Standardwert erhalten."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Die Klasse dieses Dienstes für eine Passkey-Richtlinie: wie sich Passkeys in diesem Bereich verhalten. Der Eintrag wird durch das PROFIL benannt (`cn=default`)."
@@ -1354,6 +1370,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "STANDARDMÄSSIG AUS. Eingeschaltet wartet eine Ausstellung an eine Anwendung, die dieses Profil abdeckt, bis die Anmeldesitzung an den Schlüssel des Browsers gebunden ist, und wird abgelehnt, wenn der Browser diese Registrierung übersprungen hat oder die Wartezeit ohne Bindung verstrichen ist. Eine Sitzung, der nie eine Registrierung angeboten wurde, wird von dieser Zeile nicht abgelehnt. Abgelehnt, solange authn.deviceBoundSessions aus ist."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` STANDARDMÄSSIG: Eine Registrierung verlangt keinen Schutz der Anmeldedaten, und ihre Optionen sind, was sie immer waren. Andernfalls bittet eine Registrierung den Authentifikator (CTAP 2.1 Abschnitt 12.1, die Erweiterung credProtect), die neue Anmeldedaten auf dieser Stufe zu schützen: `userVerificationOptional` (Stufe 1, was Anmeldedaten ohne die Erweiterung haben), `userVerificationOptionalWithCredentialIDList` (Stufe 2: Der Schlüssel gibt die Anmeldedaten ohne Benutzerüberprüfung weder preis noch verwendet er sie, es sei denn, die Relying Party nennt sie in allowCredentials, sodass niemand, der den Schlüssel hält, darauf auffindbare Anmeldedaten finden kann) oder `userVerificationRequired` (Stufe 3: Der Schlüssel verwendet die Anmeldedaten nur nach einer PIN oder biometrischen Prüfung). Die Stufe, die der Schlüssel meldet, wird am Passkey festgehalten. Die meisten Plattform- und synchronisierten Passkeys melden nichts. Bei einem Speichern weggelassen, bleibt der eingebaute Standardwert erhalten."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "STANDARDMÄSSIG AUS. Eingeschaltet wird der Browser gebeten, die Zeile darüber durchzusetzen (enforceCredentialProtectionPolicy), und eine Registrierung, deren Authentifikator eine niedrigere Stufe meldet, als die Zeile darüber verlangt, wird abgelehnt; ein Schlüssel, der nichts meldet, ist auf Stufe 1. Benötigt die Zeile darüber auf einer anderen Stufe als none. Bei einem Speichern weggelassen, bleibt der eingebaute Standardwert erhalten."
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",

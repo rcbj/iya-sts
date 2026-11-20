@@ -2449,6 +2449,11 @@ const JOBS = [
   // (passkey_policy, passkey_pin_length, passkey_require_usernameless).
   { file: 'sts_passkey_policy_profile.js', browser: false, local: true,
     optIn: '444' },
+  // #1955 P7: legacy U2F credentials imported and used with the appid
+  // extension (the AppID's hash only with appid true), appidExclude on a
+  // registration, and credProtect asked and enforced. Throwaway realms of
+  // its own; every key made when it runs.
+  { file: 'sts_webauthn_u2f_import.js', browser: false, local: true },
   // D12 (#444): appPasskeyPolicy and a group's stsPasskeyPolicy, their
   // refusals, which profile a sign-in gets by client_id and by group
   // precedence, the application read's card data, the delete refused while

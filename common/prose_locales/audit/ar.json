@@ -675,6 +675,10 @@
     "en": "c179dbd3cb227763",
     "text": "أعاد مشغّل تسمية مفتاح المرور الخاص بأحدهم"
   },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "استورد مشغّل مفتاح أمان U2F لشخص ما"
+  },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
     "text": "أعاد مشغّل تعيين كلمة المرور الخاصة بأحدهم"

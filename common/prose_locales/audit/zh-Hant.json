@@ -675,6 +675,10 @@
     "en": "c179dbd3cb227763",
     "text": "營運者重新命名了某人的密碼金鑰"
   },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "操作員為某人匯入了 U2F 安全金鑰"
+  },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
     "text": "營運者重設了某人的密碼"

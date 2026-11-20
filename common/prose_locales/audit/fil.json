@@ -675,6 +675,10 @@
     "en": "c179dbd3cb227763",
     "text": "May operator na nagpalit ng pangalan ng passkey ng isang tao"
   },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "Nag-import ang isang operator ng U2F security key para sa isang tao"
+  },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
     "text": "May operator na nag-reset ng password ng isang tao"

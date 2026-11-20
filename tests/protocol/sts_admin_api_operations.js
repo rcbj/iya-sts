@@ -5538,7 +5538,13 @@ const NOT_DRIVEN_HERE = {
     "it with the ML-DSA registration the prove offered",
   "POST /users/cancel-passkey-upgrade": "admin-ui/web_runtime.ts calls " +
     "it when the browser ceremony throws after begin; " +
-    "sts_passkey_dual_lane.js finishes the upgrade instead"
+    "sts_passkey_dual_lane.js finishes the upgrade instead",
+  // #1955 P7: a legacy U2F key imported by value. Refused by design in a
+  // realm whose webauthn.u2fAppIds is empty — every realm this walk drives
+  // — so the example can only be refused here; sts_webauthn_u2f_import.js
+  // lists an AppID, imports a key made at run time and signs in with it.
+  "POST /users/import-u2f-key": "sts_webauthn_u2f_import.js drives it in a " +
+    "realm that lists the AppID, and signs in with the key it imported"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

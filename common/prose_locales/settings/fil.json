@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "Ang mga origin — scheme, host at port, walang path — kung saan tinatanggap ang isang WebAuthn ceremony, pinaghihiwalay ng kuwit. **Ang WALANG LAMAN, ang default, ay hinahango ang iisang origin mula sa address kung saan naabot ang serbisyong ito**, na siyang palaging ginagawa nito at ipini-pin na ng global.publicBaseUrl kapag itinakda ito. Kapag itinakda, ito ang buong listahan: ang clientDataJSON na ang origin ay wala rito ay tinatanggihan anumang Host ang dala ng request. Magpangalan ng ilan kung saan ginagamit ang iisang credential mula sa mga magkakapatid na host sa ilalim ng pinagsasaluhang webauthn.rpId."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "Mga lumang U2F AppID"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Ang mga FIDO U2F AppID — ang mga https URL kung saan nirehistro ng isang lumang U2F relying party ang mga security key nito — na ang mga kredensyal ay maaaring i-import sa mga entry ng mga tao at gamitin para mag-sign in dito, na pinaghihiwalay ng kuwit. **WALANG LAMAN, ang default, ay naka-off ang feature**: walang maaaring i-import, walang ceremony na nagdadala ng extension na appid o appidExclude (WebAuthn Level 3 sections 10.1.1 at 10.1.2), at hindi nagsa-sign in ang na-import na key. Ginagamit lamang ang isang AppID sa RP ID na kaugnay nito: ang host nito ay ang RP ID, o suffix ng isa ang isa pa. Kung saan iba ang host sa host ng origin, kinukuha ng browser ang AppID URL para sa isang TrustedFacets list na nagpapangalan sa origin na ito, na kailangang patuloy na ihain ng lumang serbisyo. Pangalawang factor lamang ang na-import na key: hindi kayang i-verify ng U2F key ang tao."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Mga iniaalok na algorithm"

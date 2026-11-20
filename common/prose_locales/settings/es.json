@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "Los orígenes — esquema, host y puerto, sin ruta — desde los que se acepta una ceremonia WebAuthn, separados por comas. **VACÍO, el valor predeterminado, deriva el único origen de la dirección por la que se llegó a este servicio**, que es lo que siempre ha hecho y que global.publicBaseUrl ya fija cuando está definido. Definido, es la lista completa: un clientDataJSON cuyo origen no está en ella se rechaza sea cual sea el Host que llevaba la solicitud. Nombre varios cuando una credencial se usa desde hosts hermanos bajo un webauthn.rpId compartido."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "AppID U2F heredados"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "Los AppID de FIDO U2F — las URL https con las que una parte de confianza U2F heredada registró sus llaves de seguridad — cuyas credenciales pueden importarse en las entradas de las personas y usarse para iniciar sesión aquí, separados por comas. **VACÍO, el valor predeterminado, es la función desactivada**: no se puede importar nada, ninguna ceremonia lleva la extensión appid o appidExclude (WebAuthn Level 3 secciones 10.1.1 y 10.1.2), y una llave importada no inicia sesión. Un AppID solo se usa en un RP ID con el que se relaciona: su host es el RP ID, o uno es sufijo del otro. Donde el host difiere del del origen, el navegador obtiene la URL del AppID en busca de una lista TrustedFacets que nombre este origen, que el servicio heredado debe seguir sirviendo. Una llave importada es solo un segundo factor: una llave U2F no puede verificar a la persona."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Algoritmos ofrecidos"

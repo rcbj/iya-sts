@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "接受 WebAuthn 儀式的來源——通訊協定、主機與連接埠，不含路徑——以逗號分隔。**空白（預設）從本服務被存取的位址推導出唯一的來源**，這是一直以來的行為，而設定 global.publicBaseUrl 時它已將其釘選。設定後，它就是完整清單：來源不在清單上的 clientDataJSON 會被拒絕，無論請求攜帶何種 Host。當同一認證在共用 webauthn.rpId 的同層主機間使用時，請列出多個來源。"
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "舊版 U2F AppID"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "FIDO U2F AppID——舊版 U2F 信賴方註冊其安全金鑰時使用的 https URL——其憑證可以匯入到人員項目上並在此用於登入，以逗號分隔。**為空（預設值）即該功能關閉**：不能匯入任何內容，任何儀式都不攜帶 appid 或 appidExclude 延伸（WebAuthn Level 3 第 10.1.1 與 10.1.2 節），匯入的金鑰也無法登入。AppID 只在與其相關的 RP ID 上使用：其主機就是該 RP ID，或其中一個是另一個的尾碼。當主機與來源的主機不同時，瀏覽器會取得 AppID URL，以查找列出此來源的 TrustedFacets 清單，舊服務必須繼續提供該清單。匯入的金鑰只能作為第二因素：U2F 金鑰無法驗證使用者本人。"
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "提供的演算法"

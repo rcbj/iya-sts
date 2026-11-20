@@ -675,6 +675,10 @@
     "en": "c179dbd3cb227763",
     "text": "Un opérateur a renommé la passkey de quelqu’un"
   },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "Un opérateur a importé une clé de sécurité U2F pour quelqu’un"
+  },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
     "text": "Un opérateur a réinitialisé le mot de passe de quelqu’un"

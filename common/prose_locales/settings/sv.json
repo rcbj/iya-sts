@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "De ursprung — schema, värd och port, ingen sökväg — som en WebAuthn-ceremoni godtas från, kommaseparerade. **TOMT, standardvärdet, härleder det enda ursprunget från adressen som tjänsten nåddes på**, vilket är vad den alltid har gjort och vad global.publicBaseUrl redan låser när den är satt. Satt är det hela listan: en clientDataJSON vars ursprung inte finns på den vägras oavsett vilken Host begäran bar. Namnge flera där en autentiseringsuppgift används från syskonvärdar under en delad webauthn.rpId."
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "Äldre U2F-AppID:n"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "FIDO U2F-AppID:n — https-URL:erna som en äldre U2F-förlitande part registrerade sina säkerhetsnycklar under — vars autentiseringsuppgifter får importeras till personers poster och användas för att logga in här, kommaseparerade. **TOMT, standard, betyder att funktionen är av**: ingenting kan importeras, ingen ceremoni bär tillägget appid eller appidExclude (WebAuthn Level 3 avsnitt 10.1.1 och 10.1.2), och en importerad nyckel loggar inte in någon. Ett AppID används bara vid ett RP ID det hör till: dess värd är RP ID:t, eller så är det ena ett suffix av det andra. Där värden skiljer sig från ursprungets hämtar webbläsaren AppID-URL:en efter en TrustedFacets-lista som nämner detta ursprung, som den äldre tjänsten måste fortsätta att tillhandahålla. En importerad nyckel är bara en andra faktor: en U2F-nyckel kan inte verifiera personen."
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "Erbjudna algoritmer"

@@ -168,6 +168,7 @@
   "audit.actions.admin.mfa.totp.cleared.label": "An operator cleared somebody's authenticator app",
   "audit.actions.admin.mfa.key.cleared.label": "An operator removed somebody's security key",
   "audit.actions.admin.mfa.key.renamed.label": "An operator renamed somebody's passkey",
+  "audit.actions.admin.mfa.key.imported.label": "An operator imported a U2F security key for somebody",
   "audit.actions.admin.password.reset.label": "An operator reset somebody's password",
   "audit.actions.admin.password.reset-link.label": "An operator issued somebody a password reset link",
   "audit.actions.admin.mfa.primary-keys.removed.label": "An operator disabled somebody's passwordless sign-in",

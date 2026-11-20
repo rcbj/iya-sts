@@ -1379,6 +1379,14 @@
     "en": "cba85726ee4e8673",
     "text": "接受 WebAuthn 仪式的源——协议方案、主机和端口，不带路径——以逗号分隔。**留空（默认）则从访问本服务所用的地址推导出唯一的源**，这是一贯的行为，设置了 global.publicBaseUrl 时它已经固定了该源。设置后，它就是完整的列表：源不在列表中的 clientDataJSON 会被拒绝，无论请求携带的是什么 Host。当一个凭据在共享 webauthn.rpId 的兄弟主机上使用时，请列出多个源。"
   },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "旧版 U2F AppID"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "05b1b01773d86d5d",
+    "text": "FIDO U2F AppID——旧版 U2F 依赖方注册其安全密钥时使用的 https URL——其凭据可以导入到人员条目上并在此用于登录，以逗号分隔。**为空（默认值）即该功能关闭**：不能导入任何内容，任何仪式都不携带 appid 或 appidExclude 扩展（WebAuthn Level 3 第 10.1.1 和 10.1.2 节），导入的密钥也无法登录。AppID 只在与其相关的 RP ID 上使用：其主机就是该 RP ID，或其中一个是另一个的后缀。当主机与源的主机不同时，浏览器会获取 AppID URL，以查找列出此源的 TrustedFacets 列表，旧服务必须继续提供该列表。导入的密钥只能作为第二因素：U2F 密钥无法验证使用者本人。"
+  },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
     "text": "提供的算法"

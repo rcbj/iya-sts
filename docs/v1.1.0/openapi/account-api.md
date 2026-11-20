@@ -301,6 +301,7 @@ The door of the portal's `GET /portal/activate`.
 | `pending.options` | object |  |  |
 | `pending.options.algorithms` | list |  |  |
 | `pending.options.algorithms[]` | integer |  |  |
+| `pending.options.appidExclude` | string |  |  |
 | `pending.options.attestation` | string |  |  |
 | `pending.options.authenticatorSelection` | object |  |  |
 | `pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -308,6 +309,9 @@ The door of the portal's `GET /portal/activate`.
 | `pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `pending.options.credProps` | boolean |  |  |
+| `pending.options.credProtect` | object |  |  |
+| `pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `pending.options.hints` | list |  |  |
 | `pending.options.hints[]` | string |  |  |
 | `pending.options.minPinLength` | boolean |  |  |
@@ -375,6 +379,7 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
+| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -382,6 +387,9 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
+| `view.pending.options.credProtect` | object |  |  |
+| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -449,6 +457,7 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
+| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -456,6 +465,9 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
+| `view.pending.options.credProtect` | object |  |  |
+| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -557,6 +569,7 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
+| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -564,6 +577,9 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
+| `view.pending.options.credProtect` | object |  |  |
+| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -631,6 +647,7 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
+| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -638,6 +655,9 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
+| `view.pending.options.credProtect` | object |  |  |
+| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -705,6 +725,7 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
+| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -712,6 +733,9 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
+| `view.pending.options.credProtect` | object |  |  |
+| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -5242,6 +5266,7 @@ Scope: `account:manage`.
 | `enrol.pending.options` | object |  |  |
 | `enrol.pending.options.algorithms` | list |  |  |
 | `enrol.pending.options.algorithms[]` | integer |  |  |
+| `enrol.pending.options.appidExclude` | string |  |  |
 | `enrol.pending.options.attestation` | string |  |  |
 | `enrol.pending.options.authenticatorSelection` | object |  |  |
 | `enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5249,6 +5274,9 @@ Scope: `account:manage`.
 | `enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `enrol.pending.options.credProps` | boolean |  |  |
+| `enrol.pending.options.credProtect` | object |  |  |
+| `enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `enrol.pending.options.hints` | list |  |  |
 | `enrol.pending.options.hints[]` | string |  |  |
 | `enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5414,6 +5442,7 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
+| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5421,6 +5450,9 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
+| `view.enrol.pending.options.credProtect` | object |  |  |
+| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5533,6 +5565,7 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
+| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5540,6 +5573,9 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
+| `view.enrol.pending.options.credProtect` | object |  |  |
+| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5670,6 +5706,7 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
+| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5677,6 +5714,9 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
+| `view.enrol.pending.options.credProtect` | object |  |  |
+| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5823,6 +5863,7 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
+| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5830,6 +5871,9 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
+| `view.enrol.pending.options.credProtect` | object |  |  |
+| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
+| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |

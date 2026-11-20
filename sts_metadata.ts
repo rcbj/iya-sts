@@ -2770,7 +2770,8 @@ const SPECS: Spec[] = [
               'this service is neither a client nor an authenticator: ' +
               'credProtect (section 12.1) — the passkey policy\'s ' +
               'credProtect asks for a level as credentialProtectionPolicy, ' +
-              'enforceCredProtect sends enforceCredentialProtectionPolicy and ' +
+              'enforceCredProtect sends ' +
+              'enforceCredentialProtectionPolicy and ' +
               'refuses a registration whose authenticator data reports a ' +
               'lower level (none reported is level 1), and the level is ' +
               'recorded on the passkey; and minPinLength (section 12.4), ' +
