@@ -318,6 +318,21 @@ what it needs:**
   per person; `ldap/CLAUDE.md` (*the window*) has the counts.
   `tests/users_page_before_decoration.js` section 8 holds that both doors
   answer what the synchronous views answer.
+* **The register's subjects, asked once a while (#790, 2026-11-20).** The
+  population is built inside `stats.withSubjectsResolvedAsync()`, which
+  names every held token's and artifact's `urn:uuid:` subject — on demand
+  up to the 20,000 tokens a process holds, and every artifact. The kept
+  population's entry carries a memo of those names (`entry.subjects`), and
+  a rebuild asks the directory only for the subjects the last build did not
+  meet. The memo holds exactly the last walk's subjects. It is dropped whole
+  two minutes after the walk that asked them all (`SUBJECT_NAMES_KEPT_MS`,
+  the staleness an unfiltered page already accepts), and whenever this
+  process renames or deletes a person (`renameIdentity()`,
+  `forgetIdentity()` move a generation). **The cost is a rename or delete
+  made by ANOTHER process, which shows up to two minutes late.** The read
+  could not be bounded to the fifty shown rows instead (rcbj's decision on
+  #790): the list is sorted by name over every source, and a subject has no
+  name until it is resolved. `tests/users_population_async.js` P9.
 * **Page, then decorate.** `pagedRows()` takes `options.decorate(row)` and
   applies it to the shown slice only. `decoratePerson()` builds each shown
   row's full factors from `credentials.factorHolderRow()` — which is
