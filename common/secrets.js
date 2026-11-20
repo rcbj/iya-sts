@@ -1842,15 +1842,402 @@ const azureKeysProvider = {
   }
 };
 
+// ---------------------------------------------------------------------------
+// pkcs11 — A KEY-ENCRYPTION KEY IN A HARDWARE SECURITY MODULE (#1955 P8,
+// 2026-11-20): a YubiHSM 2 through `yubihsm_pkcs11.so` and
+// `yubihsm-connector`, SoftHSM2, or any PKCS#11 v2.40 module, through the
+// `pkcs11js` binding (an optional peer, loaded lazily like the cloud SDKs).
+//
+// It is a key management service in every sense the four above are: the key
+// is a NON-EXTRACTABLE AES-256 object inside the token, it wraps and unwraps
+// each data key there, and `read()` answers a HANDLE, never bytes. The
+// wrapped form is `$dekkms$1$pkcs11$<b64url key reference>$<tag>.<…>`, the
+// tag naming the mechanism and its own version (`common/crypto_impl/
+// pkcs11.js`): `g1` CKM_AES_GCM with the data key's AAD, `k1`
+// CKM_AES_KEY_WRAP_PAD, `y1` the YubiHSM's CKM_YUBICO_AES_CCM_WRAP — the two
+// that take no AAD carry SHA-256 of it inside what they wrap, the Azure RSA
+// rule.
+//
+// WHERE IT IS. The location row of the position (`keys.kekRef`,
+// `keys.cellKekRef`, `keys.previousKekRef`) is an RFC 7512 PKCS#11 URI naming
+// the token and the key: `pkcs11:token=sts;object=sts-kek`, or with
+// `id=%01%02`, `serial=`, `slot-id=`. Its `module-path` query attribute
+// overrides `keys.pkcs11Module` for that position alone — which is what
+// moving a key-encryption key from one HSM to another needs, the previous key
+// on the old module and the new on the new. `pin-value` and `pin-source` are
+// REFUSED: a PIN in a URI is a PIN in a configuration value.
+//
+// THE PIN is a secret like any other here: `keys.pkcs11PinProvider` (file,
+// vault, aws, gcp or azure) and `keys.pkcs11PinRef`, never a setting's value.
+// What is stored is the PIN — for a YubiHSM 2 the authentication key's id in
+// four hex digits followed by its password, `0001password` — or a JSON object
+// of PINs by token label (`{"sts": "1234", "old-hsm": "…"}`) when the
+// positions are on different tokens. `none` logs in to nothing, for a module
+// that needs no login.
+//
+// THE KEY IS FOUND, AND MADE ONLY WHEN ASKED. A key that is not there is
+// refused (STS-KEYS-0203) unless `keys.pkcs11GenerateKey` is on, and then
+// only by the FRONT process (a request worker never makes one: two threads
+// starting at once would make two keys under one name, and a second node at
+// once the same — which is why the setting is for a first start and the
+// documentation says to make the key with the HSM's own tool for a cluster).
+// A key that is extractable, or not AES-256, is refused as well.
+//
+// SESSIONS ARE PER THREAD (the engine's header): every process and worker
+// that unwraps opens its own, and a connector restart is met by the next
+// operation, which reconnects once. Nothing here starts a timer.
+//
+// NO ROTATE(). A PKCS#11 key has no versions; a new key-encryption key is a
+// new object, and moving to it is `keys.previousKek*` with the old one there
+// (`keystore.rotateKek()` says so). `isStale()` is therefore always false.
+// ---------------------------------------------------------------------------
+/**
+ * The PKCS#11 token PIN's descriptor (#1955): its own provider, location and
+ * field, and the key-encryption key's way of reaching a store.
+ */
+const PKCS11_PIN = {
+  id: 'pkcs11-pin',
+  label: 'the PKCS#11 token PIN',
+  provider: 'keys.pkcs11PinProvider',
+  file: 'keys.pkcs11PinRef',
+  ref: 'keys.pkcs11PinRef',
+  field: 'keys.pkcs11PinField',
+  defaultField: '',
+  // NO FALLBACK LOCATION: a PIN borrowed from the key-encryption key's place
+  // would be the key itself, or nothing.
+  fallbackRef: null,
+  vault: 'keys.kekVault',
+  region: 'keys.kekRegion',
+  token: 'keys.kekToken',
+  failureCode: 'STS-KEYS-0205',
+  emptyCode: 'STS-KEYS-0205'
+};
+
+// THE ATTRIBUTES OF A PKCS#11 URI THIS SERVICE READS (RFC 7512 section 2.3).
+// Anything else in the path is ignored, as the RFC asks of an attribute a
+// consumer does not know; the two PIN attributes are refused.
+const PKCS11_PATH_ATTRS = ['token', 'object', 'id', 'serial', 'slot-id',
+                           'type', 'manufacturer', 'model',
+                           'library-manufacturer', 'library-description',
+                           'library-version', 'slot-description',
+                           'slot-manufacturer'];
+
+/**
+ * Reads an RFC 7512 PKCS#11 URI naming a token and an object.
+ *
+ * @param text - the URI
+ * @returns `{ token, object, id (Buffer|null), serial, slotId, modulePath }`
+ * @throws STS-KEYS-0205 when it is not one, or names a PIN
+ */
+function parsePkcs11Uri(text) {
+  log.debug('Entering parsePkcs11Uri().');
+  const raw = String(text || '').trim();
+  if (raw.toLowerCase().indexOf('pkcs11:') !== 0) {
+    throw errorCodes.mark(new Error('"' + raw.slice(0, 80) + '" is not a ' +
+      'PKCS#11 URI (RFC 7512). Name the key as ' +
+      'pkcs11:token=<token label>;object=<key label>.'), 'STS-KEYS-0205');
+  }
+  const rest = raw.slice('pkcs11:'.length);
+  const q = rest.indexOf('?');
+  const pathPart = q < 0 ? rest : rest.slice(0, q);
+  const queryPart = q < 0 ? '' : rest.slice(q + 1);
+  const decode = function (v) {
+    try {
+      return decodeURIComponent(v);
+    } catch (e) {
+      throw errorCodes.mark(new Error('a PKCS#11 URI value is not ' +
+        'percent-encoded properly: ' + ((e && e.message) || e)),
+        'STS-KEYS-0205');
+    }
+  };
+  const out = { token: '', object: '', id: null, serial: '', slotId: '',
+                modulePath: '' };
+  pathPart.split(';').filter(Boolean).forEach(function (pair) {
+    const eq = pair.indexOf('=');
+    const name = (eq < 0 ? pair : pair.slice(0, eq)).toLowerCase();
+    const value = eq < 0 ? '' : pair.slice(eq + 1);
+    if (name === 'pin-value' || name === 'pin-source') {
+      throw errorCodes.mark(new Error('a PKCS#11 URI here may not carry ' +
+        name + ': a PIN in a URI is a PIN in a setting. Deliver it with ' +
+        'keys.pkcs11PinProvider.'), 'STS-KEYS-0205');
+    }
+    if (PKCS11_PATH_ATTRS.indexOf(name) < 0) {
+      return;
+    }
+    if (name === 'id') {
+      // The id is bytes: every octet percent-encoded (`%01%02`), which is
+      // how RFC 7512 writes it, so the percent-encoding is decoded as bytes.
+      const bytes = [];
+      for (let i = 0; i < value.length; i++) {
+        if (value[i] === '%' && /^[0-9a-fA-F]{2}$/.test(value.substr(i + 1,
+                                                                    2))) {
+          bytes.push(parseInt(value.substr(i + 1, 2), 16));
+          i += 2;
+        } else {
+          bytes.push(value.charCodeAt(i) & 0xff);
+        }
+      }
+      out.id = Buffer.from(bytes);
+    } else if (name === 'slot-id') {
+      out.slotId = decode(value);
+    } else if (name === 'token' || name === 'object' || name === 'serial') {
+      out[name] = decode(value);
+    }
+  });
+  queryPart.split('&').filter(Boolean).forEach(function (pair) {
+    const eq = pair.indexOf('=');
+    const name = (eq < 0 ? pair : pair.slice(0, eq)).toLowerCase();
+    const value = eq < 0 ? '' : decode(pair.slice(eq + 1));
+    if (name === 'pin-value' || name === 'pin-source') {
+      throw errorCodes.mark(new Error('a PKCS#11 URI here may not carry ' +
+        name + ': a PIN in a URI is a PIN in a setting. Deliver it with ' +
+        'keys.pkcs11PinProvider.'), 'STS-KEYS-0205');
+    }
+    if (name === 'module-path') {
+      out.modulePath = value;
+    }
+  });
+  if (!out.object && !out.id) {
+    throw errorCodes.mark(new Error('the PKCS#11 URI "' + raw.slice(0, 80) +
+      '" names no object: give object=<key label> or id=<%xx bytes>.'),
+      'STS-KEYS-0205');
+  }
+  log.debug('Leaving parsePkcs11Uri().');
+  return out;
+}
+
+// The PIN for a token: the stored value, or its member for the token label
+// where what is stored is a JSON object of PINs. Read once per call (the
+// tokens it opens are held, so that is once per token per thread).
+async function pkcs11PinFor(tokenLabel) {
+  log.debug('Entering pkcs11PinFor().');
+  if (!configuredFor(PKCS11_PIN)) {
+    log.debug('Leaving pkcs11PinFor(). No PIN configured.');
+    return null;
+  }
+  const raw = await read(PKCS11_PIN);
+  const text = (Buffer.isBuffer(raw) ? raw.toString('utf8') :
+                String(raw == null ? '' : raw)).trim();
+  let parsed = null;
+  try {
+    parsed = text.charAt(0) === '{' ? JSON.parse(text) : null;
+  } catch (e) {
+    // Not JSON: the whole text is the PIN, which is the ordinary case.
+    log.debug('Caught in pkcs11PinFor(): ' + ((e && e.message) || e));
+    parsed = null;
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const pin = parsed[tokenLabel] !== undefined ? parsed[tokenLabel]
+                                                 : parsed['*'];
+    if (pin === undefined || pin === null || String(pin) === '') {
+      throw errorCodes.mark(new Error('the PKCS#11 PIN secret is a JSON ' +
+        'object with no PIN for the token "' + tokenLabel + '" (and no ' +
+        '"*"). It holds PINs for: ' + Object.keys(parsed).join(', ') + '.'),
+        'STS-KEYS-0205');
+    }
+    log.debug('Leaving pkcs11PinFor(). By token label.');
+    return String(pin);
+  }
+  if (!text) {
+    throw errorCodes.mark(new Error('the PKCS#11 PIN secret is empty.'),
+                          'STS-KEYS-0205');
+  }
+  log.debug('Leaving pkcs11PinFor().');
+  return text;
+}
+
+// THE TOKENS THIS THREAD HAS OPENED, by module, token, serial and slot: the
+// key-encryption key, the previous one, the cell key and the realms' signing
+// keys share one token's sessions where they are on one token.
+const pkcs11Tokens = new Map();
+
+// The binding, or the package to install. Loaded through `loadSdk()` so a
+// test hands in a fake.
+function pkcs11Binding() {
+  log.debug('Entering pkcs11Binding().');
+  try {
+    const binding = loadSdk('pkcs11js');
+    log.debug('Leaving pkcs11Binding().');
+    return binding;
+  } catch (e) {
+    throw missingModule('pkcs11js', 'pkcs11', e);
+  }
+}
+
+/**
+ * Opens (or finds open) the token a PKCS#11 URI names, logged in with its
+ * PIN, for this thread.
+ *
+ * @param uri - what `parsePkcs11Uri()` answered
+ * @returns a promise of the engine's token (`crypto.openPkcs11Token()`)
+ */
+async function openHsmToken(uri) {
+  log.debug('Entering openHsmToken().');
+  const modulePath = String(uri.modulePath ||
+                            config.value('keys.pkcs11Module') || '').trim();
+  if (!modulePath) {
+    throw errorCodes.mark(new Error('no PKCS#11 module is configured: set ' +
+      'keys.pkcs11Module to the module\'s path (yubihsm_pkcs11.so, ' +
+      'libsofthsm2.so), or name it in the URI\'s module-path.'),
+      'STS-KEYS-0202');
+  }
+  const key = [modulePath, uri.token, uri.serial, uri.slotId].join('|');
+  const held = pkcs11Tokens.get(key);
+  if (held) {
+    log.debug('Leaving openHsmToken(). Held.');
+    return held;
+  }
+  const binding = pkcs11Binding();
+  const pin = await pkcs11PinFor(uri.token);
+  // Another caller may have opened it while the PIN was read.
+  if (pkcs11Tokens.has(key)) {
+    log.debug('Leaving openHsmToken(). Opened meanwhile.');
+    return pkcs11Tokens.get(key);
+  }
+  const token = crypto.openPkcs11Token(binding, {
+    modulePath: modulePath, tokenLabel: uri.token, serial: uri.serial,
+    slotId: uri.slotId, pin: pin,
+    maxSessions: Number(config.value('keys.pkcs11Sessions')) || 4 });
+  pkcs11Tokens.set(key, token);
+  log.debug('Leaving openHsmToken(). Opened.');
+  return token;
+}
+
+/**
+ * Forgets this thread's open tokens, for a test. Nothing in the service
+ * calls it.
+ */
+function forgetHsmTokens() {
+  log.debug('Entering forgetHsmTokens().');
+  pkcs11Tokens.forEach(function (token) {
+    token.close();
+  });
+  pkcs11Tokens.clear();
+  crypto.forgetPkcs11Libraries();
+  log.debug('Leaving forgetHsmTokens().');
+}
+
+// Whether this is the front process: a request worker never makes a key.
+function frontThread() {
+  log.debug('Entering frontThread().');
+  log.debug('Leaving frontThread().');
+  return require('worker_threads').isMainThread;
+}
+
+const pkcs11Provider = {
+  id: 'pkcs11',
+  label: 'A PKCS#11 hardware security module (the key never leaves it)',
+  remote: true,
+  // The one key management service that also serves the CELL key: a cell's
+  // HSM is in the cell, so the residency the cell key exists for holds.
+  servesCellKek: true,
+  describe: function (spec) {
+    log.debug('Entering pkcs11Provider.describe().');
+    const at = locationOf(spec || KEK, 'ref');
+    let module = String(config.value('keys.pkcs11Module') || '');
+    let from = at.where || SOURCE_PROSE.noKey;
+    try {
+      if (at.where) {
+        const uri = parsePkcs11Uri(at.where);
+        module = uri.modulePath || module;
+        // The URI without its query: the module is its own member.
+        from = at.where.split('?')[0];
+      }
+    } catch (e) {
+      // A malformed URI is reported by the read; a description still
+      // draws what is configured.
+      log.debug('Caught in pkcs11Provider.describe(): ' +
+                ((e && e.message) || e));
+    }
+    log.debug('Leaving pkcs11Provider.describe().');
+    return { from: from, module: module || SOURCE_PROSE.notConfigured,
+             wraps: SOURCE_PROSE.wrapsInKms };
+  },
+  read: async function (spec) {
+    log.debug('Entering pkcs11Provider.read().');
+    const secret = spec || KEK;
+    const where = locationOf(secret, 'ref').where;
+    if (!where) {
+      throw errorCodes.mark(new Error(secret.provider + ' is "pkcs11" and ' +
+        secret.ref + ' names no key. Set it to a PKCS#11 URI, ' +
+        'pkcs11:token=<token label>;object=<key label>.'), 'STS-KEYS-0046');
+    }
+    const uri = parsePkcs11Uri(where);
+    const token = await openHsmToken(uri);
+    const generate = !!config.value('keys.pkcs11GenerateKey') &&
+                     frontThread();
+    const found = token.secretKey({ label: uri.object, id: uri.id,
+                                    generate: generate });
+    const tag = token.wrapMechanism(
+      String(config.value('keys.pkcs11Mechanism') || 'auto'), found.keyType);
+    // THE REFERENCE IN EVERY WRAPPED KEY: the token and the key, never the
+    // module path (which differs between nodes and images) and never the
+    // PIN. `owns()` compares it, so every node must name the key alike.
+    const keyRef = 'token=' + uri.token + ';' +
+      (uri.object ? 'object=' + uri.object : '') +
+      (uri.id ? (uri.object ? ';' : '') + 'id=' +
+                uri.id.toString('hex') : '');
+    const handle = {
+      remote: true, provider: 'pkcs11', keyRef: keyRef,
+      label: 'PKCS#11 key ' + keyRef,
+      mechanism: tag,
+      wrap: async function (dek, aad) {
+        log.debug('Entering pkcs11 wrap().');
+        const text = await token.wrapData(found.key, tag, dek, aad);
+        if (!text || text.indexOf('$') >= 0) {
+          throw errorCodes.mark(new Error('the HSM answered no wrapped key'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving pkcs11 wrap().');
+        return kmsText('pkcs11', keyRef, text);
+      },
+      unwrap: async function (text, aad) {
+        log.debug('Entering pkcs11 unwrap().');
+        const parts = kmsParts(text);
+        if (!parts || parts.provider !== 'pkcs11' || parts.keyRef !== keyRef) {
+          throw errorCodes.mark(new Error('the wrapped data key is not ' +
+            'under the PKCS#11 key "' + keyRef + '"'), 'STS-KEYS-0103');
+        }
+        const key = await token.unwrapData(found.key, parts.ciphertext, aad);
+        if (noBytes(key)) {
+          throw errorCodes.mark(new Error('the HSM unwrapped nothing'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving pkcs11 unwrap().');
+        return key;
+      },
+      owns: function (text) {
+        log.debug('Entering pkcs11 owns().');
+        const parts = kmsParts(text);
+        log.debug('Leaving pkcs11 owns().');
+        return !!parts && parts.provider === 'pkcs11' &&
+               parts.keyRef === keyRef;
+      },
+      isStale: function () {
+        log.debug('Entering pkcs11 isStale().');
+        log.debug('Leaving pkcs11 isStale(). Never: a key has no versions.');
+        return false;
+      }
+    };
+    log.info('secrets: ' + secret.label + ' is the PKCS#11 key "' + keyRef +
+             '" on ' + token.describe() + (found.generated ? ', generated ' +
+             'now' : '') + '; it never leaves the HSM, which wraps each data ' +
+             'key (' + tag + ').');
+    log.debug('Leaving pkcs11Provider.read().');
+    return handle;
+  }
+};
+
 const PROVIDERS = [fileProvider, awsProvider, gcpProvider, azureProvider,
                    vaultProvider, transitProvider, awsKmsProvider,
-                   gcpKmsProvider, azureKeysProvider];
+                   gcpKmsProvider, azureKeysProvider, pkcs11Provider];
 // THE TWO SECRETS A KMS PROVIDER MAY SERVE: a handle is a key-encryption key
 // and nothing else.
 const KMS_CAPABLE = ['kek', 'previous-kek'];
 /**
- * The ids of the nine providers: file, aws, gcp, azure, vault, and the four
- * key management services vault-transit, aws-kms, gcp-kms and azure-keys.
+ * The ids of the ten providers: file, aws, gcp, azure, vault, and the five
+ * key management services vault-transit, aws-kms, gcp-kms, azure-keys and
+ * pkcs11.
  */
 const PROVIDER_IDS = PROVIDERS.map(function (one) { return one.id; });
 
@@ -1919,11 +2306,17 @@ async function read(spec) {
     recordRead(spec, null, 0, bad);
     throw tagReadFailure(spec, bad);
   }
-  if (provider.remote && KMS_CAPABLE.indexOf(spec.id) < 0) {
+  // THE CELL KEY MAY BE A HANDLE TOO, where the provider says it serves one
+  // (#1955: `pkcs11`, whose HSM is in the cell). The four cloud KMS keys
+  // still may not: nothing has asked for one and `keystore.js`'s cell path
+  // was held to bytes until then.
+  if (provider.remote && KMS_CAPABLE.indexOf(spec.id) < 0 &&
+      !(spec.id === 'cell-kek' && provider.servesCellKek)) {
     const bad = errorCodes.mark(new Error(spec.provider + ' is "' +
       provider.id + '", a key management service that wraps keys and holds ' +
       'no secret to read; only keys.kekProvider and ' +
-      'keys.previousKekProvider may name it.'), 'STS-KEYS-0101');
+      'keys.previousKekProvider may name it (and keys.cellKekProvider ' +
+      'pkcs11).'), 'STS-KEYS-0101');
     recordRead(spec, provider, 0, bad);
     throw tagReadFailure(spec, bad);
   }
@@ -1991,7 +2384,8 @@ function refuseFileKek(setting) {
                     '"file", and product mode takes a key-encryption key ' +
                     'from a secret store or a key management service ' +
                     '(vault, vault-transit, aws, aws-kms, gcp, gcp-kms, ' +
-                    'azure or azure-keys). Configure one, or turn on ' +
+                    'azure, azure-keys or pkcs11). Configure one, or turn ' +
+                    'on ' +
                     'secrets.allowLocalSecrets to accept the file.');
   }
   log.debug('Leaving refuseFileKek().');
@@ -4517,6 +4911,13 @@ module.exports = {
   describe: describe,
   // #391 P3: the stored form of a KMS-wrapped data key, and the test seam.
   kmsParts: kmsParts,
+  // #1955 P8: the PKCS#11 provider's URI, PIN and tokens — read by
+  // `common/helpers.js` for a realm's signing keys in the HSM, and by
+  // `tests/pkcs11_kek.js`.
+  PKCS11_PIN: PKCS11_PIN,
+  parsePkcs11Uri: parsePkcs11Uri,
+  openHsmToken: openHsmToken,
+  forgetHsmTokens: forgetHsmTokens,
   setSdkLoader: setSdkLoader,
   // The second secret (2026-09-12). The descriptors are exported for
   // `tests/database_password.js`, which asserts the fallback and the field

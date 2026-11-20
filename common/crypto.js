@@ -18499,6 +18499,52 @@ function certificateNameMatches(cert, expected) {
   return members.length > 0 && matched;
 }
 
+// ===========================================================================
+// SECTION 19 — KEYS IN A HARDWARE SECURITY MODULE, THROUGH PKCS#11 (#1955 P8,
+// 2026-11-20).
+//
+// The mechanism is `crypto_impl/pkcs11.js`, the engine: sessions, the
+// wrapping mechanisms, key generation, C_Sign. This is the door the rest of
+// the service goes through, for the reason every other section is here: one
+// place where this service's keys are used. Two callers:
+//
+//   * `secrets.js`'s `pkcs11` key-encryption-key provider, which opens a
+//     token here and wraps and unwraps data keys through it; and
+//   * a realm's classical signing keys in the HSM (`keys.signingKeyStore`),
+//     which `helpers.js` makes through `pkcs11SigningKey()` and every signing
+//     choke point in this file recognises by `isHsmKey()`.
+//
+// STILL A LEAF. The binding (`pkcs11js`) is loaded by `secrets.js`, which
+// owns the missing-package sentence, and handed in; the engine requires node,
+// bunyan and `error_codes.js`.
+// ===========================================================================
+const pkcs11Engine = require('./crypto_impl/pkcs11');
+
+/**
+ * Opens a PKCS#11 token: loads the module once per path and thread, finds
+ * the slot, logs in a session.
+ *
+ * @param binding - the loaded `pkcs11js` (or a test's fake)
+ * @param options - `{ modulePath, tokenLabel, serial, slotId, pin,
+ *   maxSessions }`
+ * @returns the token (`crypto_impl/pkcs11.js`'s `Pkcs11Token`)
+ */
+function openPkcs11Token(binding, options) {
+  log.debug('Entering openPkcs11Token().');
+  const token = pkcs11Engine.openToken(binding, options);
+  log.debug('Leaving openPkcs11Token().');
+  return token;
+}
+
+/**
+ * Forgets this thread's loaded PKCS#11 modules, for a test.
+ */
+function forgetPkcs11Libraries() {
+  log.debug('Entering forgetPkcs11Libraries().');
+  pkcs11Engine.forgetLibraries();
+  log.debug('Leaving forgetPkcs11Libraries().');
+}
+
 /**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
@@ -18511,6 +18557,10 @@ function certificateNameMatches(cert, expected) {
  * @namespace
  */
 module.exports = {
+  // --- section 19: keys in a hardware security module (#1955) ---
+  openPkcs11Token: openPkcs11Token,
+  forgetPkcs11Libraries: forgetPkcs11Libraries,
+  PKCS11_SIGNING_ALGS: Object.keys(pkcs11Engine.SIGNING),
   // --- section 18: certificate field checks (#1360) ---
   CERTIFICATE_ROLES: CERTIFICATE_ROLES,
   KEY_USAGE_BITS: KEY_USAGE_BITS,

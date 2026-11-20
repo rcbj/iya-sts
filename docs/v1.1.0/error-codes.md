@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5759** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5767** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 189
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 196
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 275
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
@@ -830,6 +830,13 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0198` | The Azure Key Vault or Managed HSM key named as the key-encryption key (azure-keys) was answered with no key version, or one that is not letters and digits. A wrapped data key is stored with the version that wrapped it, so nothing is wrapped and the service does not start. | — |
 | `STS-KEYS-0199` | A stored signing-key, certificate-authority or data-key row belongs to a realm that no longer exists — a write that landed after the realm was removed — and was skipped and deleted rather than refusing the start or kept. | — |
 | `STS-KEYS-0200` | The signing keys of a trust realm this process never defined were dropped once the store no longer listed it (#1938), and the cached key set built from them could not be. | — |
+| `STS-KEYS-0201` | A PKCS#11 operation failed on the hardware security module: no session could be opened, or a wrap, unwrap, signature or search was refused, including after one reconnect (a connector restart or a lost device is met by the next operation, never by a timer). A data key that does not unwrap at start stops the start; a signature is refused (#1955). | — |
+| `STS-KEYS-0202` | The PKCS#11 module could not be used: keys.pkcs11Module is empty, the module would not load or initialize, or no single token matches the URI's token label, serial and slot (#1955). | — |
+| `STS-KEYS-0203` | The key a PKCS#11 URI names is not usable: it is not on the token (and keys.pkcs11GenerateKey is off, or this is a request worker), more than one object matches, or it is extractable or not AES-256 (#1955). | — |
+| `STS-KEYS-0204` | The PKCS#11 token offers no mechanism this service wraps a data key with for this key (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD, CKM_YUBICO_AES_CCM_WRAP), or not the one keys.pkcs11Mechanism names (#1955). | — |
+| `STS-KEYS-0205` | The PKCS#11 location or PIN is wrong: the location is not an RFC 7512 URI naming an object, it carries a PIN (pin-value, pin-source), the PIN secret could not be read or holds none for the token, or the token refused it (#1955). | — |
+| `STS-KEYS-0206` | A realm whose signing keys are in the HSM was asked for something only a key in this process can do — the private key itself, a decryption, or an algorithm the HSM does not sign — and refused it rather than making a software key (#1955). | — |
+| `STS-KEYS-0207` | A signing key could not be made in, or read back from, the hardware security module: the module offers no key-pair generation for that algorithm or curve, or answered no public key (#1955). | — |
 
 ## STS-PKI
 

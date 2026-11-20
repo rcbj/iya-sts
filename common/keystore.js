@@ -1262,6 +1262,25 @@ async function readCellKey() {
     log.debug("Leaving readCellKey(). None configured.");
     return;
   }
+  // A CELL KEY IN AN HSM (#1955) is a handle, like a KMS key-encryption
+  // key: it has no bytes to compare, and `secrets.readCellKek()` has already
+  // refused a location that is the service key's. Two handles naming one
+  // HSM key are refused here instead, by their reference.
+  if (isRemote(read)) {
+    if (isRemote(kek) && kek.provider === read.provider &&
+        kek.keyRef === read.keyRef) {
+      throw new Error(errorCodes.tag('STS-CELL-0012') + 'the cell ' +
+                      'key-encryption key is the same HSM key as the ' +
+                      'service key-encryption key. A cell key that is the ' +
+                      'service key keeps nothing in its cell.');
+    }
+    cellKek = read;
+    log.info('keystore: this cell\'s own key-encryption key is the HSM key ' +
+             read.label + '; what the cell stores of its own is wrapped ' +
+             'under it and opens in no other cell.');
+    log.debug("Leaving readCellKey(). A handle.");
+    return;
+  }
   const bytes = crypto.kekBytes(read);
   if (kek && !isRemote(kek) &&
       Buffer.compare(bytes, crypto.kekBytes(kek)) === 0) {
@@ -4422,8 +4441,9 @@ let rewrapped = 0;
 
 // ---------------------------------------------------------------------------
 // A KEY-ENCRYPTION KEY IN A KEY MANAGEMENT SERVICE (#391 P3). `secrets.js`
-// hands back a HANDLE for `vault-transit`, `aws-kms`, `gcp-kms` and
-// `azure-keys` rather than bytes:
+// hands back a HANDLE for `vault-transit`, `aws-kms`, `gcp-kms`,
+// `azure-keys` and `pkcs11` (#1955; the cell key may be one too) rather
+// than bytes:
 // it wraps and unwraps a DEK in the KMS, asynchronously, and the key never
 // enters this process. Everything below asks `isRemote()` and either calls
 // the handle or does what it always did with bytes.
@@ -4676,8 +4696,18 @@ async function rotateKek() {
   }
   if (typeof wk.rotate !== 'function') {
     log.debug("Leaving rotateKek(). No rotate().");
+    // `pkcs11` (#1955) is the one that lands here: a PKCS#11 key has no
+    // versions, so its successor is a new object named in keys.kek* with the
+    // old one in keys.previousKek*, as for a key read into the process.
     return { ok: false, why: 'The ' + wk.provider + ' provider cannot ' +
-                             'rotate its key from here.' };
+                             'rotate its key from here.' +
+                             (wk.provider === 'pkcs11'
+                               ? ' A PKCS#11 key has no versions: make a ' +
+                                 'new key in the HSM, name it in ' +
+                                 'keys.kekRef, name the old one in ' +
+                                 'keys.previousKek*, and restart every ' +
+                                 'node.'
+                               : '') };
   }
   const done = await wk.rotate();
   const count = rewrapRotated();
