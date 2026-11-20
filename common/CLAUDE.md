@@ -11423,6 +11423,22 @@ run takes `release` and `build_number`. Every build of main publishes
 `:<M.N.O.build>`, `:<M.N.O>` and `:latest`, the release being the patch
 worked out below.
 
+**A RELEASE CANDIDATE (rcbj, 2026-11-19)**, the parent project's arrangement
+(its `dockerimage.yml`, ad5d2f03): `gh workflow run build-container.yml --ref
+develop -f candidate=true` publishes that branch's two images, to both
+registries, as `:<M.N.O.build>` and `:<M.N.O>-candidate`, so the live-site
+suites have an image before the release exists. It never publishes the bare
+`:<M.N.O>` or `:latest`. Its release is `VERSION` as written, as on any
+develop build, and the suffix is only in the tag: the image reports
+`M.N.O.<build>`, because no pre-release suffix reaches the version (below).
+It tags git `v<M.N.O>.<build>` and `v<M.N.O>-candidate`, moving the second
+to each new candidate. **Neither is counted by `release-number.js`**, which
+counts `vM.N.P` exactly, so the real release later finds no `v<M.N.O>` and
+makes it as usual. No GitHub release is made, because a release is
+permanent; the notes it would carry, GitHub's generated list since the
+previous `vM.N.P` included, go to the run's summary. The input is ignored on
+`main`.
+
 **EVERY BUILD OF `main` IS THE NEXT PATCH (rcbj, 2026-11-11).** 1.0.0 is
 followed by 1.0.1, 1.0.2 and so on, one per merge, worked out WHEN THE IMAGES
 ARE BUILT from the repository's git tags, and **nothing is committed back**:

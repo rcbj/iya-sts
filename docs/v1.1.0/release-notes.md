@@ -870,3 +870,10 @@ never a patch**: going from one patch release to the next never asks you to
 run anything against your database. That is why the release after 1.0.0 is
 1.1.0. The running service shows its version on the admin console and in its
 metadata.
+
+**Release candidates.** Before a release is published, its candidate may be:
+`iyasec/iya-sts:1.1.0-candidate` and `iyasec/iya-sts-xacml-pep:1.1.0-candidate`
+(also on `ghcr.io/rcbj`), each beside its full `1.1.0.<build>` tag. A candidate
+is for testing. It reports its version as `1.1.0.<build>` like any other build,
+and it is not the release: `:1.1.0` and `:latest` are published only by the
+release itself. A newer candidate replaces the `-candidate` tag.
