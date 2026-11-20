@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5756** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5758** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,13 +51,13 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 111
+* [Service core (`STS-CORE`)](#sts-core) — 112
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 56
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 115
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 188
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 189
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 275
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
@@ -269,6 +269,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0177` | One or more settings have no row in env/defaults.js (or the file is not there) and no value in any layer above it, so each takes the image's own default. The defaults file is older than the image — usually an env/ directory mounted or copied from an earlier release. The service starts; the warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
 | `STS-CORE-0178` | One or more settings in env/defaults.js hold a value that is not the image's default. The file's value is used, as before the upgrade; a defaults file copied from an earlier release pins every default changed since. The warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
 | `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
+| `STS-CORE-0180` | A store could not forget what it held for a trust realm this process never defined and the store no longer lists (#1938); it is asked again at the next realm read. | — |
 
 ## STS-WORKER
 
@@ -828,6 +829,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0197` | The service did not start because, in product mode, a key-encryption key was to be read from a file rather than a secret store or a key management service. | ASVS 5.0.0 13.3.1 |
 | `STS-KEYS-0198` | The Azure Key Vault or Managed HSM key named as the key-encryption key (azure-keys) was answered with no key version, or one that is not letters and digits. A wrapped data key is stored with the version that wrapped it, so nothing is wrapped and the service does not start. | — |
 | `STS-KEYS-0199` | A stored signing-key, certificate-authority or data-key row belongs to a realm that no longer exists — a write that landed after the realm was removed — and was skipped and deleted rather than refusing the start or kept. | — |
+| `STS-KEYS-0200` | The signing keys of a trust realm this process never defined were dropped once the store no longer listed it (#1938), and the cached key set built from them could not be. | — |
 
 ## STS-PKI
 

@@ -1404,6 +1404,9 @@ function create(given) {
   realms.set(id, realm);
   // A realm removed and defined again takes rows again. See acceptsRows().
   retired.delete(id);
+  // And a realm that has arrived is no longer one to forget (#1938): the
+  // rows that came first are its own.
+  unarrived.delete(id);
   log.info('realms: "' + id + '" defined; its endpoints are under ' +
            prefixOf(realm) + '/.');
   // AFTER the row is written, because a builder may want to read the realm
@@ -2099,6 +2102,150 @@ function onRemove(fn) {
 }
 
 // ---------------------------------------------------------------------------
+// AND WHAT A PROCESS HOLDS FOR A REALM IT NEVER DEFINED, WHICH THE STORE NO
+// LONGER LISTS, IS FORGOTTEN (2026-11-20, #1938).
+//
+// `acceptsRows()` admits a row of a realm that has not arrived here — its
+// rows may come first — so a realm created and removed on another node
+// between two of this process's realm reads leaves rows here in partitions
+// no `remove()` will ever purge: this process never defined the realm, so
+// it never removes it. Run #569's single-node stack showed it for the
+// keystore (#1937 fixed the data keys; #1938 the signing-key set); every
+// per-realm store this file declares has the same door, because a
+// replicated minted row of that realm is written into its partition by
+// `restore()`, and the realm's removal deletes its `sts_minted` rows in one
+// statement with no change row per row. The rows stayed for the life of the
+// process, and a realm later created under the same id would have arrived
+// holding them — the one surprise `remove()`'s purges exist to prevent.
+//
+// **THE STORE IS THE JUDGE, NOT A TIMER**, as in #1937: `persistence.js`'s
+// realm applier hands `forgetUnarrived()` the ids `sts_realms` lists and the
+// ids this process held something for BEFORE it read them. An id held
+// before the read, not listed by it and still not defined here is a realm
+// that was removed before it arrived: a realm's rows reach this process only
+// after its `sts_realms` row commits (a realm is answered after its commit,
+// and everything minted in it is minted by a request after that), so a
+// realm that is merely on its way is listed by any read that began after
+// its rows were here.
+//
+// **A FORGET IS NOT A PURGE.** It touches memory only — a purge also
+// deletes store rows, counts removals and tells observers, all of which
+// belong to a realm that existed here — and it does not retire the id:
+// a realm created under it later takes rows as any new realm does.
+// ---------------------------------------------------------------------------
+const forgetters = [];
+
+// Ids a partition was built for while no realm of that id was defined here.
+// Filled by `keyed()` on the miss, which is the only place a partition is
+// made; emptied by `create()` and `remove()` and by a forget.
+const unarrived = new Set();
+
+/**
+ * Registers an in-memory drop for a realm this process never defined and the
+ * store no longer lists (#1938). A forget deletes nothing from the store.
+ *
+ * @param forget - called with the realm id
+ * @param held - optional; answers the ids of realms not defined here that
+ *   the registrant holds something for
+ */
+function onForget(forget, held) {
+  log.debug("Entering onForget().");
+  forgetters.push({ forget: forget,
+                    held: typeof held === 'function' ? held : null });
+  log.debug("Leaving onForget().");
+}
+
+// Whether `id` names a realm that could be forgotten: not the default realm,
+// not an internal scope (a leading `*`, which no realm id can carry), not
+// defined here, and not removed here (a removed realm's partitions are the
+// purge's, and it has run).
+function forgettable(id) {
+  log.debug("Entering forgettable().");
+  const key = String(id || '');
+  log.debug("Leaving forgettable().");
+  return key !== '' && key !== DEFAULT_ID && key !== 'default' &&
+         key.charAt(0) !== '*' && !realms.has(key) && !retired.has(key);
+}
+
+/**
+ * The ids of realms not defined here that this process holds something for,
+ * in a partition or in a registrant's own maps (#1938). Taken BEFORE the
+ * store's realm list is read, so `forgetUnarrived()` judges only what was
+ * here before the read began.
+ *
+ * @returns a Set of realm ids
+ */
+function heldUnarrivedIds() {
+  log.debug("Entering heldUnarrivedIds().");
+  const out = new Set();
+  unarrived.forEach(function (id) {
+    if (forgettable(id)) {
+      out.add(id);
+    }
+  });
+  forgetters.forEach(function (one) {
+    if (!one.held) {
+      return;
+    }
+    try {
+      Array.from(one.held() || []).forEach(function (id) {
+        if (forgettable(id)) {
+          out.add(String(id));
+        }
+      });
+    } catch (e) {
+      // Not fatal: what that registrant holds is judged at the next read.
+      log.debug("Caught in heldUnarrivedIds(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving heldUnarrivedIds(). " + out.size);
+  return out;
+}
+
+/**
+ * Forgets what this process holds for each id of `heldBefore` the store's
+ * realm list `listedIds` does not name and no realm here defines (#1938).
+ * Memory only: nothing is deleted from the store, and the id is not retired.
+ *
+ * @param listedIds - the ids `sts_realms` lists (a Set or an array)
+ * @param heldBefore - `heldUnarrivedIds()`, taken before that list was read
+ * @returns the ids forgotten
+ */
+function forgetUnarrived(listedIds, heldBefore) {
+  log.debug("Entering forgetUnarrived().");
+  const listed = new Set(Array.from(listedIds || []).map(String));
+  const gone = Array.from(heldBefore || []).map(String).filter(function (id) {
+    return forgettable(id) && !listed.has(id);
+  });
+  gone.forEach(function (id) {
+    let refused = false;
+    forgetters.forEach(function (one) {
+      try {
+        one.forget(id);
+      } catch (e) {
+        refused = true;
+        log.warn(errorCodes.tag('STS-CORE-0180') + 'realms: a store ' +
+                 'refused to forget what it holds for "' + id + '", a ' +
+                 'realm this process never defined and the store no longer ' +
+                 'lists: ' + ((e && e.message) || e) + '. It is asked ' +
+                 'again at the next realm read.');
+      }
+    });
+    if (!refused) {
+      unarrived.delete(id);
+    }
+  });
+  if (gone.length) {
+    log.info('realms: ' + gone.length + ' realm(s) this process never ' +
+             'defined are not in the store, so they were removed before ' +
+             'they arrived here; what this process held for them was ' +
+             'forgotten (' + gone.join(', ') + ').');
+  }
+  log.debug("Leaving forgetUnarrived(). " + gone.length);
+  return gone;
+}
+
+// ---------------------------------------------------------------------------
 // AND THE OTHER END: A REALM THAT NEEDS SOMETHING BUILT MUST GET IT BUILT.
 //
 // `keyed()` covers every store that can be built LAZILY — a Map made on first
@@ -2608,6 +2755,7 @@ function remove(id) {
   // Before the purges, so a replicated row arriving while they run is refused
   // rather than rebuilding a partition they just emptied. See acceptsRows().
   retired.add(realm.id);
+  unarrived.delete(realm.id);
   purges.forEach(function (purge) {
     try {
       purge(realm.id);
@@ -3186,6 +3334,8 @@ function keyed(factory, onLookup) {
   // it is on the path of every property read of `helpers.js`'s STS proxy.
   const observe = typeof onLookup === 'function' ? onLookup : null;
   onRemove(function (id) { per.delete(id); });
+  // And forgotten with a realm never defined here (#1938). See onForget().
+  onForget(function (id) { per.delete(id); });
   function forCurrent() {
     log.debug("Entering forCurrent().");
     const id = currentId();
@@ -3203,7 +3353,13 @@ function keyed(factory, onLookup) {
     log.debug("Entering of().");
     const held = per.has(id);
     if (!held) {
-      per.set(id, factory(get(id) || DEFAULT_REALM));
+      const realm = get(id);
+      // A partition for a realm not defined here (#1938): its rows came
+      // first, and `forgetUnarrived()` judges them at the next realm read.
+      if (!realm && forgettable(id)) {
+        unarrived.add(String(id));
+      }
+      per.set(id, factory(realm || DEFAULT_REALM));
     }
     if (observe) {
       observe(held);
@@ -4434,6 +4590,12 @@ function segmentedArr(options, per, size) {
     bases.delete(id);
     restored.delete(id);
   });
+  // And forgotten with a realm never defined here (#1938); the partition
+  // itself is `keyed()`'s, which forgets it too.
+  onForget(function (id) {
+    bases.delete(id);
+    restored.delete(id);
+  });
 
   function baseOf(id) {
     log.debug("Entering baseOf().");
@@ -5480,6 +5642,11 @@ module.exports = {
   isEstLabel: isEstLabel,
   onCreate: onCreate,
   onRemove: onRemove,
+  // #1938: what a process holds for a realm it never defined, forgotten once
+  // the store's realm list no longer names it (`persistence.js`).
+  onForget: onForget,
+  heldUnarrivedIds: heldUnarrivedIds,
+  forgetUnarrived: forgetUnarrived,
   onRetire: onRetire,
   retire: retire,
   isRetiring: isRetiring,

@@ -5102,6 +5102,10 @@ function applyRealmsChange() {
     log.debug("Leaving applyRealmsChange().");
     return Promise.resolve(false);
   }
+  // WHAT THIS PROCESS HOLDS FOR REALMS IT HAS NOT DEFINED, TAKEN BEFORE THE
+  // READ (#1938): only what was here before the store answered is judged by
+  // that answer. See `realms.forgetUnarrived()`, below.
+  const heldBefore = realms.heldUnarrivedIds();
   log.debug("Leaving applyRealmsChange().");
   return driver.loadRealms().then(function (rows) {
     const stored = rows || [];
@@ -5180,10 +5184,10 @@ function applyRealmsChange() {
       // process saw either row, so its directory rows — committed after the
       // realm's row, in the flush order above — will never find their realm
       // here. Waiting the ten minutes reported every one (STS-STORE-0088).
+      const listed = new Set(stored.map(function (row) {
+        return String(row.id);
+      }));
       if (typeof replication.heldRealmIds === 'function') {
-        const listed = new Set(stored.map(function (row) {
-          return String(row.id);
-        }));
         replication.heldRealmIds().forEach(function (id) {
           if (!listed.has(id) && !realms.get(id)) {
             const dropped = replication.forgetDeferred(id);
@@ -5193,6 +5197,11 @@ function applyRealmsChange() {
           }
         });
       }
+      // AND WHAT THIS PROCESS ADOPTED FOR SUCH A REALM IS FORGOTTEN TOO
+      // (#1938): the rows replication wrote into its partitions, and the
+      // keystore's signing-key set, certificate authority and data keys. It
+      // never defined the realm, so no `realms.remove()` will purge them.
+      realms.forgetUnarrived(listed, heldBefore);
     } finally {
       restoring = was;
     }

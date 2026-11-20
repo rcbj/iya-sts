@@ -1764,7 +1764,25 @@ function adoptShared(realmId, blob) {
   // over it, so the row converges on the set everybody is using rather than on
   // whichever process wrote last.
   // ---------------------------------------------------------------------
-  if (persists() && store && kek) {
+  // **BUT NOT FOR A REALM THAT IS NOT DEFINED HERE (2026-11-20, #1938).**
+  // Such a set is kept in `shared` — the guard above lets it in, so that a
+  // realm still on its way here arrives to the set the rest of the service
+  // signs with rather than generating a second one (`sharedFor()`; the
+  // multi-key-set race this channel exists to close) — and it is NOT held or
+  // written. Nothing here signs with it, and a process that never defined
+  // the realm has no set of its own in the store to converge: in run #569 a
+  // process that never defined `cbc-mwoe2uxmho123` adopted its set a moment
+  // after every other process had removed the realm, and wrote it back.
+  // When the realm does arrive, `helpers.js` adopts the set from `shared`
+  // and writes it down there (`remember()`), as any adopting process does.
+  // What is kept is forgotten once the store no longer lists the realm or
+  // its row (`forgetUnarrivedKeys()`, `applyStoredChange()`).
+  const undefinedHere = undefinedRealmOf(id) !== '';
+  if (undefinedHere) {
+    log.debug('adoptShared(): the "' + id + '" realm is not defined here, ' +
+              'so its set is kept for its arrival and not written.');
+  }
+  if (persists() && store && kek && !undefinedHere) {
     try {
       hold(id, blob, 'adopted from another process in this service');
     } catch (e) {
@@ -2897,6 +2915,135 @@ realms.onRemove(function (id) {
               'later created under the same name would inherit them.');
   });
 });
+
+// ---------------------------------------------------------------------------
+// AND A REALM THAT NEVER ARRIVED HERE, WHICH THE STORE NO LONGER LISTS, TAKES
+// WHAT THIS PROCESS ADOPTED FOR IT (2026-11-20, #1938).
+//
+// The purge above runs only where `realms.remove()` runs, which is only where
+// the realm was defined. A process that never defined it — the realm was
+// created and removed elsewhere between two of its realm reads — still
+// adopted its rows (`realms.acceptsRows()` takes a realm that has not
+// arrived) and its key set from the key channel (`adoptShared()`), and kept
+// them: in run #569 the data keys (#1937, `forgetUnlistedDeks()`) and the
+// signing-key set, re-adopted a moment after the removal and held for the
+// life of the process — a removed realm's private keys, which a realm later
+// created under the same id would have been handed by `sharedFor()`.
+//
+// Two doors, both the store's answer and neither a timer:
+//
+//   * the realm's KEY-SET ROW is gone — `applyStoredChange()` (where the
+//     store does not arbitrate; where it does, `adoptKeyRow()` always
+//     dropped a set whose row went);
+//   * the realm is not in `sts_realms` — `realms.forgetUnarrived()`, called
+//     by `persistence.js`'s realm applier with what was held before its
+//     read, which covers a set adopted after the row's delete, where no
+//     change of the row will come again. Its signing-key set, certificate
+//     authority and data keys are dropped together.
+//
+// Memory only, and never a row with a write of this process queued or
+// failed: that write decides. Dropping is safe even when wrong: the realm is
+// not retired, so its rows are adopted again whenever they are listed, and
+// a set is made or adopted again when it is first needed.
+// ---------------------------------------------------------------------------
+function dropUnarrivedKeySet(id, why) {
+  log.debug("Entering dropUnarrivedKeySet(). realm=" + id);
+  const had = material.has(id) || shared.has(id);
+  purgeFor(id);
+  material.delete(id);
+  shared.delete(id);
+  if (had && adoptListener) {
+    try {
+      adoptListener(id);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KEYS-0200') + 'keystore: the "' + id +
+                '" realm, never defined here, had its signing keys dropped (' +
+                why + ') and its cached key set could not be: ' +
+                ((e && e.message) || e) + '.');
+    }
+  }
+  if (had) {
+    log.info('keystore: the "' + id + '" realm was never defined in this ' +
+             'process and ' + why + ', so the signing-key set this process ' +
+             'adopted for it was dropped.');
+  }
+  log.debug("Leaving dropUnarrivedKeySet().");
+  return had;
+}
+
+// The realms not defined here that this process holds a key set, a
+// certificate authority or a data key for. For `realms.heldUnarrivedIds()`.
+function heldUnarrivedKeyRealms() {
+  log.debug("Entering heldUnarrivedKeyRealms().");
+  const out = new Set();
+  const note = function (rowKey) {
+    log.debug("Entering note().");
+    const realmId = undefinedRealmOf(rowKey);
+    if (realmId) {
+      out.add(realmId);
+    }
+    log.debug("Leaving note().");
+  };
+  shared.forEach(function (blob, id) {
+    note(id);
+  });
+  material.forEach(function (entry, id) {
+    note(id);
+  });
+  pkiHeld.forEach(function (chain, id) {
+    note(PKI_ROW_PREFIX + id);
+  });
+  pkiBase.forEach(function (cipher, id) {
+    note(PKI_ROW_PREFIX + id);
+  });
+  deks.forEach(function (rec) {
+    if (!rec.derived) {
+      note(dekRowKey(rec.scope, rec.realm));
+    }
+  });
+  log.debug("Leaving heldUnarrivedKeyRealms(). " + out.size);
+  return out;
+}
+
+// What `realms.forgetUnarrived()` asks of this module for one realm: every
+// part whose row has no write of this process queued or failed.
+function forgetUnarrivedKeys(realmId) {
+  log.debug("Entering forgetUnarrivedKeys(). realm=" + realmId);
+  const id = String(realmId || '');
+  if (!undefinedRealmOf(id)) {
+    log.debug("Leaving forgetUnarrivedKeys(). Defined here.");
+    return;
+  }
+  const busy = function (rowKey) {
+    log.debug("Entering busy().");
+    log.debug("Leaving busy().");
+    return writes.has(rowKey) || failedWrites.has(rowKey);
+  };
+  if (!busy(id)) {
+    dropUnarrivedKeySet(id, 'the store no longer lists the realm');
+  }
+  const pkiRow = PKI_ROW_PREFIX + id;
+  if (!busy(pkiRow) && (pkiHeld.has(id) || pkiBase.has(id))) {
+    pkiHeld.delete(id);
+    pkiBase.delete(id);
+    log.info('keystore: the "' + id + '" realm was never defined in this ' +
+             'process and the store no longer lists it, so the certificate ' +
+             'authority this process adopted for it was dropped.');
+  }
+  const dekRealmId = dekRealm(id);
+  const dropped = dropDeks(function (rec) {
+    return !rec.derived && rec.realm === dekRealmId &&
+           !busy(dekRowKey(rec.scope, rec.realm));
+  });
+  if (dropped) {
+    log.info('keystore: ' + dropped + ' data encryption key(s) of the "' +
+             id + '" realm, never defined in this process and no longer ' +
+             'listed by the store, were dropped.');
+  }
+  log.debug("Leaving forgetUnarrivedKeys().");
+}
+
+realms.onForget(forgetUnarrivedKeys, heldUnarrivedKeyRealms);
 
 // What the console and the metadata report draw. Says WHERE and never WHAT.
 /**
@@ -5526,6 +5673,19 @@ function realmOfRow(rowKey) {
          isInternalScope(id) || id === realms.DEFAULT_ID ? '' : id;
 }
 
+// The realm a row belongs to when that realm is NOT DEFINED in this process,
+// or '' — '' also for the default realm and every internal scope, which are
+// always defined (#1938). A row of such a realm is adopted (its realm may be
+// on its way, `realms.acceptsRows()`) and never written from here: nothing
+// in this process seals or signs under it, and where the realm was removed
+// before it arrived a write is a removed realm's written back.
+function undefinedRealmOf(rowKey) {
+  log.debug("Entering undefinedRealmOf().");
+  const realmId = realmOfRow(rowKey);
+  log.debug("Leaving undefinedRealmOf().");
+  return realmId !== '' && !realms.get(realmId) ? realmId : '';
+}
+
 // Whether a write queued at `seq` is of a row whose realm was removed since
 // — stamped by the purge below — or of a realm this process removed and has
 // not defined again (`realms.acceptsRows()`; a realm not yet ARRIVED here is
@@ -6376,6 +6536,43 @@ function applyStoredChange(rowKey, round) {
   // row's ciphertext only when the set inside is the one already held, and
   // leaves a different set, or a removal, to the pool's key channel as before.
   if (!isPki && !arbitrates()) {
+    // A SET HELD FOR A REALM NOT DEFINED HERE GOES WITH ITS ROW (#1938):
+    // where the store arbitrates, `adoptKeyRow()` drops a set whose row is
+    // gone; here nothing did, so a never-defined realm's set — adopted from
+    // the key channel, or read from the store — outlived the realm's
+    // removal. The store is the judge: the row read now is gone.
+    const unarrivedRealm = undefinedRealmOf(key);
+    if (unarrivedRealm && !writes.has(key) && !failedWrites.has(key) &&
+        (material.has(id) || shared.has(id)) && store &&
+        typeof store.loadKey === 'function') {
+      log.debug("Leaving applyStoredChange(). A set of a realm not " +
+                "defined here; reading its row.");
+      return Promise.resolve().then(function () {
+        return store.loadKey(key);
+      }).then(function (cipher) {
+        if (cipher) {
+          // Still listed: the re-seal below, as for any held set.
+          return (namesUnheldDek(cipher) ? refreshDekRows()
+                                         : Promise.resolve(0))
+            .then(function () {
+              return adoptResealedKeyRow(id, cipher);
+            });
+        }
+        if (writes.has(key) || failedWrites.has(key)) {
+          return { kind: kind, realm: id, adopted: false };
+        }
+        dropUnarrivedKeySet(id, 'its row is no longer in the store');
+        return { kind: kind, realm: id, adopted: true, removed: true };
+      }).catch(function (e) {
+        log.debug("Caught in applyStoredChange(): " + ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-KEYS-0058') + 'keystore: the "' + key +
+                  '" row another process wrote could not be opened: ' +
+                  ((e && e.message) || e) + '. This process keeps what it ' +
+                  'holds.');
+        return { kind: kind, realm: id, adopted: false,
+                 error: String((e && e.message) || e) };
+      });
+    }
     if (writes.has(key) || !material.has(id) || !store ||
         typeof store.loadKey !== 'function') {
       log.debug("Leaving applyStoredChange(). The store does not " +

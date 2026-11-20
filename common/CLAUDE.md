@@ -3673,6 +3673,38 @@ restart, and each node of a cluster deleting the other's. `realmOfRow()`
 answers '' for any id with a leading `*` (no realm id can carry one), and it
 is the one predicate both doors and `removedSince()`/`adoptShared()` ask.
 
+**AND WHAT A PROCESS ADOPTED FOR A REALM IT NEVER DEFINED IS FORGOTTEN WHEN
+THE STORE STOPS LISTING IT (2026-11-20, #1937, #1938, run #569).**
+`acceptsRows()` admits a realm that has not arrived, so a realm created and
+removed elsewhere between two of a process's realm reads leaves rows there
+that no `remove()` purges — that process never defined it. In run #569 one
+process held `cbc-mwoe2uxmho123`'s data keys and re-adopted and wrote back
+its signing-key set after every other process had removed it. The store is
+the judge, never a timer. The data keys go when their row does
+(`forgetUnlistedDeks()`, #1937); a key set when its row does
+(`applyStoredChange()`'s non-arbitrating branch; `adoptKeyRow()` always did
+where the store arbitrates); and everything — every per-realm store's
+partition (`keyed()` notes an id it builds one for while no such realm is
+defined) and the keystore's set, CA and data keys — when `sts_realms` no
+longer lists the realm: `persistence.js`'s realm applier takes
+`realms.heldUnarrivedIds()` BEFORE its read and hands both to
+`realms.forgetUnarrived()`, which runs each `onForget()` hook. A realm's
+rows reach a process only after its `sts_realms` row commits, so a realm
+still on its way is listed by any read begun after its rows arrived. A
+forget is memory only (no store row is deleted, nothing is retired, a
+refusal is `STS-CORE-0180`). **And nothing is written from a process for a
+realm not defined there** (`undefinedRealmOf()`): `adoptShared()` keeps such
+a set in `shared` — that is the guard against the multi-key-set race for a
+realm on its way, and `helpers.js` writes it down once the realm arrives —
+but does not hold or write it. The re-seal pass and `adoptPki()`'s
+re-assert still write what they hold whatever the realm (in-process tests
+and `pki.start({ realmIds })` hold rows for ids no `create()` made); a
+forgotten realm leaves them nothing to write. What is not closed: a set adopted
+after this process's realm read that saw the removal, followed directly by
+the realm being created again under the same id, is still held when the new
+one arrives (a realm's `createdAt` is local, so nothing tells the two
+apart). `tests/answer_after_commit.js` G5–G7.
+
 ### The HTML rewrite in `app.js`, and its one honest limitation
 
 Every root-relative `href`, `action` and `src` in a `text/html` response is
