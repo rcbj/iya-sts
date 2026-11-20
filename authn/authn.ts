@@ -2418,6 +2418,65 @@ class Authn {
     return kept;
   }
 
+  // ---------------------------------------------------------------------------
+  // `accountSessionKept()` FOR A BATCH, ITS READS OFF THE EVENT LOOP (#780,
+  // reopened by rcbj 2026-11-13). The account-set expiry job asks this of
+  // the sessions a batch of sets lists, so a session the window does not
+  // hold is read on the store's read pool (`SessionWindow.readAsync()`,
+  // which admits nothing) rather than by a synchronous round trip on the
+  // request worker that runs the job. The answer for each is the one
+  // `accountSessionKept()` gives: live (held, eligible, neither clock run
+  // out), or a read that FAILED, which is kept (#350). With the window off
+  // the realm map holds every session and is read as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Whether a set should keep listing each of `sids`, reading the sessions
+   * the window does not hold asynchronously (#780).
+   *
+   * @param sids - the session ids a batch of account sets lists
+   * @returns a promise of `sid -> keep`
+   */
+  async accountSessionsKeptAsync(sids: string[]):
+      Promise<Map<string, boolean>> {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.accountSessionsKeptAsync(). " +
+              (sids || []).length);
+    const out = new Map<string, boolean>();
+    const unique = Array.from(new Set((sids || []).map(String)))
+      .filter(function (sid) {
+        return !!sid;
+      });
+    if (!this.windowOn()) {
+      unique.forEach(function (sid) {
+        out.set(sid, self.accountSessionKept(sid));
+      });
+      log.debug("Leaving Authn.accountSessionsKeptAsync(). The map.");
+      return out;
+    }
+    const realmId = realms.currentId();
+    const reads = await Promise.all(unique.map(function (sid) {
+      return sessionWindow.readAsync(realmId, sid).catch(function (e) {
+        // A read that threw is a read that failed: kept, never ended.
+        log.debug("Caught in Authn.accountSessionsKeptAsync(): " +
+                  ((e && e.message) || e));
+        return { ok: false, error: true };
+      });
+    }));
+    unique.forEach(function (sid, i) {
+      const read: any = reads[i] || { ok: false, error: true };
+      if (read.error) {
+        out.set(sid, true);
+        return;
+      }
+      const session = read.ok ? read.session : null;
+      out.set(sid, !!(session && self.accountEligible(session) &&
+                      !self.sessionEnded(session)));
+    });
+    log.debug("Leaving Authn.accountSessionsKeptAsync(). " + out.size);
+    return out;
+  }
+
   // What a set remembers of a session's account: its subject, its name and
   // the name to show. Never the sid, which the set keys it by.
   private accountOf(session) {
@@ -3321,6 +3380,8 @@ class Authn {
     log.debug("Leaving Authn.sweepAccountSetsBudgeted().");
     return AccountSets.sweepBudgeted(function (sid) {
       return self.accountSessionKept(sid);
+    }, 0, function (sids) {
+      return self.accountSessionsKeptAsync(sids);
     }).then(function (done) {
       if (done.expired) {
         stats.recordAccountChoice('expired', done.expired);
@@ -20412,7 +20473,8 @@ scheduler.register({
   owner: 'authn/authn.ts',
   scope: 'realm',
   // EVERY MINUTE, A SECOND'S WORK EACH (#784): a pass over every set still
-  // takes about an hour, spread over it. See AccountSets.sweepBudgeted().
+  // takes about an hour, spread over it, and its session reads are off the
+  // event loop (#780). See AccountSets.sweepBudgeted().
   everyMs: function (): number {
     return 60 * 1000;
   },

@@ -8352,6 +8352,12 @@ const CODES = [
       'store with a NUL in it (STS-STORE-0063), so it was refused before ' +
       'the pending record was touched.',
     spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0558',
+    summary: 'The account-set expiry job could not read the sessions a ' +
+      'batch of browsers\' account sets lists, asynchronously (#780). The ' +
+      'batch decides nothing: no session is moved to remembered and no set ' +
+      'is deleted on it, and the next run starts again at that batch.',
+    spec: 'none: a scheduler job; logged, never sent' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

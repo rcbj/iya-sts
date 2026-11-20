@@ -427,6 +427,98 @@ class SessionWindow {
     return true;
   }
 
+  // -------------------------------------------------------------------------
+  // A SESSION READ FOR A JOB THAT CAN WAIT, AND ADMITTED NOWHERE (#780,
+  // reopened 2026-11-13). The account-set expiry asked `get()` of every
+  // session every browser's set lists, and each miss was a synchronous read
+  // of the store on the request worker that runs the job. This is `get()`'s
+  // answer — the session, its absence, or a read that FAILED, which is not
+  // absence — with the miss read on the driver's read pool, and the answer
+  // NOT admitted: a sweep over every set must not push the sessions people
+  // are using out of the cache (`openAsync()`'s rule). What memory holds is
+  // answered from memory without touching its recency. A session changed
+  // here while the read was out answers from memory where memory has it,
+  // and otherwise as a failed read: the older answer may be wrong, and a
+  // failed read decides nothing. With no asynchronous door (a test's
+  // answer, a store with no read pool) it is `get()`, as before.
+  // -------------------------------------------------------------------------
+  /**
+   * Reads a session as `get()` does, the miss off the event loop and the
+   * answer not admitted (#780).
+   *
+   * @param realmId - the realm
+   * @param sid - the session id
+   * @returns a promise of `{ ok, session }`, `{ absent: true }`, or
+   *   `{ error: true }`
+   */
+  async readAsync(realmId: string, sid: string): Promise<SessionRead> {
+    log.debug("Entering SessionWindow.readAsync().");
+    const realm = String(realmId || '');
+    const id = String(sid || '');
+    const key = this.cacheKey(realm, id);
+    const held = this.lru.peek(key);
+    if (held && held.session) {
+      log.debug("Leaving SessionWindow.readAsync(). Held.");
+      return { ok: true, session: held.session };
+    }
+    if (this.freshNegative(key)) {
+      log.debug("Leaving SessionWindow.readAsync(). Known absent.");
+      return { ok: false, absent: true };
+    }
+    const mapped = this.mapRead(realm, id);
+    if (mapped.present && mapped.value != null) {
+      log.debug("Leaving SessionWindow.readAsync(). Mapped.");
+      return { ok: true, session: mapped.value };
+    }
+    if (this.queryFn || !this.asyncQueryOf ||
+        this.journalledSafe(realm, id)) {
+      log.debug("Leaving SessionWindow.readAsync(). Synchronously.");
+      return this.get(realm, id);
+    }
+    if (Date.now() < this.cooldownUntil) {
+      log.debug("Leaving SessionWindow.readAsync(). Cooling.");
+      return { ok: false, error: true };
+    }
+    const digest = this.digestOf(realm, id);
+    if (!digest) {
+      log.debug("Leaving SessionWindow.readAsync(). No digest.");
+      return { ok: false, error: true };
+    }
+    const touched = new Set<string>();
+    this.warming.add(touched);
+    let row: any = null;
+    try {
+      row = await this.asyncQueryOf('session.read', [realm, digest]);
+    } catch (e) {
+      log.debug("Caught in SessionWindow.readAsync(): " +
+                ((e && (e as Error).message) || e));
+      this.noteReadFailure(e);
+      log.debug("Leaving SessionWindow.readAsync(). Unread.");
+      return { ok: false, error: true };
+    } finally {
+      this.warming.delete(touched);
+    }
+    if (touched.has(key) || this.lru.peek(key) ||
+        this.journalledSafe(realm, id)) {
+      const now = this.lru.peek(key);
+      log.debug("Leaving SessionWindow.readAsync(). Touched meanwhile.");
+      return now && now.session ? { ok: true, session: now.session }
+                                : { ok: false, error: true };
+    }
+    const session = this.sessionFrom(row);
+    if (session === null) {
+      log.debug("Leaving SessionWindow.readAsync(). Absent.");
+      return { ok: false, absent: true };
+    }
+    if (!session) {
+      this.failRead('the sealed session would not open');
+      log.debug("Leaving SessionWindow.readAsync(). Unopened.");
+      return { ok: false, error: true };
+    }
+    log.debug("Leaving SessionWindow.readAsync().");
+    return { ok: true, session: session };
+  }
+
   // Every warm-up in flight hears of a key changed here. Hot path (every
   // apply, local write and commit): no Entering/Leaving pair.
   private noteTouched(key: string): void {
