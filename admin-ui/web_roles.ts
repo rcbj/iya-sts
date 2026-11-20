@@ -547,6 +547,20 @@ class RolesPage {
           (role.memberTypes || []).length
             ? kit.esc(RolesPage.roleMemberTypesLabel(role.memberTypes, t))
             : t.html('consoleRoles.body.peopleAndApps')) +
+      // HOW IT IS HELD (#1072), and for a dynamic role how it is chosen.
+      row(t.html('consoleRoles.detail.thMode'),
+          role.membershipMode === 'dynamic-selectable'
+            ? t.html('consoleRoles.detail.modeDynamic')
+            : t.html('consoleRoles.detail.modeStatic')) +
+      (role.membershipMode === 'dynamic-selectable'
+        ? row(t.html('consoleRoles.detail.thSelection'),
+              (role.selection === 'required'
+                ? t.html('consoleRoles.detail.selectionRequired')
+                : t.html('consoleRoles.detail.selectionOptional')) +
+              (role.exclusiveGroup ? '; ' +
+                t.html('consoleRoles.detail.exclusive',
+                       { group: role.exclusiveGroup }) : ''))
+        : '') +
       row(t.html('consoleRoles.detail.thId'),
           role.id ? '<code>' + kit.esc(role.id) + '</code>' : none) +
       row('DN', role.dn ? '<code>' + kit.esc(role.dn) + '</code>' : none) +
@@ -610,7 +624,9 @@ class RolesPage {
       : '';
     const rolePanel = kit.frame('<h2><code>' + kit.esc(role.name) +
       '</code></h2>' +
-      facts + members + authorizes + entry +
+      facts + (role.membershipMode === 'dynamic-selectable'
+        ? RolesPage.eligibilitySection(t, role, json, !!ctx.write) : '') +
+      members + authorizes + entry +
       kit.note(t.html('consoleRoles.detail.editOnList')));
     return kit.tabbedPanels('roletabs', [
       { id: 'rtab-role', label: t.text('consoleRoles.detail.tabRole'),
@@ -885,7 +901,136 @@ class RolesPage {
           '<input name="client" required></label>' +
           '<button type="submit">' + t.html('consoleRoles.body.add') +
           '</button></form>') +
+      RolesPage.dynamicForms(t, one, listView) +
       '</details>';
+  }
+
+  // A DYNAMIC ROLE'S ELIGIBILITY (#1072): its own XACML policy, the two
+  // forms that set it (ALFA, or XACML XML — `set-eligibility-policy` takes
+  // exactly one) and the test, a GET the page composes with
+  // `GET /admin-api/roles/eligibility` (rule 7: the same two operations).
+  // The answer is drawn as the API gives it; the policy's text never is.
+  /**
+   * Draws a dynamic role's Eligibility section.
+   *
+   * @param t - the page's translator
+   * @param role - the role, as the drill-down's answer carries it
+   * @param json - the page's answer, `eligibility` composed in when asked
+   * @param write - whether the reader may write
+   * @returns the section as HTML
+   */
+  static eligibilitySection(t, role, json, write) {
+    const answer = json && json.eligibility && json.eligibility.role ===
+      role.name ? json.eligibility : null;
+    const textForm = function (field, label) {
+      return '<form method="post" action="/admin/roles">' +
+        '<input type="hidden" name="action" value="set-eligibility-policy">' +
+        '<input type="hidden" name="role" value="' + kit.esc(role.name) +
+        '"><label>' + label + '<br><textarea name="' + field + '" ' +
+        'rows="8" cols="72" required></textarea></label><br>' +
+        '<button type="submit">' +
+        t.html('consoleRoles.eligibility.save') + '</button></form>';
+    };
+    const result = !answer ? '' : '<div class="' +
+      (answer.eligible ? 'ok' : 'err') + '"><strong>' +
+      (answer.eligible
+        ? t.html('consoleRoles.eligibility.yes', {
+          user: answer.username, decision: answer.decision || '' })
+        : t.html('consoleRoles.eligibility.no', {
+          user: answer.username, decision: answer.decision || '' })) +
+      '</strong><br>' + kit.esc(answer.why || '') +
+      (answer.code ? ' <code>' + kit.esc(answer.code) + '</code>' : '') +
+      (answer.status && answer.status.missing
+        ? '<br>' + t.html('consoleRoles.eligibility.missing', {
+          attribute: answer.status.missing.attributeId })
+        : '') +
+      ((answer.applicable || []).length
+        ? '<br><span class="sub">' +
+          t.html('consoleRoles.eligibility.applicable') + ' ' +
+          kit.codeList(answer.applicable) + '</span>'
+        : '') + '</div>';
+    return kit.frame('<h3 id="role-eligibility">' +
+      t.html('consoleRoles.eligibility.heading') + '</h3>' +
+      kit.note(t.html('consoleRoles.eligibility.note')) +
+      '<p>' + t.html('consoleRoles.eligibility.policy') + ' ' +
+      (role.eligibilityPolicy ? '<code>' + kit.esc(role.eligibilityPolicy) +
+        '</code>' : '<span class="state-none">' +
+        t.html('consoleRoles.eligibility.none') + '</span>') + '</p>' +
+      (write ? '<details><summary>' +
+        t.html('consoleRoles.eligibility.edit') + '</summary>' +
+        textForm('alfa', t.html('consoleRoles.eligibility.fromAlfa')) +
+        textForm('document', t.html('consoleRoles.eligibility.fromXml')) +
+        '</details>' : '') +
+      '<h4>' + t.html('consoleRoles.eligibility.testHeading') + '</h4>' +
+      '<form method="get" action="/admin/roles"><div class="formrow">' +
+      '<input type="hidden" name="role" value="' + kit.esc(role.name) + '">' +
+      '<input type="hidden" name="eligibilityRole" value="' +
+      kit.esc(role.name) + '"><label>' +
+      t.html('consoleRoles.eligibility.person') +
+      ' <input type="text" name="eligibilityUser" value="' +
+      kit.esc((answer && answer.username) || '') + '"></label><label>' +
+      t.html('consoleRoles.eligibility.application') +
+      ' <input type="text" name="eligibilityApplication" value="' +
+      kit.esc((answer && answer.application) || role.application || '') +
+      '"></label><button type="submit">' +
+      t.html('consoleRoles.eligibility.test') + '</button></div></form>' +
+      result);
+  }
+
+  // HOW A ROLE IS HELD, AND HOW A DYNAMIC ONE IS CHOSEN (#1072): the forms
+  // for `set-membership-mode` and `set-selection`, the two operations of
+  // `/admin-api/roles` that say the same (rule 7). Not for a console or
+  // native role, whose holders are fixed, nor one only applications hold.
+  /**
+   * Draws a role's dynamic-selection forms: its membership mode and, for a
+   * dynamic role, its selection and exclusive group.
+   *
+   * @param t - the page's translator
+   * @param one - the configured role
+   * @param listView - the list view the forms carry
+   * @returns the forms as HTML, or nothing for a role that cannot be dynamic
+   */
+  static dynamicForms(t, one, listView) {
+    if (one.console || one.native || ((one.memberTypes || []).length &&
+                                      one.memberTypes.indexOf('user') < 0)) {
+      return '';
+    }
+    const dynamic = one.membershipMode === 'dynamic-selectable';
+    const option = function (value, label, chosen) {
+      return '<option value="' + value + '"' + (chosen ? ' selected' : '') +
+        '>' + kit.esc(label) + '</option>';
+    };
+    const mode = '<form method="post" action="/admin/roles">' +
+      RolesPage.rolesBack(listView) +
+      '<input type="hidden" name="action" value="set-membership-mode">' +
+      '<input type="hidden" name="role" value="' + kit.esc(one.name) + '">' +
+      '<label>' + t.html('consoleRoles.roleEditFold.mode') +
+      ' <select name="mode">' +
+      option('static', t.text('consoleRoles.roleEditFold.modeStatic'),
+             !dynamic) +
+      option('dynamic-selectable',
+             t.text('consoleRoles.roleEditFold.modeDynamic'), dynamic) +
+      '</select></label><button type="submit">' +
+      t.html('consoleRoles.roleEditFold.setMode') + '</button></form>';
+    if (!dynamic) {
+      return mode;
+    }
+    return mode + '<form method="post" action="/admin/roles">' +
+      RolesPage.rolesBack(listView) +
+      '<input type="hidden" name="action" value="set-selection">' +
+      '<input type="hidden" name="role" value="' + kit.esc(one.name) + '">' +
+      '<label>' + t.html('consoleRoles.roleEditFold.selection') +
+      ' <select name="selection">' +
+      option('optional', t.text('consoleRoles.roleEditFold.optional'),
+             one.selection !== 'required') +
+      option('required', t.text('consoleRoles.roleEditFold.required'),
+             one.selection === 'required') +
+      '</select></label><label>' +
+      t.html('consoleRoles.roleEditFold.exclusiveGroup') +
+      ' <input name="exclusiveGroup" value="' +
+      kit.esc(one.exclusiveGroup || '') + '"></label>' +
+      '<button type="submit">' + t.html('consoleRoles.roleEditFold.save') +
+      '</button></form>';
   }
 
   // Who a role's member types let hold it, in words (#93).

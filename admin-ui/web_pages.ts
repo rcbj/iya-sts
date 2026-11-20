@@ -908,8 +908,17 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/roles', title: 'Roles',
     operation: '/admin-api/roles',
-    compose: { preview: '/admin-api/roles/preview' },
-    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'] },
+    compose: { preview: '/admin-api/roles/preview',
+               // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072), on its page:
+               // asked only by the test form, under names of its own so the
+               // drill-down's `role` never sets it off.
+               eligibility: '/admin-api/roles/eligibility' },
+    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'],
+                   eligibility: ['eligibilityRole', 'eligibilityUser',
+                                 'eligibilityApplication'] },
+    composeParams: { eligibility: { eligibilityRole: 'role',
+                                    eligibilityUser: 'user',
+                                    eligibilityApplication: 'application' } },
     // ONE ROLE'S PAGE (#604): the same operation, asked with `role`.
     drill: {
       param: 'role',

@@ -9907,6 +9907,61 @@ class AdminApi {
           log.debug("Leaving the management API role preview endpoint.");
         } },
 
+      // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072; the ticket's 5.3):
+      // one role's own policy against one person, decided by the PDP as a
+      // sign-in would ask it. A READ beside the preview: nothing is written
+      // but the audit row every eligibility decision leaves.
+      { method: 'GET', path: BASE + '/roles/eligibility', tag: 'Roles',
+        operationId: 'testRoleEligibility',
+        mirrors: 'GET /admin/roles',
+        parameters: [
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string', examples: ['oncall-operator'] },
+            description: 'The dynamic selectable role.' },
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string', examples: ['alice'] },
+            description: 'The person, by username.' },
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string', examples: ['payroll'] },
+            description: 'The application a sign-in would be for. A role ' +
+                         'that belongs to an application is offered only ' +
+                         'on a sign-in to it.' },
+          { name: 'acr', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The authentication context class the sign-in ' +
+                         'would have met, as `urn:sts:xacml:acr`.' },
+          { name: 'amr', in: 'query', required: false,
+            schema: { type: 'string', examples: ['pwd otp'] },
+            description: 'The sign-in\'s authentication methods (RFC 8176), ' +
+                         'separated by spaces, as `urn:sts:xacml:amr`.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API role eligibility endpoint.");
+          const q = req.query || {};
+          const role = String(q.role || '').trim();
+          const user = String(q.user || '').trim();
+          // NOTHING ASKED IS `answered: false`, NOT A 400 — the preview's
+          // rule beside it, and for its reason: the role page's test is a
+          // GET form, and a read with no question in it has nothing to
+          // refuse.
+          if (!role || !user) {
+            self.sendJson(res, 200, { ok: true, answered: false,
+              why: '`role` and `user` are both needed: eligibility is one ' +
+                   'person\'s for one role.' });
+            log.debug("Leaving the management API role eligibility " +
+                      "endpoint. Not asked.");
+            return;
+          }
+          const answer = require('../xacml/role_eligibility').test(role, user, {
+            application: String(q.application || '').trim(),
+            acr: String(q.acr || '').trim(),
+            amr: String(q.amr || '').split(/\s+/).filter(Boolean),
+            actor: self.callerNameOf(res) });
+          self.sendJson(res, 200, Object.assign({ ok: true, answered: true },
+                                                answer));
+          log.debug("Leaving the management API role eligibility endpoint.");
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/roles/:action', tag: 'Roles',
         // A SECOND CONSOLE PATH SINCE #604: the role page's Owners tab posts
@@ -9949,7 +10004,15 @@ class AdminApi {
           // A ROLE'S OWNERS (#604): what the role page's Owners tab saves the
           // moment Add or Remove is pressed.
           { action: 'add-owner', operationId: 'addRoleOwner' },
-          { action: 'remove-owner', operationId: 'removeRoleOwner' }
+          { action: 'remove-owner', operationId: 'removeRoleOwner' },
+
+          // DYNAMIC SELECTABLE ROLES (#1072): how a role is held, and how a
+          // dynamic one is chosen at sign-in.
+          { action: 'set-membership-mode',
+            operationId: 'setRoleMembershipMode' },
+          { action: 'set-selection', operationId: 'setRoleSelection' },
+          { action: 'set-eligibility-policy',
+            operationId: 'setRoleEligibilityPolicy' }
         ] }),
 
       // -----------------------------------------------------------------------

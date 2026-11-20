@@ -877,6 +877,66 @@ function haveDirectory() {
 // ---------------------------------------------------------------------------
 // A role's list as this module has always answered it: each value trimmed and
 // the empty ones gone, which a concept's list does not do for it (#1390).
+// ---------------------------------------------------------------------------
+// DYNAMIC SELECTABLE ROLES (#1072, rcbj's decisions of 2026-11-20).
+//
+// A role is held one of two ways. `static` is what every role written before
+// #1072 is and stays: the users, groups and applications listed hold it.
+// `dynamic-selectable` is a role NOBODY holds: a person its own XACML
+// eligibility policy permits is OFFERED it at sign-in, and holds it for that
+// sign-in's application only if they choose it. The role is still a role —
+// its permissions, its application and its display name are the ones every
+// other role has — so nothing about what a role DOES is duplicated.
+//
+// **A DYNAMIC ROLE HAS NO MEMBERS (rcbj's decision 1)**, so a person never
+// both holds a role outright and is offered it. The mode cannot change while
+// the role has a member, and a member cannot be written onto a dynamic role.
+// No conferring client either: a role a client confers is held by everybody
+// signing in through it, which is the opposite of being chosen. The console
+// and native roles keep their fixed holders and cannot be dynamic.
+//
+// Only the definition lives here. The eligibility decision is the PDP's
+// (`xacml/role_eligibility.ts`), and what a sign-in chose is on the session
+// (`authn/role_selection.ts`); this file stays a leaf.
+// ---------------------------------------------------------------------------
+const MEMBERSHIP_MODES = ['static', 'dynamic-selectable'];
+const SELECTION_KINDS = ['optional', 'required'];
+
+// The stored mode, with absent and anything unknown read as `static`: a
+// value this service did not write is not a reason to offer a role.
+// Hot path: read for every role on every listing, so no Entering/Leaving
+// pair would drown the log.
+function membershipModeOf(value) {
+  const text = String(Array.isArray(value) ? value[0] || '' : value || '')
+    .trim().toLowerCase();
+  return text === 'dynamic-selectable' ? 'dynamic-selectable' : 'static';
+}
+
+/**
+ * Whether a role row (as `all()` draws it) is a dynamic selectable role.
+ *
+ * @param row - the role row
+ * @returns true for `dynamic-selectable`
+ */
+function isDynamic(row) {
+  log.debug("Entering isDynamic().");
+  const yes = !!row && row.membershipMode === 'dynamic-selectable';
+  log.debug("Leaving isDynamic(). " + yes);
+  return yes;
+}
+
+/**
+ * Every dynamic selectable role of the ambient realm, sorted by name.
+ *
+ * @returns the rows as `all()` draws them
+ */
+function dynamicRoles() {
+  log.debug("Entering dynamicRoles().");
+  const out = all().filter(isDynamic);
+  log.debug("Leaving dynamicRoles(). " + out.length + " role(s).");
+  return out;
+}
+
 function trimmedValues(values) {
   log.debug("Entering trimmedValues().");
   const out = (values || []).map(function (one) {
@@ -953,6 +1013,14 @@ function all() {
       console: !!consoleRow,
       // Seeded in every realm, undeletable, its permission fixed (#309).
       native: !!nativeRow,
+      // HOW IT IS HELD (#1072): `static`, membership as it always was, or
+      // `dynamic-selectable`, offered at sign-in to whoever its own
+      // eligibility policy permits. See DYNAMIC SELECTABLE ROLES.
+      membershipMode: membershipModeOf(role.roleMembershipMode),
+      eligibilityPolicy: String(role.roleEligibilityPolicy || ''),
+      selection: String(role.roleSelection || '') === 'required'
+        ? 'required' : 'optional',
+      exclusiveGroup: String(role.roleSelectionExclusive || ''),
       builtIn: false
     };
   });
@@ -1192,6 +1260,71 @@ function write(name, record) {
                   'cannot confer it on everybody signing in through it. ' +
                   'Grant it on /admin/rbac.' }, 'STS-XACML-0089');
   }
+  // HOW IT IS HELD (#1072), kept when the caller does not name it, for
+  // `conferredBy`'s reason: every caller writes the whole record.
+  const modeGiven = given.membershipMode === undefined
+    ? (before.membershipMode || 'static')
+    : String(given.membershipMode || 'static').trim().toLowerCase();
+  if (MEMBERSHIP_MODES.indexOf(modeGiven) < 0) {
+    log.debug('Leaving write(). An unknown membership mode.');
+    return errorCodes.mark({ ok: false,
+             why: 'A role\'s membership mode is ' +
+                  MEMBERSHIP_MODES.join(' or ') + '; "' + modeGiven +
+                  '" is not one.' }, 'STS-XACML-0303');
+  }
+  const dynamic = modeGiven === 'dynamic-selectable';
+  if (dynamic && (consoleRow || nativeRoleFor(name))) {
+    log.debug('Leaving write(). A console or native role made dynamic.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" is one of this service\'s own roles, ' +
+                  'whose holders are fixed (the console roster, or the ' +
+                  'seed); it cannot be offered at sign-in instead.' },
+             'STS-XACML-0305');
+  }
+  if (dynamic && ((given.users || []).length ||
+                  (given.groups || []).length ||
+                  (given.applications || []).length || conferredBy.length)) {
+    log.debug('Leaving write(). A dynamic role with members.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" is a dynamic selectable role, which ' +
+                  'nobody holds: it is offered at sign-in to whoever its ' +
+                  'eligibility policy permits, so it can have no member ' +
+                  'and no conferring client. Make it static to give it ' +
+                  'members, or take them off before making it dynamic.' },
+             'STS-XACML-0304');
+  }
+  if (dynamic && memberTypes.length && memberTypes.indexOf('user') < 0) {
+    log.debug('Leaving write(). A dynamic role only applications may hold.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" may be held by applications only, and a ' +
+                  'dynamic role is chosen by a PERSON at sign-in.' },
+             'STS-XACML-0308');
+  }
+  const selectionGiven = given.selection === undefined
+    ? (before.selection || 'optional')
+    : String(given.selection || 'optional').trim().toLowerCase();
+  if (SELECTION_KINDS.indexOf(selectionGiven) < 0) {
+    log.debug('Leaving write(). An unknown selection kind.');
+    return errorCodes.mark({ ok: false,
+             why: 'A dynamic role\'s selection is ' +
+                  SELECTION_KINDS.join(' or ') + '; "' + selectionGiven +
+                  '" is not one.' }, 'STS-XACML-0306');
+  }
+  const exclusiveGiven = String(given.exclusiveGroup === undefined
+    ? (before.exclusiveGroup || '') : (given.exclusiveGroup || '')).trim();
+  if (exclusiveGiven &&
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(exclusiveGiven)) {
+    log.debug('Leaving write(). A malformed exclusive group.');
+    return errorCodes.mark({ ok: false,
+             why: 'An exclusive group is a name of up to 64 letters, ' +
+                  'digits and . _ : -, starting with a letter or a digit; "' +
+                  exclusiveGiven + '" is not.' }, 'STS-XACML-0307');
+  }
+  // THE OWNED ELIGIBILITY POLICY (#1072): written by its lifecycle
+  // (`xacml/role_eligibility.ts`), kept by every other write.
+  const eligibilityPolicy = String(given.eligibilityPolicy === undefined
+    ? (before.eligibilityPolicy || '') : (given.eligibilityPolicy || ''))
+    .trim();
   if (conferredBy.length && memberTypes.length &&
       memberTypes.indexOf('user') < 0) {
     log.debug('Leaving write(). Conferred on people, held by applications.');
@@ -1228,7 +1361,14 @@ function write(name, record) {
     // A native role's permission is fixed (see THE NATIVE ROLES) and
     // written as such, so an ldapsearch shows what the role authorizes.
     rolePermission: nativeRoleFor(name) ? [nativeRoleFor(name).permission]
-                                        : (given.permissions || []).map(String)
+                                        : (given.permissions || []).map(String),
+    // #1072. A static role writes none of them but the policy it may still
+    // own, so switching back to static keeps what was configured.
+    roleMembershipMode: dynamic ? ['dynamic-selectable'] : [],
+    roleEligibilityPolicy: eligibilityPolicy ? [eligibilityPolicy] : [],
+    roleSelection: dynamic && selectionGiven === 'required'
+      ? ['required'] : [],
+    roleSelectionExclusive: dynamic && exclusiveGiven ? [exclusiveGiven] : []
   };
   if (consoleRow) {
     attributes.roleMemberUser = [];
@@ -2394,6 +2534,10 @@ const MEMBER_FIELDS = ['users', 'groups', 'applications'];
 
 module.exports = {
   SCHEMA: SCHEMA,
+  MEMBERSHIP_MODES: MEMBERSHIP_MODES,
+  SELECTION_KINDS: SELECTION_KINDS,
+  isDynamic: isDynamic,
+  dynamicRoles: dynamicRoles,
   BUILT_IN: BUILT_IN,
   BUILT_IN_NAMES: BUILT_IN_NAMES,
   DEFAULT_REQUIRED_ROLE: DEFAULT_REQUIRED_ROLE,

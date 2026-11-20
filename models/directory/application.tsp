@@ -3914,4 +3914,17 @@ model Application {
     what: "TRUE when this UMA 2.0 resource server may register resources it OWNS ITSELF, through a protection API token obtained with client_credentials. Absent or FALSE, the default, means a PAT must be a person's (the code flow) and that person owns what it registers."
   })
   umaOwnsResources?: string;
+  // -------------------------------------------------------------------
+  // DYNAMIC SELECTABLE ROLES (#1072). The application's half of rcbj's
+  // decision 2: the sign-in page's "Choose roles for this sign-in" box is
+  // offered unless the realm's `roles.dynamicSelection` or this attribute
+  // turns it off. DECLARED, so editable on the console and the API.
+  // -------------------------------------------------------------------
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "the console, the management API, or by hand",
+    what: "FALSE turns off dynamic role selection for sign-ins to this application (#1072): the sign-in page offers no \"Choose roles for this sign-in\" box, no role is offered, and a token for this application carries no dynamically selected role. Absent or TRUE, the default, leaves it to the realm's roles.dynamicSelection setting."
+  })
+  appDynamicRoleSelection?: string;
 }

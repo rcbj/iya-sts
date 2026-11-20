@@ -777,7 +777,13 @@
   "xacmlPepVersion": 739,
   "xacmlPolicyDocument": 740,
   "xacmlPolicyId": 741,
-  "xacmlVersion": 742
+  "xacmlVersion": 742,
+  "roleMembershipMode": 777,
+  "roleEligibilityPolicy": 778,
+  "roleSelection": 779,
+  "roleSelectionExclusive": 780,
+  "appDynamicRoleSelection": 781,
+  "xacmlRole": 782
  },
  "classes": {
   "spiffeAgent": 1,

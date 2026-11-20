@@ -80,6 +80,7 @@ declare namespace IyaDomain {
     fgaPolicy?: string;
     fgaEnforced?: string;
     umaOwnsResources?: string;
+    appDynamicRoleSelection?: string;
     verifiableCredentialPartner?: VerifiableCredentialPartner;
     wsTrustRelyingParty?: WsTrustRelyingParty;
     kerberosService?: KerberosService;
@@ -788,6 +789,10 @@ declare namespace IyaDomain {
     roleAllowedMemberType?: string[];
     owner?: string[];
     stsOwnerProtected?: boolean;
+    roleMembershipMode?: string;
+    roleEligibilityPolicy?: string;
+    roleSelection?: string;
+    roleSelectionExclusive?: string;
   }
 
   /**

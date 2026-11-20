@@ -24124,6 +24124,92 @@ const CODES = [
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   // ===== XPEP ==============================================================
+  { code: 'STS-XACML-0303',
+    summary: 'A role was written with a membership mode other than static ' +
+      'or dynamic-selectable (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0304',
+    summary: 'A dynamic selectable role was written with a member or a ' +
+      'conferring client (#1072): such a role is held by nobody and offered ' +
+      'at sign-in, so the write was refused, whether it made a role with ' +
+      'members dynamic or added a member to a dynamic role.',
+    spec: '' },
+  { code: 'STS-XACML-0305',
+    summary: 'A console or native role was to be made dynamic selectable ' +
+      '(#1072); their holders are fixed, so the write was refused.',
+    spec: '' },
+  { code: 'STS-XACML-0306',
+    summary: 'A dynamic role\'s selection was neither optional nor ' +
+      'required (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0307',
+    summary: 'A dynamic role\'s exclusive group was not a name of up to 64 ' +
+      'letters, digits and . _ : - (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0308',
+    summary: 'A role only applications may hold was to be made dynamic ' +
+      'selectable (#1072); a dynamic role is chosen by a person at sign-in.',
+    spec: '' },
+  { code: 'STS-XACML-0309',
+    summary: 'The selection of a static role was to be set (#1072); only a ' +
+      'dynamic selectable role is chosen at sign-in.',
+    spec: '' },
+  { code: 'STS-XACML-0310',
+    summary: 'A dynamic role\'s eligibility policy (xacmlRole, #1072) was ' +
+      'to be made the root of the repository; it is decided alone, for ' +
+      'one role, so the write was refused.',
+    spec: '' },
+  { code: 'STS-XACML-0311',
+    summary: 'A dynamic role\'s eligibility was asked about, or its policy ' +
+      'set, for a role this realm does not hold (#1072); nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0312',
+    summary: 'A static role was asked about as a dynamic one, or given an ' +
+      'eligibility policy (#1072); only a dynamic selectable role is offered.',
+    spec: '' },
+  { code: 'STS-XACML-0313',
+    summary: 'A dynamic role has no eligibility policy (#1072), so nobody is ' +
+      'eligible for it.',
+    spec: '' },
+  { code: 'STS-XACML-0314',
+    summary: 'A dynamic role names an eligibility policy that is not in ' +
+      'ou=policies (#1072); nobody is eligible for it.',
+    spec: '' },
+  { code: 'STS-XACML-0315',
+    summary: 'A dynamic role names a policy that is not its own: it carries ' +
+      'another role\'s xacmlRole, or none (#1072). It is never adopted, and ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0316',
+    summary: 'A dynamic role\'s eligibility policy is disabled (#1072); ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0317',
+    summary: 'A dynamic role\'s eligibility policy does not parse (#1072); ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0318',
+    summary: 'A dynamic role\'s eligibility could not be decided: the PDP ' +
+      'met a processing or syntax error, or the decision threw (#1072). The ' +
+      'person is not eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0319',
+    summary: 'A person is not eligible for a dynamic role: its policy did ' +
+      'not answer Permit, or no person was named (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0320',
+    summary: 'A dynamic role that belongs to one application was asked about ' +
+      'for a sign-in to another (#1072); it is offered only on its own ' +
+      'application\'s.',
+    spec: '' },
+  { code: 'STS-XACML-0321',
+    summary: 'A dynamic role\'s eligibility policy was given as neither or ' +
+      'both of document (XACML XML) and alfa (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0322',
+    summary: 'A dynamic role would not take the reference to its new ' +
+      'eligibility policy (#1072); a new policy was taken back.',
+    spec: '' },
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
       'or ../common/error_codes; the container starts anyway and ' +
