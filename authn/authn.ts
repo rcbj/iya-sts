@@ -6776,6 +6776,23 @@ class Authn {
     session.authTime = event.at;
     session.via = event.via;
     session.lastSeenAt = Date.now();
+    // A ROLE CHOICE MADE ON THIS SIGN-IN (#1072) REPLACES the session's for
+    // its application, and only for it: the portal's "Sign in again" is how
+    // a person chooses for a second application without losing the first's
+    // choice. A sign-in whose role step did not run changes nothing here;
+    // what it still carries is asked of each policy at every issuance.
+    if (extra.rolesDone === true && extra.application) {
+      const forApp = String(extra.application);
+      session.selectedRoles = (Array.isArray(session.selectedRoles)
+        ? session.selectedRoles : []).filter(function (one: any) {
+        return one && String(one.application || '') !== forApp;
+      }).concat((Array.isArray(extra.selectedRoles) ? extra.selectedRoles
+                                                     : [])
+        .map(function (one: any) {
+          return { role: String(one.role), application: forApp,
+                   at: Number(one.at) || 0 };
+        }));
+    }
     this.markPresentationHeld(session, true);
     this.bindPartnerSession(session, extra);
     const cookieValue = this.mintSessionHandle(session);

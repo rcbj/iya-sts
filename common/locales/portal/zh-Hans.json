@@ -546,5 +546,8 @@
   "photo.errRead": "无法将该文件作为图片读取。",
   "done.photo": "您的个人资料照片已保存。",
   "done.photoRemoved": "您的个人资料照片已移除。",
-  "done.endOthers": "您可以在 /logout 结束其他会话。"
+  "done.endOthers": "您可以在 /logout 结束其他会话。",
+  "apps.reauthenticate": "重新登录",
+  "apps.reauthenticateNote": "每个登录链接都会要求您重新登录，以便您选择要在该应用程序中使用的角色。",
+  "apps.reauthenticateApply": "应用"
 }

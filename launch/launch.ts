@@ -279,8 +279,12 @@ class Launch {
     }
     const base = baseUrlOf(req);
     const target = String(query.target || '');
+    // "SIGN IN AGAIN" (#1072): the portal's box, so a person may choose
+    // dynamic roles for this application — each protocol's fresh sign-in.
+    const fresh = String(query.reauthenticate || '') === '1';
     if (protocol !== 'oidc') {
-      const there = LaunchLinks.endpointUrl(base, view, protocol, target);
+      const there = LaunchLinks.endpointUrl(base, view, protocol, target,
+                                            fresh);
       log.info('launch: "' + view.identifier + '" in ' + row.label +
                ', to ' + there + '.');
       log.debug("Leaving Launch.launch(). To the " + row.label +
@@ -305,7 +309,7 @@ class Launch {
         'from the link, or register the address.',
         { app: identifier, protocol: protocol });
     }
-    return this.launchOidc(req, res, view, base, landing, realms);
+    return this.launchOidc(req, res, view, base, landing, realms, fresh);
   }
 
   // OPENID CONNECT CORE SECTION 4. Signed in first, through the sign-in
@@ -323,17 +327,23 @@ class Launch {
    * @param realmsModule - the realms module
    */
   launchOidc(req: Json, res: Json, view: Json, base: string, target: string,
-             realmsModule: Json): void {
+             realmsModule: Json, fresh?: boolean): void {
     const { applications, authn, config, errorCodes } = this.deps;
     const { log, nowSec } = this.deps.helpers;
     log.debug("Entering Launch.launchOidc().");
     const clientId = String(view.identifier);
     const session = authn.sessionOf(req);
     if (!session) {
+      // NOT FRESH ON THE WAY BACK (#1072): the sign-in this starts is the
+      // fresh one, so `reauthenticate` is left off the return, and the
+      // client is not asked for a second.
       const url = String(req.originalUrl || req.url || '');
       const at = url.indexOf('?');
+      const kept = new URLSearchParams(at < 0 ? '' : url.slice(at + 1));
+      kept.delete('reauthenticate');
+      const back = kept.toString();
       const where = authn.beginAuthentication({
-        returnTo: req.path + (at < 0 ? '' : url.slice(at)),
+        returnTo: req.path + (back ? '?' + back : ''),
         application: clientId,
         protocol: 'OpenID Connect',
         details: [
@@ -360,7 +370,8 @@ class Launch {
         username: String((session.user || {}).username || ''),
         tenant: String(realm.id || ''),
         domain: String(realmsModule.domainOf(realm) || ''),
-        target: target || applications.homePageOf(view)
+        target: target || applications.homePageOf(view),
+        prompt: fresh ? 'login' : ''
       });
     if (!url) {
       errorCodes.mark(res, 'STS-LAUNCH-0006');

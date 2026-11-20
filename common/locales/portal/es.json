@@ -546,5 +546,8 @@
   "photo.errRead": "Ese archivo no se pudo leer como imagen.",
   "done.photo": "Su foto de perfil se guardó.",
   "done.photoRemoved": "Su foto de perfil se quitó.",
-  "done.endOthers": "Puede finalizar sus otras sesiones en /logout."
+  "done.endOthers": "Puede finalizar sus otras sesiones en /logout.",
+  "apps.reauthenticate": "Volver a iniciar sesión",
+  "apps.reauthenticateNote": "Cada enlace de inicio de sesión le pide que vuelva a iniciar sesión, para que pueda elegir los roles que usará con esa aplicación.",
+  "apps.reauthenticateApply": "Aplicar"
 }

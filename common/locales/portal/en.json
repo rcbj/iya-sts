@@ -546,5 +546,8 @@
   "photo.errRead": "That file could not be read as an image.",
   "done.photo": "Your profile photo is saved.",
   "done.photoRemoved": "Your profile photo is removed.",
-  "done.endOthers": "You can end your other sessions at /logout."
+  "done.endOthers": "You can end your other sessions at /logout.",
+  "apps.reauthenticate": "Sign in again",
+  "apps.reauthenticateNote": "Each Sign in link asks you to sign in afresh, so you can choose the roles to use with that application.",
+  "apps.reauthenticateApply": "Apply"
 }

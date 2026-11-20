@@ -546,5 +546,8 @@
   "photo.errRead": "تعذّرت قراءة ذلك الملف كصورة.",
   "done.photo": "حُفظت صورة ملفك الشخصي.",
   "done.photoRemoved": "أُزيلت صورة ملفك الشخصي.",
-  "done.endOthers": "يمكنك إنهاء جلساتك الأخرى في /logout."
+  "done.endOthers": "يمكنك إنهاء جلساتك الأخرى في /logout.",
+  "apps.reauthenticate": "تسجيل الدخول مرة أخرى",
+  "apps.reauthenticateNote": "يطلب منك كل رابط لتسجيل الدخول أن تسجل الدخول من جديد، حتى تتمكن من اختيار الأدوار التي ستستخدمها مع ذلك التطبيق.",
+  "apps.reauthenticateApply": "تطبيق"
 }

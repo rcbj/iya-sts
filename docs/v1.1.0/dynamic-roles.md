@@ -102,6 +102,86 @@ namespace oncall {
 }
 ```
 
+## At sign-in
+
+1. **The box.** In a realm that defines at least one dynamic role, the
+   sign-in screen shows **Choose roles for this sign-in**, unless the feature
+   is turned off for the realm or the application. The box is shown to
+   everybody, whether or not they are eligible for anything, so it reveals
+   nothing about who may hold which role.
+2. **The step.** After every factor (password, passkey, second factor), each
+   dynamic role's policy is decided for the person. If the box was ticked,
+   or a role marked `required` is among those offered, a page lists the
+   roles they may choose, each with its display name and description, as
+   checkboxes. Ticking none is allowed unless a required role is offered.
+3. **The check.** What the person submits is held against the step's own
+   record of what it offered, never against what the browser sends, and each
+   chosen role's policy is decided again. A role that was not offered, two
+   roles of one exclusive group, a missing required role, or a role no
+   longer eligible is refused, and the page is shown again.
+4. **The session.** The choice is recorded on the sign-on session, for the
+   application the sign-in was for. Nothing is written to the directory, and
+   the choice ends with the session.
+
+If nothing is offered, the sign-in continues as it always did.
+
+## In tokens
+
+A chosen role appears in the tokens issued for that application on that
+session, through the same processing as any other role:
+
+- the `roles` claim (named by `roles.claimName`) of the OAuth 2.0 access
+  token, the ID Token and the UserInfo response;
+- the roles attribute of SAML 2.0, SAML 1.1 and WS-Federation assertions
+  issued through the browser profiles;
+- the issuance policy's role checks, and the permissions a role authorizes
+  (scopes).
+
+An application's own role (`<role>@<application>`) is carried only in tokens
+for that application, as with every application role. Existing deny
+decisions, scope restrictions and audience rules still apply.
+
+**Each issuance asks the role's policy again.** A role the person is no
+longer eligible for (their entry changed, the policy changed, or the role
+was disabled, deleted or made static) is left off that token and audited as
+`roles.selection.dropped`. Refreshing a token never adds a role the person
+did not choose. Tokens already issued keep what they carry until they
+expire.
+
+An `offline_access` refresh token used after its session has ended carries
+no chosen role, because there is no longer a session to read the choice
+from.
+
+## Other applications, and signing in again
+
+Single sign-on into a second application carries no choice: what was chosen
+applies to the application of that sign-in only. To choose roles for
+another application, start from the [user portal](user-facing-pages.md#the-user-portal)'s
+**Applications** page and tick **Sign in again**. Each Sign in link then
+asks for a fresh sign-in, in that protocol's own way:
+
+| Protocol | What the link adds |
+|---|---|
+| SAML 2.0, SAML 1.1 | `forceAuthn=true` on the identity-provider-initiated link |
+| WS-Federation | `wfresh=0` |
+| OpenID Connect | `prompt=login` on the request to the client's `initiate_login_uri`, for the client to forward. This is not part of OpenID Connect Core section 4, so a client that does not forward it signs in as usual. |
+
+The new choice replaces the session's choice for that application only.
+
+## Sign-ins without the screen
+
+A dynamic role is never assumed. Sign-ins and grants that cannot show the
+step never carry a dynamically selected role:
+
+- the password grant, token exchange, the JWT and SAML assertion grants,
+  device and CIBA flows;
+- WS-Trust, Kerberos and LDAP;
+- federated, wallet, SPNEGO and certificate sign-ins.
+
+Where a **required** role applies to the person, the federated, wallet,
+SPNEGO and certificate sign-ins are refused (`STS-XACML-0329`), with a
+message sending the person to the sign-in screen.
+
 ## Administering dynamic roles
 
 On the console, a role's page (`/admin/roles?role=<name>`) shows how the role
@@ -136,4 +216,4 @@ a dynamically selected role.
 
 - [XACML 3.0 and ALFA](xacml.md)
 - [Authorization overview](authorization.md)
-- [Error codes](error-codes.md) (`STS-XACML-0303` to `STS-XACML-0322`)
+- [Error codes](error-codes.md) (`STS-XACML-0303` to `STS-XACML-0330`)

@@ -546,5 +546,8 @@
   "photo.errRead": "Hindi mabasa ang file na iyon bilang larawan.",
   "done.photo": "Na-save na ang iyong larawan sa profile.",
   "done.photoRemoved": "Naalis na ang iyong larawan sa profile.",
-  "done.endOthers": "Maaari mong tapusin ang iba mong session sa /logout."
+  "done.endOthers": "Maaari mong tapusin ang iba mong session sa /logout.",
+  "apps.reauthenticate": "Mag-sign in muli",
+  "apps.reauthenticateNote": "Hihilingin ng bawat link sa pag-sign in na mag-sign in ka muli, para mapili mo ang mga tungkuling gagamitin sa application na iyon.",
+  "apps.reauthenticateApply": "Ilapat"
 }

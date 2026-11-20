@@ -546,5 +546,8 @@
   "photo.errRead": "Ce fichier n'a pas pu être lu comme une image.",
   "done.photo": "Votre photo de profil est enregistrée.",
   "done.photoRemoved": "Votre photo de profil est retirée.",
-  "done.endOthers": "Vous pouvez mettre fin à vos autres sessions sur /logout."
+  "done.endOthers": "Vous pouvez mettre fin à vos autres sessions sur /logout.",
+  "apps.reauthenticate": "Se reconnecter",
+  "apps.reauthenticateNote": "Chaque lien de connexion vous demande de vous reconnecter, afin de choisir les rôles à utiliser avec cette application.",
+  "apps.reauthenticateApply": "Appliquer"
 }

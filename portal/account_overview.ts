@@ -787,8 +787,13 @@ class AccountOverview {
    * @param base - this realm's base URL
    * @returns the view
    */
+  //
+  // `fresh` (#1072): the portal's "Sign in again" — each launch link asks
+  // for a fresh sign-in, so the person may choose dynamic roles for that
+  // application. `rolesOffered` says whether the box is worth drawing: the
+  // realm defines a dynamic role and `roles.dynamicSelection` is on.
   applicationsView(caller: AccountCaller, wanted: number,
-                   base: string): Json {
+                   base: string, fresh?: boolean): Json {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AccountOverview.applicationsView().");
@@ -799,16 +804,22 @@ class AccountOverview {
       .map(function (row: Json): Json {
         return Object.assign({}, row, {
           launches: (row.launchable || []).map(function (id: string): Json {
+            const url = LaunchLinks.launchUrl(base, row.identifier, id);
             return { protocol: id, label: LaunchLinks.protocol(id).label,
-                     url: LaunchLinks.launchUrl(base, row.identifier, id) };
+                     url: fresh ? url + (url.indexOf('?') < 0 ? '?' : '&') +
+                                  'reauthenticate=1' : url };
           }) });
       });
     log.debug("Leaving AccountOverview.applicationsView(). Page " + at +
               ".");
+    const rolesOffered = require('../common/config')
+      .value('roles.dynamicSelection') === true &&
+      require('../common/roles').dynamicRoles().length > 0;
     return { rows: shown, page: at, pages: pages, refused: found.refused,
              notSignIn: found.notSignIn, scanned: found.scanned,
              total: found.total, truncated: found.truncated,
-             limit: found.limit };
+             limit: found.limit, reauthenticate: !!fresh,
+             rolesOffered: rolesOffered };
   }
 
   // ---------------------------------------------------------------------------
@@ -1007,7 +1018,8 @@ class AccountOverview {
         handler: function (req, res, caller: AccountCaller,
                            input): unknown {
           return ctx.json(res, 200, self.applicationsView(caller,
-            Number(input.query.page || 1), ctx.baseUrlOf(req)));
+            Number(input.query.page || 1), ctx.baseUrlOf(req),
+            String(input.query.reauthenticate || '') === '1'));
         } },
       { method: 'GET', path: ctx.BASE + '/signals',
         operationId: 'getSecurityActivity', access: 'person', query: PAGED_QUERY,
