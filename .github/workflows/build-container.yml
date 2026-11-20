@@ -766,7 +766,14 @@ jobs:
       #   * GitHub's generated notes from the previous `vM.N.P` release tag,
       #     which list the pull requests merged since it.
       #
-      # It is marked the latest release, as `:latest` is the newest image.
+      # IT IS MADE AS A DRAFT (rcbj, 2026-11-20): "for each new release I
+      # want to review exactly what gets printed in the change log." Nothing
+      # public is written here. rcbj reads and edits the draft's notes on
+      # the Releases page, then publishes it and marks it the latest
+      # (`gh release edit v<M.N.O> --draft=false --latest`). The images and
+      # the git tags are already out by then; only the page waits. The
+      # notes can be read before any of this, in the run summary of a
+      # release candidate (the `candidate` input).
       # A re-run of the same commit finds the release there and leaves it:
       # its tag cannot have moved (*Tag the release in git* refuses that),
       # so it already describes this commit. The job's token creates it, so
@@ -844,17 +851,22 @@ jobs:
             echo "Candidate ${release}-candidate: its notes are in the summary."
             exit 0
           fi
-          args=(--repo "${repo}" --verify-tag --latest
+          # --draft, for rcbj's review (above); --latest is set when the
+          # draft is published, not here.
+          args=(--repo "${repo}" --verify-tag --draft
                 --title "${release} (${VERSION})" --notes-file "${notes}"
                 --generate-notes)
           if [ -n "${previous}" ]; then
             args+=(--notes-start-tag "${previous}")
           fi
           gh release create "${release}" "${args[@]}"
-          echo "Created release ${release}${previous:+ (since ${previous})}."
+          echo "Created the DRAFT release ${release}" \
+               "${previous:+(since ${previous}) }for review."
           {
             echo ""
-            echo "GitHub release: \`${release}\`${previous:+, since \`${previous}\`}."
+            echo "GitHub release: \`${release}\`${previous:+, since \`${previous}\`}," \
+                 "a DRAFT: review its notes, then publish it with" \
+                 "\`gh release edit ${release} --draft=false --latest\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # if: always() — when a step above fails, the container's log is the only
