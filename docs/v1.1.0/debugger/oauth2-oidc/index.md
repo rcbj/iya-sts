@@ -5,7 +5,7 @@ nav_order: 10
 
 # Using the OAuth2 / OIDC workflow
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.5 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](../access.md) says how to reach, enable and disable it.
 
 The OAuth2 / OIDC workflow lets you run every OAuth 2.0 authorization grant
 and every OpenID Connect authentication flow against a real authorization
@@ -127,7 +127,7 @@ request:
 
 | Field | What it does |
 |---|---|
-| **RFC 9700 compliance mode** | Makes the debugger refuse to send anything the OAuth 2.0 Security Best Current Practice forbids. Off by default, so you can test providers that do not comply. See [RFC 9700 compliance mode](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/rfc9700.md). |
+| **RFC 9700 compliance mode** | Makes the debugger refuse to send anything the OAuth 2.0 Security Best Current Practice forbids. Off by default, so you can test providers that do not comply. See [RFC 9700 compliance mode](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/rfc9700.md). |
 | **Authorization Grant** | Chooses the grant or flow. The rest of both pages changes to match it. |
 | **Endpoints** | Authorization, token, introspection, revocation, registration, UserInfo and JWKS. Filled in by **Populate Meta Data**. |
 | **Device Authorization Endpoint** | The RFC 8628 endpoint. The row stays hidden until discovery advertises `device_authorization_endpoint`, or until a value saved earlier is restored. **Populate Meta Data** fills it and shows the row. |
@@ -206,7 +206,10 @@ Each token comes with buttons and links:
 Further down step 2 are panes that work with the tokens you now hold:
 
 * **RP-initiated Logout**: ends the session at the provider (OpenID Connect
-  RP-Initiated Logout 1.0).
+  RP-Initiated Logout 1.0). It stays collapsed until the page has retrieved
+  a token set for a signed-in user, because before then there is no session
+  to end. A Client Credentials grant signs nobody in, so the pane stays
+  collapsed after one. Click its title to open it at any time.
 * **Token Revocation (RFC 7009)**: revokes any token you paste in.
 * **Token Exchange (RFC 8693)**: exchanges a token for a different one. See
   [Token Exchange](oauth2-grants.md#token-exchange-rfc-8693).
@@ -240,4 +243,4 @@ The screenshots are taken by the debugger project's own Selenium jobs, against
 the standalone debugger and this service, so the address bar in them shows
 `https://localhost:3000` where the embedded debugger is
 `https://localhost:8444`. How to retake them is in that project's
-[guide](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/oauth2-oidc/index.md#regenerating-the-screenshots).
+[guide](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/oauth2-oidc/index.md#regenerating-the-screenshots).

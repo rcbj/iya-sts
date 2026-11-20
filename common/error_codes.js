@@ -8352,6 +8352,12 @@ const CODES = [
       'store with a NUL in it (STS-STORE-0063), so it was refused before ' +
       'the pending record was touched.',
     spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0558',
+    summary: 'The account-set expiry job could not read the sessions a ' +
+      'batch of browsers\' account sets lists, asynchronously (#780). The ' +
+      'batch decides nothing: no session is moved to remembered and no set ' +
+      'is deleted on it, and the next run starts again at that batch.',
+    spec: 'none: a scheduler job; logged, never sent' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -25413,6 +25419,12 @@ const CODES = [
       'xacml.pepAuthentication is certificate, which accepts a remote PEP ' +
       'only by its client certificate (#1827).',
     spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-AUTHZEN-0122',
+    summary: 'An AuthZEN access request submission did not carry ' +
+      'Content-Type: application/json, which AuthZEN 1.0 section 10.1 ' +
+      'requires; refused before its body was read (#936).',
+    spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), ' +
+      'application/problem+json (RFC 9457)' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

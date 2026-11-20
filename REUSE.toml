@@ -57,7 +57,7 @@ SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
 SPDX-License-Identifier = "BUSL-1.1"
 
 # The id-proto-debugger user guides under docs/v1.1.0/debugger/, copied from
-# that project's release 0.9.3 (#1717): the same owner, and that project's
+# that project's release 0.9.5 (#1717): the same owner, and that project's
 # MIT licence, like the protocol jobs above. The chapter's own two pages,
 # docs/v1.1.0/debugger/index.md and access.md, are this service's and stay
 # BUSL-1.1 under the catch-all. docs/v1.0.0/ (main at 7907e7e86) has no
@@ -66,10 +66,10 @@ SPDX-License-Identifier = "BUSL-1.1"
 path = [
   "docs/v1.1.0/debugger/oauth2-oidc/**",
   "docs/v1.1.0/debugger/what-is-a-protocol-debugger.md",
-  "docs/v1.1.0/debugger/saml.md",
+  "docs/v1.1.0/debugger/saml/**",
   "docs/v1.1.0/debugger/saml-assertion.md",
   "docs/v1.1.0/debugger/saml-decoders.md",
-  "docs/v1.1.0/debugger/wstrust.md",
+  "docs/v1.1.0/debugger/wstrust/**",
   "docs/v1.1.0/debugger/jwt-tools.md",
   "docs/v1.1.0/debugger/digital-signature.md",
 ]

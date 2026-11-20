@@ -1,23 +1,22 @@
 ---
 title: "JWT Tools"
-nav_order: 30
+nav_order: 40
 ---
 
 # JWT Tools
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.5 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 **JWT Tools** (`/jwt_tools.html`) builds, signs, encrypts, verifies, and
 decrypts a JSON Web Token in the browser. Open it from the **Tools** pane
 on `oauth2_oidc_1.html` or `oauth2_oidc_2.html`. **← Return to debugger**
 goes back to the page you came from.
 
-Signing and verification go through `jws.js` with the Web Crypto backend.
-That is why this page's algorithm list stops where `crypto.subtle` stops:
-no `RSA1_5`, no Ed448, no secp256k1, and no post-quantum `alg`. Those are
-on the [Digital Signature](digital-signature.md) JWS pane, which uses the
-pure-JavaScript backend. Use the page over `https://` or `http://localhost`.
-Web Crypto is absent anywhere else.
+Signing and verification go through `jws.js`'s pure-JavaScript backend
+(`crypto_provider.js`, #463), and encryption through `jose_jwe.js`, which is
+pure JavaScript too, so the page works on every origin, plain HTTP included.
+Its algorithm menu has no Ed448, no secp256k1 and no post-quantum `alg`.
+Those are on the [Digital Signature](digital-signature.md) JWS pane.
 
 Nothing on this page is written to `localStorage`. Keys live for the
 session.
@@ -28,6 +27,29 @@ those jobs were not re-run for this pass.
 
 * TOC
 {:toc}
+
+## Overview
+
+**JWT Tools** (`/jwt_tools.html`) builds, signs, encrypts, verifies, and
+decrypts a token in the browser. Open it from the **Tools** pane on the
+OAuth2 / OIDC pages. Everything runs in pure JavaScript, on any origin.
+
+The signing menu is `RS256` (the default) and the rest of `RS*` / `PS*`,
+`ES256` / `ES384` / `ES512`, `EdDSA` (Ed25519), and `HS256` / `HS384` /
+`HS512`. Ed448, secp256k1, and the post-quantum algorithms are on the
+Digital Signature page's JWS pane.
+
+Encryption pairs a key-management algorithm with a content-encryption
+algorithm. **Key Management** defaults to `RSA-OAEP` (also `RSA-OAEP-256`
+and `ECDH-ES`, `ECDH-ES+A128KW`, `+A192KW`, `+A256KW`, all on P-256).
+**Content Encryption** defaults to `A256GCM` (also `A192GCM`, `A128GCM`,
+`A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512`). `RSA1_5` is not
+offered. AES-192 (`A192GCM`, `A192CBC-HS384`, and `ECDH-ES+A192KW`) fails
+in Chromium-based browsers. Nothing on this page is written to
+`localStorage`.
+
+The fields, the defaults, and the trust-chain checkbox are in
+[JWT Tools](jwt-tools.md).
 
 ## 1. Compose
 
@@ -93,10 +115,10 @@ opens the certificate page when the key box holds a certificate.
 
 | Field | Default | What it does |
 |---|---|---|
-| **Key Management (`alg`)** | RSA-OAEP | Also RSA-OAEP-256, ECDH-ES (P-256), and ECDH-ES+A128KW, +A192KW, +A256KW, all on P-256. |
+| **Key Management (`alg`)** | RSA-OAEP | Also RSA-OAEP-256, ECDH-ES (P-256), and ECDH-ES+A128KW, +A192KW, +A256KW, all on P-256. And the draft post-quantum and HPKE algorithms: ML-KEM-512/768/1024 and their +A*KW forms, HPKE-0 … HPKE-16 and their -KE forms (HPKE-10/11 are X-Wing). See [`jwe-pq-kem.md`](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/jwe-pq-kem.md). |
 | **Content Encryption (`enc`)** | A256GCM | Also A192GCM, A128GCM, **A128CBC-HS256**, **A192CBC-HS384**, and **A256CBC-HS512**. |
 | **RSA Key Size** | 2048 | Also 3072, 4096, 1024 (insecure). Ignored for ECDH-ES. |
-| **Generate Keys** | | Recipient pair: RSA for `RSA-OAEP*`, P-256 for `ECDH-ES*`. |
+| **Generate Keys** | | Recipient pair: RSA for `RSA-OAEP*`, P-256 for `ECDH-ES*`. For ML-KEM and HPKE, a JWK pair (`kty: AKP`, or EC/OKP for HPKE-0 … 7) whose `alg` is the selected one, and the JWK box is ticked: these keys have no PEM form. Their **Download Keys** is JWK only. |
 | **Show keys as JWK** | off | PEM or JWK, same as pane 2. |
 | **Keystore format** / **Password** / **Download Keys** | PEM | Same export rules as pane 2. |
 | **Payload to Encrypt** | the signed JWT from pane 2 | Any text. A payload that is itself a JWS is marked `cty: JWT`. |
@@ -104,8 +126,12 @@ opens the certificate page when the key box holds a certificate.
 | **JWE to Decrypt** | the JWE just produced | Decryption uses the recipient private key and the `alg` / `enc` in the protected header. |
 | **Decrypt JWT** | | Plaintext, or the inner JWS, in **Decryption Output**. |
 
-AES-192 (`A192GCM`, `A192CBC-HS384`, and `ECDH-ES+A192KW`) fails in
-Chromium-based browsers, which do not implement 192-bit AES. Firefox and
-Node accept it. The 128-bit and 256-bit choices work in all of them.
+AES-192 (`A192GCM`, `A192CBC-HS384`, and `ECDH-ES+A192KW`) works in every
+browser: `jose_jwe.js` does all of AES in pure JavaScript (#463), so
+Chromium's missing 192-bit AES no longer matters.
 
-`RSA1_5` is not in the menu. Web Crypto does not implement it.
+`RSA1_5` is not in the menu. `jose_jwe.js` does not implement it.
+
+A bare `HPKE-n` is HPKE Integrated Encryption. Its JWE has no `enc`, so the
+**Content Encryption** menu is not used, and the IV and tag segments are
+empty.

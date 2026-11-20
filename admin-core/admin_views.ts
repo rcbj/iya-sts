@@ -14776,7 +14776,11 @@ class AdminViews {
     const version = credentials.directoryPeopleVersion();
     let entry = populationHeld.get(realmId);
     if (!entry) {
-      entry = { version: null, at: 0, value: null, building: null };
+      // `subjects`: the register subjects' names the last build asked,
+      // which the next one reads rather than asking again (#790,
+      // `stats.withSubjectsResolvedAsync()`'s memo).
+      entry = { version: null, at: 0, value: null, building: null,
+                subjects: { names: null, at: 0, generation: -1 } };
       populationHeld.set(realmId, entry);
     }
     const age = Date.now() - entry.at;
@@ -14808,24 +14812,26 @@ class AdminViews {
   private rebuildPopulation(realmId, entry, version) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.rebuildPopulation().");
-    entry.building = this.buildPeopleAndCensusAsync().then((value) => {
-      entry.value = value;
-      entry.version = version;
-      entry.at = Date.now();
-      entry.building = null;
-      return value;
-    }, (e) => {
-      log.debug("Caught in AdminViews.rebuildPopulation(): " +
-                ((e && e.message) || e));
-      entry.building = null;
-      throw e;
-    });
+    entry.building = this.buildPeopleAndCensusAsync(entry.subjects)
+      .then((value) => {
+        entry.value = value;
+        entry.version = version;
+        entry.at = Date.now();
+        entry.building = null;
+        return value;
+      }, (e) => {
+        log.debug("Caught in AdminViews.rebuildPopulation(): " +
+                  ((e && e.message) || e));
+        entry.building = null;
+        throw e;
+      });
     log.debug("Leaving AdminViews.rebuildPopulation().");
     return entry.building;
   }
 
-  // The build `peopleAndCensusAsync()` keeps.
-  private async buildPeopleAndCensusAsync() {
+  // The build `peopleAndCensusAsync()` keeps. `subjects` is the realm's
+  // memo of the register subjects' names (#790), refilled by each build.
+  private async buildPeopleAndCensusAsync(subjects?: any) {
     const { log, credentials } = this.deps;
     log.debug("Entering AdminViews.buildPeopleAndCensusAsync().");
     // The first names and the people count together (#616, #798): the
@@ -14857,8 +14863,15 @@ class AdminViews {
       return this.peopleRows(Object.assign({ seen: stats.userRows() },
                                             rowOpts));
     };
+    //
+    // **AND ASKED ONLY ONCE A WHILE (#790, 2026-11-20).** Every build asked
+    // every held subject again — up to 20,000 tokens a process holds and
+    // every artifact — to draw fifty rows. The names the last build asked
+    // are handed back in (`subjects`), and only a subject it did not meet is
+    // asked; the memo is dropped whole after two minutes and on a rename or
+    // a delete made here (admin_stats.js says why that is the bound).
     const population = typeof stats.withSubjectsResolvedAsync === 'function'
-      ? await stats.withSubjectsResolvedAsync(build)
+      ? await stats.withSubjectsResolvedAsync(build, undefined, subjects)
       : this.peopleRows(rowOpts);
     const census = await this.peopleCensusAsync(population, population.rows);
     log.debug("Leaving AdminViews.peopleAndCensusAsync().");

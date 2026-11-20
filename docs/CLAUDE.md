@@ -167,8 +167,8 @@ here: `debugger/index.md`, the chapter and its table of guides, and
 `debugger/access.md`, which covers reaching the debugger, who may use it, turning it on, and
 `DEBUGGER_IMAGE=debugger-none`. **Everything else under `debugger/` is a
 COPY of the id-proto-debugger user guides at the release the image embeds
-(0.9.3)** — its `docs/oauth2-oidc/` with the screenshots, `saml.md`,
-`saml-assertion.md`, `saml-decoders.md`, `wstrust.md`, `jwt-tools.md`,
+(0.9.5)** — its `docs/v0.9.5/oauth2-oidc/`, `saml/` and `wstrust/` with the
+screenshots, `saml-assertion.md`, `saml-decoders.md`, `jwt-tools.md`,
 `digital-signature.md` and `what-is-a-protocol-debugger.md` — under that
 project's MIT licence (`REUSE.toml`).
 
@@ -177,8 +177,8 @@ The copies were changed in exactly these ways, and a refresh repeats them:
 `https://localhost:3000` → `https://localhost:8444` and `:4000` → `:8444/api`
 (the embedded build's own addresses); "the mock STS" → iya-sts; links to this
 site made relative; links to debugger pages that were NOT copied pointed at
-`github.com/rcbj/id-proto-debugger/blob/<release>/docs/`; and the "start it
-from a checkout" and "regenerating the screenshots" passages replaced by
+`github.com/rcbj/id-proto-debugger/blob/<release>/docs/v<release>/`; and
+the "start it from a checkout" and "regenerating the screenshots" passages replaced by
 pointers to `access.md` and to that project. Its developer notes (`kerberos.md`,
 `scim.md`, `ssf.md` and the rest, which begin by listing the source files they
 cover) were not copied: this directory is for somebody using the service.

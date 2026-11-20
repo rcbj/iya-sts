@@ -202,10 +202,10 @@
     - { title: OpenID Connect authentication flows, url: /debugger/oauth2-oidc/oidc-flows.html }
     - { title: Dynamic client registration, url: /debugger/oauth2-oidc/dynamic-client-registration.html }
     - { title: "Token detail, introspection, UserInfo, JWKS", url: /debugger/oauth2-oidc/related-tools.html }
-    - { title: The SAML workflow, url: /debugger/saml.html }
+    - { title: The SAML workflow, url: /debugger/saml/ }
     - { title: SAML Assertion Tool, url: /debugger/saml-assertion.html }
     - { title: SAML decoders, url: /debugger/saml-decoders.html }
-    - { title: The WS-Trust workflow, url: /debugger/wstrust.html }
+    - { title: The WS-Trust workflow, url: /debugger/wstrust/ }
     - { title: JWT Tools, url: /debugger/jwt-tools.html }
     - { title: Digital Signature, url: /debugger/digital-signature.html }
 

@@ -2922,6 +2922,39 @@ function withSubjectsResolved(fn) {
 // the event loop; `fn` then runs synchronously against them, as it does
 // there. For the Users page, whose register on 8081 held ~228,000 subjects.
 // ---------------------------------------------------------------------------
+//
+// **AND WHAT WAS ASKED LAST TIME IS NOT ASKED AGAIN (#790, 2026-11-20).**
+// Every rebuild of the Users page's population asked the name of every held
+// subject — up to the 20,000 tokens a process holds on demand (#820), and
+// every artifact — to draw fifty rows. A subject is an `entryUUID`, so its
+// name changes only when the entry is renamed or deleted; the answers of the
+// last build are worth keeping. A caller that rebuilds (`admin_views.ts`'s
+// kept population) hands in `memo`, an object it owns, and this:
+//
+//   * reads a subject's name from `memo.names` when the memo is current, and
+//     asks the directory only for the subjects it does not hold;
+//   * leaves in `memo.names` exactly this walk's subjects, so the memo is
+//     never larger than one walk — a bound by structure, not by a cap;
+//   * treats the memo as current for SUBJECT_NAMES_KEPT_MS from the walk that
+//     asked every subject, and while `subjectNamesGeneration` has not moved.
+//
+// The page cannot be bounded to its fifty rows instead (rcbj's decision on
+// #790, 2026-11-20): it is sorted by name over every source, and a token
+// filed under a `urn:uuid:` subject has no name until it is resolved, so
+// every held subject has to be resolved before the fifty rows are known.
+//
+// WHAT IT COSTS: a rename or a delete applied by ANOTHER process is seen
+// here up to SUBJECT_NAMES_KEPT_MS late — the staleness an unfiltered Users
+// page already accepts (`USERS_POPULATION_STALE_MS`). One made by this
+// process moves the generation (`renameIdentity()`, `forgetIdentity()`) and
+// the next walk asks everything. A subject that named nobody is remembered
+// as naming nobody: an `entryUUID` is never given to a second entry.
+// ---------------------------------------------------------------------------
+// How long a memo's answers are used from the walk that asked them all.
+const SUBJECT_NAMES_KEPT_MS = 120000;
+// Moved by every rename and delete of a person this process makes.
+let subjectNamesGeneration = 0;
+
 /**
  * Runs `fn` with every subject of the register resolved, asked of the
  * directory asynchronously.
@@ -2930,9 +2963,12 @@ function withSubjectsResolved(fn) {
  * @param alsoSubjects - optional; subjects of records `fn` will meet that
  *   this process does not hold (#820: a shown row's tokens, read from the
  *   store's index)
+ * @param memo - optional; `{ names, at, generation }`, owned by a caller
+ *   that walks again: the names an earlier walk asked, read and refilled
+ *   here (#790)
  * @returns a promise of what `fn` returns
  */
-async function withSubjectsResolvedAsync(fn, alsoSubjects) {
+async function withSubjectsResolvedAsync(fn, alsoSubjects, memo) {
   log.debug("Entering withSubjectsResolvedAsync().");
   if (resolvedSubjects) {
     const inner = fn();
@@ -2958,7 +2994,7 @@ async function withSubjectsResolvedAsync(fn, alsoSubjects) {
   });
   (alsoSubjects || []).forEach(note);
   const resolved = subjects.size
-    ? await namesForSubjectsAsync(Array.from(subjects)) : null;
+    ? await resolveSubjectsAsync(Array.from(subjects), memo) : null;
   // Set only now, across a synchronous call: nothing else can run inside it.
   resolvedSubjects = resolved;
   let value;
@@ -2970,6 +3006,52 @@ async function withSubjectsResolvedAsync(fn, alsoSubjects) {
   log.debug("Leaving withSubjectsResolvedAsync(). " + subjects.size +
             " subject(s).");
   return value;
+}
+
+// `namesForSubjectsAsync()`, reading what `memo` holds and asking only the
+// rest (#790; see above). Without a memo, every subject is asked.
+async function resolveSubjectsAsync(list, memo) {
+  log.debug("Entering resolveSubjectsAsync(). " + list.length +
+            " subject(s).");
+  if (!memo) {
+    const all = await namesForSubjectsAsync(list);
+    log.debug("Leaving resolveSubjectsAsync(). No memo.");
+    return all;
+  }
+  const nowMs = Date.now();
+  const current = memo.names instanceof Map &&
+    memo.generation === subjectNamesGeneration &&
+    nowMs - Number(memo.at || 0) <= SUBJECT_NAMES_KEPT_MS;
+  const held = current ? memo.names : null;
+  // Read before the question: a rename made while it is asked moves it, and
+  // what that question answered is then not kept as current.
+  const generation = subjectNamesGeneration;
+  const out = new Map();
+  const ask = [];
+  list.forEach(function (subject) {
+    const key = String(subject).toLowerCase();
+    if (held && held.has(key)) {
+      out.set(key, held.get(key));
+    } else {
+      ask.push(subject);
+    }
+  });
+  if (ask.length) {
+    const named = await namesForSubjectsAsync(ask);
+    named.forEach(function (name, key) {
+      out.set(key, name);
+    });
+  }
+  // This walk's subjects and nothing else; the clock restarts only when
+  // every one of them was asked.
+  memo.names = out;
+  memo.generation = generation;
+  if (!current) {
+    memo.at = nowMs;
+  }
+  log.debug("Leaving resolveSubjectsAsync(). " + ask.length + " asked, " +
+            (list.length - ask.length) + " remembered.");
+  return out;
 }
 
 /**
@@ -3253,6 +3335,8 @@ function holderKeyOf(username, sub) {
  */
 function renameIdentity(from, to) {
   log.debug("Entering renameIdentity().");
+  // Whatever the register holds: the subject now names somebody else (#790).
+  subjectNamesGeneration++;
   const oldKey = identityKeyOf(from);
   const newKey = identityKeyOf(to);
   const moved = oldKey && newKey && oldKey !== newKey ? users.get(oldKey)
@@ -3300,6 +3384,8 @@ function renameIdentity(from, to) {
  */
 function forgetIdentity(username) {
   log.debug("Entering forgetIdentity().");
+  // The deleted person's subject now names nobody (#790).
+  subjectNamesGeneration++;
   const key = identityKeyOf(username);
   if (!key) {
     log.debug("Leaving forgetIdentity(). Nobody named.");
