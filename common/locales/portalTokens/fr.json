@@ -16,5 +16,6 @@
   "done.lost": "La clé est déclarée perdue et {n} de vos identifiants sur cette clé ont été retirés.",
   "done.notAll": "{n} n'ont pas pu être retirés : demandez à votre administrateur de les supprimer.",
   "done.sessionsEnded": "{n} sessions ouvertes avec cette clé ont été fermées.",
+  "done.recovery": "Votre prochaine connexion sans clé d'accès vous demandera d'en enregistrer une nouvelle avant de pouvoir utiliser une application.",
   "done.noWayIn": "C'était votre seul moyen de vous connecter : demandez un lien d'activation à votre administrateur ou utilisez vos codes de récupération."
 }

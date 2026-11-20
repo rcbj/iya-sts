@@ -5533,9 +5533,13 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                                    protocol: 'TLS',
                                    method: 'client certificate (GET ' +
                                            '/tls/sign-in)',
+                                   // And its serial, which the hardware
+                                   // token register files it by (#1955).
                                    credential: {
                                      kind: 'certificate',
-                                     id: cert.fingerprint256 || '' } });
+                                     id: cert.fingerprint256 || '',
+                                     serial: String(cert.serialNumber ||
+                                                    '') } });
   } catch (e) {
     // Bookkeeping must never break a connection that has already been
     // accepted — the same rule recordClientCertificate() states.
@@ -5870,6 +5874,8 @@ function screenCertificateHolder(req) {
       ok: true,
       username: peer.username,
       credentialId: String(peer.cert.fingerprint256 || ''),
+      // Its serial, which the hardware token register files it by (#1955).
+      serial: String(peer.cert.serialNumber || ''),
       // What the certificate's key earns (#1955 P1), for the screen's
       // session: `GET /tls/sign-in`'s answer, from the same evidence.
       amr: certificateAmrOf(peer.cert),

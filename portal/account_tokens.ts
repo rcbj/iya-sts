@@ -25,9 +25,14 @@
 // the same physical key is left for an administrator (STS-HWTOKEN-0010).
 //
 // **IT ASKS FOR A RECENT SIGN-IN** (`recentAuth`), as removing a passkey
-// does: the act removes ways in. A person whose lost key was their only way
-// in is told so, and pointed at the realm's recovery, because the removal
-// passes the last-way-in guard (`credentials.removeKey()`'s `lost`).
+// does: the act removes ways in. A person whose every passkey was on the
+// token is HANDED TO THE RECOVERY PATH (#724, `common/CLAUDE.md` 3cq): the
+// act notes a `lost-key` recovery, so under `recoveryAssurance` `not-weaker`
+// their next sign-in a passkey did not answer goes to the set-up step that
+// registers a new one, and the answer says so. Where the realm's policy
+// holds no recovery (`any`) and nothing else signs them in, they are told
+// to ask for an activation link or use their recovery codes, because the
+// removal passes the last-way-in guard (`credentials.removeKey()`'s `lost`).
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -158,6 +163,11 @@ class AccountTokens {
     const keysLeft = (this.deps.credentials.keysOf(username) || []).length;
     const stranded = keysLeft === 0 &&
       !this.deps.credentials.hasPassword(username);
+    // HANDED TO THE RECOVERY PATH (#724): the act noted a `lost-key`
+    // recovery, so the next sign-in a passkey does not answer is limited to
+    // registering a new one, and the person is told that rather than to go
+    // and find an administrator.
+    const recovering = (done.recoveryNoted || []).indexOf(username) >= 0;
     const message = t.text('portalTokens.done.lost',
                            { n: (done.retired || []).length }) +
       ((done.notRetired || []).length
@@ -165,7 +175,9 @@ class AccountTokens {
                        { n: done.notRetired.length }) : '') +
       (ended ? ' ' + t.text('portalTokens.done.sessionsEnded',
                             { n: ended }) : '') +
-      (stranded ? ' ' + t.text('portalTokens.done.noWayIn') : '');
+      (recovering ? ' ' + t.text('portalTokens.done.recovery')
+                  : (stranded ? ' ' + t.text('portalTokens.done.noWayIn')
+                              : ''));
     log.debug("Leaving AccountTokens.act(). Reported lost.");
     // `account-api/CLAUDE.md`'s members (*What an answer is*): the
     // sentence, and the page as it now is.

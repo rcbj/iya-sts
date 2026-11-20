@@ -111,6 +111,14 @@
     "en": "0f52a102d4c01229",
     "text": "「整合式驗證」。人員被送往 /authn/spnego，它以 401 及 WWW-Authenticate: Negotiate 回應，並依其用戶端送回的服務票證讓他們登入（RFC 4559 建立在 RFC 4178 之上，再建立在 RFC 4121 之上）。不必輸入任何內容，也不繪製任何畫面。如同安全金鑰或錢包，它建立在本服務於每種模式下都會驗證的認證資料上——登入畫面的密碼只在產品模式下驗證——而工作階段接著主張的內容是從「票證」自身的旗標讀取：pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未主張的票證則「什麼都沒有」。無法取得票證的用戶端會看到一個連結到登入畫面的頁面，因為在每個未針對此主機設定的瀏覽器中，單純的 401 Negotiate 都是死路。"
   },
+  "fed.mechanisms.attested-hardware.label": {
+    "en": "a133b83617b8359b",
+    "text": "經證明的硬體金鑰"
+  },
+  "fed.mechanisms.attested-hardware.what": {
+    "en": "2fc5a571514106a4",
+    "text": "本領域依其本身證明記錄的硬體權杖上的密碼金鑰或智慧卡憑證（common/hardware_tokens.ts）：經企業證明的安全金鑰，或 PIV 卡。登入畫面提供密碼金鑰，並在驗證原則接受時提供憑證，不提供密碼。在允許清單中只有這樣的憑證才滿足它，因此驗證原則只列出 attested-hardware 的應用程式只能以經證明的硬體金鑰存取。"
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "錢包（OpenID4VP）"
@@ -488,8 +496,8 @@
     "text": "「指標」，也是這一端關於夥伴所儲存的全部內容：它在 ou=applications 中的項目識別碼。其 entityID、斷言取用服務、重新導向 URI 與憑證都存放在「那裡」，每個協定模組本來就從那裡讀取。把其中任何一項複製到這裡，就是本儲存庫刻意避免的雙存放區失敗。"
   },
   "fed.schema.attributes.fedAuthnMechanism.what": {
-    "en": "10e91a734e1d74b3",
-    "text": "「當此夥伴要求時，本服務如何驗證人員的身分」：password、password-mfa、webauthn、spnego——瀏覽器已持有的 Kerberos 票證，完全沒有畫面——wallet——此領域簽發、從人員錢包出示的憑證——或 federation，它會把人員送往另一個關係，這正是讓本服務成為兩個協定之間身分「橋接」的方式。「空白表示此關係不表示意見」，這與 password 不同：它會改用應用程式項目上的 appFederationRelationship，再改用登入畫面，這正是此屬性存在之前每個關係的行為。"
+    "en": "cbb25dba52aecc9f",
+    "text": "「當此夥伴要求時，本服務如何驗證人員的身分」：password、password-mfa、webauthn、attested-hardware——經證明的硬體權杖上的密碼金鑰——spnego——瀏覽器已持有的 Kerberos 票證，完全沒有畫面——wallet——此領域簽發、從人員錢包出示的憑證——或 federation，它會把人員送往另一個關係，這正是讓本服務成為兩個協定之間身分「橋接」的方式。「空白表示此關係不表示意見」，這與 password 不同：它會改用應用程式項目上的 appFederationRelationship，再改用登入畫面，這正是此屬性存在之前每個關係的行為。"
   },
   "fed.schema.attributes.fedAuthnRelationship.what": {
     "en": "e67f3ec502c8b6b8",

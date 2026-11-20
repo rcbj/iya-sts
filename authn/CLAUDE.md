@@ -3758,6 +3758,25 @@ somebody who does not exist) had always answered 500. It falls back to the
 
 ## AFTER AN ACCOUNT RECOVERY, A PASSKEY FIRST (#724, 2026-10-19)
 
+**A SECURITY KEY REPORTED LOST IS A RECOVERY OWED (#1955 P1).** The lost-key
+act (`common/hardware_tokens.ts`) notes a `lost-key` recovery
+(`passkey_policy.ts`'s RECOVERY_DOORS, not self-service) for a person whose
+every passkey was on the token, BEFORE it removes them; `holdsPasskey()`
+counts such a person as covered while it is pending, and
+`setRecoveryPending()` keeps `lost-key` when a later door writes its own.
+So the next session a passkey did not answer is held as any recovery's is —
+under `not-weaker`, the set-up step below — and a passkey signing them in
+clears it. Under `any` nothing is written.
+
+**THE CREDENTIAL'S HARDWARE TOKEN IS ON THE EVENT (#1955 P1)**:
+`eventContext()` records `context.credential.hardwareToken` (key, vendor,
+model, evidence source, smart card) from the register at the sign-in — a
+passkey by its credential id, a certificate by the serial the two
+certificate doors now pass — and `common/authn_mechanisms.ts` reads it as
+the `attested-hardware` mechanism. A list naming `attested-hardware` draws a
+screen with a passkey and, where the realm takes one, the certificate door,
+and no password field; nothing is forced.
+
 The design is `common/CLAUDE.md` 3cq; what this module does with it:
 
 * **`startSessionHere()` asks the recovery question** right after the passkey

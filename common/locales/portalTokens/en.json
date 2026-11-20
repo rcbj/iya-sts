@@ -16,5 +16,6 @@
   "done.lost": "The key is reported lost, and {n} of your credentials on it were retired.",
   "done.notAll": "{n} could not be retired: ask your administrator to remove them.",
   "done.sessionsEnded": "{n} sign-on sessions it signed in were ended.",
+  "done.recovery": "Your next sign-in without a passkey will ask you to register a new one before you can use any application.",
   "done.noWayIn": "It was your only way to sign in: ask your administrator for an activation link, or use your recovery codes."
 }

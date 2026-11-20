@@ -16,5 +16,6 @@
   "done.lost": "Nyckeln är anmäld som förlorad, och {n} av dina inloggningsuppgifter på den har återkallats.",
   "done.notAll": "{n} kunde inte återkallas: be din administratör att ta bort dem.",
   "done.sessionsEnded": "{n} sessioner som den loggade in avslutades.",
+  "done.recovery": "Nästa gång du loggar in utan nyckel ombeds du registrera en ny innan du kan använda någon applikation.",
   "done.noWayIn": "Det var ditt enda sätt att logga in: be din administratör om en aktiveringslänk, eller använd dina återställningskoder."
 }

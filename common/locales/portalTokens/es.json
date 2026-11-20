@@ -16,5 +16,6 @@
   "done.lost": "La llave se ha notificado como perdida y se han retirado {n} de sus credenciales en ella.",
   "done.notAll": "{n} no se pudieron retirar: pida a su administrador que las elimine.",
   "done.sessionsEnded": "Se cerraron {n} sesiones iniciadas con ella.",
+  "done.recovery": "Su próximo inicio de sesión sin llave de acceso le pedirá que registre una nueva antes de poder usar cualquier aplicación.",
   "done.noWayIn": "Era su única forma de iniciar sesión: pida a su administrador un enlace de activación o use sus códigos de recuperación."
 }

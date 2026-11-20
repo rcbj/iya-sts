@@ -932,6 +932,15 @@ class HardwareTokens {
                     retired: [] };
     marked.updatedAt = now;
     register.set(key, marked);
+    // THE RECOVERY THE LOSS OWES (#724, design X2): a person whose every
+    // passkey is on this token is left with nothing as strong, so before
+    // the keys go — while `credentials.holdsPasskey()` is still true — a
+    // `lost-key` recovery is noted on their entry. The passkey policy's
+    // `recoveryAssurance` then holds their next sign-in a passkey did not
+    // answer exactly as it holds a reset link's (`not-weaker`: the
+    // sign-in screen's set-up step registers a new passkey, and no session
+    // until one signs them in); under `any` nothing is written.
+    const recoveries = this.noteLossRecoveries(marked, onlyHolder);
     const ctx = { actor: actor, via: String(s.via || ''),
                   initiatingEntity: s.initiatingEntity === 'admin'
                     ? 'admin' : 'user',
@@ -991,6 +1000,7 @@ class HardwareTokens {
       'Hardware token ' + key + ' was reported lost: ' + retired.length +
       ' credential(s) retired, ' + notRetired.length + ' not',
       { key: key, via: ctx.via, retired: retired, notRetired: notRetired,
+        recoveryNoted: recoveries,
         errorCode: notRetired.length ? notRetired[0].errorCode : undefined });
     if (notRetired.length) {
       // The first row's own code (STS-HWTOKEN-0007, -0009 or -0010, the
@@ -1004,7 +1014,51 @@ class HardwareTokens {
     log.debug("Leaving HardwareTokens.markLost(). " + retired.length +
               ' retired, ' + notRetired.length + ' not.');
     return { ok: true, token: this.view(key, done), retired: retired,
-             notRetired: notRetired };
+             notRetired: notRetired, recoveryNoted: recoveries };
+  }
+
+  // The holders a lost token leaves with no other passkey, each noted as a
+  // `lost-key` recovery (above). Answers the usernames noted.
+  private noteLossRecoveries(token: Json, onlyHolder: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.noteLossRecoveries().");
+    const credentials = this.deps.loadCredentials();
+    const byHolder: Record<string, string[]> = {};
+    (token.credentials || []).forEach(function (c: Json) {
+      const who = String(c.holder || token.holder || '');
+      if (c.kind === 'fido' && who && (!onlyHolder || who === onlyHolder)) {
+        (byHolder[who] = byHolder[who] || []).push(String(c.ref));
+      }
+    });
+    const noted: string[] = [];
+    Object.keys(byHolder).forEach((holder) => {
+      const name = this.nameOfHolder(holder);
+      if (!name) {
+        return;
+      }
+      const lost = byHolder[holder];
+      const others = (credentials.keysOf(name) || []).filter(
+        function (k: Json) {
+          return lost.indexOf(String(k.credentialId)) < 0;
+        });
+      if (others.length) {
+        return;
+      }
+      try {
+        if (credentials.noteRecovery(name, 'lost-key')) {
+          noted.push(name);
+        }
+      } catch (e) {
+        log.debug("Caught in HardwareTokens.noteLossRecoveries(): " +
+                  ((e && e.message) || e));
+        // The removal goes ahead: a key a finder holds is worse than a
+        // recovery not held to the policy. The audit row says none was
+        // noted.
+      }
+    });
+    log.debug("Leaving HardwareTokens.noteLossRecoveries(). " +
+              noted.length);
+    return noted;
   }
 
   // -------------------------------------------------------------------------

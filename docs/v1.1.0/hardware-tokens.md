@@ -74,6 +74,13 @@ can report a token lost. The service then does all of the following at once:
    credential, and the sign-on sessions those credentials started are ended.
 5. An audit row (`hardware-token.lost`) lists what was retired and what was
    not.
+6. A person whose **every passkey** was on the lost token is handed to the
+   [account recovery](passkeys.md) rules: a `lost-key` recovery is recorded
+   on their entry before the keys go. Under the passkey policy's
+   `recoveryAssurance` `not-weaker` (the default in product mode), the next
+   sign-in that a passkey did not answer leads to registering a new passkey
+   and not to an application. A passkey sign-in then completes the
+   recovery. Under `any` nothing is recorded.
 
 The portal retires only the caller's own credentials, and asks for a recent
 sign-in. Someone else might have registered a credential on the same physical
@@ -107,6 +114,35 @@ RFC 8176 `amr` values that say a key is in hardware are earned from
 
 A passkey sign-in records `hwk` as it always has. Whether its attestation was
 trusted is a separate fact, and phishing-resistance policy reads it (`phrh`).
+
+## Requiring a hardware token
+
+Each sign-in records the token its passkey or certificate is on, if a token
+holds it. Policy can use that fact in two ways:
+
+- **The authentication policy's `attested-hardware` mechanism.** A named
+  authentication policy's first-factor list (`stsAuthnPolicyMechanism`)
+  may name `attested-hardware`. A sign-in satisfies it only with a passkey
+  or certificate on an attested token that is still in use. An application
+  whose policy names only `attested-hardware` therefore gets a sign-in
+  screen with a passkey and, where the realm accepts one, a certificate,
+  and no password field. A session made any other way is asked again.
+- **XACML attributes**, sent as environment attributes on every browser
+  issuance. No built-in rule reads them; they are there for a realm's own
+  rules.
+
+| Attribute | Value |
+|---|---|
+| `urn:sts:xacml:hardware-token-attested` | boolean: the credential is on an attested token still in use (always sent) |
+| `urn:sts:xacml:hardware-token-key` | `<vendor>/<serial>` |
+| `urn:sts:xacml:hardware-token-vendor` | e.g. `yubico` |
+| `urn:sts:xacml:hardware-token-model` | e.g. `YubiKey 5 NFC` |
+| `urn:sts:xacml:hardware-token-evidence` | `fido-enterprise-attestation`, `piv-attestation` or `vendor-import` |
+| `urn:sts:xacml:hardware-token-smart-card` | boolean: the evidence says the key is on a smart card |
+| `urn:sts:xacml:hardware-token-holder-matches` | boolean: the subject is the token's recorded holder |
+| `urn:sts:xacml:hardware-token-status` | `active` or `lost` |
+
+A token reported lost after the sign-in reads `attested` false from then on.
 
 ## Error codes
 

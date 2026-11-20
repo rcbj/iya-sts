@@ -564,8 +564,8 @@
     "text": "الغرض من الملف، للشخص التالي."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "في سياسة مصادقة مسمّاة (#1148، #1237): آلية عامل أول يسمح بها تسجيل الدخول الذي تنطبق عليه — حيث يسمّيها التطبيق (appAuthnPolicy) أو إحدى مجموعات الشخص (stsAuthnPolicy) وتكون أسبقيتها الأدنى بين المسمّاة — password أو password-mfa أو webauthn أو spnego أو wallet أو federation، قيمة واحدة لكل منها. الغياب يسمح بكل ما يسمح به نطاق الثقة."
+    "en": "783db3d7da8c29c5",
+    "text": "في سياسة مصادقة مسمّاة (#1148، #1237): آلية عامل أول يسمح بها تسجيل الدخول الذي تنطبق عليه — حيث يسمّيها التطبيق (appAuthnPolicy) أو إحدى مجموعات الشخص (stsAuthnPolicy) وتكون أسبقيتها الأدنى بين المسمّاة — password أو password-mfa أو webauthn أو attested-hardware (مفتاح مرور أو شهادة على رمز مادي مُثبَت بالشهادة، #1955) أو spnego أو wallet أو federation، قيمة واحدة لكل منها. الغياب يسمح بكل ما يسمح به نطاق الثقة."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
     "en": "7c8e4d8b4cce7c08",

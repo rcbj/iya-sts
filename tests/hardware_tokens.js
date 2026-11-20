@@ -38,6 +38,10 @@ const credentials = require('../common/credentials');
 const tokens = require('../common/hardware_tokens');
 const errorCodes = require('../common/error_codes');
 const krb5Tokens = require('../kerberos/krb5_tokens');
+const mechanisms = require('../common/authn_mechanisms');
+const gate = require('../common/issuance_gate');
+const templates = require('../xacml/xacml_templates');
+const rolePep = require('../xacml/xacml_role_pep');
 const kit = require('./webauthn_attestation_kit');
 
 const log = require('bunyan').createLogger({ name: 'hardware_tokens',
@@ -47,7 +51,8 @@ const RUN = Date.now().toString(36);
 const ALICE = 'hwt-alice-' + RUN;
 const BOB = 'hwt-bob-' + RUN;
 const SERIAL = String(10000000 + (Date.now() % 80000000));
-const OVERRIDDEN = ['hardwareTokens.hardwareClaims'];
+const CAROL = 'hwt-carol-' + RUN;
+const OVERRIDDEN = ['hardwareTokens.hardwareClaims', 'global.mode'];
 
 function code(answer) {
   log.debug("Entering code().");
@@ -232,6 +237,100 @@ function checkClaims(t, writerKey) {
   log.debug("Leaving checkClaims().");
 }
 
+// 6. X4: what an authentication on a token says to policy — the event's
+// snapshot, the `attested-hardware` mechanism, the gate's facts brought up
+// to date against the register, and the PEP's attributes.
+async function checkPolicyFacts(t) {
+  log.debug("Entering checkPolicyFacts().");
+  t.log.info('=== 6. X4: the token as policy facts ===');
+  const serial = 'pf-' + RUN;
+  const key = await attestedKey(serial);
+  credentials.addKey(CAROL, key);
+  const Authn = require('../authn/authn').Authn;
+  const snap = Authn.hardwareTokenOf({ kind: 'webauthn',
+                                       id: key.credentialId });
+  t.check(!!snap && snap.key === 'yubico/' + serial &&
+          snap.model === 'YubiKey 5 NFC' &&
+          snap.source === 'fido-enterprise-attestation',
+          '6a. a sign-in\'s credential on a token records a snapshot of it',
+          JSON.stringify(snap));
+  t.check(Authn.hardwareTokenOf({ kind: 'webauthn', id: 'nope' }) === null &&
+          Authn.hardwareTokenOf({ kind: 'certificate', id: 'x' }) === null,
+          '6b. and nothing for a credential no token lists');
+  const event = { authenticated: true, amr: ['hwk'], acr: '1',
+                  authority: { kind: 'local' },
+                  context: { credential: { kind: 'webauthn',
+                                           hardwareToken: snap } } };
+  const plain = { authenticated: true, amr: ['hwk'], acr: '1',
+                  authority: { kind: 'local' },
+                  context: { credential: { kind: 'webauthn' } } };
+  t.check(mechanisms.ofEvent(event).join(',') ===
+          'webauthn,attested-hardware' &&
+          mechanisms.ofEvent(plain).join(',') === 'webauthn',
+          '6c. the event satisfies attested-hardware beside webauthn, and ' +
+          'a key on no token only webauthn',
+          JSON.stringify([mechanisms.ofEvent(event),
+                          mechanisms.ofEvent(plain)]));
+  const asked = function (who, ev) {
+    return { kind: gate.ISSUANCE.SESSION, authenticationEvent: ev,
+             subject: { kind: 'user', name: who, authenticated: true } };
+  };
+  const mine = gate.hardwareTokenFactsOf(asked(CAROL, event));
+  const theirs = gate.hardwareTokenFactsOf(asked(BOB, event));
+  const none = gate.hardwareTokenFactsOf(asked(CAROL, plain));
+  t.check(mine.attested === true && mine.holderMatches === true &&
+          mine.status === 'active' && theirs.holderMatches === false &&
+          none.attested === false && !none.key,
+          '6d. the gate\'s facts: attested and held by the subject, not ' +
+          'held by another, and attested false with no token',
+          JSON.stringify([mine, theirs, none]));
+  t.check(gate.hardwareTokenFactsOf(Object.assign(asked(CAROL, event),
+    { kind: gate.ISSUANCE.WSTRUST_TOKEN })) === null,
+          '6e. nothing for an issuance that is not a browser sign-in');
+  const H = templates.HARDWARE_TOKEN_ATTRIBUTE;
+  const text = JSON.stringify(rolePep.buildRequest({
+    application: 'hwt-app', kind: 'start-session',
+    subject: { kind: 'user', name: CAROL, authenticated: true },
+    hardwareToken: mine }, ['EVERYBODY'], [], ['EVERYBODY']));
+  const bare = JSON.stringify(rolePep.buildRequest({
+    application: 'hwt-app', kind: 'start-session',
+    subject: { kind: 'user', name: CAROL, authenticated: true },
+    hardwareToken: { attested: false } }, ['EVERYBODY'], [],
+    ['EVERYBODY']));
+  t.check([H.ATTESTED, H.KEY, H.VENDOR, H.MODEL, H.EVIDENCE, H.SMART_CARD,
+           H.HOLDER_MATCHES, H.STATUS].every(function (urn) {
+    return text.indexOf(urn) >= 0;
+  }) && text.indexOf('YubiKey 5 NFC') >= 0 &&
+          bare.indexOf(H.ATTESTED) >= 0 && bare.indexOf(H.MODEL) < 0,
+          '6f. the PEP sends every hardware-token attribute for a token, ' +
+          'and only ATTESTED without one');
+  // 7. THE RECOVERY THE LOSS OWES (#724): Carol's only passkey is on it.
+  config.setOverride('global.mode', 'product');
+  const lost = await tokens.markLost({ key: 'yubico/' + serial,
+    actor: CAROL, via: 'portal', onlyHolder: CAROL });
+  const pending = credentials.recoveryPending(CAROL);
+  t.check(lost.ok && (lost.recoveryNoted || []).indexOf(CAROL) >= 0 &&
+          pending && pending.door === 'lost-key',
+          '7a. a person whose every passkey was on the lost token is ' +
+          'handed to the recovery path: a lost-key recovery is pending',
+          JSON.stringify([lost.recoveryNoted, pending]));
+  t.check(credentials.keysOf(CAROL).length === 0 &&
+          credentials.holdsPasskey(CAROL) === true,
+          '7b. with the key gone they are still covered by the passkey ' +
+          'policy while the recovery is pending');
+  credentials.setRecoveryPending(CAROL, 'password-reset');
+  t.equal((credentials.recoveryPending(CAROL) || {}).door, 'lost-key',
+          '7c. a later door\'s recovery does not replace the loss');
+  credentials.setRecoveryPending(CAROL, '');
+  t.check(!credentials.recoveryPending(CAROL) &&
+          credentials.holdsPasskey(CAROL) === false,
+          '7d. a passkey signing them in clears it, and the cover with it');
+  t.check(gate.hardwareTokenFactsOf(asked(CAROL, event)).attested === false,
+          '7e. a token reported lost since the sign-in is no longer attested');
+  config.clearOverride('global.mode');
+  log.debug("Leaving checkPolicyFacts().");
+}
+
 function checkIsolation(t, writerKey) {
   log.debug("Entering checkIsolation().");
   t.log.info('=== 5. realm isolation ===');
@@ -262,13 +361,14 @@ function checkIsolation(t, writerKey) {
 async function run(t) {
   log.debug("Entering run().");
   try {
-    [ALICE, BOB].forEach(function (name) {
+    [ALICE, BOB, CAROL].forEach(function (name) {
       ldap.createUser(name, { invent: false, attributes: {} });
     });
     const writerKey = checkWriter(t);
     const key = await checkWiring(t);
     await checkLost(t, key);
     checkClaims(t, writerKey);
+    await checkPolicyFacts(t);
     checkIsolation(t, writerKey);
   } finally {
     OVERRIDDEN.forEach(function (k) {
