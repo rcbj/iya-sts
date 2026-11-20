@@ -244,7 +244,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `XACML_PEP_PROXY_SESSION_RECHECK_MS` | `5000` | How old the remote PEP's last answer about a proxy session's sign-on session may be before it asks the service again. `0` asks on every request, so a sign-out at the service ends access at once |
 | `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
 | `GIT_COMMIT` | empty | Build argument: see [Which build am I running?](getting-started.md#which-build-am-i-running) |
-| `DEBUGGER_IMAGE` | `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3` | Build argument: the [embedded debugger](admin-console.md#the-embedded-protocol-debugger) the image carries, a tagged release of id-proto-debugger. `debugger-none` builds an image without one |
+| `DEBUGGER_IMAGE` | `ghcr.io/rcbj/id-proto-debugger-embedded:0.9.5` | Build argument: the [embedded debugger](admin-console.md#the-embedded-protocol-debugger) the image carries, a tagged release of id-proto-debugger. `debugger-none` builds an image without one |
 | `*_CONTAINER_NAME` | `sts`, `sts-postgres`, `sts-openbao`, … | Container names, which are machine-wide; change them to run a second stack beside this one |
 
 `OID4VCI_WALLET_URL` is not in the file. Add it under `sts` → `environment`
