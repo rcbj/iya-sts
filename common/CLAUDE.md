@@ -2057,6 +2057,19 @@ names each replacement and `stats().pools[].replaced` counts them.
 `tests/request_worker_replacement.js` drives the real `fork()` and `reap()`
 with a stub worker.
 
+**A WORKER THAT ASKS TO BE REPLACED IS RETIRED, THEN REPLACED (#1934).** A
+worker whose change-log pull waited on its own flush past
+`workers.readBarrierTimeoutMs` (`persistence/CLAUDE.md`, STS-STORE-0176)
+refuses every read-your-write request for as long as that flush stays out —
+44 minutes in run #551 — so it sends `{ replaceWorker }` once.
+`receiveReplaceWorker()` asks `replacementFor()` as for a death; if it would
+replace, the worker is marked `retiring` (out of `readyWorkers()`, so no
+request, session pin or scheduler run goes to it), sent `stop`, and ended
+past `RETIRE_DRAIN_MS` (8000, `stop()`'s default) if its drain waits on the
+commit that never comes (STS-WORKER-0056). `reap()` then forks the
+replacement into its slot. STS-WORKER-0055 names each, or says why the worker
+is kept. Its exit counts as a stopped exit, not a crash.
+
 **WORKERS START ONE AT A TIME (#342, 2026-09-29).** Each worker's start
 restores the whole store into its own heap, and `start()` forked every worker
 in the same instant. On testidp's node-a on 2026-09-28, a new task's four

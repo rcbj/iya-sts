@@ -1591,6 +1591,19 @@ const CODES = [
       'workers.readBarrierTimeoutMs; answering from its own copy could ' +
       'have been wrong.',
     spec: 'HTTP 503 (Retry-After: 5), plain text' },
+  { code: 'STS-WORKER-0055',
+    summary: 'A request worker reported that its change-log pull waited on ' +
+      'its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), ' +
+      'so the front process retired it — nothing more routed to it, then ' +
+      'drained — and forks a replacement into its slot when it exits. A ' +
+      'pool that is stopping or has given up keeps the worker, and the ' +
+      'line says why.',
+    spec: '' },
+  { code: 'STS-WORKER-0056',
+    summary: 'A request worker retired because its change-log pull was ' +
+      'wedged (STS-WORKER-0055) did not finish draining within 8000 ms and ' +
+      'was ended; its replacement follows as for any worker that exits.',
+    spec: '' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -1755,7 +1768,9 @@ const CODES = [
       'and told its caller so; a request pool barrier asks again and ' +
       'refuses once workers.readBarrierTimeoutMs has passed. The line ' +
       'breaks the pull\'s time down: reading pages, the rows by kind, ' +
-      'preparing, the event loop\'s turns, and the rest.',
+      'preparing, the event loop\'s turns, and the rest — and says when ' +
+      'the apply is waiting on this process\'s own flush, and for how ' +
+      'long (STS-STORE-0176).',
     spec: '' },
   { code: 'STS-STORE-0040',
     summary: 'A read barrier could not read the change log and told its ' +
@@ -2180,6 +2195,15 @@ const CODES = [
       'arriving row replaced the held copy, as it did before such rows ' +
       'were merged.',
     spec: 'none — logged' },
+  { code: 'STS-STORE-0176',
+    summary: 'A change-log apply of a directory entry waited for this ' +
+      'process\'s own flush of that entry past workers.readBarrierTimeoutMs ' +
+      'and the flush had not settled. The pull fails before its position ' +
+      'moves, so the row is read again and never dropped; a request worker ' +
+      'asks the front process to replace it (STS-WORKER-0055). Reported ' +
+      'once a flush; a read barrier\'s STS-STORE-0039 line names the wait ' +
+      'while it lasts.',
+    spec: '' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
